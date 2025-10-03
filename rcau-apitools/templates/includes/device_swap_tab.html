@@ -1,0 +1,23 @@
+<div class="space-y-4">
+<h3 class="text-xl font-bold mb-2 text-blue-700">Device Swap</h3>
+
+<div class="card p-4 bg-gray-50 border-l-4 border-yellow-500 text-sm text-gray-700">
+    <p class="font-bold mb-2">Instructions & Notes:</p>
+    <ul class="list-disc list-inside space-y-2">
+        <li>**Prerequisite:** RC Account must be connected.</li>
+        <li>**Function:** Swaps the digital line assignments (DLs) between two existing devices (Device A and Device B). This is a multi-step, destructive operation.</li>
+        <li>**API Endpoint:** Requires sequences of <code>PUT /restapi/v1.0/account/~/device/&lt;deviceId&gt;</code> calls to update the line assignments.</li>
+        <li>**Rate Limit:** Low/Moderate. Treat as complex provisioning (high chance of hitting 20+ calls/minute limits).</li>
+        <li>**Execution Time:** Moderate (several seconds for the sequence of calls).</li>
+    </ul>
+</div>
+
+<form class="card space-y-3">
+    <input type="text" placeholder="Source Device ID (A)" class="w-full p-3 border border-gray-300 rounded-lg">
+    <input type="text" placeholder="Target Device ID (B)" class="w-full p-3 border border-gray-300 rounded-lg">
+    <button type="button" class="bg-red-500 text-white py-2 px-4 rounded-lg hover:bg-red-600 transition">
+        Execute Device Swap
+    </button>
+</form>
+
+</div>

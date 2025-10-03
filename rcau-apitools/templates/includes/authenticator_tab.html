@@ -1,0 +1,43 @@
+<div class="space-y-4">
+<h3 class="text-xl font-bold mb-2 text-blue-700">RingCentral PKCE Connection Guide (Layer 2)</h3>
+
+<div class="card p-4 bg-gray-50 border-l-4 border-gray-300 text-sm text-gray-700">
+    <p class="font-bold mb-2">Instructions for PKCE Authorization:</p>
+    <ul class="list-disc list-inside space-y-2">
+        <li>
+            **CRITICAL STEP: OAuth Redirect URI**
+            <p class="mt-1">In the RingCentral Developer Console, set the **OAuth Redirect URI** to this exact URL:</p>
+            <code id="redirect-uri-display" class="font-mono text-xs p-2 bg-gray-200 rounded block mt-1 overflow-x-auto border border-gray-400">
+                {{ RC_REDIRECT_URI }}
+            </code>
+        </li>
+        <li>Paste the **Client ID** from your RingCentral application into the input field below.</li>
+        <li>Click **Connect**. This will redirect you to RingCentral's login page to grant access to the customer account.</li>
+        <li>After successful login on RingCentral, you will be redirected back, and the status above will change to **Connected**.</li>
+    </ul>
+    <p class="mt-4 font-semibold">API Endpoint: N/A (Client-side flow handled by /api/rc/initiate-auth)</p>
+    <p class="text-xs text-gray-500">Rate Limit: Low (only used for initiating the connection).</p>
+</div>
+
+<!-- The RC Connection Form itself is placed here -->
+<div id="rc-connection-card" class="card rc-disconnected">
+    <h2 class="text-xl font-semibold mb-4 rc-panel-title">Connection Form</h2>
+    <p class="text-sm text-gray-600">Enter the customer's application Client ID to initiate authorization.</p>
+    
+    <!-- FIX: Added the input field and buttons back into the form -->
+    <form id="rc-connect-form" class="space-y-4 mt-4">
+        <input type="text" id="rc-client-id-input" name="client_id" required
+               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500"
+               placeholder="Enter Customer/Partner's RingCentral Client ID">
+        <button type="submit" id="rc-connect-button"
+                class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition duration-150">
+            Connect and Authorize RingCentral Account
+        </button>
+        <button type="button" id="rc-disconnect-button" style="display:none;"
+                class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition duration-150">
+            Disconnect RingCentral Account
+        </button>
+    </form>
+</div>
+
+</div>
