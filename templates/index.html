@@ -130,7 +130,7 @@
                 <div class="text-lg font-medium text-gray-700">
                     Welcome! Role: <span class="font-bold">{{ USER_ROLE }}</span>
                 </div>
-                <a href="/logout"
+                <a href="{{ url_for('core.logout') }}"
                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition duration-150 shadow-md">
                     Logout
                 </a>
@@ -164,7 +164,7 @@
                     ] %}
                     
                     {% for tab_id, tab_name, tab_desc in tabs %}
-                        <a href="{{ url_for('index', tab=tab_id) }}" 
+                        <a href="{{ url_for('core.index', tab=tab_id) }}" 
                            class="tab-button whitespace-nowrap py-3 px-1 text-sm font-medium relative 
                            {% if current_tab == tab_id %}tab-active{% else %}tab-inactive hover:border-gray-300 hover:text-gray-900{% endif %}"
                            aria-current="{% if current_tab == tab_id %}page{% else %}false{% endif %}"
