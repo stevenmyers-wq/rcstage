@@ -1,0 +1,28 @@
+<div class="space-y-4">
+<h3 class="text-xl font-bold mb-2 text-blue-700">Bulk Opening Hours / Site Management</h3>
+
+<div class="card p-4 bg-gray-50 border-l-4 border-yellow-500 text-sm text-gray-700">
+    <p class="font-bold mb-2">Instructions & Notes (Bulk Rule Changes):</p>
+    <ul class="list-disc list-inside space-y-2">
+        <li>**Prerequisite:** RC Account must be connected.</li>
+        <li>**Function:** Allows mass update of business hours or site-specific call handling rules based on a provided list (e.g., CSV input).</li>
+        <li>**API Endpoint (Sites):** <code>PUT /restapi/v1.0/account/~/sites/&lt;siteId&gt;</code></li>
+        <li>**API Endpoint (Queues):** <code>PUT /restapi/v1.0/account/~/call-queues/&lt;queueId&gt;/business-hours</code></li>
+        <li>**Rate Limit:** Low. (Heavy processing, limit consumption to prevent throttling).</li>
+        <li>**Execution Time:** Long (depends on the number of entities; may take minutes).</li>
+    </ul>
+</div>
+
+<div class="card space-y-3">
+    <p class="font-semibold mb-2">Target Selection:</p>
+    <select class="w-full p-3 border border-gray-300 rounded-lg">
+        <option>Call Queues (Business Hours)</option>
+        <option>Sites (Default Rules)</option>
+    </select>
+    <textarea placeholder="Paste list of Site/Queue IDs or CSV content here" rows="5" class="w-full p-3 border border-gray-300 rounded-lg"></textarea>
+    <button type="button" class="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition">
+        Apply Bulk Changes
+    </button>
+</div>
+
+</div>
