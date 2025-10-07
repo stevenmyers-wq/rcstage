@@ -13,14 +13,18 @@ steps:
   args:
   - 'run'
   - 'deploy'
-  - 'rcau-api-tools' # Your Cloud Run service name
+  - 'rcau-api-tools'
   - '--image'
   - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA'
   - '--region'
-  - 'us-central1' # The region of your Cloud Run service
+  - 'us-central1'
   - '--platform'
   - 'managed'
 
 # Store the image in Artifact Registry
 images:
 - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA'
+
+# ADD THIS NEW SECTION TO FIX THE LOGGING ERROR
+options:
+  logging: CLOUD_LOGGING_ONLY
