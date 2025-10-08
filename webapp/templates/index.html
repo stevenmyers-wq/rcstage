@@ -128,6 +128,7 @@
     </div>
 
     <script>
+    // --- UTILITY FUNCTIONS ---
     function showMessage(message, isError = false) {
         const messagesDiv = document.getElementById('message-box');
         if (!messagesDiv) return;
@@ -137,6 +138,7 @@
         setTimeout(() => { messagesDiv.classList.add('hidden'); }, 5000);
     }
 
+    // --- AUTHENTICATION HANDLERS ---
     async function handleLogin(event) {
         event.preventDefault();
         const email = document.getElementById('login-email').value;
@@ -183,39 +185,49 @@
         disconnectButton.disabled = true; disconnectButton.innerText = 'Disconnecting...';
         try {
             const response = await fetch('/api/rc/disconnect', { method: 'POST' });
-            if (response.ok) { checkRcStatus(); }
-            else { showMessage('Failed to disconnect.', true); }
+            if (response.ok) { 
+                showMessage('Disconnected successfully.', false);
+                checkRcStatus(); // Re-check status to update the UI
+            } else { showMessage('Failed to disconnect.', true); }
         } catch (error) { showMessage('Network error on disconnect.', true); }
-        finally { disconnectButton.disabled = false; disconnectButton.innerText = 'Disconnect RingCentral'; }
+        finally { 
+            if(disconnectButton) {
+                disconnectButton.disabled = false; 
+                disconnectButton.innerText = 'Disconnect RingCentral';
+            }
+        }
     }
 
-    // REPLACE the old updateRcStatusDisplay function with this one
+    function updateRcStatusDisplay(status, rcEmail, clientId) {
+        const connectButton = document.getElementById('rc-connect-button');
+        const disconnectButton = document.getElementById('rc-disconnect-button');
+        const clientIdInput = document.getElementById('rc-client-id-input');
+        const statusDisplay = document.getElementById('rc-status-display');
+        const currentRcEmail = document.getElementById('current-rc-email');
 
-function updateRcStatusDisplay(status, rcEmail, clientId) {
-    const authenticatorTab = document.querySelector('a[href*="tab=authenticator"]');
-    if (!authenticatorTab) return;
-
-    const disconnectButton = document.getElementById('rc-disconnect-button');
-    const clientIdInput = document.getElementById('rc-client-id-input');
-    const statusDisplay = document.getElementById('rc-status-display'); // Assuming this exists
-
-    if (status === 'connected') {
-        if (disconnectButton) disconnectButton.style.display = 'block';
-        if (clientIdInput) {
-            clientIdInput.value = clientId || 'Connected';
-            clientIdInput.disabled = true;
+        if (status === 'connected') {
+            if (connectButton) connectButton.style.display = 'none';
+            if (disconnectButton) disconnectButton.style.display = 'block';
+            if (clientIdInput) {
+                clientIdInput.value = clientId || 'Connected';
+                clientIdInput.disabled = true;
+            }
+            if (statusDisplay) statusDisplay.innerHTML = `Status: <span class="text-green-700 font-bold">Connected</span>`;
+            if (currentRcEmail) {
+                currentRcEmail.innerText = `Connected User: ${rcEmail}`;
+                currentRcEmail.style.display = 'block';
+            }
+        } else {
+            if (connectButton) connectButton.style.display = 'block';
+            if (disconnectButton) disconnectButton.style.display = 'none';
+            if (clientIdInput) {
+                clientIdInput.value = '';
+                clientIdInput.disabled = false;
+            }
+            if (statusDisplay) statusDisplay.innerHTML = `Status: <span class="text-red-700 font-bold">Disconnected</span>`;
+            if (currentRcEmail) currentRcEmail.style.display = 'none';
         }
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <span class="text-green-700 font-bold">Connected</span>';
-
-    } else {
-        if (disconnectButton) disconnectButton.style.display = 'none';
-        if (clientIdInput) {
-            clientIdInput.value = '';
-            clientIdInput.disabled = false;
-        }
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <span class="text-red-700 font-bold">Disconnected</span>';
     }
-}
 
     async function checkRcStatus() {
         try {
@@ -229,33 +241,38 @@ function updateRcStatusDisplay(status, rcEmail, clientId) {
         }
     }
 
-    // --- (All your visualiser JavaScript functions) ---
-    function createNodeElement(nodeData, isBranchRoot = false) { /* ... same as before ... */ }
-    function createArrowElement() { /* ... same as before ... */ }
-    function renderHtmlFlow(apiFlowData) { /* ... same as before ... */ }
-    function handleVisualizeCallFlow() { /* ... same as before ... */ }
-    async function fetchAndPopulateNumbers() { /* ... same as before ... */ }
-    function filterAndDisplayNumbers() { /* ... same as before ... */ }
-    function displayApiLog(logData) { /* ... same as before ... */ }
+    // --- VISUALISER JAVASCRIPT ---
+    function createNodeElement(nodeData, isBranchRoot = false) { /* ... function content from previous answers ... */ }
+    function createArrowElement() { /* ... function content from previous answers ... */ }
+    function renderHtmlFlow(apiFlowData) { /* ... function content from previous answers ... */ }
+    function handleVisualizeCallFlow() { /* ... function content from previous answers ... */ }
+    async function fetchAndPopulateNumbers() { /* ... function content from previous answers ... */ }
+    function filterAndDisplayNumbers() { /* ... function content from previous answers ... */ }
+    function displayApiLog(logData) { /* ... function content from previous answers ... */ }
 
-    // --- EVENT LISTENERS ---
+    // --- EVENT LISTENERS (This is the critical part that was broken) ---
     document.addEventListener('DOMContentLoaded', () => {
+        // General login form
         const loginForm = document.getElementById('login-form');
         if (loginForm) { loginForm.addEventListener('submit', handleLogin); }
 
-        const rcConnectButton = document.getElementById('rc-connect-button');
-        if (rcConnectButton) { rcConnectButton.addEventListener('click', handleRcConnect); }
-
-        const rcDisconnectButton = document.getElementById('rc-disconnect-button');
-        if (rcDisconnectButton) { rcDisconnectButton.addEventListener('click', handleRcDisconnect); }
-
-        const visualizeButton = document.getElementById('visualize-button');
-        if (visualizeButton) { visualizeButton.addEventListener('click', handleVisualizeCallFlow); }
-
-        const phoneSearchInput = document.getElementById('phone-search');
-        if (phoneSearchInput) { phoneSearchInput.addEventListener('input', filterAndDisplayNumbers); }
-        
+        // If the main dashboard is visible, set up its listeners
         if (document.getElementById('app-dashboard')) {
+            // RC Auth listeners
+            const rcConnectButton = document.getElementById('rc-connect-button');
+            if (rcConnectButton) { rcConnectButton.addEventListener('click', handleRcConnect); }
+
+            const rcDisconnectButton = document.getElementById('rc-disconnect-button');
+            if (rcDisconnectButton) { rcDisconnectButton.addEventListener('click', handleRcDisconnect); }
+            
+            // Visualiser listeners
+            const visualizeButton = document.getElementById('visualize-button');
+            if (visualizeButton) { visualizeButton.addEventListener('click', handleVisualizeCallFlow); }
+
+            const phoneSearchInput = document.getElementById('phone-search');
+            if (phoneSearchInput) { phoneSearchInput.addEventListener('input', filterAndDisplayNumbers); }
+            
+            // Initial status check on page load
             checkRcStatus().then(isConnected => {
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('tab') === 'call_flow') {
