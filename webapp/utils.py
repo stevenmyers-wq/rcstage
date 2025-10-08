@@ -177,13 +177,14 @@ def parse_rule_details(detailed_rule):
     except Exception:
         return "Rule Details: ERROR", "Action: ERROR", "Target: ERROR"
 
+# REPLACE the entire trace_flow_recursive function with this version.
+
 def trace_flow_recursive(ext_id, node_counter, flow_data, processed_extensions):
     """Recursively traces the entire call flow path for any extension type."""
     if ext_id in processed_extensions or node_counter > 20:
         return node_counter, flow_data
     
-    # Handle the special case where the flow starts with a "Main Company Number"
-    # This ID isn't a real extension, so we find the operator (Auto-Receptionist) it points to.
+    # Special case for the "Main Company Number"
     if node_counter == 1 and 'maincompanynumber' in flow_data[0].get('details', [''])[0].lower():
         main_number_info = rc_api_call("/restapi/v1.0/account/~/business-address")
         if operator_id := main_number_info.get('operator', {}).get('id'):
@@ -191,93 +192,99 @@ def trace_flow_recursive(ext_id, node_counter, flow_data, processed_extensions):
 
     ext_info = get_extension_info(ext_id)
     if not ext_info:
-        flow_data.append({'type': 'endpoint', 'name': 'End of Call Flow', 'details': [f"Could not trace extension ID: {ext_id}"]})
+        flow_data.append({'type': 'endpoint', 'name': 'End of Call Flow', 'details': [f"Could not trace ID: {ext_id}"]})
         return node_counter + 1, flow_data
 
     processed_extensions[ext_id] = ext_id
     ext_type = ext_info.get('type', 'Unknown')
-    ext_name = ext_info.get('name', f'ID {ext_id}')
+    ext_name = ext_info.get('name', 'Unknown Extension')
     ext_number = ext_info.get('extensionNumber', 'N/A')
     
-    # --- Base Node Creation ---
     main_node_details = [f"Type: {ext_type} (Ext: {ext_number})"]
-    current_node_data = {'id': f"N{node_counter}", 'type': 'queue', 'name': ext_name, 'details': main_node_details, 'rules': [], 'members': [], 'members_name': ''}
+    current_node_data = {
+        'id': f"N{node_counter}", 'type': 'queue', 'name': ext_name, 
+        'details': main_node_details, 'rules': [], 'members': [], 
+        'members_name': '', 'branches': []
+    }
     flow_data.append(current_node_data)
     node_counter += 1
-    next_ext_id = None
 
-    # --- Answering Rules Logic (Applies to most extension types) ---
+    # Helper function to recursively trace a rule's destination
+    def _trace_rule_destination(rule, rule_name, counter):
+        branch_data = []
+        schedule, action, target = parse_rule_details(rule)
+        details = [f"<b>Schedule:</b> {schedule or rule_name}", f"<b>Action:</b> {action} → {target}"]
+        branch_data.append({'id': f"N{counter}", 'type': 'queue', 'name': rule_name, 'details': details, 'branches': []})
+        counter += 1
+        
+        next_ext_id = None
+        if 'TransferToExtension' in action:
+            if transfer := rule.get('transfer'):
+                next_ext_id = transfer.get('extension', {}).get('id')
+            elif forwarding := rule.get('forwarding'):
+                 if numbers := forwarding.get('rules', [{}])[0].get('forwardingNumbers'):
+                     if numbers and 'extension' in numbers[0]:
+                         next_ext_id = numbers[0].get('extension', {}).get('id')
+        
+        if next_ext_id:
+            counter, sub_branches = trace_flow_recursive(next_ext_id, counter, [], processed_extensions)
+            branch_data.extend(sub_branches)
+        
+        return counter, branch_data
+
+    # --- Main Logic ---
     rules_endpoint = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
     rules_summary = rc_api_call(rules_endpoint)
-    active_custom_rule = None
     
-    # First, find if there is an ACTIVE custom rule, as it takes precedence
+    inactive_rules_display = []
+    active_custom_rule = None
+
     if rules_summary:
         for rule_summary in rules_summary.get('records', []):
-            if rule_summary.get('enabled') and rule_summary.get('type') == 'Custom':
-                active_custom_rule = rc_api_call(f"{rules_endpoint}/{rule_summary['id']}")
-                break # Found the active one, no need to look further
+            if rule_summary.get('type') == 'Custom':
+                detailed_rule = rc_api_call(f"{rules_endpoint}/{rule_summary['id']}")
+                if detailed_rule:
+                    if detailed_rule.get('enabled'):
+                        active_custom_rule = detailed_rule
+                    else:
+                        # Collect inactive rules for display on the side
+                        schedule, action, target = parse_rule_details(detailed_rule)
+                        inactive_rules_display.append(f"<b>{detailed_rule.get('name')} (Inactive):</b><br/>{action} → {target}")
 
-    # If an active custom rule is found, trace it
+    current_node_data['rules'] = inactive_rules_display
+
     if active_custom_rule:
         current_node_data['details'].append(f"<b>Override:</b> {active_custom_rule.get('name')} (Active)")
-        schedule, action, target = parse_rule_details(active_custom_rule)
-        details = [f"<b>Schedule:</b> {schedule}", f"<b>Action:</b> {action} → {target}"]
-        flow_data.append({'id': f"N{node_counter}", 'type': 'queue', 'name': 'Active Custom Rule', 'details': details})
-        node_counter += 1
-        # If the rule transfers to another extension, that's our next trace path
-        if 'TransferToExtension' in action:
-            next_ext_id = (active_custom_rule.get('transfer', {}) or active_custom_rule.get('forwarding', {}).get('rules', [{}])[0].get('forwardingNumbers', [{}])[0].get('extension', {})).get('id')
-
-    # If NO active custom rule, trace the standard Business Hours / After Hours rules
+        node_counter, new_branch = _trace_rule_destination(active_custom_rule, f"Active Rule: {active_custom_rule.get('name')}", node_counter)
+        current_node_data['branches'].append(new_branch)
     else:
-        # Trace Business Hours Rule
-        business_hours_rule = rc_api_call(f"{rules_endpoint}/business-hours-rule")
-        if business_hours_rule:
-            schedule, action, target = parse_rule_details(business_hours_rule)
-            details = [f"<b>Schedule:</b> Business Hours", f"<b>Action:</b> {action} → {target}"]
-            flow_data.append({'id': f"N{node_counter}", 'type': 'queue', 'name': 'Business Hours Action', 'details': details})
-            node_counter += 1
-            if 'TransferToExtension' in action:
-                next_ext_id = (business_hours_rule.get('transfer', {}) or {}).get('extension', {}).get('id')
-        
-        # Trace After Hours Rule
-        after_hours_rule = rc_api_call(f"{rules_endpoint}/after-hours-rule")
-        if after_hours_rule and after_hours_rule.get('enabled'):
-            schedule, action, target = parse_rule_details(after_hours_rule)
-            details = [f"<b>Schedule:</b> After Hours", f"<b>Action:</b> {action} → {target}"]
-            flow_data.append({'id': f"N{node_counter}", 'type': 'endpoint', 'name': 'After Hours Action', 'details': details})
-            node_counter += 1
-            # After-hours rules can also point to another extension to trace
-            if 'TransferToExtension' in action:
-                # If we don't already have a path from business hours, use this one
-                if not next_ext_id:
-                    next_ext_id = (after_hours_rule.get('transfer', {}) or {}).get('extension', {}).get('id')
+        # Trace both Business Hours and After Hours paths
+        if bh_rule := rc_api_call(f"{rules_endpoint}/business-hours-rule"):
+            node_counter, new_branch = _trace_rule_destination(bh_rule, "Business Hours", node_counter)
+            current_node_data['branches'].append(new_branch)
+        if ah_rule := rc_api_call(f"{rules_endpoint}/after-hours-rule"):
+            if ah_rule.get('enabled'):
+                node_counter, new_branch = _trace_rule_destination(ah_rule, "After Hours", node_counter)
+                current_node_data['branches'].append(new_branch)
 
-    # --- Extension-Specific Details (IVR Keys, Queue Members, etc.) ---
-    
-    # For IVR Menus, add the keypress info
+    # Add extension-specific details
     if ext_type == 'IvrMenu':
-        ivr_details = []
-        for prompt in ext_info.get('prompts', []):
-            for action in prompt.get('actions', []):
-                if action.get('action') == 'Connect':
-                    key = action.get('input', 'Any')
-                    target_ext = action.get('extension', {})
-                    if target_id := target_ext.get('id'):
-                        target_info = get_extension_info(target_id)
-                        target_num = target_info.get('extensionNumber', 'N/A') if target_info else 'N/A'
-                        ivr_details.append(f"<b>Key {key}</b> → Ext: {target_num}")
-        current_node_data['rules'] = ivr_details # Display keypresses as "rules" on the side
+        ivr_keys = [f"<b>Key {a.get('input')}</b> → Ext: {get_extension_info(a.get('extension', {}).get('id')).get('extensionNumber')}" for p in ext_info.get('prompts', []) for a in p.get('actions', []) if a.get('action') == 'Connect']
+        current_node_data['rules'].extend(ivr_keys) # Add IVR keys to the side panel
+        # Also trace each IVR keypress as a separate branch
+        for p in ext_info.get('prompts', []):
+            for a in p.get('actions', []):
+                if a.get('action') == 'Connect' and (next_id := a.get('extension', {}).get('id')):
+                    ext_num = get_extension_info(next_id).get('extensionNumber')
+                    node_counter, new_branch = _trace_rule_destination({'callHandlingAction': 'TransferToExtension', 'transfer': {'extension': {'id': next_id}}}, f"Key '{a.get('input')}' → Ext {ext_num}", node_counter)
+                    current_node_data['branches'].append(new_branch)
 
-    # For Call Queues, add the member list
-    if members_resp := rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members"):
-        member_name, member_list = get_queue_members_info(ext_id)
-        current_node_data['members'], current_node_data['members_name'] = member_list, member_name
-
-    # --- Recursive Call ---
-    # If any of the steps above found a destination extension, trace it now
-    if next_ext_id and next_ext_id not in processed_extensions:
-        return trace_flow_recursive(next_ext_id, node_counter, flow_data, processed_extensions)
+    elif members_resp := rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members"):
+        name, members = get_queue_members_info(ext_id)
+        current_node_data['members'], current_node_data['members_name'] = members, name
+        if bh_rule := rc_api_call(f"{rules_endpoint}/business-hours-rule"):
+            if bh_rule.get('holdTimeExpirationAction') == 'TransferToExtension':
+                 node_counter, new_branch = _trace_rule_destination(bh_rule, "Queue Overflow", node_counter)
+                 current_node_data['branches'].append(new_branch)
 
     return node_counter, flow_data
