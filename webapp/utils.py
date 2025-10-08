@@ -216,6 +216,7 @@ def trace_flow_recursive(ext_id, node_counter, flow_data, processed_extensions):
     bh_rule = rc_api_call(f"{rules_endpoint}/business-hours-rule")
     members_resp = rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
 
+    # --- Call Queue Logic (as before) ---
     if members_resp is not None:
         flow_data[-1]['details'].append(get_business_hours_summary(ext_id))
         flow_data[-1]['details'].append(f"<b>Ring Type:</b> {bh_rule.get('queue', {}).get('transferMode', 'N/A')}")
@@ -240,18 +241,45 @@ def trace_flow_recursive(ext_id, node_counter, flow_data, processed_extensions):
              schedule_details, call_action, action_target = parse_rule_details(after_hours_rule)
              flow_data.append({'id': f"N{next_node_counter}",'type': 'endpoint','name': 'After Hours Action','details': [f"<b>Action:</b> {call_action} → {action_target}"]})
              next_node_counter += 1
+             
+    # --- NEW: Logic for 'Site' extensions ---
+    elif ext_type == 'Site':
+        site_business_hours_rule = rc_api_call(f"/restapi/v1.0/account/~/sites/{ext_id}/ivrs/0/answering-rules/business-hours-rule")
+        if site_business_hours_rule:
+             schedule_details, call_action, action_target = parse_rule_details(site_business_hours_rule)
+             flow_data.append({'id': f"N{next_node_counter}",'type': 'queue','name': 'Business Hours Action','details': [f"<b>Action:</b> {call_action} → {action_target}"]})
+             next_node_counter += 1
+             # Check if the target is another extension we need to trace
+             if call_action == 'TransferToExtension':
+                 transfer_ext_id = site_business_hours_rule.get('transfer', {}).get('extension', {}).get('id')
+                 if transfer_ext_id:
+                     next_ext_id = transfer_ext_id
+
+    # --- FIX: Corrected Logic for 'IvrMenu' extensions ---
     elif ext_type == 'IvrMenu':
         ivr_details = []
-        for prompt in ext_info.get('prompts', []):
-            target_ext = prompt.get('extension', {})
-            if prompt.get('action') == 'Connect' and target_ext.get('id'):
-                key = prompt.get('key', 'Any')
-                ivr_details.append(f"<b>Key {key}</b> → Ext: {target_ext.get('extensionNumber', 'N/A')}")
-                next_ext_id = target_ext['id']
-        flow_data.append({'id': f"N{next_node_counter}",'type': 'queue','name': 'IVR Keypresses','details': ivr_details})
-        next_node_counter += 1
+        next_ext_id_from_ivr = None
+        # The keypress data is in the 'actions' part of the main extension info
+        for action in ext_info.get('actions', []):
+            if action.get('action') == 'Connect':
+                key = action.get('input', 'Any')
+                target_ext = action.get('extension', {})
+                if target_ext.get('id'):
+                    # Fetching info just to get the extension number for display
+                    target_info = get_extension_info(target_ext['id'])
+                    target_ext_num = target_info.get('extensionNumber', 'N/A') if target_info else 'N/A'
+                    ivr_details.append(f"<b>Key {key}</b> → Ext: {target_ext_num}")
+                    # Capture the first keypress destination to trace next
+                    if not next_ext_id_from_ivr:
+                        next_ext_id_from_ivr = target_ext['id']
         
+        # Add the IVR Keypresses box even if it's empty, to show the end of a path
+        flow_data.append({'id': f"N{next_node_counter}",'type': 'queue','name': 'IVR Keypresses','details': ivr_details if ivr_details else ['No keypress actions defined.']})
+        next_node_counter += 1
+        # Set the next extension to trace
+        next_ext_id = next_ext_id_from_ivr
+
     if next_ext_id and next_ext_id not in processed_extensions:
         return trace_flow_recursive(next_ext_id, next_node_counter, flow_data, processed_extensions)
 
-    return node_counter, flow_data
+    return next_node_counter, flow_data
