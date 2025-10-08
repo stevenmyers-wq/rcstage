@@ -1,4 +1,4 @@
-/your-project-name
+``` /your-project-name
 |
 ├── main.py              # New entry point to run the app
 |
@@ -26,6 +26,7 @@
     |
     └── /visualiser/
         └── routes.py    # Routes for the call flow visualiser
+```
         
         
 
@@ -42,7 +43,7 @@ In your webapp folder, create a new folder for your feature. Inside that folder,
 
 Your structure will now look like this:
 
-/webapp
+``` /webapp
 |
 ├── /core/
 │   └── routes.py
@@ -53,6 +54,8 @@ Your structure will now look like this:
 |
 └── /visualiser/
     └── routes.py
+```
+    
 ## Step 2: Define the Blueprint in routes.py
 Open your new webapp/device_swap/routes.py file. Here, you'll define a new Blueprint and add the routes specific to the Device Swap feature.
 
