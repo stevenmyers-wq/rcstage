@@ -95,6 +95,8 @@ def initiate_pkce():
     auth_url = 'https://platform.ringcentral.com/restapi/oauth/authorize?' + urlencode(params)
     return jsonify({'status': 'success', 'redirect_url': auth_url}), 200
 
+# In webapp/core/routes.py, find and replace this function
+
 @core_bp.route('/auth/callback', methods=['GET'])
 def auth_callback():
     """Handles the token exchange."""
@@ -135,7 +137,10 @@ def auth_callback():
         session['rc_current_client_id'] = client_id
         session['rc_user_email'] = token_data.get('owner_id')
         
+        # **** THE FIX ****
+        # Redirect back to the authenticator tab to show the new 'Connected' status
         return redirect(url_for('core.index', tab='authenticator'))
+        
     except requests.exceptions.RequestException as e:
         status_code = e.response.status_code if e.response else 'N/A'
         response_text = e.response.text if e.response else 'No body.'
