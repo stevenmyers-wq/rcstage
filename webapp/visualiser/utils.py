@@ -1,99 +1,10 @@
-import os
-import secrets
-import base64
-import hashlib
-import time
-import requests
-from flask import session, current_app
-from google.cloud import firestore
-from google.cloud.firestore_v1.base_document import DocumentSnapshot
+# webapp/visualiser/utils.py
 from datetime import datetime
-
-# Database initialization
-try:
-    db = firestore.Client()
-except Exception as e:
-    print(f"WARNING: Could not initialize Firestore client: {e}. Check credentials.")
-
-# --- CONSTANTS ---
-PASSCODE_COLLECTION_ID = 'RCAU_APITOOLS_WEBAPP_PASSCODE'
-PASSCODE_DOCUMENT_ID = 'passcode'
-PASSCODE_FIELD = 'app_passcode'
-ADMIN_LIST_FIELD = 'admin_emails'
-
-# --- Session & Auth Helpers ---
-def is_authenticated() -> bool:
-    """Checks for a successful website login session (Layer 1)."""
-    return session.get('authenticated', False) and session.get('user_email') is not None
-
-def is_admin_user() -> bool:
-    """Checks if the currently logged-in website user has admin privileges."""
-    return session.get('is_admin', False)
-
-def get_rc_access_token() -> str | None:
-    """Retrieves the user's dynamic RingCentral token from the session (Layer 2)."""
-    return session.get('rc_access_token')
-
-def create_pkce_challenge():
-    """Standard, robust PKCE challenge generation."""
-    code_verifier = secrets.token_urlsafe(64)
-    hashed = hashlib.sha256(code_verifier.encode('utf-8')).digest()
-    code_challenge = base64.urlsafe_b64encode(hashed).decode('utf-8').rstrip('=')
-    return code_verifier, code_challenge
-
-# --- Firestore Helpers ---
-def get_config_from_firestore() -> dict | None:
-    """Retrieves the shared passcode and admin list from Firestore."""
-    try:
-        doc_ref: DocumentSnapshot = db.collection(PASSCODE_COLLECTION_ID).document(PASSCODE_DOCUMENT_ID).get()
-        if doc_ref.exists:
-            data = doc_ref.to_dict()
-            return {'passcode': data.get(PASSCODE_FIELD), 'admin_list': data.get(ADMIN_LIST_FIELD, [])}
-    except Exception as e:
-        print(f"CRITICAL ERROR: Failed to access Firestore: {e}")
-    return None
-
-# --- RingCentral API Call Helpers ---
-extension_cache = {}
-
-def rc_api_call(endpoint, method="GET", body=None, params=None) -> dict | None:
-    """Makes a generic, authenticated call to the RingCentral API with session logging."""
-    rc_token = get_rc_access_token()
-    
-    if 'api_log' not in session:
-        session['api_log'] = []
-
-    if not rc_token:
-        session['api_log'].append({'status': 'FAIL', 'endpoint': endpoint, 'detail': 'Token missing'})
-        session.modified = True
-        return None
-
-    url = f"{current_app.config['RC_SERVER_URL']}{endpoint}"
-    headers = {"Authorization": f"Bearer {rc_token}", "Accept": "application/json"}
-    start_time = time.time()
-    
-    try:
-        response = requests.request(method.upper(), url, headers=headers, params=params, json=body)
-        # Gracefully handle 404 Not Found as a valid "empty" response
-        if response.status_code == 404:
-            return None
-        
-        response.raise_for_status()
-        duration = (time.time() - start_time) * 1000
-        session['api_log'].append({'status': 'SUCCESS', 'endpoint': endpoint, 'code': response.status_code, 'duration': f"{duration:.0f}ms", 'method': method})
-        session.modified = True
-        return response.json() if response.content else {"status": "success", "content_empty": True}
-    except requests.exceptions.RequestException as e:
-        duration = (time.time() - start_time) * 1000
-        status_code = e.response.status_code if e.response is not None else 'N/A'
-        response_text = e.response.text if e.response is not None else 'No response body'
-        # Don't log expected 404s as failures
-        if status_code != 404:
-            session['api_log'].append({'status': 'FAIL', 'endpoint': endpoint, 'code': status_code, 'duration': f"{duration:.0f}ms", 'method': method, 'detail': response_text[:100]})
-            session.modified = True
-        return None
+from webapp.rc_api import rc_api_call
 
 # --- Visualiser Specific Helpers ---
+extension_cache = {}
+
 def get_extension_info(ext_id):
     """Helper to get full extension info with caching."""
     if ext_id in extension_cache: return extension_cache[ext_id]
@@ -126,8 +37,8 @@ def get_business_hours_summary(ext_id):
         if not days_active: return "Hours: Closed (All Week)"
         for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
              if day in weekly_ranges and weekly_ranges[day]:
-                 time_from, time_to = weekly_ranges[day][0]['from'], weekly_ranges[day][0]['to']
-                 return f"Hours: {', '.join(days_active)} {time_from} - {time_to}"
+                    time_from, time_to = weekly_ranges[day][0]['from'], weekly_ranges[day][0]['to']
+                    return f"Hours: {', '.join(days_active)} {time_from} - {time_to}"
         return "Hours: Custom Schedule"
     except Exception: return "Hours: Runtime ERROR"
 
@@ -177,8 +88,6 @@ def parse_rule_details(detailed_rule):
     except Exception:
         return "Rule Details: ERROR", "Action: ERROR", "Target: ERROR"
 
-# REPLACE the entire trace_flow_recursive function with this version.
-
 def trace_flow_recursive(ext_id, node_counter, flow_data, processed_extensions):
     """Recursively traces the entire call flow path for any extension type."""
     if ext_id in processed_extensions or node_counter > 20:
@@ -223,8 +132,8 @@ def trace_flow_recursive(ext_id, node_counter, flow_data, processed_extensions):
                 next_ext_id = transfer.get('extension', {}).get('id')
             elif forwarding := rule.get('forwarding'):
                  if numbers := forwarding.get('rules', [{}])[0].get('forwardingNumbers'):
-                     if numbers and 'extension' in numbers[0]:
-                         next_ext_id = numbers[0].get('extension', {}).get('id')
+                        if numbers and 'extension' in numbers[0]:
+                                next_ext_id = numbers[0].get('extension', {}).get('id')
         
         if next_ext_id:
             counter, sub_branches = trace_flow_recursive(next_ext_id, counter, [], processed_extensions)
