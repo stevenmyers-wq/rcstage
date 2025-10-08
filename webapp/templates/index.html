@@ -189,34 +189,33 @@
         finally { disconnectButton.disabled = false; disconnectButton.innerText = 'Disconnect RingCentral'; }
     }
 
-    function updateRcStatusDisplay(status, rcEmail, clientId) {
-        const authenticatorTab = document.querySelector('a[href*="tab=authenticator"]');
-        if (!authenticatorTab) return;
+    // REPLACE the old updateRcStatusDisplay function with this one
 
-        const connectButton = document.getElementById('rc-connect-button');
-        const disconnectButton = document.getElementById('rc-disconnect-button');
-        const clientIdInput = document.getElementById('rc-client-id-input');
-        const statusDisplay = document.getElementById('rc-status-display'); // Assuming this exists
+function updateRcStatusDisplay(status, rcEmail, clientId) {
+    const authenticatorTab = document.querySelector('a[href*="tab=authenticator"]');
+    if (!authenticatorTab) return;
 
-        if (status === 'connected') {
-            if (connectButton) connectButton.style.display = 'none';
-            if (disconnectButton) disconnectButton.style.display = 'block';
-            if (clientIdInput) {
-                clientIdInput.value = clientId || 'Connected';
-                clientIdInput.disabled = true;
-            }
-            if(statusDisplay) statusDisplay.innerHTML = 'Status: <span class="text-green-700 font-bold">Connected</span>';
+    const disconnectButton = document.getElementById('rc-disconnect-button');
+    const clientIdInput = document.getElementById('rc-client-id-input');
+    const statusDisplay = document.getElementById('rc-status-display'); // Assuming this exists
 
-        } else {
-            if (connectButton) connectButton.style.display = 'block';
-            if (disconnectButton) disconnectButton.style.display = 'none';
-            if (clientIdInput) {
-                clientIdInput.value = '';
-                clientIdInput.disabled = false;
-            }
-            if(statusDisplay) statusDisplay.innerHTML = 'Status: <span class="text-red-700 font-bold">Disconnected</span>';
+    if (status === 'connected') {
+        if (disconnectButton) disconnectButton.style.display = 'block';
+        if (clientIdInput) {
+            clientIdInput.value = clientId || 'Connected';
+            clientIdInput.disabled = true;
         }
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <span class="text-green-700 font-bold">Connected</span>';
+
+    } else {
+        if (disconnectButton) disconnectButton.style.display = 'none';
+        if (clientIdInput) {
+            clientIdInput.value = '';
+            clientIdInput.disabled = false;
+        }
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <span class="text-red-700 font-bold">Disconnected</span>';
     }
+}
 
     async function checkRcStatus() {
         try {
