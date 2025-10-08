@@ -476,95 +476,116 @@
          });
     }
     
-    function createNodeElement(name, details, classList) {
-        const nodeElement = document.createElement('div');
-        nodeElement.className = `flow-node ${classList}`;
-        
-        let htmlContent = `<div class="title"><b>${name}</b></div>`;
-        
-        if (details && details.length > 0) {
-            htmlContent += `<ul class="detail-list list-none p-0">`;
-            details.forEach(detail => {
-                htmlContent += `<li class="mt-1">${detail}</li>`;
-            });
-            htmlContent += `</ul>`;
-        }
 
-        nodeElement.innerHTML = htmlContent;
-        return nodeElement;
-    }
+function createNodeElement(nodeData, isBranchRoot = false) {
+    const nodeElement = document.createElement('div');
+    nodeElement.className = `flow-node ${nodeData.classList}`;
     
-    function createArrowElement() {
-        const arrow = document.createElement('div');
-        arrow.className = 'arrow-down';
-        return arrow;
-    }
-    
-    function renderHtmlFlow(apiFlowData) {
-        const container = document.getElementById('call-flow-diagram');
-        container.innerHTML = '';
-        container.classList.remove('justify-center', 'items-center', 'text-gray-400');
-        container.classList.add('flow-container');
-        
-        let currentFlowElement = container;
-        let isFirstNode = true;
-        
-        apiFlowData.forEach((node) => {
-            
-            if (!isFirstNode) {
-                currentFlowElement.appendChild(createArrowElement());
-            }
-
-            if (node.type === 'queue' && ((node.rules && node.rules.length > 0) || (node.members && node.members.length > 0))) {
-                 
-                 const sepContainer = document.createElement('div');
-                 sepContainer.className = 'flow-step-separator';
-                 
-                 const leftColumn = document.createElement('div');
-                 leftColumn.className = 'flow-side-column justify-self-end mr-6';
-                 
-                // FIX: Render ALL rules and apply a different style for active ones
-                if (node.rules && node.rules.length > 0) {
-                    node.rules.forEach(rule => {
-                        const ruleNodeClass = rule.active ? 'side-flow node-rule-active' : 'side-flow node-rule';
-                        const ruleNode = createNodeElement(
-                            `Rule: ${rule.name} ${rule.active ? '(Active)' : '(Inactive)'}`, 
-                            rule.details, 
-                            ruleNodeClass
-                        );
-                        leftColumn.appendChild(ruleNode);
-                    });
-                }
-                 sepContainer.appendChild(leftColumn);
-                 
-                 const centerColumn = document.createElement('div');
-                 centerColumn.className = 'flow-center-column';
-                 
-                 centerColumn.appendChild(createNodeElement(node.name, node.details, 'main-flow node-' + node.type));
-                 sepContainer.appendChild(centerColumn);
-                 
-                 const rightColumn = document.createElement('div');
-                 rightColumn.className = 'flow-side-column ml-6';
-                 
-                 if (node.members && node.members.length > 0) {
-                     const memberDetails = node.members.map(m => `<span>${m}</span>`);
-                     rightColumn.appendChild(createNodeElement(node.members_name || 'Queue Members', memberDetails, 'side-flow node-member'));
-                 }
-                 sepContainer.appendChild(rightColumn);
-                 
-                 currentFlowElement.appendChild(sepContainer);
-                 
-            } else {
-                 currentFlowElement.appendChild(createNodeElement(node.name, node.details, 'main-flow node-' + node.type));
-            }
-            
-            isFirstNode = false;
+    let htmlContent = `<div class="title"><b>${nodeData.name}</b></div>`;
+    if (nodeData.details && nodeData.details.length > 0) {
+        htmlContent += `<ul class="detail-list list-none p-0">`;
+        nodeData.details.forEach(detail => {
+            htmlContent += `<li class="mt-1">${detail}</li>`;
         });
+        htmlContent += `</ul>`;
+    }
+    nodeElement.innerHTML = htmlContent;
+
+    if (isBranchRoot) {
+        const button = document.createElement('button');
+        button.className = 'toggle-button';
+        button.innerText = '−';
+        button.onclick = (e) => {
+            e.stopPropagation();
+            const branchContainer = nodeElement.closest('.branch-container');
+            const childrenToToggle = Array.from(branchContainer.children)
+                .filter(child => child.classList.contains('arrow-down') || child.classList.contains('branch-wrapper'));
+            
+            childrenToToggle.forEach(child => child.classList.toggle('hidden'));
+            const isHidden = childrenToToggle[0] && childrenToToggle[0].classList.contains('hidden');
+            button.innerText = isHidden ? '+' : '−';
+        };
+        nodeElement.appendChild(button);
+    }
+    return nodeElement;
+}
+
+function createArrowElement() {
+    const arrow = document.createElement('div');
+    arrow.className = 'arrow-down';
+    return arrow;
+}
+
+function renderHtmlFlow(apiFlowData) {
+    const mainContainer = document.getElementById('call-flow-diagram');
+    mainContainer.innerHTML = '';
+    mainContainer.classList.remove('justify-center', 'items-center', 'text-gray-400');
+    mainContainer.classList.add('flow-container');
+
+    function buildBranch(dataArray, parentElement) {
+        if (!dataArray || dataArray.length === 0) return;
+
+        const node = dataArray[0];
+        const children = dataArray.slice(1);
+        const nodeData = {
+            name: node.name,
+            details: node.details,
+            classList: 'main-flow node-' + (node.type || 'endpoint')
+        };
         
-        if (container.lastChild && container.lastChild.classList.contains('arrow-down')) {
-            container.removeChild(container.lastChild);
+        const hasSideContent = (node.rules && node.rules.length > 0) || (node.members && node.members.length > 0);
+        const hasSubBranches = node.branches && node.branches.length > 0;
+        const isBranchRoot = hasSubBranches;
+
+        const branchContainer = document.createElement('div');
+        branchContainer.className = 'branch-container';
+
+        if (hasSideContent) {
+            const sepContainer = document.createElement('div');
+            sepContainer.className = 'flow-step-separator';
+            
+            const leftColumn = document.createElement('div');
+            leftColumn.className = 'flow-side-column justify-self-end mr-6';
+            if (node.rules && node.rules.length > 0) {
+                leftColumn.appendChild(createNodeElement({ name: 'Info / Rules', details: node.rules, classList: 'side-flow node-rule' }));
+            }
+            
+            const centerColumn = document.createElement('div');
+            centerColumn.className = 'flow-center-column';
+            centerColumn.appendChild(createNodeElement(nodeData, isBranchRoot));
+
+            const rightColumn = document.createElement('div');
+            rightColumn.className = 'flow-side-column ml-6';
+            if (node.members && node.members.length > 0) {
+                rightColumn.appendChild(createNodeElement({ name: node.members_name || 'Queue Members', details: node.members, classList: 'side-flow node-member' }));
+            }
+            
+            sepContainer.appendChild(leftColumn);
+            sepContainer.appendChild(centerColumn);
+            sepContainer.appendChild(rightColumn);
+            branchContainer.appendChild(sepContainer);
+        } else {
+            branchContainer.appendChild(createNodeElement(nodeData, isBranchRoot));
+        }
+        
+        parentElement.appendChild(branchContainer);
+
+        if (hasSubBranches) {
+            const branchWrapper = document.createElement('div');
+            branchWrapper.className = 'branch-wrapper w-full';
+            node.branches.forEach(branch => {
+                branchWrapper.appendChild(createArrowElement());
+                buildBranch(branch, branchWrapper);
+            });
+            branchContainer.appendChild(branchWrapper);
+        } else if (children.length > 0) {
+            branchContainer.appendChild(createArrowElement());
+            buildBranch(children, branchContainer);
         }
     }
+
+    buildBranch(apiFlowData, mainContainer);
+}
     
     function handleVisualizeCallFlow() {
         const selectElement = document.getElementById('phone-number-select');
