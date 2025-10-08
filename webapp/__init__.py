@@ -18,14 +18,22 @@ def create_app():
 
     # --- Register Blueprints ---
     with app.app_context():
-        # Core routes (index, login, logout, auth callbacks, status checks)
+        # Core routes (index, login, logout)
         from .core import routes as core_routes
         app.register_blueprint(core_routes.core_bp)
+
+        # RingCentral PKCE authentication routes
+        from .auth import routes as auth_routes
+        app.register_blueprint(auth_routes.auth_bp)
 
         # Visualiser routes (API calls for the call flow feature)
         from .visualiser import routes as visualiser_routes
         app.register_blueprint(visualiser_routes.viz_bp)
         
-        # (When you add a new feature like 'sip_fetcher', you'll import and register its blueprint here)
+        # SIP Fetcher routes
+        from .sip_fetcher import routes as sip_fetcher_routes
+        app.register_blueprint(sip_fetcher_routes.sip_fetcher_bp)
+
+        # (When you add another new feature, you'll import and register its blueprint here)
 
     return app

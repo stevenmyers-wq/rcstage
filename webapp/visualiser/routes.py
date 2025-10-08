@@ -1,8 +1,7 @@
 from flask import Blueprint, jsonify, request, session
-from webapp.utils import (
-    is_authenticated, get_rc_access_token, rc_api_call, trace_flow_recursive, 
-    extension_cache
-)
+from webapp.auth_utils import is_authenticated, get_rc_access_token
+from webapp.rc_api import rc_api_call
+from webapp.visualiser.utils import trace_flow_recursive, extension_cache
 
 viz_bp = Blueprint('visualiser', __name__)
 

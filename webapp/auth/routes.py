@@ -4,64 +4,14 @@ import requests
 from urllib.parse import urlencode
 from flask import (
     Blueprint, render_template, request, session, jsonify, redirect, url_for,
-    make_response, current_app
+    current_app
 )
-from webapp.utils import (
-    is_authenticated, get_rc_access_token, get_config_from_firestore, 
-    create_pkce_challenge
-)
+from webapp.auth_utils import is_authenticated, get_rc_access_token, create_pkce_challenge
 
-# A Blueprint is a way to organize a group of related views and other code.
-core_bp = Blueprint('core', __name__)
+# A Blueprint for RingCentral authentication routes
+auth_bp = Blueprint('auth', __name__)
 
-@core_bp.route('/')
-def index():
-    """Serves the main application page."""
-    rc_redirect_uri_clean = os.getenv("RC_REDIRECT_URI", "http://localhost:8080/auth/callback").rstrip('/')
-    return render_template(
-        'index.html', 
-        AUTHENTICATED=is_authenticated(), 
-        USER_ROLE='Admin' if session.get('is_admin') else 'User',
-        RC_REDIRECT_URI=rc_redirect_uri_clean,
-        current_tab=request.args.get('tab', 'authenticator')
-    )
-
-@core_bp.route('/logout')
-def logout():
-    """Logs the user out and clears the entire session."""
-    response = make_response(redirect(url_for('core.index')))
-    session.clear()
-    response.delete_cookie('app_session') # Use the configured cookie name
-    return response
-
-@core_bp.route('/api/auth/login', methods=['POST'])
-def login():
-    """Handles the website login via email and shared passcode."""
-    config = get_config_from_firestore()
-    if not config:
-        return jsonify({'status': 'error', 'message': 'Server Error.'}), 500
-        
-    expected_passcode = config['passcode']
-    admin_emails = config['admin_list']
-    
-    data = request.get_json()
-    if not data:
-        return jsonify({'status': 'error', 'message': 'Invalid format.'}), 400
-    
-    user_email = data.get('email', '').strip().lower()
-    passcode_attempt = data.get('passcode', '').strip()
-
-    if passcode_attempt != expected_passcode:
-        return jsonify({'status': 'error', 'message': 'Invalid Passcode.'}), 401
-
-    session['authenticated'] = True
-    session['user_email'] = user_email
-    session['is_admin'] = user_email in admin_emails
-    session.modified = True
-    
-    return jsonify({'status': 'success', 'redirect_url': url_for('core.index')}), 200
-
-@core_bp.route('/auth/initiate-pkce', methods=['POST'])
+@auth_bp.route('/auth/initiate-pkce', methods=['POST'])
 def initiate_pkce():
     """Initiates the PKCE flow."""
     if not is_authenticated():
@@ -95,7 +45,7 @@ def initiate_pkce():
     auth_url = 'https://platform.ringcentral.com/restapi/oauth/authorize?' + urlencode(params)
     return jsonify({'status': 'success', 'redirect_url': auth_url}), 200
 
-@core_bp.route('/auth/callback', methods=['GET'])
+@auth_bp.route('/auth/callback', methods=['GET'])
 def auth_callback():
     """Handles the token exchange."""
     code = request.args.get('code')
@@ -144,7 +94,7 @@ def auth_callback():
         full_message = f"Token exchange failed. Status: {status_code}. Detail: {error_message}"
         return render_template('error.html', message=full_message), 500
 
-@core_bp.route('/api/rc/disconnect', methods=['POST'])
+@auth_bp.route('/api/rc/disconnect', methods=['POST'])
 def rc_disconnect():
     """Clears only the RC token state."""
     session.pop('rc_access_token', None)
@@ -152,16 +102,7 @@ def rc_disconnect():
     session.pop('rc_user_email', None)
     return jsonify({'status': 'success', 'message': 'Disconnected.'}), 200
 
-@core_bp.route('/api/auth/status')
-def get_auth_status():
-    """API endpoint to check current website login status."""
-    return jsonify({
-        'authenticated': session.get('authenticated', False), 
-        'is_admin': session.get('is_admin', False), 
-        'user_email': session.get('user_email', None)
-    }), 200
-
-@core_bp.route('/api/rc/status')
+@auth_bp.route('/api/rc/status')
 def get_rc_status():
     """API endpoint to check current RingCentral connection status."""
     token = get_rc_access_token()
@@ -170,13 +111,3 @@ def get_rc_status():
         'client_id': session.get('rc_current_client_id'),
         'rc_user_email': session.get('rc_user_email')
     }), 200
-
-@core_bp.route('/api/rc/sip-fetcher', methods=['POST'])
-def sip_fetcher_endpoint():
-    """Placeholder function for the SIP Fetcher tab."""
-    if not is_authenticated():
-        return jsonify({'status': 'error', 'message': 'Website not unlocked.'}), 401
-    if not get_rc_access_token():
-        return jsonify({'status': 'error', 'message': 'RingCentral not connected. Please connect above.'}), 401
-    # In the future, you would add the logic for this feature here.
-    return jsonify({'status': 'success', 'result': 'SIP Fetcher placeholder executed successfully.'}), 200

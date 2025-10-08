@@ -1,139 +1,126 @@
-``` /your-project-name
+RingCentral RCAU API Tools
+This web application provides a suite of tools for interacting with the RingCentral API, designed for support, administration, and development tasks. The application is built with a modular architecture to allow for easy maintenance and independent development of new features.
+Key Features
+•	Secure Two-Layer Authentication:
+1.	A shared passcode to unlock the website.
+2.	An OAuth 2.0 PKCE flow to securely connect to a RingCentral account.
+•	Call Flow Visualiser: An interactive tool that traces and displays the complete call routing path for any phone number in the account.
+•	Modular Tool Tabs: The application is designed to be easily extensible with new tools, each contained within its own tab. Current placeholders include:
+o	SIP Credentials Fetcher
+o	Device Swap Utility
+o	Bulk Opening Hours Management
+o	Live Events Listener
+Project Structure
+The project follows a modular Flask Blueprint architecture. Each major feature is a self-contained module, promoting a clean separation of concerns.
+```
 |
-├── main.py              # New entry point to run the app
+├── main.py                 # Main application entry point
+├── requirements.txt        # Python package dependencies
+├── Dockerfile              # Container definition for deployment
+├── cloudbuild.yaml         # Google Cloud Build configuration
 |
-├── requirements.txt     # (Your existing file)
-|
-└── /webapp              # Your main application package
+└── /webapp                 # Main Flask application package
     |
-    ├── __init__.py      # The application factory
+    ├── __init__.py         # Application factory, registers all blueprints
     |
-    ├── utils.py         # All your helper functions
+    ├── /static/            # All frontend assets (CSS, JS, images)
+    │   ├── /css/
+    │   │   └── visualiser.css
+    │   └── /js/
+    │       ├── app.js      # Core JS for login, auth, and main layout
+    │       └── visualiser.js
     |
-    ├── /templates/      # Your HTML files
+    ├── /templates/         # HTML templates
+    │   ├── index.html      # The main application shell and tab navigation
     │   ├── error.html
-    │   └── index.html
-    │   └── /includes/   # Your template partials
+    │   └── /includes/      # HTML partials for each tool's tab content
     │       ├── authenticator_tab.html
-    │       ├── bulk_opening_tab.html
     │       ├── call_flow_tab.html
-    │       ├── device_swap_tab.html
-    │       ├── live_events_tab.html
-    │       └── sip_fetcher_tab.html
+    │       └── ... (other tool tabs)
     |
-    ├── /core/
-    │   └── routes.py    # Core routes like index, login, logout, etc.
+    ├── /core/              # Core functionality (Homepage, Website Auth)
+    │   └── routes.py
     |
-    └── /visualiser/
-        └── routes.py    # Routes for the call flow visualiser
+    ├── /auth/              # Handles RingCentral PKCE OAuth flow
+    │   └── routes.py
+    |
+    ├── /visualiser/        # Call Flow Visualiser module
+    │   ├── routes.py       # API endpoints for the visualiser
+    │   └── utils.py        # Backend helper functions for tracing call flows
+    |
+    ├── /sip_fetcher/       # SIP Credentials Fetcher module
+    │   └── routes.py
+    |
+    ├── auth_utils.py       # Shared authentication helper functions
+    ├── firestore_utils.py  # Shared Firestore database functions
+    └── rc_api.py           # Shared, generic RingCentral API call handler
+
 ```
-        
-        
 
+Developer's Guide: Working Independently
+The modular design is intended to allow developers to work on features without causing conflicts. Here’s how to approach different tasks.
+Core Principle: Separation of Concerns
+•	The core and auth modules should rarely be touched. They handle the fundamental login and connection logic for the entire site.
+•	Each tool is a self-contained unit. It has its own backend routes, frontend assets, and HTML template partial.
+How to Modify an Existing Tool (Example: Call Flow Visualiser)
+If you need to fix a bug or add a feature to the Call Flow Visualiser, you only need to work within its dedicated files. You can safely ignore all other modules.
+1.	Backend API Logic:
+o	Modify the API endpoints in webapp/visualiser/routes.py.
+o	Update the call flow tracing logic in webapp/visualiser/utils.py.
+2.	Frontend Interaction & Display:
+o	Change the UI layout in webapp/templates/includes/call_flow_tab.html.
+o	Update the JavaScript that fetches data and renders the diagram in webapp/static/js/visualiser.js.
+o	Adjust the flowchart styling in webapp/static/css/visualiser.css.
+By staying within these files, your work will not affect the SIP Fetcher, Device Swap, or any other tool.
+How to Add a Brand New Tool (Example: "Contact Uploader")
+Here is the checklist for adding a new feature to the application.
+Step 1: Create the Backend Module
+•	Create a new folder: webapp/contact_uploader/.
+•	Inside it, create webapp/contact_uploader/routes.py. Define a new Flask Blueprint and add your API endpoints (e.g., /api/rc/upload-contacts).
+Step 2: Create the Frontend Template
+•	Create a new HTML file: webapp/templates/includes/contact_uploader_tab.html. This file will contain the UI for your new tool (e.g., a file input and an "Upload" button).
+Step 3: (If Needed) Create Frontend Assets
+•	If your tool needs specific JavaScript or CSS, create new files:
+o	webapp/static/js/contact_uploader.js
+o	webapp/static/css/contact_uploader.css
+•	Important: Link these new static files directly inside your contact_uploader_tab.html file. This ensures they are only loaded when the user clicks on your tool's tab.
+Step 4: Register the New Module
+•	Open webapp/__init__.py.
+•	Import and register the new Blueprint you created in Step 1.
+Step 5: Add the Tab to the Main UI
+•	Open webapp/templates/index.html.
+•	Add your new tool to the tabs list to make it appear in the navigation bar.
+Your new tool is now integrated without having modified any of the existing tools' code.
+Local Development Setup
+Prerequisites
+•	Python 3.10+
+•	pip for package management
+1. Set Up Environment Variables
+•	Create a file named .env in the root directory of the project.
+•	Add the following required variables:
+•	# A strong, random string for signing Flask sessions
+•	FLASK_SECRET_KEY='your_super_secret_key'
+•	
+•	# The full URL where RingCentral will redirect back to after auth
+•	# For local development, this is typically:
+•	RC_REDIRECT_URI='http://localhost:8080/auth/callback'
+•	
+•	# The base URL for the RingCentral API (Production or Sandbox)
+•	RC_SERVER_URL='[https://platform.ringcentral.com](https://platform.ringcentral.com)'
+•	
+•	# (Optional) If running locally with Google Cloud credentials for Firestore
+•	# GOOGLE_APPLICATION_CREDENTIALS='/path/to/your/gcp-credentials.json'
 
+2. Install Dependencies
+pip install -r requirements.txt
 
-Now that your project has this modular structure, adding new features is a simple and repeatable process.
+3. Run the Application
+python main.py
 
-For each new feature on your website (like "Device Swap," "Live Events," etc.), you will simply repeat these three steps.
+The application will be available at http://localhost:8080.
+Deployment
+This application is configured for deployment to Google Cloud Run. The deployment process is automated via cloudbuild.yaml. Pushing changes to the connected Git repository will trigger Google Cloud Build to:
+1.	Build the Docker container image using the Dockerfile.
+2.	Push the image to Google Artifact Registry.
+3.	Deploy the new image as a new revision to the Cloud Run service.
 
-Let's use Device Swap as an example.
-
-## Step 1: Create the Feature Folder and Files
-In your webapp folder, create a new folder for your feature. Inside that folder, create an empty __init__.py file and a routes.py file.
-
-Your structure will now look like this:
-
-``` /webapp
-|
-├── /core/
-│   └── routes.py
-|
-├── /device_swap/        <-- NEW FOLDER
-│   ├── __init__.py      <-- NEW (empty file)
-│   └── routes.py        <-- NEW FILE
-|
-└── /visualiser/
-    └── routes.py
-```
-    
-## Step 2: Define the Blueprint in routes.py
-Open your new webapp/device_swap/routes.py file. Here, you'll define a new Blueprint and add the routes specific to the Device Swap feature.
-
-A great practice is to use a url_prefix. This automatically adds a prefix to all routes in this file, keeping your URLs organized.
-
-File: webapp/device_swap/routes.py
-
-Python
-
-from flask import Blueprint, jsonify, request
-# Import any utility functions you need for this feature
-from webapp.utils import is_authenticated, get_rc_access_token, rc_api_call
-
-# 1. Define the Blueprint with a URL prefix
-device_swap_bp = Blueprint(
-    'device_swap', 
-    __name__, 
-    url_prefix='/api/rc/device-swap'
-)
-
-# 2. Add your routes for this feature
-@device_swap_bp.route('/execute', methods=['POST'])
-def execute_swap():
-    # First, always check for authentication
-    if not is_authenticated():
-        return jsonify({'status': 'error', 'message': 'Website not unlocked.'}), 401
-    if not get_rc_access_token():
-        return jsonify({'status': 'error', 'message': 'RingCentral not connected.'}), 401
-
-    # Get device IDs from the request
-    data = request.get_json()
-    source_device_id = data.get('sourceDeviceId')
-    target_device_id = data.get('targetDeviceId')
-
-    # --- ADD YOUR DEVICE SWAP LOGIC HERE ---
-    # This is where you would make the series of rc_api_call()s 
-    # to perform the swap.
-    # ---
-
-    # For now, we can return a placeholder success message
-    return jsonify({
-        'status': 'success', 
-        'message': f'Device swap initiated between {source_device_id} and {target_device_id}.'
-    })
-
-## Step 3: Register the New Blueprint
-Finally, "plug in" your new feature by registering its Blueprint in the main application factory.
-
-Open webapp/__init__.py.
-
-Add the two lines to import and register your new device_swap_bp.
-
-File: webapp/__init__.py
-
-Python
-
-import os
-from flask import Flask
-from dotenv import load_dotenv
-
-def create_app():
-    # ... (Flask app setup code as before) ...
-    
-    # --- Register Blueprints ---
-    with app.app_context():
-        # Core routes
-        from .core import routes as core_routes
-        app.register_blueprint(core_routes.core_bp)
-
-        # Visualiser routes
-        from .visualiser import routes as visualiser_routes
-        app.register_blueprint(visualiser_routes.viz_bp)
-        
-        # ADD THESE TWO LINES FOR YOUR NEW FEATURE
-        from .device_swap import routes as device_swap_routes
-        app.register_blueprint(device_swap_routes.device_swap_bp)
-
-    return app
-That's it! You have successfully added a new, isolated feature to your application.
-
-You can now follow this exact same Create Folder -> Define Blueprint -> Register Blueprint pattern for all your other features like Live Events, SIP Fetcher, and Bulk Opening Hours. 
