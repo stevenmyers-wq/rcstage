@@ -1,73 +1,96 @@
+# webapp/visualiser/routes.py
 from flask import Blueprint, jsonify, request, session
 from webapp.auth_utils import is_authenticated, get_rc_access_token
 from webapp.rc_api import rc_api_call
-from webapp.visualiser.utils import trace_flow_recursive, extension_cache
+from webapp.visualiser.utils import generate_mermaid_flow
 
 viz_bp = Blueprint('visualiser', __name__)
 
-@viz_bp.route('/api/rc/phone-numbers', methods=['GET'])
-def get_phone_numbers():
-    """Fetches the list of phone numbers and extensions that can be visualized."""
-    if not is_authenticated():
-        return jsonify({'status': 'error', 'message': 'Website not unlocked.'}), 401
-    if not get_rc_access_token():
-        return jsonify({'status': 'error', 'message': 'RingCentral not connected.'}), 401
+@viz_bp.route('/api/rc/visualiser/search', methods=['GET'])
+def search_for_visualiser_targets():
+    """
+    Searches for phone numbers, sites, and extensions based on a query string.
+    """
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
 
-    response_data = rc_api_call("/restapi/v1.0/account/~/phone-number?perPage=1000")
+    query = request.args.get('query', '').lower().strip()
+    if len(query) < 3:
+        # Don't search if the query is too short
+        return jsonify({'status': 'success', 'results': []})
+
+    results = []
     
-    if response_data is None:
-        last_log = session.get('api_log', [{}])[-1]
-        return jsonify({
-            'status': 'error', 
-            'message': f"RC API Failed. Code: {last_log.get('code', 'N/A')}. Detail: {last_log.get('detail', 'N/A')}."
-        }), 500
-    
-    if 'records' not in response_data or not isinstance(response_data.get('records'), list):
-        return jsonify({'status': 'error', 'message': 'RC API returned invalid data format.'}), 500
+    # API calls to fetch all possible targets
+    phone_data = rc_api_call("/restapi/v1.0/account/~/phone-number?perPage=1000")
+    sites_data = rc_api_call("/restapi/v1.0/account/~/sites?perPage=1000")
+    ext_data = rc_api_call("/restapi/v1.0/account/~/extension?perPage=1000")
 
-    numbers = []
-    VALID_USAGE_TYPES = [
-        "MainCompanyNumber", "AdditionalCompanyNumber", "CompanyNumber", "DirectNumber", 
-        "CompanyFaxNumber", "ForwardedNumber", "ForwardedCompanyNumber"
-    ]
+    # 1. Process Phone Numbers
+    if phone_data and phone_data.get('records'):
+        for record in phone_data['records']:
+            p_number = record.get('phoneNumber', '')
+            p_usage = record.get('usageType', '')
+            p_ext = record.get('extension')
+            if p_ext and (query in p_number or query in p_usage.lower()):
+                results.append({
+                    'id': p_ext['id'],
+                    'name': f"{p_number} ({p_usage})",
+                    'type': 'PhoneNumber'
+                })
 
-    for record in response_data.get('records', []):
-        phone_number = record.get('phoneNumber')
-        usage_type = record.get('usageType')
-        ext_info = record.get('extension')
-        
-        if usage_type not in VALID_USAGE_TYPES or not phone_number:
-            continue
+    # 2. Process Sites
+    if sites_data and sites_data.get('records'):
+        for site in sites_data['records']:
+            s_name = site.get('name', '')
+            if query in s_name.lower():
+                results.append({
+                    'id': site['id'],
+                    'name': s_name,
+                    'type': 'Site'
+                })
+
+    # 3. Process Extensions (Users, IVRs, Queues)
+    if ext_data and ext_data.get('records'):
+        for ext in ext_data['records']:
+            e_name = ext.get('name', '')
+            e_number = ext.get('extensionNumber', '')
+            e_type = ext.get('type', 'Unknown')
+            if query in e_name.lower() or query == e_number:
+                if e_type in ['User', 'IvrMenu', 'CallQueue', 'Department', 'Site']:
+                     results.append({
+                        'id': ext['id'],
+                        'name': f"{e_name} (Ext: {e_number})",
+                        'type': e_type
+                    })
+
+    # Remove duplicates by ID, keeping the first entry found
+    final_results = []
+    seen_ids = set()
+    for item in results:
+        if item['id'] not in seen_ids:
+            final_results.append(item)
+            seen_ids.add(item['id'])
             
-        ext_id = ext_info.get('id') if ext_info else record.get('id')
-        name = f"Ext: {ext_info.get('extensionNumber')}" if ext_info else usage_type
-        
-        if ext_id:
-            numbers.append({"id": ext_id, "number": phone_number, "usage": usage_type, "name": name})
-
-    if not numbers:
-        return jsonify({'status': 'success', 'numbers': [{"id": "mock1", "number": "+61280000000", "usage": "IVR Menu", "name": "No Live Numbers Found (Mock)"}]}), 200
-
-    return jsonify({'status': 'success', 'numbers': numbers}), 200
+    # Return up to 20 matching results
+    return jsonify({'status': 'success', 'results': final_results[:20]})
 
 @viz_bp.route('/api/rc/trace-flow/<ext_id>', methods=['GET'])
 def visualize_call_flow_api(ext_id):
-    """Generates the raw flow data structure for the HTML renderer."""
-    if not is_authenticated():
-        return jsonify({'status': 'error', 'message': 'Website not unlocked.'}), 401
-    if not get_rc_access_token():
-        return jsonify({'status': 'error', 'message': 'RingCentral not connected.'}), 401
+    """
+    Generates the Mermaid.js graph definition for a given starting extension ID.
+    """
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
 
-    phone_number_text = request.args.get('phoneNumber', f"ID: {ext_id}")
-    
-    # Clear the cache and log for a new run
-    extension_cache.clear()
-    session['api_log'] = [] 
-    
-    flow_data = [{'id': 'N0', 'type': 'incoming', 'name': 'Incoming Call', 'details': [f"Number: {phone_number_text}"]}]
-    processed_extensions = {}
-    
-    node_counter, final_flow_data = trace_flow_recursive(ext_id, 1, flow_data, processed_extensions)
+    session['api_log'] = []
+    mermaid_graph_string = generate_mermaid_flow(ext_id)
     api_log_data = session.pop('api_log', [])
     
-    return jsonify({'status': 'success', 'flow_data': final_flow_data, 'api_log': api_log_data}), 200
+    return jsonify({
+        'status': 'success',
+        'mermaid_graph': mermaid_graph_string,
+        'api_log': api_log_data
+    })
+
+

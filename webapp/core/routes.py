@@ -1,3 +1,4 @@
+# webapp/core/routes.py
 import os
 from flask import (
     Blueprint, render_template, request, session, jsonify, redirect, url_for,
@@ -12,6 +13,7 @@ core_bp = Blueprint('core', __name__)
 @core_bp.route('/')
 def index():
     """Serves the main application page."""
+    # The temporary auto-login bypass has been removed from here.
     rc_redirect_uri_clean = os.getenv("RC_REDIRECT_URI", "http://localhost:8080/auth/callback").rstrip('/')
     return render_template(
         'index.html', 
@@ -32,18 +34,30 @@ def logout():
 @core_bp.route('/api/auth/login', methods=['POST'])
 def login():
     """Handles the website login via email and shared passcode."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'Invalid format.'}), 400
+    
+    user_email = data.get('email', '').strip().lower()
+
+    # --- DEVELOPMENT MODE BYPASS ---
+    # If in development, skip the passcode check and log in automatically.
+    if os.getenv('FLASK_ENV') == 'development':
+        session['authenticated'] = True
+        session['user_email'] = user_email or 'developer@local.test'
+        session['is_admin'] = True # Assume admin for local testing
+        session.modified = True
+        return jsonify({'status': 'success', 'redirect_url': url_for('core.index')}), 200
+    # --- END DEVELOPMENT MODE BYPASS ---
+
+    # --- PRODUCTION LOGIC ---
+    # This part will run only when not in development mode.
     config = get_config_from_firestore()
     if not config:
         return jsonify({'status': 'error', 'message': 'Server Error.'}), 500
         
     expected_passcode = config['passcode']
     admin_emails = config['admin_list']
-    
-    data = request.get_json()
-    if not data:
-        return jsonify({'status': 'error', 'message': 'Invalid format.'}), 400
-    
-    user_email = data.get('email', '').strip().lower()
     passcode_attempt = data.get('passcode', '').strip()
 
     if passcode_attempt != expected_passcode:
@@ -56,6 +70,7 @@ def login():
     
     return jsonify({'status': 'success', 'redirect_url': url_for('core.index')}), 200
 
+
 @core_bp.route('/api/auth/status')
 def get_auth_status():
     """API endpoint to check current website login status."""
@@ -64,3 +79,5 @@ def get_auth_status():
         'is_admin': session.get('is_admin', False), 
         'user_email': session.get('user_email', None)
     }), 200
+
+
