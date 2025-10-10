@@ -1,4 +1,5 @@
 // webapp/static/js/visualiser.js
+
 // FIX: Import the panzoom library as an ES Module.
 import panzoom from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.esm.js';
 
@@ -20,26 +21,26 @@ let panzoomInstance = null;
 function displayApiLog(logData) {
     if (!logContainer) return;
     logContainer.innerHTML = '';
-    
+
     if (!logData || logData.length === 0) {
         logContainer.innerHTML = '<div class="text-gray-500">No API calls recorded.</div>';
         return;
     }
-    
+
     logData.forEach(entry => {
         const line = document.createElement('div');
         const statusClass = entry.status === 'SUCCESS' ? 'text-green-400' : 'text-red-400';
         const statusIcon = entry.status === 'SUCCESS' ? '✅' : '❌';
-        
+
         let detail = `(${entry.duration}): ${entry.endpoint}`;
         if (entry.status !== 'SUCCESS') {
             detail = `**FAIL**: ${entry.endpoint}<br> &nbsp; &nbsp; <span class="text-yellow-400">Detail: ${entry.detail}</span>`;
         }
-        
+
         line.innerHTML = `<span class="${statusClass}">${statusIcon} ${entry.code} ${entry.method}</span> ${detail}`;
         logContainer.appendChild(line);
     });
-    
+
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
@@ -47,148 +48,73 @@ function showMessage(message, isError) {
     console.log(isError ? 'Error:' : 'Success:', message);
 }
 
-// --- Pan/Zoom Functions ---
+// --- Pan/Zoom Functions (Updated for the new library) ---
 function initializePanZoom() {
     const svgElement = outputDiv.querySelector('svg');
-    
+
     if (!svgElement) {
         console.warn('No SVG element found for pan/zoom initialization');
         return;
     }
     
-    console.log('Initializing pan/zoom controls...');
-    
     // Destroy existing instance if any
     if (panzoomInstance) {
-        panzoomInstance.dispose();
-        panzoomInstance = null;
+        panzoomInstance.destroy();
     }
     
-    // Initialize panzoom on the SVG element with proper event handling
+    // Initialize panzoom on the SVG element
     panzoomInstance = panzoom(svgElement, {
-        maxZoom: 5,
-        minZoom: 0.1,
-        initialZoom: 1,
-        zoomSpeed: 0.1,
-        smoothScroll: false,
-        bounds: false,
-        boundsPadding: 0.1,
-        beforeWheel: function(e) {
-            return true;
-        },
-        beforeMouseDown: function(e) {
-            return true;
-        },
-        autocenter: false,
-        zoomDoubleClickSpeed: 1
+        maxScale: 5,
+        minScale: 0.1,
+        contain: 'outside'
     });
     
-    // Manually add wheel zoom support
-    svgElement.addEventListener('wheel', function(e) {
+    // Add wheel zoom support to the container
+    outputDiv.addEventListener('wheel', function(event) {
         if (!panzoomInstance) return;
-        
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const delta = e.deltaY;
-        if (delta < 0) {
-            panzoomInstance.zoomIn();
-        } else {
-            panzoomInstance.zoomOut();
-        }
+        event.preventDefault();
+        panzoomInstance.zoomWithWheel(event);
     }, { passive: false });
     
     // Show zoom controls
     zoomControls.style.display = 'flex';
     outputDiv.classList.add('pan-enabled');
     
-    console.log('Zoom controls should now be visible');
-    
-    // Pan distance for directional buttons
-    const panDistance = 100;
-    
     // Set up zoom and pan control buttons
-    document.getElementById('zoom-in-btn').onclick = () => {
-        console.log('Zoom in clicked');
-        panzoomInstance.zoomIn();
-    };
-    
-    document.getElementById('zoom-out-btn').onclick = () => {
-        console.log('Zoom out clicked');
-        panzoomInstance.zoomOut();
-    };
-    
-    document.getElementById('pan-up-btn').onclick = () => {
-        console.log('Pan up clicked');
-        panzoomInstance.moveBy(0, panDistance, true);
-    };
-    
-    document.getElementById('pan-down-btn').onclick = () => {
-        console.log('Pan down clicked');
-        panzoomInstance.moveBy(0, -panDistance, true);
-    };
-    
-    document.getElementById('pan-left-btn').onclick = () => {
-        console.log('Pan left clicked');
-        panzoomInstance.moveBy(panDistance, 0, true);
-    };
-    
-    document.getElementById('pan-right-btn').onclick = () => {
-        console.log('Pan right clicked');
-        panzoomInstance.moveBy(-panDistance, 0, true);
-    };
-    
-    document.getElementById('zoom-reset-btn').onclick = () => {
-        console.log('Reset clicked');
-        panzoomInstance.moveTo(0, 0);
-        panzoomInstance.zoomAbs(0, 0, 1);
-    };
-    
-    document.getElementById('fit-btn').onclick = () => {
-        console.log('Fit to view clicked');
-        fitToView();
-    };
+    const panDistance = 100;
+    document.getElementById('zoom-in-btn').onclick = () => panzoomInstance.zoomIn();
+    document.getElementById('zoom-out-btn').onclick = () => panzoomInstance.zoomOut();
+    document.getElementById('pan-up-btn').onclick = () => panzoomInstance.pan(0, -panDistance, { relative: true });
+    document.getElementById('pan-down-btn').onclick = () => panzoomInstance.pan(0, panDistance, { relative: true });
+    document.getElementById('pan-left-btn').onclick = () => panzoomInstance.pan(-panDistance, 0, { relative: true });
+    document.getElementById('pan-right-btn').onclick = () => panzoomInstance.pan(panDistance, 0, { relative: true });
+    document.getElementById('zoom-reset-btn').onclick = () => panzoomInstance.reset();
+    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset(); // Fit is the same as reset in this context
 }
 
-function fitToView() {
-    if (!panzoomInstance) return;
-    
-    const svg = outputDiv.querySelector('svg');
-    if (!svg) return;
-    
-    const containerRect = outputDiv.getBoundingClientRect();
-    const svgRect = svg.getBoundingClientRect();
-    
-    const scaleX = (containerRect.width - 40) / svgRect.width;
-    const scaleY = (containerRect.height - 40) / svgRect.height;
-    const scale = Math.min(scaleX, scaleY, 1) * 0.90;
-    
-    panzoomInstance.moveTo(0, 0);
-    panzoomInstance.zoomAbs(0, 0, scale);
-}
 
-// --- Core Logic ---
+// --- Core Logic (No changes needed here) ---
 function handleSearchInput() {
     clearTimeout(searchTimeout);
     const query = searchInput.value;
-    
+
     selectedTargetId = null;
     visualizeBtn.disabled = true;
-    
+
     if (query.length < 3) {
         resultsContainer.classList.add('hidden');
         resultsContainer.innerHTML = '';
         return;
     }
-    
+
     resultsContainer.innerHTML = '<div class="p-3 text-gray-500">Searching...</div>';
     resultsContainer.classList.remove('hidden');
-    
+
     searchTimeout = setTimeout(async () => {
         try {
             const response = await fetch(`/api/rc/visualiser/search?query=${encodeURIComponent(query)}`);
             if (!response.ok) throw new Error('Search request failed.');
-            
+
             const data = await response.json();
             if (data.status === 'success') {
                 displaySearchResults(data.results);
@@ -203,12 +129,12 @@ function handleSearchInput() {
 
 function displaySearchResults(results) {
     resultsContainer.innerHTML = '';
-    
+
     if (results.length === 0) {
         resultsContainer.innerHTML = '<div class="p-3 text-gray-500">No results found.</div>';
         return;
     }
-    
+
     results.forEach(item => {
         const resultItem = document.createElement('div');
         resultItem.className = 'p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-200';
@@ -232,11 +158,9 @@ async function handleVisualize() {
         return;
     }
     
-    console.log('Starting visualization...');
-    
     // Clean up existing pan/zoom instance
     if (panzoomInstance) {
-        panzoomInstance.dispose();
+        panzoomInstance.destroy();
         panzoomInstance = null;
     }
     
@@ -261,7 +185,6 @@ async function handleVisualize() {
         displayApiLog(data.api_log || []);
         
         if (data.status === 'success' && data.mermaid_graph) {
-            console.log('Mermaid graph received, rendering...');
             outputDiv.innerHTML = '';
             
             const mermaidContainer = document.createElement('div');
@@ -269,15 +192,10 @@ async function handleVisualize() {
             mermaidContainer.textContent = data.mermaid_graph;
             outputDiv.appendChild(mermaidContainer);
             
-            // Render the mermaid diagram
             await mermaid.run();
             
-            console.log('Mermaid rendered, initializing pan/zoom...');
-            
-            // Initialize pan/zoom after rendering
             setTimeout(() => {
                 initializePanZoom();
-                setTimeout(fitToView, 200);
             }, 150);
             
             exportControls.style.display = 'flex';
@@ -286,7 +204,6 @@ async function handleVisualize() {
             throw new Error(data.message || 'Failed to generate flow.');
         }
     } catch (error) {
-        console.error('Visualization error:', error);
         outputDiv.innerHTML = `<div class="p-8 text-red-500">${error.message}</div>`;
         showMessage(error.message, true);
     } finally {
@@ -295,33 +212,20 @@ async function handleVisualize() {
 }
 
 function handleSavePdf() {
-    const diagramElement = outputDiv.querySelector('.mermaid svg');
+    const diagramElement = outputDiv.querySelector('svg');
     if (!diagramElement) {
         showMessage('Could not find diagram to save.', true);
         return;
     }
     
-    const wasPanZoomActive = !!panzoomInstance;
     if (panzoomInstance) {
-        panzoomInstance.pause();
+        panzoomInstance.reset();
     }
-    
-    const originalBg = diagramElement.style.backgroundColor;
-    diagramElement.style.backgroundColor = 'white';
-    
-    const originalTransform = diagramElement.style.transform;
-    diagramElement.style.transform = 'none';
     
     html2canvas(diagramElement, { 
         scale: 2,
         backgroundColor: 'white'
     }).then(canvas => {
-        diagramElement.style.backgroundColor = originalBg;
-        diagramElement.style.transform = originalTransform;
-        if (wasPanZoomActive && panzoomInstance) {
-            panzoomInstance.resume();
-        }
-        
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         const { jsPDF } = window.jspdf;
         
@@ -337,20 +241,12 @@ function handleSavePdf() {
     }).catch(error => {
         console.error('Error generating PDF:', error);
         showMessage('Error generating PDF', true);
-        
-        diagramElement.style.backgroundColor = originalBg;
-        diagramElement.style.transform = originalTransform;
-        if (wasPanZoomActive && panzoomInstance) {
-            panzoomInstance.resume();
-        }
     });
 }
 
 // --- Event Listeners and Initialization ---
 (function() {
     if (!visualizeBtn) return;
-    
-    console.log('Visualiser.js loaded successfully');
     
     visualizeBtn.addEventListener('click', handleVisualize);
     savePdfBtn.addEventListener('click', handleSavePdf);
@@ -371,4 +267,3 @@ function handleSavePdf() {
         console.error('Failed to check RC connection status:', err);
     });
 })();
-
