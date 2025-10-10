@@ -1,7 +1,7 @@
 // webapp/static/js/visualiser.js
 
-// FIX: Import the panzoom library as an ES Module.
-import panzoom from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
+// FIX 1: Use a named import { Panzoom } instead of a default import.
+import { Panzoom } from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
 
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
@@ -62,8 +62,8 @@ function initializePanZoom() {
         panzoomInstance.destroy();
     }
     
-    // Initialize panzoom on the SVG element
-    panzoomInstance = panzoom(svgElement, {
+    // FIX 2: Use "new Panzoom(...)" to create an instance of the class.
+    panzoomInstance = new Panzoom(svgElement, {
         maxScale: 5,
         minScale: 0.1,
         contain: 'outside'
@@ -89,11 +89,11 @@ function initializePanZoom() {
     document.getElementById('pan-left-btn').onclick = () => panzoomInstance.pan(-panDistance, 0, { relative: true });
     document.getElementById('pan-right-btn').onclick = () => panzoomInstance.pan(panDistance, 0, { relative: true });
     document.getElementById('zoom-reset-btn').onclick = () => panzoomInstance.reset();
-    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset(); // Fit is the same as reset in this context
+    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset();
 }
 
 
-// --- Core Logic (No changes needed here) ---
+// --- Core Logic ---
 function handleSearchInput() {
     clearTimeout(searchTimeout);
     const query = searchInput.value;
@@ -158,7 +158,6 @@ async function handleVisualize() {
         return;
     }
     
-    // Clean up existing pan/zoom instance
     if (panzoomInstance) {
         panzoomInstance.destroy();
         panzoomInstance = null;
