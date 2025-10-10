@@ -90,6 +90,8 @@ function initializePanZoom() {
 
 
 // --- Core Logic (No changes needed here) ---
+// webapp/static/js/visualiser.js
+
 function handleSearchInput() {
     clearTimeout(searchTimeout);
     const query = searchInput.value;
@@ -102,6 +104,40 @@ function handleSearchInput() {
         resultsContainer.innerHTML = '';
         return;
     }
+
+    resultsContainer.innerHTML = '<div class="p-3 text-gray-500">Searching...</div>';
+    resultsContainer.classList.remove('hidden');
+
+    searchTimeout = setTimeout(async () => {
+        // --- START OF NEW DEBUGGING CODE ---
+        console.log(`[DEBUG] Searching for query: "${query}"`);
+        try {
+            const url = `/api/rc/visualiser/search?query=${encodeURIComponent(query)}`;
+            console.log(`[DEBUG] Fetching URL: ${url}`);
+            
+            const response = await fetch(url);
+            console.log(`[DEBUG] Response received. Status: ${response.status} ${response.statusText}`);
+
+            if (!response.ok) {
+                // This will catch errors like 500 Internal Server Error
+                throw new Error(`Network response was not ok. Status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('[DEBUG] JSON data parsed:', data);
+
+            if (data.status === 'success') {
+                displaySearchResults(data.results);
+            } else {
+                throw new Error(data.message || 'API returned an error.');
+            }
+        } catch (error) {
+            console.error('[DEBUG] An error occurred during search:', error);
+            resultsContainer.innerHTML = `<div class="p-3 text-red-500">Error: ${error.message}</div>`;
+        }
+        // --- END OF NEW DEBUGGING CODE ---
+    }, 300);
+}
 
     resultsContainer.innerHTML = '<div class="p-3 text-gray-500">Searching...</div>';
     resultsContainer.classList.remove('hidden');
