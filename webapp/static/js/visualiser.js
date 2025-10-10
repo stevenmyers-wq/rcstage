@@ -1,4 +1,5 @@
 // webapp/static/js/visualiser.js
+
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
 const searchInput = document.getElementById('visualiser-search-input');
@@ -7,30 +8,161 @@ const outputDiv = document.getElementById('call-flow-diagram');
 const logContainer = document.getElementById('api-log-container');
 const exportControls = document.getElementById('export-controls');
 const savePdfBtn = document.getElementById('save-pdf-btn');
+const zoomControls = document.getElementById('zoom-controls');
 
 let selectedTargetId = null;
 let searchTimeout = null;
+let panzoomInstance = null;
 
 // --- Helper Functions ---
 function displayApiLog(logData) {
     if (!logContainer) return;
     logContainer.innerHTML = '';
+    
     if (!logData || logData.length === 0) {
         logContainer.innerHTML = '<div class="text-gray-500">No API calls recorded.</div>';
         return;
     }
+    
     logData.forEach(entry => {
         const line = document.createElement('div');
         const statusClass = entry.status === 'SUCCESS' ? 'text-green-400' : 'text-red-400';
         const statusIcon = entry.status === 'SUCCESS' ? '✅' : '❌';
+        
         let detail = `(${entry.duration}): ${entry.endpoint}`;
         if (entry.status !== 'SUCCESS') {
             detail = `**FAIL**: ${entry.endpoint}<br> &nbsp; &nbsp; <span class="text-yellow-400">Detail: ${entry.detail}</span>`;
         }
+        
         line.innerHTML = `<span class="${statusClass}">${statusIcon} ${entry.code} ${entry.method}</span> ${detail}`;
         logContainer.appendChild(line);
     });
+    
     logContainer.scrollTop = logContainer.scrollHeight;
+}
+
+function showMessage(message, isError) {
+    console.log(isError ? 'Error:' : 'Success:', message);
+}
+
+// --- Pan/Zoom Functions ---
+function initializePanZoom() {
+    const svgElement = outputDiv.querySelector('svg');
+    
+    if (!svgElement) {
+        console.warn('No SVG element found for pan/zoom initialization');
+        return;
+    }
+    
+    console.log('Initializing pan/zoom controls...');
+    
+    // Destroy existing instance if any
+    if (panzoomInstance) {
+        panzoomInstance.dispose();
+        panzoomInstance = null;
+    }
+    
+    // Initialize panzoom on the SVG element with proper event handling
+    panzoomInstance = panzoom(svgElement, {
+        maxZoom: 5,
+        minZoom: 0.1,
+        initialZoom: 1,
+        zoomSpeed: 0.1,
+        smoothScroll: false,
+        bounds: false,
+        boundsPadding: 0.1,
+        beforeWheel: function(e) {
+            return true;
+        },
+        beforeMouseDown: function(e) {
+            return true;
+        },
+        autocenter: false,
+        zoomDoubleClickSpeed: 1
+    });
+    
+    // Manually add wheel zoom support
+    svgElement.addEventListener('wheel', function(e) {
+        if (!panzoomInstance) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const delta = e.deltaY;
+        if (delta < 0) {
+            panzoomInstance.zoomIn();
+        } else {
+            panzoomInstance.zoomOut();
+        }
+    }, { passive: false });
+    
+    // Show zoom controls
+    zoomControls.style.display = 'flex';
+    outputDiv.classList.add('pan-enabled');
+    
+    console.log('Zoom controls should now be visible');
+    
+    // Pan distance for directional buttons
+    const panDistance = 100;
+    
+    // Set up zoom and pan control buttons
+    document.getElementById('zoom-in-btn').onclick = () => {
+        console.log('Zoom in clicked');
+        panzoomInstance.zoomIn();
+    };
+    
+    document.getElementById('zoom-out-btn').onclick = () => {
+        console.log('Zoom out clicked');
+        panzoomInstance.zoomOut();
+    };
+    
+    document.getElementById('pan-up-btn').onclick = () => {
+        console.log('Pan up clicked');
+        panzoomInstance.moveBy(0, panDistance, true);
+    };
+    
+    document.getElementById('pan-down-btn').onclick = () => {
+        console.log('Pan down clicked');
+        panzoomInstance.moveBy(0, -panDistance, true);
+    };
+    
+    document.getElementById('pan-left-btn').onclick = () => {
+        console.log('Pan left clicked');
+        panzoomInstance.moveBy(panDistance, 0, true);
+    };
+    
+    document.getElementById('pan-right-btn').onclick = () => {
+        console.log('Pan right clicked');
+        panzoomInstance.moveBy(-panDistance, 0, true);
+    };
+    
+    document.getElementById('zoom-reset-btn').onclick = () => {
+        console.log('Reset clicked');
+        panzoomInstance.moveTo(0, 0);
+        panzoomInstance.zoomAbs(0, 0, 1);
+    };
+    
+    document.getElementById('fit-btn').onclick = () => {
+        console.log('Fit to view clicked');
+        fitToView();
+    };
+}
+
+function fitToView() {
+    if (!panzoomInstance) return;
+    
+    const svg = outputDiv.querySelector('svg');
+    if (!svg) return;
+    
+    const containerRect = outputDiv.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
+    
+    const scaleX = (containerRect.width - 40) / svgRect.width;
+    const scaleY = (containerRect.height - 40) / svgRect.height;
+    const scale = Math.min(scaleX, scaleY, 1) * 0.90;
+    
+    panzoomInstance.moveTo(0, 0);
+    panzoomInstance.zoomAbs(0, 0, scale);
 }
 
 // --- Core Logic ---
@@ -40,16 +172,16 @@ function handleSearchInput() {
     
     selectedTargetId = null;
     visualizeBtn.disabled = true;
-
+    
     if (query.length < 3) {
         resultsContainer.classList.add('hidden');
         resultsContainer.innerHTML = '';
         return;
     }
-
+    
     resultsContainer.innerHTML = '<div class="p-3 text-gray-500">Searching...</div>';
     resultsContainer.classList.remove('hidden');
-
+    
     searchTimeout = setTimeout(async () => {
         try {
             const response = await fetch(`/api/rc/visualiser/search?query=${encodeURIComponent(query)}`);
@@ -64,16 +196,17 @@ function handleSearchInput() {
         } catch (error) {
             resultsContainer.innerHTML = `<div class="p-3 text-red-500">${error.message}</div>`;
         }
-    }, 300); // Debounce API calls by 300ms
+    }, 300);
 }
 
 function displaySearchResults(results) {
     resultsContainer.innerHTML = '';
+    
     if (results.length === 0) {
         resultsContainer.innerHTML = '<div class="p-3 text-gray-500">No results found.</div>';
         return;
     }
-
+    
     results.forEach(item => {
         const resultItem = document.createElement('div');
         resultItem.className = 'p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-200';
@@ -96,25 +229,54 @@ async function handleVisualize() {
         showMessage('Please select a valid item from the search results.', true);
         return;
     }
-
-    outputDiv.innerHTML = `<div class="p-8 text-gray-500 flex items-center justify-center h-full"><svg class="animate-spin h-8 w-8 text-purple-600 mr-3" viewBox="0 0 24 24"></svg> Generating call flow for ${searchInput.value}...</div>`;
+    
+    console.log('Starting visualization...');
+    
+    // Clean up existing pan/zoom instance
+    if (panzoomInstance) {
+        panzoomInstance.dispose();
+        panzoomInstance = null;
+    }
+    
+    outputDiv.classList.remove('pan-enabled');
+    outputDiv.innerHTML = `<div class="p-8 text-gray-500 flex items-center justify-center h-full">
+        <svg class="animate-spin h-8 w-8 text-purple-600 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Generating call flow for ${searchInput.value}...
+    </div>`;
+    
     logContainer.innerHTML = '<div class="text-gray-500">Executing API calls...</div>';
     exportControls.style.display = 'none';
+    zoomControls.style.display = 'none';
     visualizeBtn.disabled = true;
-
+    
     try {
         const response = await fetch(`/api/rc/trace-flow/${selectedTargetId}`);
         const data = await response.json();
+        
         displayApiLog(data.api_log || []);
-
+        
         if (data.status === 'success' && data.mermaid_graph) {
+            console.log('Mermaid graph received, rendering...');
             outputDiv.innerHTML = '';
+            
             const mermaidContainer = document.createElement('div');
             mermaidContainer.className = 'mermaid';
             mermaidContainer.textContent = data.mermaid_graph;
             outputDiv.appendChild(mermaidContainer);
             
+            // Render the mermaid diagram
             await mermaid.run();
+            
+            console.log('Mermaid rendered, initializing pan/zoom...');
+            
+            // Initialize pan/zoom after rendering
+            setTimeout(() => {
+                initializePanZoom();
+                setTimeout(fitToView, 200);
+            }, 150);
             
             exportControls.style.display = 'flex';
             showMessage('Call flow visualization complete!', false);
@@ -122,6 +284,7 @@ async function handleVisualize() {
             throw new Error(data.message || 'Failed to generate flow.');
         }
     } catch (error) {
+        console.error('Visualization error:', error);
         outputDiv.innerHTML = `<div class="p-8 text-red-500">${error.message}</div>`;
         showMessage(error.message, true);
     } finally {
@@ -135,26 +298,58 @@ function handleSavePdf() {
         showMessage('Could not find diagram to save.', true);
         return;
     }
+    
+    const wasPanZoomActive = !!panzoomInstance;
+    if (panzoomInstance) {
+        panzoomInstance.pause();
+    }
+    
     const originalBg = diagramElement.style.backgroundColor;
     diagramElement.style.backgroundColor = 'white';
     
-    html2canvas(diagramElement, { scale: 3 }).then(canvas => {
+    const originalTransform = diagramElement.style.transform;
+    diagramElement.style.transform = 'none';
+    
+    html2canvas(diagramElement, { 
+        scale: 2,
+        backgroundColor: 'white'
+    }).then(canvas => {
         diagramElement.style.backgroundColor = originalBg;
+        diagramElement.style.transform = originalTransform;
+        if (wasPanZoomActive && panzoomInstance) {
+            panzoomInstance.resume();
+        }
+        
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         const { jsPDF } = window.jspdf;
+        
         const pdfWidth = canvas.width;
         const pdfHeight = canvas.height;
         const orientation = pdfWidth > pdfHeight ? 'l' : 'p';
+        
         const pdf = new jsPDF(orientation, 'px', [pdfWidth, pdfHeight]);
         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`call-flow-${searchInput.value.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+        
+        showMessage('PDF saved successfully!', false);
+    }).catch(error => {
+        console.error('Error generating PDF:', error);
+        showMessage('Error generating PDF', true);
+        
+        diagramElement.style.backgroundColor = originalBg;
+        diagramElement.style.transform = originalTransform;
+        if (wasPanZoomActive && panzoomInstance) {
+            panzoomInstance.resume();
+        }
     });
 }
 
 // --- Event Listeners and Initialization ---
 (function() {
     if (!visualizeBtn) return;
-
+    
+    console.log('Visualiser.js loaded successfully');
+    
     visualizeBtn.addEventListener('click', handleVisualize);
     savePdfBtn.addEventListener('click', handleSavePdf);
     searchInput.addEventListener('input', handleSearchInput);
@@ -164,13 +359,14 @@ function handleSavePdf() {
             resultsContainer.classList.add('hidden');
         }
     });
-
+    
     fetch('/api/rc/status').then(res => res.json()).then(data => {
         if (data.status !== 'connected') {
             searchInput.disabled = true;
             searchInput.placeholder = "Connect to RingCentral to enable search...";
         }
+    }).catch(err => {
+        console.error('Failed to check RC connection status:', err);
     });
 })();
-
 
