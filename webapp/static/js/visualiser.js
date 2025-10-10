@@ -1,7 +1,7 @@
 // webapp/static/js/visualiser.js
 
-// FIX 1: Use a named import { Panzoom } instead of a default import.
-import { Panzoom } from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
+// FINAL FIX: Import the named export 'panzoom' (lowercase)
+import { panzoom } from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
 
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
@@ -48,7 +48,7 @@ function showMessage(message, isError) {
     console.log(isError ? 'Error:' : 'Success:', message);
 }
 
-// --- Pan/Zoom Functions (Updated for the new library) ---
+// --- Pan/Zoom Functions ---
 function initializePanZoom() {
     const svgElement = outputDiv.querySelector('svg');
 
@@ -57,30 +57,26 @@ function initializePanZoom() {
         return;
     }
     
-    // Destroy existing instance if any
     if (panzoomInstance) {
         panzoomInstance.destroy();
     }
     
-    // FIX 2: Use "new Panzoom(...)" to create an instance of the class.
-    panzoomInstance = new Panzoom(svgElement, {
+    // FINAL FIX: Call 'panzoom' (lowercase) as a function, without 'new'
+    panzoomInstance = panzoom(svgElement, {
         maxScale: 5,
         minScale: 0.1,
         contain: 'outside'
     });
     
-    // Add wheel zoom support to the container
     outputDiv.addEventListener('wheel', function(event) {
         if (!panzoomInstance) return;
         event.preventDefault();
         panzoomInstance.zoomWithWheel(event);
     }, { passive: false });
     
-    // Show zoom controls
     zoomControls.style.display = 'flex';
     outputDiv.classList.add('pan-enabled');
     
-    // Set up zoom and pan control buttons
     const panDistance = 100;
     document.getElementById('zoom-in-btn').onclick = () => panzoomInstance.zoomIn();
     document.getElementById('zoom-out-btn').onclick = () => panzoomInstance.zoomOut();
@@ -91,7 +87,6 @@ function initializePanZoom() {
     document.getElementById('zoom-reset-btn').onclick = () => panzoomInstance.reset();
     document.getElementById('fit-btn').onclick = () => panzoomInstance.reset();
 }
-
 
 // --- Core Logic ---
 function handleSearchInput() {
