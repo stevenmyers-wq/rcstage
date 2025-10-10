@@ -1,8 +1,5 @@
 // webapp/static/js/visualiser.js
 
-// FINAL FIX: Import the named export 'panzoom' (lowercase)
-import { panzoom } from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
-
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
 const searchInput = document.getElementById('visualiser-search-input');
@@ -48,35 +45,38 @@ function showMessage(message, isError) {
     console.log(isError ? 'Error:' : 'Success:', message);
 }
 
-// --- Pan/Zoom Functions ---
+// --- Pan/Zoom Functions (Using timmywil/panzoom) ---
 function initializePanZoom() {
     const svgElement = outputDiv.querySelector('svg');
-
     if (!svgElement) {
         console.warn('No SVG element found for pan/zoom initialization');
         return;
     }
-    
+
+    // Clean up any old instance
     if (panzoomInstance) {
         panzoomInstance.destroy();
     }
-    
-    // FINAL FIX: Call 'panzoom' (lowercase) as a function, without 'new'
-    panzoomInstance = panzoom(svgElement, {
+
+    // Initialize the new Panzoom library (note the capital 'P')
+    panzoomInstance = Panzoom(svgElement, {
         maxScale: 5,
         minScale: 0.1,
         contain: 'outside'
     });
-    
+
+    // Add wheel zoom support
     outputDiv.addEventListener('wheel', function(event) {
         if (!panzoomInstance) return;
         event.preventDefault();
         panzoomInstance.zoomWithWheel(event);
     }, { passive: false });
-    
+
+    // Show zoom controls and enable panning cursor
     zoomControls.style.display = 'flex';
     outputDiv.classList.add('pan-enabled');
-    
+
+    // Connect the buttons to the new library's functions
     const panDistance = 100;
     document.getElementById('zoom-in-btn').onclick = () => panzoomInstance.zoomIn();
     document.getElementById('zoom-out-btn').onclick = () => panzoomInstance.zoomOut();
@@ -85,10 +85,11 @@ function initializePanZoom() {
     document.getElementById('pan-left-btn').onclick = () => panzoomInstance.pan(-panDistance, 0, { relative: true });
     document.getElementById('pan-right-btn').onclick = () => panzoomInstance.pan(panDistance, 0, { relative: true });
     document.getElementById('zoom-reset-btn').onclick = () => panzoomInstance.reset();
-    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset();
+    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset(); // Fit and reset do the same thing
 }
 
-// --- Core Logic ---
+
+// --- Core Logic (No changes needed here) ---
 function handleSearchInput() {
     clearTimeout(searchTimeout);
     const query = searchInput.value;
@@ -153,6 +154,7 @@ async function handleVisualize() {
         return;
     }
     
+    // Destroy the old instance before creating a new diagram
     if (panzoomInstance) {
         panzoomInstance.destroy();
         panzoomInstance = null;
@@ -186,8 +188,9 @@ async function handleVisualize() {
             mermaidContainer.textContent = data.mermaid_graph;
             outputDiv.appendChild(mermaidContainer);
             
-            await mermaid.run();
+            await mermaid.run(); // Render the diagram
             
+            // Initialize panzoom after the diagram SVG is created
             setTimeout(() => {
                 initializePanZoom();
             }, 150);
@@ -213,7 +216,7 @@ function handleSavePdf() {
     }
     
     if (panzoomInstance) {
-        panzoomInstance.reset();
+        panzoomInstance.reset(); // Reset view for a clean PDF capture
     }
     
     html2canvas(diagramElement, { 
@@ -239,8 +242,10 @@ function handleSavePdf() {
 }
 
 // --- Event Listeners and Initialization ---
+// This is an IIFE (Immediately Invoked Function Expression)
+// It runs automatically when the script loads.
 (function() {
-    if (!visualizeBtn) return;
+    if (!visualizeBtn) return; // Don't run if we're not on the right page
     
     visualizeBtn.addEventListener('click', handleVisualize);
     savePdfBtn.addEventListener('click', handleSavePdf);
