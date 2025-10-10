@@ -1,7 +1,7 @@
 // webapp/static/js/visualiser.js
 
 // FIX: Import the panzoom library as an ES Module.
-import panzoom from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.esm.js';
+import panzoom from 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
 
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
