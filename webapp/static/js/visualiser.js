@@ -58,7 +58,6 @@ function initializePanZoom() {
     panzoomInstance = Panzoom(svgElement, {
         maxScale: 5,
         minScale: 0.1,
-        contain: 'outside'
     });
 
     outputDiv.addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive: false });
@@ -199,6 +198,8 @@ async function handleVisualize() {
     }
 }
 
+// Replace your entire handleSavePdf function with this
+
 function handleSavePdf() {
     const diagramElement = outputDiv.querySelector('svg');
     if (!diagramElement) {
@@ -211,7 +212,9 @@ function handleSavePdf() {
         panzoomInstance.reset({ animate: false });
     }
     
-    // Add a small delay to allow the browser to re-render the reset SVG
+    // --- FIX: Add a small delay ---
+    // This gives the browser a moment to re-render the reset SVG
+    // before we try to capture it.
     setTimeout(() => {
         html2canvas(diagramElement, {
             scale: 2,
@@ -233,9 +236,8 @@ function handleSavePdf() {
             console.error('Error generating PDF:', error);
             showMessage('Error generating PDF', true);
         });
-    }, 100);
+    }, 100); // 100ms delay is usually enough
 }
-
 
 // --- Event Listeners and Initialization ---
 (function() {
