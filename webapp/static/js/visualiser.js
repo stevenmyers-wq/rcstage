@@ -53,30 +53,25 @@ function initializePanZoom() {
         return;
     }
 
-    // Clean up any old instance
     if (panzoomInstance) {
         panzoomInstance.destroy();
     }
 
-    // Initialize the new Panzoom library (note the capital 'P')
     panzoomInstance = Panzoom(svgElement, {
         maxScale: 5,
         minScale: 0.1,
         contain: 'outside'
     });
 
-    // Add wheel zoom support
     outputDiv.addEventListener('wheel', function(event) {
         if (!panzoomInstance) return;
         event.preventDefault();
         panzoomInstance.zoomWithWheel(event);
     }, { passive: false });
 
-    // Show zoom controls and enable panning cursor
     zoomControls.style.display = 'flex';
     outputDiv.classList.add('pan-enabled');
 
-    // Connect the buttons to the new library's functions
     const panDistance = 100;
     document.getElementById('zoom-in-btn').onclick = () => panzoomInstance.zoomIn();
     document.getElementById('zoom-out-btn').onclick = () => panzoomInstance.zoomOut();
@@ -85,13 +80,11 @@ function initializePanZoom() {
     document.getElementById('pan-left-btn').onclick = () => panzoomInstance.pan(-panDistance, 0, { relative: true });
     document.getElementById('pan-right-btn').onclick = () => panzoomInstance.pan(panDistance, 0, { relative: true });
     document.getElementById('zoom-reset-btn').onclick = () => panzoomInstance.reset();
-    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset(); // Fit and reset do the same thing
+    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset();
 }
 
 
-// --- Core Logic (No changes needed here) ---
-// webapp/static/js/visualiser.js
-
+// --- Core Logic ---
 function handleSearchInput() {
     clearTimeout(searchTimeout);
     const query = searchInput.value;
@@ -109,7 +102,6 @@ function handleSearchInput() {
     resultsContainer.classList.remove('hidden');
 
     searchTimeout = setTimeout(async () => {
-        // --- START OF NEW DEBUGGING CODE ---
         console.log(`[DEBUG] Searching for query: "${query}"`);
         try {
             const url = `/api/rc/visualiser/search?query=${encodeURIComponent(query)}`;
@@ -119,7 +111,6 @@ function handleSearchInput() {
             console.log(`[DEBUG] Response received. Status: ${response.status} ${response.statusText}`);
 
             if (!response.ok) {
-                // This will catch errors like 500 Internal Server Error
                 throw new Error(`Network response was not ok. Status: ${response.status}`);
             }
             
@@ -134,27 +125,6 @@ function handleSearchInput() {
         } catch (error) {
             console.error('[DEBUG] An error occurred during search:', error);
             resultsContainer.innerHTML = `<div class="p-3 text-red-500">Error: ${error.message}</div>`;
-        }
-        // --- END OF NEW DEBUGGING CODE ---
-    }, 300);
-}
-
-    resultsContainer.innerHTML = '<div class="p-3 text-gray-500">Searching...</div>';
-    resultsContainer.classList.remove('hidden');
-
-    searchTimeout = setTimeout(async () => {
-        try {
-            const response = await fetch(`/api/rc/visualiser/search?query=${encodeURIComponent(query)}`);
-            if (!response.ok) throw new Error('Search request failed.');
-
-            const data = await response.json();
-            if (data.status === 'success') {
-                displaySearchResults(data.results);
-            } else {
-                throw new Error(data.message || 'Failed to get search results.');
-            }
-        } catch (error) {
-            resultsContainer.innerHTML = `<div class="p-3 text-red-500">${error.message}</div>`;
         }
     }, 300);
 }
@@ -190,7 +160,6 @@ async function handleVisualize() {
         return;
     }
     
-    // Destroy the old instance before creating a new diagram
     if (panzoomInstance) {
         panzoomInstance.destroy();
         panzoomInstance = null;
@@ -224,9 +193,8 @@ async function handleVisualize() {
             mermaidContainer.textContent = data.mermaid_graph;
             outputDiv.appendChild(mermaidContainer);
             
-            await mermaid.run(); // Render the diagram
+            await mermaid.run();
             
-            // Initialize panzoom after the diagram SVG is created
             setTimeout(() => {
                 initializePanZoom();
             }, 150);
@@ -252,7 +220,7 @@ function handleSavePdf() {
     }
     
     if (panzoomInstance) {
-        panzoomInstance.reset(); // Reset view for a clean PDF capture
+        panzoomInstance.reset();
     }
     
     html2canvas(diagramElement, { 
@@ -278,10 +246,8 @@ function handleSavePdf() {
 }
 
 // --- Event Listeners and Initialization ---
-// This is an IIFE (Immediately Invoked Function Expression)
-// It runs automatically when the script loads.
 (function() {
-    if (!visualizeBtn) return; // Don't run if we're not on the right page
+    if (!visualizeBtn) return;
     
     visualizeBtn.addEventListener('click', handleVisualize);
     savePdfBtn.addEventListener('click', handleSavePdf);
