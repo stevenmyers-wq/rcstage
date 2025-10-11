@@ -1,8 +1,5 @@
 // webapp/static/js/visualiser.js
 
-// BREADCRUMB 1: Check if the script file itself is running.
-console.log('[DEBUG] visualiser.js script has been loaded and is running.');
-
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
 const searchInput = document.getElementById('visualiser-search-input');
@@ -31,12 +28,10 @@ function displayApiLog(logData) {
         const line = document.createElement('div');
         const statusClass = entry.status === 'SUCCESS' ? 'text-green-400' : 'text-red-400';
         const statusIcon = entry.status === 'SUCCESS' ? '✅' : '❌';
-
         let detail = `(${entry.duration}): ${entry.endpoint}`;
         if (entry.status !== 'SUCCESS') {
             detail = `**FAIL**: ${entry.endpoint}<br> &nbsp; &nbsp; <span class="text-yellow-400">Detail: ${entry.detail}</span>`;
         }
-
         line.innerHTML = `<span class="${statusClass}">${statusIcon} ${entry.code} ${entry.method}</span> ${detail}`;
         logContainer.appendChild(line);
     });
@@ -48,7 +43,7 @@ function showMessage(message, isError) {
     console.log(isError ? 'Error:' : 'Success:', message);
 }
 
-// --- Pan/Zoom Functions (Using timmywil/panzoom) ---
+// --- Pan/Zoom Functions ---
 function initializePanZoom() {
     const svgElement = outputDiv.querySelector('svg');
     if (!svgElement) {
@@ -66,11 +61,7 @@ function initializePanZoom() {
         contain: 'outside'
     });
 
-    outputDiv.addEventListener('wheel', function(event) {
-        if (!panzoomInstance) return;
-        event.preventDefault();
-        panzoomInstance.zoomWithWheel(event);
-    }, { passive: false });
+    outputDiv.addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive: false });
 
     zoomControls.style.display = 'flex';
     outputDiv.classList.add('pan-enabled');
@@ -83,18 +74,35 @@ function initializePanZoom() {
     document.getElementById('pan-left-btn').onclick = () => panzoomInstance.pan(-panDistance, 0, { relative: true });
     document.getElementById('pan-right-btn').onclick = () => panzoomInstance.pan(panDistance, 0, { relative: true });
     document.getElementById('zoom-reset-btn').onclick = () => panzoomInstance.reset();
-    document.getElementById('fit-btn').onclick = () => panzoomInstance.reset();
-}
 
+    // Helper function to calculate and apply the best fit
+    function fitToView() {
+        if (!panzoomInstance) return;
+        const containerRect = outputDiv.getBoundingClientRect();
+        const svgBBox = svgElement.getBBox();
+
+        const scaleX = containerRect.width / svgBBox.width;
+        const scaleY = containerRect.height / svgBBox.height;
+        const scale = Math.min(scaleX, scaleY) * 0.95; // 0.95 gives padding
+
+        const newX = (containerRect.width - (svgBBox.width * scale)) / 2;
+        const newY = (containerRect.height - (svgBBox.height * scale)) / 2;
+
+        panzoomInstance.zoom(scale, { animate: false });
+        panzoomInstance.pan(newX, newY, { animate: false });
+    }
+
+    // Update the "Fit" button to use our new function
+    document.getElementById('fit-btn').onclick = fitToView;
+
+    // Call fitToView initially to set the correct zoom level
+    setTimeout(fitToView, 50);
+}
 
 // --- Core Logic ---
 function handleSearchInput() {
-    // BREADCRUMB 4: Check if this function is ever called.
-    console.log('[DEBUG] Search input event fired! You typed in the box.');
-    
     clearTimeout(searchTimeout);
     const query = searchInput.value;
-
     selectedTargetId = null;
     visualizeBtn.disabled = true;
 
@@ -120,7 +128,7 @@ function handleSearchInput() {
                 throw new Error(data.message || 'API returned an error.');
             }
         } catch (error) {
-            console.error('[DEBUG] An error occurred during search:', error);
+            console.error('An error occurred during search:', error);
             resultsContainer.innerHTML = `<div class="p-3 text-red-500">Error: ${error.message}</div>`;
         }
     }, 300);
@@ -128,12 +136,10 @@ function handleSearchInput() {
 
 function displaySearchResults(results) {
     resultsContainer.innerHTML = '';
-
     if (results.length === 0) {
-        resultsContainer.innerHTML = '<div class="text-gray-500">No results found.</div>';
+        resultsContainer.innerHTML = '<div class="p-3 text-gray-500">No results found.</div>';
         return;
     }
-
     results.forEach(item => {
         const resultItem = document.createElement('div');
         resultItem.className = 'p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-200';
@@ -156,46 +162,30 @@ async function handleVisualize() {
         showMessage('Please select a valid item from the search results.', true);
         return;
     }
-    
     if (panzoomInstance) {
         panzoomInstance.destroy();
         panzoomInstance = null;
     }
-    
     outputDiv.classList.remove('pan-enabled');
-    outputDiv.innerHTML = `<div class="p-8 text-gray-500 flex items-center justify-center h-full">
-        <svg class="animate-spin h-8 w-8 text-purple-600 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        Generating call flow for ${searchInput.value}...
-    </div>`;
-    
+    outputDiv.innerHTML = `<div class="p-8 text-gray-500 flex items-center justify-center h-full"><svg class="animate-spin h-8 w-8 text-purple-600 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating call flow for ${searchInput.value}...</div>`;
     logContainer.innerHTML = '<div class="text-gray-500">Executing API calls...</div>';
     exportControls.style.display = 'none';
     zoomControls.style.display = 'none';
     visualizeBtn.disabled = true;
-    
     try {
         const response = await fetch(`/api/rc/trace-flow/${selectedTargetId}`);
         const data = await response.json();
-        
         displayApiLog(data.api_log || []);
-        
         if (data.status === 'success' && data.mermaid_graph) {
             outputDiv.innerHTML = '';
-            
             const mermaidContainer = document.createElement('div');
             mermaidContainer.className = 'mermaid';
             mermaidContainer.textContent = data.mermaid_graph;
             outputDiv.appendChild(mermaidContainer);
-            
             await mermaid.run();
-            
             setTimeout(() => {
                 initializePanZoom();
             }, 150);
-            
             exportControls.style.display = 'flex';
             showMessage('Call flow visualization complete!', false);
         } else {
@@ -216,46 +206,45 @@ function handleSavePdf() {
         return;
     }
     
+    // Temporarily reset the zoom and pan for a clean capture.
     if (panzoomInstance) {
-        panzoomInstance.reset();
+        panzoomInstance.reset({ animate: false });
     }
     
-    html2canvas(diagramElement, { 
-        scale: 2,
-        backgroundColor: 'white'
-    }).then(canvas => {
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const { jsPDF } = window.jspdf;
-        
-        const pdfWidth = canvas.width;
-        const pdfHeight = canvas.height;
-        const orientation = pdfWidth > pdfHeight ? 'l' : 'p';
-        
-        const pdf = new jsPDF(orientation, 'px', [pdfWidth, pdfHeight]);
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`call-flow-${searchInput.value.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
-        
-        showMessage('PDF saved successfully!', false);
-    }).catch(error => {
-        console.error('Error generating PDF:', error);
-        showMessage('Error generating PDF', true);
-    });
+    // Add a small delay to allow the browser to re-render the reset SVG
+    setTimeout(() => {
+        html2canvas(diagramElement, {
+            scale: 2,
+            backgroundColor: 'white' // Ensure background is not transparent
+        }).then(canvas => {
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            const { jsPDF } = window.jspdf;
+            
+            const pdfWidth = canvas.width;
+            const pdfHeight = canvas.height;
+            const orientation = pdfWidth > pdfHeight ? 'l' : 'p';
+            
+            const pdf = new jsPDF(orientation, 'px', [pdfWidth, pdfHeight]);
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`call-flow-${searchInput.value.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+            
+            showMessage('PDF saved successfully!', false);
+        }).catch(error => {
+            console.error('Error generating PDF:', error);
+            showMessage('Error generating PDF', true);
+        });
+    }, 100);
 }
+
 
 // --- Event Listeners and Initialization ---
 (function() {
-    // BREADCRUMB 2: Check if this initialization block is running.
-    console.log('[DEBUG] Initializing event listeners...');
-
     if (!visualizeBtn || !searchInput) {
-        console.error('[DEBUG] CRITICAL: Could not find visualize button or search input on the page. Stopping initialization.');
+        console.error('Could not find visualize button or search input on the page. Stopping initialization.');
         return;
     }
     
-    // BREADCRUMB 3: Check if the event listener is being attached.
-    console.log('[DEBUG] Attaching input event listener to the search box.');
     searchInput.addEventListener('input', handleSearchInput);
-
     visualizeBtn.addEventListener('click', handleVisualize);
     savePdfBtn.addEventListener('click', handleSavePdf);
     
