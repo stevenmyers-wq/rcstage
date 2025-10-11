@@ -1,29 +1,4 @@
 <!-- Add the required JS libraries for this module -->
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
-<script src="{{ url_for('static', filename='js/visualiser.js') }}"></script>
-<script>
-    // Initialize Mermaid.js with better defaults for readability
-    mermaid.initialize({ 
-        startOnLoad: false,
-        theme: 'base',
-        themeVariables: {
-            fontSize: '20px',
-            fontFamily: 'arial, sans-serif'
-        },
-        flowchart: {
-            useMaxWidth: false,
-            htmlLabels: true,
-            curve: 'basis',
-            padding: 30,
-            nodeSpacing: 120,
-            rankSpacing: 120
-        }
-    });
-</script>
-
 <style>
     #call-flow-diagram {
         min-height: 700px;
@@ -179,4 +154,27 @@
         </div>
     </div>
 </div>
-
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+<script src="{{ url_for('static', filename='js/visualiser.js') }}"></script>
+<script>
+    // Initialize Mermaid.js with better defaults for readability
+    mermaid.initialize({ 
+        startOnLoad: false,
+        theme: 'base',
+        themeVariables: {
+            fontSize: '20px',
+            fontFamily: 'arial, sans-serif'
+        },
+        flowchart: {
+            useMaxWidth: false,
+            htmlLabels: true,
+            curve: 'basis',
+            padding: 30,
+            nodeSpacing: 120,
+            rankSpacing: 120
+        }
+    });
+</script>
