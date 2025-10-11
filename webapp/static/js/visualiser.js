@@ -1,5 +1,8 @@
 // webapp/static/js/visualiser.js
 
+// BREADCRUMB 1: Check if the script file itself is running.
+console.log('[DEBUG] visualiser.js script has been loaded and is running.');
+
 // --- DOM Elements ---
 const visualizeBtn = document.getElementById('visualize-button');
 const searchInput = document.getElementById('visualiser-search-input');
@@ -86,6 +89,9 @@ function initializePanZoom() {
 
 // --- Core Logic ---
 function handleSearchInput() {
+    // BREADCRUMB 4: Check if this function is ever called.
+    console.log('[DEBUG] Search input event fired! You typed in the box.');
+    
     clearTimeout(searchTimeout);
     const query = searchInput.value;
 
@@ -102,21 +108,12 @@ function handleSearchInput() {
     resultsContainer.classList.remove('hidden');
 
     searchTimeout = setTimeout(async () => {
-        console.log(`[DEBUG] Searching for query: "${query}"`);
         try {
-            const url = `/api/rc/visualiser/search?query=${encodeURIComponent(query)}`;
-            console.log(`[DEBUG] Fetching URL: ${url}`);
-            
-            const response = await fetch(url);
-            console.log(`[DEBUG] Response received. Status: ${response.status} ${response.statusText}`);
-
+            const response = await fetch(`/api/rc/visualiser/search?query=${encodeURIComponent(query)}`);
             if (!response.ok) {
                 throw new Error(`Network response was not ok. Status: ${response.status}`);
             }
-            
             const data = await response.json();
-            console.log('[DEBUG] JSON data parsed:', data);
-
             if (data.status === 'success') {
                 displaySearchResults(data.results);
             } else {
@@ -133,7 +130,7 @@ function displaySearchResults(results) {
     resultsContainer.innerHTML = '';
 
     if (results.length === 0) {
-        resultsContainer.innerHTML = '<div class="p-3 text-gray-500">No results found.</div>';
+        resultsContainer.innerHTML = '<div class="text-gray-500">No results found.</div>';
         return;
     }
 
@@ -247,11 +244,20 @@ function handleSavePdf() {
 
 // --- Event Listeners and Initialization ---
 (function() {
-    if (!visualizeBtn) return;
+    // BREADCRUMB 2: Check if this initialization block is running.
+    console.log('[DEBUG] Initializing event listeners...');
+
+    if (!visualizeBtn || !searchInput) {
+        console.error('[DEBUG] CRITICAL: Could not find visualize button or search input on the page. Stopping initialization.');
+        return;
+    }
     
+    // BREADCRUMB 3: Check if the event listener is being attached.
+    console.log('[DEBUG] Attaching input event listener to the search box.');
+    searchInput.addEventListener('input', handleSearchInput);
+
     visualizeBtn.addEventListener('click', handleVisualize);
     savePdfBtn.addEventListener('click', handleSavePdf);
-    searchInput.addEventListener('input', handleSearchInput);
     
     document.addEventListener('click', (e) => {
         if (!searchInput.contains(e.target) && !resultsContainer.contains(e.target)) {
