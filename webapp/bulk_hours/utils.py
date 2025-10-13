@@ -1,0 +1,235 @@
+# webapp/bulk_hours/utils.py
+from webapp.rc_api import rc_api_call
+import json
+
+# ===============================================================
+# BUSINESS HOURS FUNCTIONS
+# ===============================================================
+
+def fetch_operating_hours(entity_type):
+    """Fetches and processes operating hours for a given entity type ('Site' or 'Queue')."""
+    try:
+        list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
+        entities_response = rc_api_call(list_endpoint)
+        if not entities_response or 'records' not in entities_response:
+            return []
+
+        all_data = []
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        for entity in entities_response['records']:
+            entity_id = entity.get('id')
+            entity_name = entity.get('name', f'Unknown {entity_type}')
+            
+            hours_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/business-hours"
+            if entity_id == "main-site":
+                hours_endpoint = "/restapi/v1.0/account/~/business-hours"
+
+            hours_response = rc_api_call(hours_endpoint)
+            entity_row = {"EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name}
+
+            if not hours_response or 'schedule' not in hours_response:
+                print(f"WARN: Could not retrieve hours for {entity_name} (ID: {entity_id})")
+                for day in days: entity_row[day] = "ERROR"
+            else:
+                schedule = hours_response.get('schedule', {})
+                weekly_ranges = schedule.get('weeklyRanges', {})
+                if not weekly_ranges:
+                    for day in days: entity_row[day] = "00:00-23:59"
+                else:
+                    for day in days:
+                        day_schedule = weekly_ranges.get(day.lower())
+                        if day_schedule:
+                            entity_row[day] = f"{day_schedule[0].get('from', 'N/A')}-{day_schedule[0].get('to', 'N/A')}"
+                        else:
+                            entity_row[day] = "Closed"
+            all_data.append(entity_row)
+        return all_data
+    except Exception as e:
+        print(f"FATAL ERROR in fetch_operating_hours: {e}")
+        raise e
+
+def update_hours_from_records(records):
+    """Processes a list of records and updates RC business hours."""
+    results = []
+    for record in records:
+        entity_id = record.get("EntityID")
+        entity_name = record.get("EntityName")
+        if not entity_id or not entity_name: continue
+
+        try:
+            schedule_from_row = {day.lower(): record.get(day) for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]}
+            api_body = _build_hours_api_body(schedule_from_row)
+            
+            endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/business-hours"
+            if entity_id == "main-site": endpoint = "/restapi/v1.0/account/~/business-hours"
+
+            response = rc_api_call(endpoint, method="PUT", body=api_body)
+            if response:
+                results.append({"name": entity_name, "status": "success", "message": "Updated successfully."})
+            else:
+                results.append({"name": entity_name, "status": "error", "message": "API call failed. Check server logs."})
+        except Exception as e:
+            print(f"ERROR processing update for {entity_name}: {e}")
+            results.append({"name": entity_name, "status": "error", "message": str(e)})
+    return results
+
+def _build_hours_api_body(schedule):
+    """Helper to construct the business hours API body."""
+    weekly_ranges = {}
+    for day, hours in schedule.items():
+        if not hours or str(hours).strip().lower() in ['closed', '']: continue
+        if "00:00-23:59" in str(hours) or "00:00-00:00" in str(hours):
+            weekly_ranges[day] = [{"from": "00:00", "to": "23:59"}]
+            continue
+        if '-' in str(hours):
+            parts = str(hours).split('-')
+            if len(parts) == 2:
+                weekly_ranges[day] = [{"from": parts[0].strip(), "to": parts[1].strip()}]
+    return {"schedule": {"weeklyRanges": weekly_ranges}}
+
+
+# ===============================================================
+# CUSTOM ANSWERING RULES FUNCTIONS
+# ===============================================================
+
+def fetch_custom_rules(entity_type):
+    """Fetches all custom answering rules for a given entity type."""
+    try:
+        list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
+        entities_response = rc_api_call(list_endpoint)
+        if not entities_response or 'records' not in entities_response:
+            return []
+
+        all_rules_data = []
+        for entity in entities_response['records']:
+            entity_id = entity.get('id')
+            entity_name = entity.get('name')
+            
+            rules_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
+            if entity_id == "main-site": rules_endpoint = "/restapi/v1.0/account/~/answering-rule"
+
+            rules_summary_response = rc_api_call(rules_endpoint)
+            if not rules_summary_response or 'records' not in rules_summary_response: continue
+
+            custom_rules = [r for r in rules_summary_response['records'] if r.get('type') == 'Custom']
+            
+            if not custom_rules:
+                all_rules_data.append({
+                    "Action": "INFO", "EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name,
+                    "RuleID": "N/A", "RuleName": "No Custom Rules Active", "Enabled": "N/A",
+                    "ScheduleType": "N/A", "ScheduleDetails": "Following standard business hours",
+                    "CallAction": "N/A", "ActionTarget": "N/A"
+                })
+            else:
+                for rule_summary in custom_rules:
+                    rule_id = rule_summary.get('id')
+                    detailed_rule = rc_api_call(f"{rules_endpoint}/{rule_id}")
+                    if not detailed_rule: continue
+                    
+                    parsed = _parse_rule_details(detailed_rule)
+                    all_rules_data.append({
+                        "Action": "MODIFY", "EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name,
+                        "RuleID": rule_id, "RuleName": detailed_rule.get('name'), "Enabled": detailed_rule.get('enabled'),
+                        "ScheduleType": parsed['schedule_type'], "ScheduleDetails": parsed['schedule_details'],
+                        "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target']
+                    })
+        return all_rules_data
+    except Exception as e:
+        print(f"FATAL ERROR in fetch_custom_rules: {e}")
+        raise e
+
+
+def update_rules_from_records(records):
+    """Updates or creates custom rules from a list of records."""
+    results = []
+    for rule in records:
+        action = rule.get("Action", "").upper()
+        entity_id = rule.get("EntityID")
+        entity_name = rule.get("EntityName")
+        rule_name = rule.get("RuleName")
+
+        if action not in ["NEW", "MODIFY"] or not entity_id:
+            continue
+
+        try:
+            api_body = _build_rule_api_body(rule)
+            if not api_body:
+                raise ValueError("Could not construct valid API body from rule data.")
+
+            if action == "MODIFY":
+                rule_id = rule.get("RuleID")
+                if not rule_id or rule_id == 'N/A': raise ValueError("RuleID is required for MODIFY action.")
+                endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule/{rule_id}"
+                response = rc_api_call(endpoint, method="PUT", body=api_body)
+            elif action == "NEW":
+                endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
+                response = rc_api_call(endpoint, method="POST", body=api_body)
+            
+            if response:
+                results.append({"name": f"{entity_name} - {rule_name}", "status": "success", "message": f"Action '{action}' successful."})
+            else:
+                 results.append({"name": f"{entity_name} - {rule_name}", "status": "error", "message": "API call failed. Check server logs."})
+        except Exception as e:
+            print(f"ERROR processing rule update for {entity_name}: {e}")
+            results.append({"name": f"{entity_name} - {rule_name}", "status": "error", "message": str(e)})
+
+    return results
+
+def _parse_rule_details(rule):
+    """Parses a detailed rule object into simple, readable strings."""
+    parsed = {"schedule_type": "Unknown", "schedule_details": "N/A", "call_action": "N/A", "action_target": "N/A"}
+    
+    schedule = rule.get('schedule', {})
+    if 'weeklyRanges' in schedule:
+        parsed['schedule_type'] = "Weekly"
+        parsed['schedule_details'] = "Custom weekly schedule defined"
+    elif 'ranges' in schedule and schedule.get('ranges'):
+        parsed['schedule_type'] = "DateRange"
+        r = schedule['ranges'][0]
+        parsed['schedule_details'] = f"{r.get('from')} to {r.get('to')}"
+    
+    parsed['call_action'] = rule.get('callHandlingAction', 'N/A')
+    if parsed['call_action'] == 'ForwardCalls' and 'forwarding' in rule:
+        fwd_nums = rule['forwarding'].get('rules', [{}])[0].get('forwardingNumbers', [])
+        if fwd_nums:
+            target = fwd_nums[0]
+            if 'phoneNumber' in target:
+                parsed['call_action'] = "ForwardExternal"
+                parsed['action_target'] = target['phoneNumber']
+            elif 'extension' in target:
+                parsed['call_action'] = "ForwardExtension"
+                parsed['action_target'] = target['extension'].get('id')
+    elif parsed['call_action'] == 'TakeMessagesOnly':
+        parsed['call_action'] = 'Voicemail'
+    
+    return parsed
+
+def _build_rule_api_body(rule_data):
+    """Constructs the complex API request body for creating/updating a custom rule."""
+    body = {
+        "enabled": str(rule_data.get("Enabled", "true")).lower() == 'true',
+        "type": "Custom",
+        "name": rule_data.get("RuleName")
+    }
+
+    schedule_type = rule_data.get("ScheduleType")
+    if schedule_type == "DateRange":
+        details = rule_data.get("ScheduleDetails", "").split(" to ")
+        if len(details) == 2:
+            body["schedule"] = {"ranges": [{"from": details[0].strip(), "to": details[1].strip()}]}
+
+    call_action = rule_data.get("CallAction")
+    action_target = rule_data.get("ActionTarget")
+    body["callHandlingAction"] = call_action
+
+    if call_action == "ForwardExternal":
+        body["callHandlingAction"] = "ForwardCalls"
+        body["forwarding"] = {"rules": [{"forwardingNumbers": [{"phoneNumber": action_target}]}]}
+    elif call_action == "ForwardExtension":
+        body["callHandlingAction"] = "ForwardCalls"
+        body["forwarding"] = {"rules": [{"forwardingNumbers": [{"extension": {"id": action_target}}]}]}
+    elif call_action == "Voicemail":
+        body["callHandlingAction"] = "TakeMessagesOnly"
+    
+    return body

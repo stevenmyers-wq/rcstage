@@ -1,0 +1,26 @@
+/* webapp/static/css/bulk_hours.css */
+/* Styling for the new bulk edit panel */
+.bulk-edit-panel {
+    background-color: #f0f9ff; /* Light blue background */
+    border: 1px solid #bde0fe;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Style for table rows that are selected via checkbox */
+.selected-row {
+    background-color: #fffbeb !important; /* Light yellow background */
+}
+
+/* Make the table header sticky for better scrolling on large lists */
+.table-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
