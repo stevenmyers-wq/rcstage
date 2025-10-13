@@ -1,3 +1,4 @@
+# webapp/__init__.py
 import os
 from flask import Flask
 from dotenv import load_dotenv
@@ -33,6 +34,10 @@ def create_app():
         # SIP Fetcher routes
         from .sip_fetcher import routes as sip_fetcher_routes
         app.register_blueprint(sip_fetcher_routes.sip_fetcher_bp)
+        
+        # Bulk Hours Tool routes
+        from .bulk_hours import routes as bulk_hours_routes
+        app.register_blueprint(bulk_hours_routes.bulk_hours_bp)
 
         # (When you add another new feature, you'll import and register its blueprint here)
 
