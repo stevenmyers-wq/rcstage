@@ -38,6 +38,10 @@ def create_app():
         # Bulk Hours Tool routes
         from .bulk_hours import routes as bulk_hours_routes
         app.register_blueprint(bulk_hours_routes.bulk_hours_bp)
+        
+        # Personal Address Book routes
+        from .personal_address_book import routes as personal_address_book_routes
+        app.register_blueprint(personal_address_book_routes.personal_address_book_bp)
 
         # (When you add another new feature, you'll import and register its blueprint here)
 
