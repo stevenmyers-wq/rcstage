@@ -80,6 +80,7 @@
                         ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'),
                         ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
                         ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
+                        ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
                         ('live_events', 'Live Events', 'Real-time subscription listener')
                     ] %}
                     
@@ -104,6 +105,8 @@
                     {% include 'includes/device_swap_tab.html' %}
                 {% elif current_tab == 'bulk_opening' %}
                     {% include 'includes/bulk_opening_tab.html' %}
+                {% elif current_tab == 'personal_address_book' %}
+                    {% include 'includes/personal_address_book_tab.html' %}
                 {% elif current_tab == 'call_flow' %}
                     {% include 'includes/call_flow_tab.html' %}
                 {% elif current_tab == 'live_events' %}

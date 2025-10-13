@@ -1,0 +1,109 @@
+<div class="container-fluid mt-3">
+    <h4>Multi-User Personal Address Book Updater</h4>
+    <p>Centrally manage personal contacts for multiple users. Fetch users, select them, then view and manage their combined contact list.</p>
+
+    <div class="card">
+        <div class="card-header">
+            <strong>Step 1: Select Users</strong>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-name" placeholder="First/Last Name..."></div>
+                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-ext" placeholder="Extension No..."></div>
+                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-dept" placeholder="Department..."></div>
+                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-site" placeholder="Site..."></div>
+                <div class="col-md-4">
+                    <button class="btn btn-primary" id="pab-fetch-users-btn">
+                        <i class="fas fa-users"></i> Fetch All Users
+                    </button>
+                    <button class="btn btn-success" id="pab-get-contacts-btn" disabled>
+                        <i class="fas fa-address-book"></i> Get Contacts for Selected
+                    </button>
+                </div>
+            </div>
+            <div id="pab-user-list-container" class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-sm table-striped table-hover">
+                    <thead class="table-dark" style="position: sticky; top: 0;">
+                        <tr>
+                            <th><input type="checkbox" id="pab-select-all-users"></th>
+                            <th>Name</th>
+                            <th>Extension</th>
+                            <th>Department</th>
+                            <th>Site</th>
+                            <th>Email</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pab-user-list-tbody">
+                        </tbody>
+                </table>
+            </div>
+            <div id="pab-user-loader" class="text-center my-3" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Fetching users...</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-4" id="pab-contacts-section" style="display: none;">
+        <div class="card-header">
+            <strong>Step 2: Manage Contacts</strong>
+        </div>
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <button class="btn btn-danger" id="pab-delete-contacts-btn" disabled>
+                        <i class="fas fa-trash-alt"></i> Delete Selected Contacts
+                    </button>
+                    <button class="btn btn-info" id="pab-export-csv-btn">
+                        <i class="fas fa-file-csv"></i> Export Unique List to CSV
+                    </button>
+                </div>
+                <div class="d-flex align-items-center">
+                    <input class="form-control me-2" type="file" id="pab-csv-upload-input" accept=".csv">
+                    <select id="pab-upload-action" class="form-select me-2" style="width: auto;">
+                        <option value="add">Add</option>
+                        <option value="remove">Remove</option>
+                        <option value="update">Update (Sync)</option>
+                    </select>
+                    <button class="btn btn-warning" id="pab-upload-csv-btn">
+                        <i class="fas fa-upload"></i> Upload
+                    </button>
+                </div>
+            </div>
+            <div id="pab-contact-list-container" class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                 <table class="table table-sm table-striped table-hover">
+                    <thead class="table-dark" style="position: sticky; top: 0;">
+                        <tr>
+                            <th><input type="checkbox" id="pab-select-all-contacts"></th>
+                            <th>First Name</th>
+                            <th>Last Name</th>
+                            <th>Business Phone</th>
+                            <th>Home Phone</th>
+                            <th>Mobile Phone</th>
+                            <th>Email</th>
+                            <th>Associated Users</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pab-contact-list-tbody">
+                        </tbody>
+                </table>
+            </div>
+             <div id="pab-contact-loader" class="text-center my-3" style="display: none;">
+                <div class="spinner-border text-success" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p id="pab-contact-loader-text">Fetching contacts...</p>
+            </div>
+            <div id="pab-progress-container" class="my-3" style="display: none;">
+                <p id="pab-progress-label">Uploading contacts...</p>
+                <div class="progress" role="progressbar" aria-label="Upload progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                    <div id="pab-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/personal_address_book.js') }}"></script>
