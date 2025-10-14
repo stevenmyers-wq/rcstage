@@ -42,6 +42,10 @@ def create_app():
         # Personal Address Book routes
         from .personal_address_book import routes as personal_address_book_routes
         app.register_blueprint(personal_address_book_routes.personal_address_book_bp)
+        
+        # Live Events routes
+        from .live_events import routes as live_events_routes
+        app.register_blueprint(live_events_routes.live_events_bp)
 
         # (When you add another new feature, you'll import and register its blueprint here)
 

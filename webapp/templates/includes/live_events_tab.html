@@ -1,24 +1,69 @@
-<div class="space-y-4">
-<h3 class="text-xl font-bold mb-2 text-blue-700">Live Events Listener</h3>
-
-<div class="card p-4 bg-gray-50 border-l-4 border-yellow-500 text-sm text-gray-700">
-    <p class="font-bold mb-2">Instructions & Notes:</p>
-    <ul class="list-disc list-inside space-y-2">
-        <li>**Prerequisite:** RC Account must be connected.</li>
-        <li>**Function:** Creates a persistent Webhook or WebSocket subscription to receive real-time notifications (e.g., presence updates, call logs).</li>
-        <li>**API Endpoint:** <code>POST /restapi/v1.0/subscription</code> (for creating the subscription).</li>
-        <li>**Rate Limit:** Low (one initial call to subscribe).</li>
-        <li>**Execution Time:** Instant (setup) to Continuous (listening).</li>
-    </ul>
-</div>
-
-<div class="card space-y-3">
-    <button type="button" class="bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition">
-        Start Live Event Subscription
-    </button>
-    <div id="live-events-log" class="mt-4 p-4 border border-gray-200 h-64 bg-black text-green-400 font-mono text-xs overflow-y-scroll rounded-lg">
-        > Waiting for connection...
+<div class="container-fluid h-100 d-flex flex-column p-4 tool-tab-content" id="live-events-listener">
+    <script src="https://cdn.pubnub.com/sdk/javascript/pubnub.7.2.2.min.js"></script>
+    
+    <script src="{{ url_for('static', filename='js/live_events.js') }}"></script>
+    
+    <div class="row">
+        <div class="col-md-5 d-flex flex-column">
+            <h5><strong><i class="bi bi-broadcast-pin me-2"></i>Create New Subscription</strong></h5>
+            <div class="card p-3 flex-grow-1">
+                <div class="mb-3">
+                    <label for="subscriptionType" class="form-label">Subscription Type:</label>
+                    <select class="form-select" id="subscriptionType">
+                        <option value="accountTelephony">Account Telephony Sessions</option>
+                        <option value="extensionTelephony">Specific Extension Telephony Sessions</option>
+                        <option value="accountPresence">Account Presence</option>
+                        <option value="extensionPresence">Specific Extension Presence</option>
+                    </select>
+                </div>
+                <div class="mb-3" id="extensionIdInputContainer" style="display: none;">
+                    <label for="extensionId" class="form-label">Extension ID or Number:</label>
+                    <input type="text" class="form-control" id="extensionId" placeholder="Enter Extension ID">
+                </div>
+                <div class="d-flex align-items-center mt-auto">
+                    <button class="btn btn-success me-2" id="createSubscriptionBtn">
+                        <i class="bi bi-play-circle me-1"></i> Start Listening
+                    </button>
+                    <button class="btn btn-danger" id="disconnectBtn" disabled>
+                        <i class="bi bi-stop-circle me-1"></i> Disconnect
+                    </button>
+                    <div id="connectionStatus" class="ms-3">
+                        <span class="badge bg-secondary">Status: Idle</span>
+                    </div>
+                </div>
+            </div>
+            <h5 class="mt-4"><strong><i class="bi bi-card-list me-2"></i>Active Subscriptions</strong></h5>
+            <div class="card p-3 flex-grow-1">
+                 <button class="btn btn-primary btn-sm mb-3" id="refreshSubscriptionsBtn" style="max-width: 150px;">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Refresh List
+                </button>
+                <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Filters</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activeSubscriptionsTable">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-7 d-flex flex-column">
+            <h5><strong><i class="bi bi-terminal me-2"></i>Real-Time Event Log</strong></h5>
+            <div class="card p-3 flex-grow-1 d-flex flex-column">
+                <div class="d-flex mb-2">
+                    <input type="text" class="form-control form-control-sm me-2" id="logSearchInput" placeholder="Search log...">
+                    <button class="btn btn-info btn-sm me-2" id="saveLogBtn" title="Save log to file"><i class="bi bi-download"></i></button>
+                    <button class="btn btn-secondary btn-sm" id="clearLogBtn" title="Clear log"><i class="bi bi-trash"></i></button>
+                </div>
+                <pre id="eventLog" class="flex-grow-1 p-2 bg-gray-900 text-white rounded-lg" style="font-family: 'Courier New', monospace; font-size: 0.8rem; overflow-y: scroll; min-height: 400px;"></pre>
+            </div>
+        </div>
     </div>
-</div>
-
 </div>
