@@ -48,7 +48,7 @@ def create_app():
         app.register_blueprint(live_events_routes.live_events_bp)
 
         # Custom Rule routes
-        from webapp.custom_rules.routes import custom_rules_bp
+        from .custom_rules.routes import custom_rules_bp
         app.register_blueprint(custom_rules_bp)
 
         # (When you add another new feature, you'll import and register its blueprint here)
