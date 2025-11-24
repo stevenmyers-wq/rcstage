@@ -4,17 +4,16 @@ import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, send_file, session
 from ringcentral import SDK
+from webapp.auth_utils import require_rc_token
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
-# --- HELPER FUNCTIONS (Previously in utils.py) ---
+# --- HELPER: Time Parser ---
 def parse_time_range(range_str):
-    """Parses '8:00 AM - 5:00 PM' into API format."""
     if not isinstance(range_str, str) or '-' not in range_str:
         return None
     try:
         start_str, end_str = range_str.split('-')
-        # Adjust format if your CSV uses different time formats
         fmt_in = "%I:%M %p" 
         fmt_out = "%H:%M"
         start_time = datetime.strptime(start_str.strip(), fmt_in).strftime(fmt_out)
@@ -23,8 +22,8 @@ def parse_time_range(range_str):
     except:
         return None
 
+# --- HELPER: Payload Builder ---
 def build_rule_payload(row, ext_id):
-    """Constructs the API payload from a CSV row."""
     rule_name = row.get('Rule Name', f'Custom Rule {datetime.now()}')
     enabled = True if str(row.get('Enabled')).lower() == 'yes' else False
     
@@ -33,17 +32,14 @@ def build_rule_payload(row, ext_id):
         "callers": [], "calledNumbers": [], "schedule": {}
     }
 
-    # Conditions
     if pd.notna(row.get('Caller ID')):
         payload['callers'] = [{'callerId': c.strip()} for c in str(row.get('Caller ID')).split(',') if c.strip()]
     if pd.notna(row.get('Called Number')):
         payload['calledNumbers'] = [{'phoneNumber': n.strip()} for n in str(row.get('Called Number')).split(',') if n.strip()]
 
-    # Schedule
     schedule = {'weeklyRanges': {}}
     days_map = {'Monday': 'monday', 'Tuesday': 'tuesday', 'Wednesday': 'wednesday',
                 'Thursday': 'thursday', 'Friday': 'friday', 'Saturday': 'saturday', 'Sunday': 'sunday'}
-    
     has_schedule = False
     for col, api_key in days_map.items():
         if col in row and pd.notna(row[col]):
@@ -51,11 +47,9 @@ def build_rule_payload(row, ext_id):
             if ranges:
                 schedule['weeklyRanges'][api_key] = ranges
                 has_schedule = True
-    
     if has_schedule:
         payload['schedule'] = schedule
 
-    # Actions
     action_map = {
         'Transfer to External': 'UnconditionalForwarding',
         'Send to Voicemail': 'TakeMessagesOnly',
@@ -69,26 +63,28 @@ def build_rule_payload(row, ext_id):
     
     return payload, api_action
 
-# --- AUTHENTICATION HELPER ---
-def get_platform():
-    """Recreates the RingCentral SDK platform object using the user's session token."""
-    sdk = SDK(
-        os.environ.get('RC_CLIENT_ID'),
-        os.environ.get('RC_CLIENT_SECRET'),
-        os.environ.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
-    )
+# --- HELPER: Auth & RC ---
+def get_platform(client_id, client_secret):
+    """
+    Initializes SDK using the credentials provided in the form,
+    then applies the session token.
+    """
+    # Use the session Server URL (Sandbox/Prod) or default to Prod
+    server_url = session.get('rc_server_url', 'https://platform.ringcentral.com')
+    
+    # Initialize SDK with the FORM provided credentials
+    # If secret is empty (PKCE), we pass empty string
+    sdk = SDK(client_id, client_secret or '', server_url)
     platform = sdk.platform()
     
-    # Retrieve token from session (supporting common naming conventions)
-    stored_token = session.get('tokens') or session.get('oauth_token') or session.get('token')
-    
+    # Apply the User's Logged-in Token
+    stored_token = session.get('tokens') or session.get('oauth_token') or session.get('rc_access_token')
     if stored_token:
         platform.auth().set_data(stored_token)
         
     return platform
 
 def get_extension_id(platform, extension_number):
-    """Fetches the internal ID for a given extension number."""
     try:
         resp = platform.get('/restapi/v1.0/account/~/extension', {'extensionNumber': extension_number})
         records = resp.json().get('records', [])
@@ -96,16 +92,32 @@ def get_extension_id(platform, extension_number):
     except:
         return None
 
-# --- API ROUTES ---
+# --- ROUTES ---
 
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
+@require_rc_token
 def update_rules():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
+    # 1. Get Credentials from Form
+    client_id = request.form.get('client_id')
+    client_secret = request.form.get('client_secret')
+
+    if not client_id:
+        return jsonify({"error": "Client ID is required."}), 400
+
+    # 2. Initialize Platform
+    try:
+        platform = get_platform(client_id, client_secret)
+        if not platform.logged_in():
+             return jsonify({"error": "Session token invalid. Please log in again."}), 401
+    except Exception as e:
+        return jsonify({"error": f"SDK Init Error: {str(e)}"}), 500
+
+    # 3. Read File
     file = request.files['file']
     try:
-        # Determine file type
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
         else:
@@ -113,111 +125,71 @@ def update_rules():
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
-    # --- 1. AUTHENTICATION CHECK ---
-    try:
-        platform = get_platform()
-        if not platform.logged_in():
-            return jsonify({"error": "Session expired. Please refresh the page and log in again."}), 401
-    except Exception as e:
-        return jsonify({"error": f"Authentication System Error: {str(e)}"}), 500
-
-    # --- 2. PROCESS ROWS ---
+    # 4. Process Rows
     results = []
     
     for index, row in df.iterrows():
         ext_num = row.get('Ext Number')
-        
-        # Skip empty rows
         if pd.isna(ext_num): continue
 
-        # Resolve Extension ID
         ext_id = get_extension_id(platform, ext_num)
         if not ext_id:
             results.append(f"Row {index}: ⚠️ Extension {ext_num} not found.")
             continue
 
-        # Build Payload
         try:
             payload, action_type = build_rule_payload(row, ext_id)
 
-            # Resolve Action Targets (Requires API calls for IDs)
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                 payload['unconditionalForwarding'] = {'phoneNumber': str(row.get('External Number'))}
-            
             elif action_type == 'TransferToExtension' and pd.notna(row.get('Transfer Extension')):
                 target_id = get_extension_id(platform, row.get('Transfer Extension'))
                 if target_id: 
                     payload['transfer'] = {'extension': {'id': target_id}}
                 else:
-                    results.append(f"Row {index}: ⚠️ Target Extension {row.get('Transfer Extension')} not found.")
+                    results.append(f"⚠️ Target Ext {row.get('Transfer Extension')} not found.")
                     continue
-                    
             elif action_type == 'TakeMessagesOnly' and pd.notna(row.get('Voicemail Recipient')):
                 vm_id = get_extension_id(platform, row.get('Voicemail Recipient'))
                 if vm_id: 
                     payload['voicemail'] = {'recipient': {'id': vm_id}}
 
-            # Send to RC API
             rule_id = row.get('Rule ID')
             if pd.notna(rule_id) and str(rule_id).strip():
-                # Update existing
                 platform.put(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}", payload)
                 results.append(f"✅ Updated Rule for Ext {ext_num}")
             else:
-                # Create new
                 platform.post(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule", payload)
                 results.append(f"✅ Created Rule for Ext {ext_num}")
                 
         except Exception as e:
-            results.append(f"❌ Error processing Ext {ext_num}: {str(e)}")
+            results.append(f"❌ Error Ext {ext_num}: {str(e)}")
 
     return jsonify({"logs": results})
 
 @custom_rules_bp.route('/template', methods=['GET'])
 def download_template():
-    # Define the exact columns your script expects
     columns = [
         'Ext Number', 'Ext Name', 'Rule Name', 'Rule ID', 'Enabled', 
         'Caller ID', 'Called Number', 'Work or After Hours', 
         'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 
         'Specific Dates', 'Action', 'Transfer Extension', 'External Number', 'Voicemail Recipient'
     ]
-
-    # Create an example row
     example_data = [{
-        'Ext Number': '101',
-        'Ext Name': 'John Doe',
-        'Rule Name': 'Holiday Rule',
-        'Rule ID': '', 
-        'Enabled': 'Yes',
-        'Caller ID': '1234567890',
-        'Called Number': '',
-        'Work or After Hours': '',
-        'Monday': '9:00 AM - 5:00 PM',
-        'Tuesday': '9:00 AM - 5:00 PM',
-        'Action': 'Transfer to External',
-        'External Number': '15550001234'
+        'Ext Number': '101', 'Ext Name': 'John Doe', 'Rule Name': 'Holiday Rule',
+        'Rule ID': '', 'Enabled': 'Yes', 'Caller ID': '1234567890',
+        'Called Number': '', 'Monday': '9:00 AM - 5:00 PM',
+        'Action': 'Transfer to External', 'External Number': '15550001234'
     }]
-
-    # Create DataFrame
+    
     df = pd.DataFrame(example_data, columns=columns)
-
-    # Create an in-memory Excel file
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Template')
-        
-        # Auto-adjust column widths
         worksheet = writer.sheets['Template']
         for column_cells in worksheet.columns:
             length = max(len(str(cell.value) or "") for cell in column_cells)
             worksheet.column_dimensions[column_cells[0].column_letter].width = length + 2
-
     output.seek(0)
     
-    return send_file(
-        output, 
-        download_name="custom_rules_template.xlsx", 
-        as_attachment=True, 
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    return send_file(output, download_name="custom_rules_template.xlsx", as_attachment=True, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
