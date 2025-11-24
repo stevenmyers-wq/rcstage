@@ -3,20 +3,18 @@
         <div class="card-body">
             <div class="flex justify-between items-center mb-4">
                 <h5 class="text-xl font-bold text-gray-800">Bulk Custom Rule Updater</h5>
-                
                 <a href="{{ url_for('custom_rules.download_template') }}" class="bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 px-4 rounded inline-flex items-center transition">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Download .xlsx Template
+                    Download Template
                 </a>
             </div>
 
             <p class="text-sm text-gray-600 mb-4">
-                Upload an Excel file (.xlsx) or CSV to bulk create/update answering rules. 
+                Upload an Excel/CSV file to update answering rules. 
                 Leave <strong>Rule ID</strong> empty to create new rules.
             </p>
 
             <form id="rulesUploadForm" class="space-y-4">
-                
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-gray-200">
                     <div>
                         <label for="custom_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
@@ -63,29 +61,21 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     try {
         const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
         
-        // 1. Check if Server crashed (HTML response)
+        // Check for HTML Error Response
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") === -1) {
             const text = await res.text();
             logDiv.className = "mt-4 p-4 bg-red-50 rounded border border-red-200 font-mono text-sm text-red-800 h-64 overflow-y-auto whitespace-pre-line";
-            
-            let cleanText = text;
-            if (text.includes('<title>')) {
-                const match = text.match(/<title>(.*?)<\/title>/);
-                if (match) cleanText = `Server Error: ${match[1]}`;
-            }
-            logDiv.textContent = `❌ Server returned HTML instead of JSON.\n\n${cleanText}\n\n(Check Cloud Run Logs for details)`;
+            logDiv.textContent = `❌ Server Error (HTML Response):\n${text.substring(0, 500)}...`;
             throw new Error("Server returned HTML");
         }
 
-        // 2. Parse JSON
         const data = await res.json();
         
         if (res.ok) {
             logDiv.textContent = data.logs ? data.logs.join('\n') : "Success!";
             logDiv.className = "mt-4 p-4 bg-green-50 rounded border border-green-200 font-mono text-sm text-green-800 h-64 overflow-y-auto whitespace-pre-line";
         } else {
-            // 3. Show Logic Error (Auth failed, etc)
             logDiv.className = "mt-4 p-4 bg-red-50 rounded border border-red-200 font-mono text-sm text-red-800 h-64 overflow-y-auto whitespace-pre-line";
             const details = data.details || data.error || "Unknown Error";
             logDiv.textContent = `❌ Error: ${details}`;
