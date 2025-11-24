@@ -81,7 +81,8 @@
                         ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
                         ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
                         ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
-                        ('live_events', 'Live Events', 'Real-time subscription listener')
+                        ('live_events', 'Live Events', 'Real-time subscription listener'),
+                        ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV')
                     ] %}
                     
                     {% for tab_id, tab_name, tab_desc in tabs %}
@@ -111,6 +112,8 @@
                     {% include 'includes/call_flow_tab.html' %}
                 {% elif current_tab == 'live_events' %}
                     {% include 'includes/live_events_tab.html' %}
+                {% elif current_tab == 'custom_rules' %}
+                    {% include 'includes/custom_rules_tab.html' %}
                 {% else %}
                     <p class="text-gray-500">Select a tool from the tabs above to begin.</p>
                 {% endif %}
