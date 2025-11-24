@@ -16,6 +16,20 @@
             </p>
 
             <form id="rulesUploadForm" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-gray-200">
+                    <div>
+                        <label for="custom_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
+                        <input type="text" id="custom_client_id" name="client_id" required 
+                               class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
+                               placeholder="Enter your App Client ID">
+                    </div>
+                    <div>
+                        <label for="custom_client_secret" class="block text-sm font-medium text-gray-700">Client Secret</label>
+                        <input type="password" id="custom_client_secret" name="client_secret" 
+                               class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
+                               placeholder="Optional (if using PKCE)">
+                    </div>
+                </div>
                 <div>
                     <label for="ruleFile" class="block text-sm font-medium text-gray-700">Select File</label>
                     <input class="mt-1 block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none p-2" 
@@ -43,6 +57,8 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     logDiv.textContent = 'Starting upload...';
 
     try {
+        // Note: The URL assumes you did NOT set a url_prefix in __init__.py. 
+        // If you did, change this to '/custom_rules/api/update_rules'
         const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
         const data = await res.json();
         
@@ -59,4 +75,3 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     btn.textContent = 'Process Rules';
 });
 </script>
-
