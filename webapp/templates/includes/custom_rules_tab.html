@@ -16,18 +16,25 @@
             </p>
 
             <form id="rulesUploadForm" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-gray-200">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded border border-gray-200">
                     <div>
                         <label for="custom_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
                         <input type="text" id="custom_client_id" name="client_id" required 
                                class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                               placeholder="Enter your App Client ID">
+                               placeholder="Enter Client ID">
                     </div>
                     <div>
                         <label for="custom_client_secret" class="block text-sm font-medium text-gray-700">Client Secret</label>
                         <input type="password" id="custom_client_secret" name="client_secret" 
                                class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                               placeholder="Optional (if using PKCE)">
+                               placeholder="Optional (if PKCE)">
+                    </div>
+                    <div>
+                        <label for="custom_server_url" class="block text-sm font-medium text-gray-700">Environment</label>
+                        <select id="custom_server_url" name="server_url" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="https://platform.ringcentral.com">Production</option>
+                            <option value="https://platform.devtest.ringcentral.com">Sandbox</option>
+                        </select>
                     </div>
                 </div>
                 <div>
@@ -57,8 +64,6 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     logDiv.textContent = 'Starting upload...';
 
     try {
-        // Note: The URL assumes you did NOT set a url_prefix in __init__.py. 
-        // If you did, change this to '/custom_rules/api/update_rules'
         const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
         const data = await res.json();
         
