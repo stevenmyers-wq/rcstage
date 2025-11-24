@@ -64,21 +64,27 @@ def build_rule_payload(row, ext_id):
     return payload, api_action
 
 # --- HELPER: Auth & RC ---
-def get_platform(client_id, client_secret):
+def get_platform(client_id, client_secret, server_url):
     """
-    Initializes SDK using the credentials provided in the form,
-    then applies the session token.
+    Initializes SDK using the credentials provided in the form.
+    Handles token format (dictionary vs string).
     """
-    # Use the session Server URL (Sandbox/Prod) or default to Prod
-    server_url = session.get('rc_server_url', 'https://platform.ringcentral.com')
-    
-    # Initialize SDK with the FORM provided credentials
-    # If secret is empty (PKCE), we pass empty string
+    # Initialize SDK
+    # If secret is None/Empty, pass '' for PKCE support
     sdk = SDK(client_id, client_secret or '', server_url)
     platform = sdk.platform()
     
-    # Apply the User's Logged-in Token
-    stored_token = session.get('tokens') or session.get('oauth_token') or session.get('rc_access_token')
+    # 1. Try to get the Full Token Object (Best for Refreshes)
+    stored_token = session.get('tokens')
+    
+    # 2. If missing, try to construct it from the simple Access Token string
+    if not stored_token:
+        simple_token = session.get('rc_access_token') or session.get('oauth_token')
+        if simple_token:
+            # We wrap it in a dict because the SDK expects {'access_token': '...'}
+            stored_token = {'access_token': simple_token}
+    
+    # 3. Apply to Platform
     if stored_token:
         platform.auth().set_data(stored_token)
         
@@ -103,15 +109,20 @@ def update_rules():
     # 1. Get Credentials from Form
     client_id = request.form.get('client_id')
     client_secret = request.form.get('client_secret')
+    # Default to Prod if missing, but Form should provide it
+    server_url = request.form.get('server_url', 'https://platform.ringcentral.com')
 
     if not client_id:
         return jsonify({"error": "Client ID is required."}), 400
 
     # 2. Initialize Platform
     try:
-        platform = get_platform(client_id, client_secret)
+        platform = get_platform(client_id, client_secret, server_url)
+        
+        # Explicit check: If token is missing/invalid, this will fail
         if not platform.logged_in():
-             return jsonify({"error": "Session token invalid. Please log in again."}), 401
+             return jsonify({"error": "Session token invalid. 1. Check if you are logged in. 2. Ensure Environment (Prod/Sandbox) matches your account."}), 401
+             
     except Exception as e:
         return jsonify({"error": f"SDK Init Error: {str(e)}"}), 500
 
