@@ -43,7 +43,7 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     logDiv.textContent = 'Starting upload...';
 
     try {
-        const res = await fetch('/custom_rules/api/update_rules', { method: 'POST', body: formData });
+        const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
         const data = await res.json();
         
         if (data.logs) {
@@ -59,3 +59,4 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     btn.textContent = 'Process Rules';
 });
 </script>
+
