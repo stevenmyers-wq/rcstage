@@ -4,6 +4,11 @@ import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, send_file, session
 from ringcentral import SDK
+# Import specific RC exception to get better error messages
+try:
+    from ringcentral.http.api_exception import RestException
+except ImportError:
+    RestException = Exception
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
@@ -66,7 +71,6 @@ def build_rule_payload(row, ext_id):
 def get_platform(client_id, client_secret):
     """
     Initializes SDK using the credentials provided in the form.
-    Strictly uses Production URL.
     """
     server_url = 'https://platform.ringcentral.com'
     
@@ -81,12 +85,13 @@ def get_platform(client_id, client_secret):
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
-            # Wrap simple string into a dict for the SDK
             stored_token = {'access_token': simple_token, 'expires_in': 3600}
     
-    # 3. Apply to Platform
-    if stored_token:
-        platform.auth().set_data(stored_token)
+    # 3. CRITICAL CHECK: If no token found, stop immediately
+    if not stored_token:
+        raise Exception("No Auth Token found. The server restart cleared your session. Please go to 'PKCE Setup' and Log In again.")
+
+    platform.auth().set_data(stored_token)
         
     return platform
 
@@ -105,17 +110,32 @@ def update_rules():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    # 1. Get Credentials from Form
     client_id = request.form.get('client_id')
     client_secret = request.form.get('client_secret')
 
     if not client_id:
         return jsonify({"error": "Client ID is required."}), 400
 
-    # 2. Initialize Platform
-    platform = get_platform(client_id, client_secret)
+    # --- 1. INITIALIZE & AUTH CHECK ---
+    try:
+        platform = get_platform(client_id, client_secret)
+        # Test the connection immediately
+        platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
+        
+    except RestException as re:
+        # Catch RingCentral specific errors (shows the JSON response)
+        return jsonify({
+            "error": "RingCentral API Error",
+            "details": f"Status: {re.status}\nMessage: {re.message}"
+        }), 401
+    except Exception as e:
+        # Catch Python/Session errors
+        return jsonify({
+            "error": "Authentication Failed",
+            "details": str(e)
+        }), 401
 
-    # 3. Read File
+    # --- 2. FILE PROCESSING ---
     file = request.files['file']
     try:
         if file.filename.endswith('.csv'):
@@ -125,27 +145,8 @@ def update_rules():
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
-    # 4. Process Rows
     results = []
     
-    # --- TEST CONNECTION ON FIRST ROW ---
-    try:
-        # Simple call to verify token works
-        platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
-    except Exception as e:
-         return jsonify({
-             "error": "Authentication Failed.", 
-             "details": (
-                 f"RingCentral rejected the connection.\n"
-                 f"Attempted with Client ID: {client_id}\n"
-                 f"Target Environment: Production\n"
-                 f"Error Message: {str(e)}\n\n"
-                 "Troubleshooting:\n"
-                 "1. Ensure Client ID matches the one used to log in.\n"
-                 "2. Try logging out and logging in again."
-             )
-         }), 401
-
     for index, row in df.iterrows():
         ext_num = row.get('Ext Number')
         if pd.isna(ext_num): continue
