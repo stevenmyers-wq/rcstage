@@ -1,3 +1,5 @@
+import io
+from flask import send_file
 from flask import Blueprint, request, jsonify, render_template
 import pandas as pd
 from .utils import build_rule_payload
@@ -65,5 +67,6 @@ def update_rules():
                 results.append(f"✅ Created for {ext_num}")
         except Exception as e:
             results.append(f"❌ Error {ext_num}: {str(e)}")
+
 
     return jsonify({"logs": results})
