@@ -67,27 +67,28 @@ def build_rule_payload(row, ext_id):
 def get_platform(client_id, client_secret):
     """
     Initializes SDK using the credentials provided in the form.
+    Strictly Production.
     """
+    # 1. HARDCODED PRODUCTION URL
     server_url = 'https://platform.ringcentral.com'
     
-    # Initialize SDK (Strip spaces from ID/Secret just in case)
+    # Initialize SDK (Clean spaces from inputs)
     sdk = SDK(client_id.strip(), (client_secret or '').strip(), server_url)
     platform = sdk.platform()
     
-    # 1. Try to get the Full Token Object
+    # 2. Get Token (Aggressively Clean Spaces)
     stored_token = session.get('tokens')
     
-    # Clean the token inside the dictionary
+    # Clean inside the dict object
     if stored_token and isinstance(stored_token, dict) and 'access_token' in stored_token:
         stored_token['access_token'] = stored_token['access_token'].strip()
     
-    # 2. If missing, try to construct it from the simple Access Token string
+    # Fallback to simple string
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
             stored_token = {'access_token': simple_token.strip(), 'expires_in': 3600}
     
-    # 3. Check and Set
     if not stored_token:
         raise Exception("No Auth Token found. Please go to 'PKCE Setup' and Log In again.")
 
@@ -101,7 +102,6 @@ def get_extension_id(platform, extension_number):
         records = resp.json().get('records', [])
         return records[0]['id'] if records else None
     except Exception as e:
-        # Let the main loop handle exceptions
         raise e 
 
 # --- ROUTES ---
@@ -120,31 +120,30 @@ def update_rules():
     # --- 1. INITIALIZE & AUTH CHECK ---
     try:
         platform = get_platform(client_id, client_secret)
-        # Test the connection immediately
+        # Test connection strictly
         platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
         
     except ApiException as api_err:
-        # --- FIXED ERROR HANDLING ---
-        # Safely extract status and message from the response object
-        status_code = "Unknown"
-        error_message = str(api_err)
+        # --- FIXED ERROR EXTRACTION ---
+        status = "Unknown"
+        msg = str(api_err)
         
-        if hasattr(api_err, 'response') and api_err.response is not None:
-             status_code = getattr(api_err.response, 'status_code', 'Unknown')
+        # Safely extract real RC error details
+        if hasattr(api_err, 'response'):
+             status = getattr(api_err.response, 'status_code', 'Unknown')
              try:
-                 # Try to read the full error text from RingCentral
-                 error_message = api_err.response.text
-             except:
+                 msg = api_err.response.text 
+             except: 
                  pass
                  
         return jsonify({
-            "error": "RingCentral API Error",
-            "details": f"Status: {status_code}\nResponse: {error_message}"
+            "error": "RingCentral Rejected Connection",
+            "details": f"Status: {status}\nResponse: {msg}\n\nHint: Check if Client ID matches your login."
         }), 401
         
     except Exception as e:
         return jsonify({
-            "error": "Authentication Failed",
+            "error": "System/Auth Error",
             "details": str(e)
         }), 401
 
