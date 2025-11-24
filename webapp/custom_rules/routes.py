@@ -81,14 +81,18 @@ def get_platform(client_id, client_secret):
     # 1. Try to get the Full Token Object
     stored_token = session.get('tokens')
     
+    # --- CRITICAL FIX: Clean the token inside the dictionary ---
+    if stored_token and isinstance(stored_token, dict) and 'access_token' in stored_token:
+        # This removes the leading space that caused the crash
+        stored_token['access_token'] = stored_token['access_token'].strip()
+    
     # 2. If missing, try to construct it from the simple Access Token string
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
-            # FIX: .strip() prevents "Invalid leading whitespace" header errors
             stored_token = {'access_token': simple_token.strip(), 'expires_in': 3600}
     
-    # 3. CRITICAL CHECK: If no token found, stop immediately
+    # 3. Check and Set
     if not stored_token:
         raise Exception("No Auth Token found. Please go to 'PKCE Setup' and Log In again.")
 
@@ -124,13 +128,11 @@ def update_rules():
         platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
         
     except RestException as re:
-        # Catch RingCentral specific errors
         return jsonify({
             "error": "RingCentral API Error",
             "details": f"Status: {re.status}\nMessage: {re.message}"
         }), 401
     except Exception as e:
-        # Catch Python/Session errors (like the Header Error)
         return jsonify({
             "error": "Authentication Failed",
             "details": str(e)
