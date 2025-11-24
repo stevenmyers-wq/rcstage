@@ -4,11 +4,7 @@ import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, send_file, session
 from ringcentral import SDK
-# Import specific RC exception to get better error messages
-try:
-    from ringcentral.http.api_exception import RestException
-except ImportError:
-    RestException = Exception
+from ringcentral.http.api_exception import ApiException
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
@@ -81,9 +77,8 @@ def get_platform(client_id, client_secret):
     # 1. Try to get the Full Token Object
     stored_token = session.get('tokens')
     
-    # --- CRITICAL FIX: Clean the token inside the dictionary ---
+    # Clean the token inside the dictionary
     if stored_token and isinstance(stored_token, dict) and 'access_token' in stored_token:
-        # This removes the leading space that caused the crash
         stored_token['access_token'] = stored_token['access_token'].strip()
     
     # 2. If missing, try to construct it from the simple Access Token string
@@ -106,6 +101,7 @@ def get_extension_id(platform, extension_number):
         records = resp.json().get('records', [])
         return records[0]['id'] if records else None
     except Exception as e:
+        # Let the main loop handle exceptions
         raise e 
 
 # --- ROUTES ---
@@ -127,11 +123,25 @@ def update_rules():
         # Test the connection immediately
         platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
         
-    except RestException as re:
+    except ApiException as api_err:
+        # --- FIXED ERROR HANDLING ---
+        # Safely extract status and message from the response object
+        status_code = "Unknown"
+        error_message = str(api_err)
+        
+        if hasattr(api_err, 'response') and api_err.response is not None:
+             status_code = getattr(api_err.response, 'status_code', 'Unknown')
+             try:
+                 # Try to read the full error text from RingCentral
+                 error_message = api_err.response.text
+             except:
+                 pass
+                 
         return jsonify({
             "error": "RingCentral API Error",
-            "details": f"Status: {re.status}\nMessage: {re.message}"
+            "details": f"Status: {status_code}\nResponse: {error_message}"
         }), 401
+        
     except Exception as e:
         return jsonify({
             "error": "Authentication Failed",
