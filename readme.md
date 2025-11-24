@@ -16,6 +16,12 @@ Passcode: `serotonin-human-prodigy-croon-palace-scheming`
     * Device Swap Utility
     * Bulk Opening Hours Management
     * Live Events Listener
+    * Custom Extension Rules
+
+## RingCentral Developer Portal Setup
+   * Create a new API application on the customers UID
+   * Enter the following as the callback URL - https://rcau-api-tools-396158962307.us-central1.run.app/auth/callback
+   * Set App Permissions
 
 ## Project Structure
 
