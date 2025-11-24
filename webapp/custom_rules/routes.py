@@ -67,9 +67,8 @@ def build_rule_payload(row, ext_id):
 def get_platform(client_id, client_secret):
     """
     Initializes SDK using the credentials provided in the form.
-    Handles token format (dictionary vs string).
     """
-    # HARDCODED PRODUCTION URL
+    # HARDCODED PRODUCTION URL (As requested)
     server_url = 'https://platform.ringcentral.com'
     
     # Initialize SDK
@@ -83,7 +82,8 @@ def get_platform(client_id, client_secret):
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
-            stored_token = {'access_token': simple_token}
+            # We assume it's valid for at least a few seconds to run the script
+            stored_token = {'access_token': simple_token, 'expires_in': 3600}
     
     # 3. Apply to Platform
     if stored_token:
@@ -96,8 +96,9 @@ def get_extension_id(platform, extension_number):
         resp = platform.get('/restapi/v1.0/account/~/extension', {'extensionNumber': extension_number})
         records = resp.json().get('records', [])
         return records[0]['id'] if records else None
-    except:
-        return None
+    except Exception as e:
+        # If this fails, it's usually the first point of failure for Auth
+        raise e 
 
 # --- ROUTES ---
 
@@ -115,14 +116,7 @@ def update_rules():
         return jsonify({"error": "Client ID is required."}), 400
 
     # 2. Initialize Platform
-    try:
-        platform = get_platform(client_id, client_secret)
-        
-        if not platform.logged_in():
-             return jsonify({"error": "Session token invalid. Please log in again."}), 401
-             
-    except Exception as e:
-        return jsonify({"error": f"SDK Init Error: {str(e)}"}), 500
+    platform = get_platform(client_id, client_secret)
 
     # 3. Read File
     file = request.files['file']
@@ -137,16 +131,27 @@ def update_rules():
     # 4. Process Rows
     results = []
     
+    # --- TEST CONNECTION ON FIRST ROW ---
+    # We try to process the first row immediately to catch Auth errors early
+    try:
+        # Simple call to verify token works before processing loop
+        platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
+    except Exception as e:
+         return jsonify({
+             "error": "Authentication Failed.", 
+             "details": f"RingCentral rejected the token. \n1. Check if Client ID '{client_id}' matches the one you logged in with.\n2. Ensure you are not in Sandbox mode.\nError: {str(e)}"
+         }), 401
+
     for index, row in df.iterrows():
         ext_num = row.get('Ext Number')
         if pd.isna(ext_num): continue
 
-        ext_id = get_extension_id(platform, ext_num)
-        if not ext_id:
-            results.append(f"Row {index}: ⚠️ Extension {ext_num} not found.")
-            continue
-
         try:
+            ext_id = get_extension_id(platform, ext_num)
+            if not ext_id:
+                results.append(f"Row {index}: ⚠️ Extension {ext_num} not found.")
+                continue
+
             payload, action_type = build_rule_payload(row, ext_id)
 
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
