@@ -70,3 +70,51 @@ def update_rules():
 
 
     return jsonify({"logs": results})
+@custom_rules_bp.route('/template', methods=['GET'])
+def download_template():
+    # Define the exact columns your script expects
+    columns = [
+        'Ext Number', 'Ext Name', 'Rule Name', 'Rule ID', 'Enabled', 
+        'Caller ID', 'Called Number', 'Work or After Hours', 
+        'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 
+        'Specific Dates', 'Action', 'Transfer Extension', 'External Number', 'Voicemail Recipient'
+    ]
+
+    # Create an example row
+    example_data = [{
+        'Ext Number': '101',
+        'Ext Name': 'John Doe',
+        'Rule Name': 'Holiday Rule',
+        'Rule ID': '', 
+        'Enabled': 'Yes',
+        'Caller ID': '1234567890',
+        'Called Number': '',
+        'Work or After Hours': '',
+        'Monday': '9:00 AM - 5:00 PM',
+        'Tuesday': '9:00 AM - 5:00 PM',
+        'Action': 'Transfer to External',
+        'External Number': '15550001234'
+    }]
+
+    # Create DataFrame
+    df = pd.DataFrame(example_data, columns=columns)
+
+    # Create an in-memory Excel file
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Template')
+        
+        # Auto-adjust column widths
+        worksheet = writer.sheets['Template']
+        for column_cells in worksheet.columns:
+            length = max(len(str(cell.value) or "") for cell in column_cells)
+            worksheet.column_dimensions[column_cells[0].column_letter].width = length + 2
+
+    output.seek(0)
+    
+    return send_file(
+        output, 
+        download_name="custom_rules_template.xlsx", 
+        as_attachment=True, 
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
