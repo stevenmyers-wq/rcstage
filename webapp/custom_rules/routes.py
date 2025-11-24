@@ -4,7 +4,8 @@ import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, send_file, session
 from ringcentral import SDK
-from webapp.auth_utils import require_rc_token
+# Removed the import of require_rc_token since we aren't using it on the route anymore
+# from webapp.auth_utils import require_rc_token 
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
@@ -68,7 +69,7 @@ def get_platform(client_id, client_secret):
     """
     Initializes SDK using the credentials provided in the form.
     """
-    # HARDCODED PRODUCTION URL (As requested)
+    # HARDCODED PRODUCTION URL
     server_url = 'https://platform.ringcentral.com'
     
     # Initialize SDK
@@ -82,7 +83,6 @@ def get_platform(client_id, client_secret):
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
-            # We assume it's valid for at least a few seconds to run the script
             stored_token = {'access_token': simple_token, 'expires_in': 3600}
     
     # 3. Apply to Platform
@@ -97,13 +97,12 @@ def get_extension_id(platform, extension_number):
         records = resp.json().get('records', [])
         return records[0]['id'] if records else None
     except Exception as e:
-        # If this fails, it's usually the first point of failure for Auth
         raise e 
 
 # --- ROUTES ---
 
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
-@require_rc_token
+# @require_rc_token  <-- REMOVED THIS LINE so the function can handle the error gracefully
 def update_rules():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
@@ -132,14 +131,14 @@ def update_rules():
     results = []
     
     # --- TEST CONNECTION ON FIRST ROW ---
-    # We try to process the first row immediately to catch Auth errors early
     try:
         # Simple call to verify token works before processing loop
         platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
     except Exception as e:
+         # This error will now show up in your "Execution Log" box
          return jsonify({
              "error": "Authentication Failed.", 
-             "details": f"RingCentral rejected the token. \n1. Check if Client ID '{client_id}' matches the one you logged in with.\n2. Ensure you are not in Sandbox mode.\nError: {str(e)}"
+             "details": f"RingCentral rejected the connection.\n1. Please Log Out and Log In again (Deployment cleared your session).\n2. Check if Client ID matches.\nError: {str(e)}"
          }), 401
 
     for index, row in df.iterrows():
