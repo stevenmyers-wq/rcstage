@@ -4,8 +4,6 @@ import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, send_file, session
 from ringcentral import SDK
-# Removed the import of require_rc_token since we aren't using it on the route anymore
-# from webapp.auth_utils import require_rc_token 
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
@@ -68,8 +66,8 @@ def build_rule_payload(row, ext_id):
 def get_platform(client_id, client_secret):
     """
     Initializes SDK using the credentials provided in the form.
+    Strictly uses Production URL.
     """
-    # HARDCODED PRODUCTION URL
     server_url = 'https://platform.ringcentral.com'
     
     # Initialize SDK
@@ -83,6 +81,7 @@ def get_platform(client_id, client_secret):
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
+            # Wrap simple string into a dict for the SDK
             stored_token = {'access_token': simple_token, 'expires_in': 3600}
     
     # 3. Apply to Platform
@@ -102,7 +101,6 @@ def get_extension_id(platform, extension_number):
 # --- ROUTES ---
 
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
-# @require_rc_token  <-- REMOVED THIS LINE so the function can handle the error gracefully
 def update_rules():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
@@ -132,13 +130,20 @@ def update_rules():
     
     # --- TEST CONNECTION ON FIRST ROW ---
     try:
-        # Simple call to verify token works before processing loop
+        # Simple call to verify token works
         platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
     except Exception as e:
-         # This error will now show up in your "Execution Log" box
          return jsonify({
              "error": "Authentication Failed.", 
-             "details": f"RingCentral rejected the connection.\n1. Please Log Out and Log In again (Deployment cleared your session).\n2. Check if Client ID matches.\nError: {str(e)}"
+             "details": (
+                 f"RingCentral rejected the connection.\n"
+                 f"Attempted with Client ID: {client_id}\n"
+                 f"Target Environment: Production\n"
+                 f"Error Message: {str(e)}\n\n"
+                 "Troubleshooting:\n"
+                 "1. Ensure Client ID matches the one used to log in.\n"
+                 "2. Try logging out and logging in again."
+             )
          }), 401
 
     for index, row in df.iterrows():
