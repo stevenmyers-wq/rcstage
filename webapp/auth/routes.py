@@ -19,24 +19,18 @@ def initiate_pkce():
     
     data = request.get_json()
     client_id = data.get('client_id') if data else None
-    # Capture the environment (Prod vs Sandbox) from the dropdown
-    server_url = data.get('server_url', 'https://platform.ringcentral.com')
 
     if not client_id:
         return jsonify({'status': 'error', 'message': 'Client ID is required.'}), 400
 
     code_verifier, code_challenge = create_pkce_challenge()
     
-    # --- CHANGE 1: Save Client ID and URL for other tools (Custom Rules) ---
     session['rc_client_id'] = client_id
-    session['rc_server_url'] = server_url
-    # -----------------------------------------------------------------------
-
     session['rc_code_verifier'] = code_verifier
     session['rc_state'] = secrets.token_urlsafe(16)
     
     redirect_uri = os.getenv("RC_REDIRECT_URI", "http://localhost:8080/auth/callback")
-    scope_value = os.getenv("RC_SCOPE", "ReadAccounts ReadCallLog EditExtensions EditAccounts")
+    scope_value = os.getenv("RC_SCOPE", "ReadAccounts ReadCallLog")
     
     params = {
         'response_type': 'code', 
@@ -48,8 +42,7 @@ def initiate_pkce():
         'state': session['rc_state']
     }
     
-    # Use the dynamic server URL (allows switching between Prod/Sandbox)
-    auth_url = f'{server_url}/restapi/oauth/authorize?' + urlencode(params)
+    auth_url = 'https://platform.ringcentral.com/restapi/oauth/authorize?' + urlencode(params)
     return jsonify({'status': 'success', 'redirect_url': auth_url}), 200
 
 @auth_bp.route('/auth/callback', methods=['GET'])
@@ -64,11 +57,7 @@ def auth_callback():
     if state != session.get('rc_state'):
         return render_template('error.html', message="State mismatch."), 403
 
-    # --- CHANGE 2: Use .get() instead of .pop() for Client ID ---
-    # We want to KEEP the client_id in the session so Custom Rules can use it.
-    client_id = session.get('rc_client_id') 
-    # -----------------------------------------------------------
-    
+    client_id = session.pop('rc_client_id', None)
     code_verifier = session.pop('rc_code_verifier', None)
     session.pop('rc_state', None)
 
@@ -76,10 +65,7 @@ def auth_callback():
         return render_template('error.html', message="PKCE flow failed: Missing session context."), 400
 
     redirect_uri = os.getenv("RC_REDIRECT_URI", "http://localhost:8080/auth/callback")
-    
-    # Use the dynamic server URL saved in session, fallback to config
-    server_url = session.get('rc_server_url', current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'))
-    token_url = f"{server_url}/restapi/oauth/token"
+    token_url = f"{current_app.config['RC_SERVER_URL']}/restapi/oauth/token"
     
     data = {
         'grant_type': 'authorization_code', 
@@ -95,12 +81,9 @@ def auth_callback():
         response.raise_for_status() 
         token_data = response.json()
         
-        # --- CHANGE 3: Save Full Token Data ---
-        # The RingCentral SDK prefers the full dictionary (access_token, refresh_token, etc.)
-        session['tokens'] = token_data 
         session['rc_access_token'] = token_data.get('access_token')
+        session['rc_current_client_id'] = client_id
         session['rc_user_email'] = token_data.get('owner_id')
-        # --------------------------------------
         
         return redirect(url_for('core.index', tab='authenticator'))
     except requests.exceptions.RequestException as e:
@@ -115,8 +98,7 @@ def auth_callback():
 def rc_disconnect():
     """Clears only the RC token state."""
     session.pop('rc_access_token', None)
-    session.pop('tokens', None) # Clear the full token object
-    session.pop('rc_client_id', None) # Clear the client ID on explicit disconnect
+    session.pop('rc_current_client_id', None)
     session.pop('rc_user_email', None)
     return jsonify({'status': 'success', 'message': 'Disconnected.'}), 200
 
@@ -126,6 +108,6 @@ def get_rc_status():
     token = get_rc_access_token()
     return jsonify({
         'status': 'connected' if token else 'disconnected',
-        'client_id': session.get('rc_client_id'),
+        'client_id': session.get('rc_current_client_id'),
         'rc_user_email': session.get('rc_user_email')
     }), 200
