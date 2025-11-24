@@ -64,24 +64,25 @@ def build_rule_payload(row, ext_id):
     return payload, api_action
 
 # --- HELPER: Auth & RC ---
-def get_platform(client_id, client_secret, server_url):
+def get_platform(client_id, client_secret):
     """
     Initializes SDK using the credentials provided in the form.
     Handles token format (dictionary vs string).
     """
+    # HARDCODED PRODUCTION URL
+    server_url = 'https://platform.ringcentral.com'
+    
     # Initialize SDK
-    # If secret is None/Empty, pass '' for PKCE support
     sdk = SDK(client_id, client_secret or '', server_url)
     platform = sdk.platform()
     
-    # 1. Try to get the Full Token Object (Best for Refreshes)
+    # 1. Try to get the Full Token Object
     stored_token = session.get('tokens')
     
     # 2. If missing, try to construct it from the simple Access Token string
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
-            # We wrap it in a dict because the SDK expects {'access_token': '...'}
             stored_token = {'access_token': simple_token}
     
     # 3. Apply to Platform
@@ -109,19 +110,16 @@ def update_rules():
     # 1. Get Credentials from Form
     client_id = request.form.get('client_id')
     client_secret = request.form.get('client_secret')
-    # Default to Prod if missing, but Form should provide it
-    server_url = request.form.get('server_url', 'https://platform.ringcentral.com')
 
     if not client_id:
         return jsonify({"error": "Client ID is required."}), 400
 
     # 2. Initialize Platform
     try:
-        platform = get_platform(client_id, client_secret, server_url)
+        platform = get_platform(client_id, client_secret)
         
-        # Explicit check: If token is missing/invalid, this will fail
         if not platform.logged_in():
-             return jsonify({"error": "Session token invalid. 1. Check if you are logged in. 2. Ensure Environment (Prod/Sandbox) matches your account."}), 401
+             return jsonify({"error": "Session token invalid. Please log in again."}), 401
              
     except Exception as e:
         return jsonify({"error": f"SDK Init Error: {str(e)}"}), 500
