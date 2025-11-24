@@ -55,15 +55,20 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     btn.disabled = true;
     btn.textContent = 'Processing...';
     logDiv.textContent = 'Starting upload...';
+    logDiv.className = "mt-4 p-4 bg-gray-50 rounded border border-gray-200 font-mono text-sm text-gray-700 h-64 overflow-y-auto whitespace-pre-line";
 
     try {
         const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
         const data = await res.json();
         
-        if (data.logs) {
-            logDiv.textContent = data.logs.join('\n');
+        if (res.ok) {
+            logDiv.textContent = data.logs ? data.logs.join('\n') : "Success!";
+            logDiv.className = "mt-4 p-4 bg-green-50 rounded border border-green-200 font-mono text-sm text-green-800 h-64 overflow-y-auto whitespace-pre-line";
         } else {
-            logDiv.textContent = "Error: " + (data.error || "Unknown error occurred");
+            // SHOW DETAILED ERROR
+            logDiv.className = "mt-4 p-4 bg-red-50 rounded border border-red-200 font-mono text-sm text-red-800 h-64 overflow-y-auto whitespace-pre-line";
+            const details = data.details || data.error || "Unknown Error";
+            logDiv.textContent = `❌ Error: ${details}`;
         }
     } catch (err) {
         logDiv.textContent = "System Error: " + err.message;
