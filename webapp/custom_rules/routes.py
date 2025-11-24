@@ -70,6 +70,8 @@ def update_rules():
 
 
     return jsonify({"logs": results})
+
+#template file creation
 @custom_rules_bp.route('/template', methods=['GET'])
 def download_template():
     # Define the exact columns your script expects
@@ -118,3 +120,4 @@ def download_template():
         as_attachment=True, 
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
