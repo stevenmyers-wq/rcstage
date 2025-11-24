@@ -74,8 +74,8 @@ def get_platform(client_id, client_secret):
     """
     server_url = 'https://platform.ringcentral.com'
     
-    # Initialize SDK
-    sdk = SDK(client_id, client_secret or '', server_url)
+    # Initialize SDK (Strip spaces from ID/Secret just in case)
+    sdk = SDK(client_id.strip(), (client_secret or '').strip(), server_url)
     platform = sdk.platform()
     
     # 1. Try to get the Full Token Object
@@ -85,11 +85,12 @@ def get_platform(client_id, client_secret):
     if not stored_token:
         simple_token = session.get('rc_access_token') or session.get('oauth_token')
         if simple_token:
-            stored_token = {'access_token': simple_token, 'expires_in': 3600}
+            # FIX: .strip() prevents "Invalid leading whitespace" header errors
+            stored_token = {'access_token': simple_token.strip(), 'expires_in': 3600}
     
     # 3. CRITICAL CHECK: If no token found, stop immediately
     if not stored_token:
-        raise Exception("No Auth Token found. The server restart cleared your session. Please go to 'PKCE Setup' and Log In again.")
+        raise Exception("No Auth Token found. Please go to 'PKCE Setup' and Log In again.")
 
     platform.auth().set_data(stored_token)
         
@@ -123,13 +124,13 @@ def update_rules():
         platform.get('/restapi/v1.0/account/~/extension', {'perPage': 1})
         
     except RestException as re:
-        # Catch RingCentral specific errors (shows the JSON response)
+        # Catch RingCentral specific errors
         return jsonify({
             "error": "RingCentral API Error",
             "details": f"Status: {re.status}\nMessage: {re.message}"
         }), 401
     except Exception as e:
-        # Catch Python/Session errors
+        # Catch Python/Session errors (like the Header Error)
         return jsonify({
             "error": "Authentication Failed",
             "details": str(e)
