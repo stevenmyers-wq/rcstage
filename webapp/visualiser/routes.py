@@ -1,172 +1,105 @@
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+# webapp/visualiser/routes.py
+import sys
+import time
+from flask import Blueprint, jsonify, request, session
+from webapp.auth_utils import is_authenticated, get_rc_access_token
+from webapp.rc_api import rc_api_call
+from webapp.visualiser.utils import generate_mermaid_flow
 
-<style>
-    #call-flow-diagram { 
-        min-height: 700px; 
-        height: 80vh; 
-        border: 2px solid #e2e8f0; 
-        position: relative; 
-        background: #fafafa; 
-        overflow: hidden; 
-    }
-    .select2-container .select2-selection--single { height: 50px !important; border: 1px solid #d1d5db !important; border-radius: 0.5rem !important; display: flex !important; align-items: center !important; }
-    .select2-selection__arrow { height: 48px !important; }
-    .select2-container--default .select2-selection--single .select2-selection__rendered { color: #374151 !important; font-size: 16px; padding-left: 12px; }
-    .controls-overlay { position: absolute; bottom: 20px; right: 20px; z-index: 100; background: rgba(255,255,255,0.95); padding: 8px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #ddd; display: flex; gap: 8px; }
-    .ctrl-btn { background: #fff; border: 1px solid #ccc; width: 36px; height: 36px; border-radius: 4px; font-weight: bold; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-    .ctrl-btn:hover { background: #f0f0f0; color: #000; border-color: #999; }
-    .export-group { position: relative; display: inline-block; }
-    .export-menu { display: none; position: absolute; right: 0; bottom: 45px; background: white; border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 180px; overflow: hidden; }
-    .export-item { display: block; width: 100%; padding: 10px 12px; text-align: left; background: none; border: none; cursor: pointer; font-size: 14px; color: #333; }
-    .export-item:hover { background: #f3f4f6; }
-</style>
+viz_bp = Blueprint('visualiser', __name__)
 
-<div class="space-y-6">
-    <h3 class="text-xl font-bold text-blue-700">Call Flow Visualiser</h3>
-    <div class="card space-y-4">
-        <h4 class="text-lg font-semibold text-gray-800">1. Select Entry Point</h4>
-        <div class="flex gap-4 items-center">
-            <div class="w-full">
-                <select id="visualiser-target-select" class="w-full" style="width: 100%;">
-                    <option></option>
-                </select>
-                <p id="loading-indicator" class="text-xs text-gray-500 mt-1">Loading account data...</p>
-            </div>
-            <button type="button" id="visualize-button" class="bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 transition whitespace-nowrap h-[50px]">Visualize</button>
-        </div>
-    </div>
-    <div class="w-full bg-white rounded-xl shadow-lg border border-gray-200 p-6 space-y-3">
-        <h4 class="text-lg font-semibold text-gray-800">2. Call Flow Diagram</h4>
-        <div style="position: relative;">
-            <div id="call-flow-diagram" class="mt-4 w-full bg-white rounded-lg flex items-center justify-center text-gray-400">Select an extension above and click 'Visualize'.</div>
-            <div id="zoom-controls" class="controls-overlay" style="display:none;">
-                <button class="ctrl-btn" id="btn-zoom-in" title="Zoom In">+</button>
-                <button class="ctrl-btn" id="btn-zoom-out" title="Zoom Out">−</button>
-                <button class="ctrl-btn" id="btn-reset" title="Reset View">⟲</button>
-                <div class="export-group">
-                    <button class="ctrl-btn" id="btn-export-toggle" title="Save Image">💾</button>
-                    <div id="export-menu" class="export-menu">
-                        <button class="export-item" id="btn-save-svg">Download SVG (Vector)</button>
-                        <button class="export-item" id="btn-save-png">Download PNG (Image)</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">💡 <strong>Tip:</strong> Mouse Wheel to Zoom • Click & Drag to Pan</div>
-    </div>
-    <div class="card space-y-3">
-        <h4 class="text-lg font-semibold text-gray-800">3. Live API Debug Log</h4>
-        <div id="api-log-container" class="mt-4 p-4 border border-gray-200 bg-gray-900 text-white rounded-lg max-h-96 overflow-y-auto font-mono text-xs"></div>
-    </div>
-</div>
+def fetch_all_pages(endpoint, params=None):
+    if params is None: params = {}
+    current_params = params.copy()
+    current_params['perPage'] = 500
+    current_params['page'] = 1
+    all_records = []
+    
+    try:
+        while True:
+            query_string = "&".join([f"{k}={v}" for k, v in current_params.items()])
+            sep = '&' if '?' in endpoint else '?'
+            url = f"{endpoint}{sep}{query_string}"
+            
+            resp = rc_api_call(url)
+            if not resp: break
+            if 'records' in resp: all_records.extend(resp['records'])
+            
+            if resp.get('navigation', {}).get('nextPage'):
+                current_params['page'] += 1
+                time.sleep(0.05)
+            else: break
+    except: pass
+    return all_records
 
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
-
-<script>
-    mermaid.initialize({ startOnLoad: false, theme: 'base', flowchart: { useMaxWidth: false, htmlLabels: true, curve: 'basis' } });
-    let panZoomInstance = null;
-
-    $(document).ready(function() {
-        $('#visualiser-target-select').select2({ placeholder: "Wait, loading data...", width: '100%' });
-        const $loadingIndicator = $('#loading-indicator');
-
-        $.ajax({
-            url: '/api/rc/visualiser/search', method: 'GET',
-            success: function(response) {
-                if(response.status === 'success') {
-                    $loadingIndicator.hide();
-                    if ($('#visualiser-target-select').data('select2')) $('#visualiser-target-select').select2('destroy');
-                    $('#visualiser-target-select').empty().select2({ placeholder: "Select a Call Flow Start Point", data: response.results, width: '100%', allowClear: true });
-                } else { $loadingIndicator.text("Error: " + response.message).addClass('text-red-500'); }
-            },
-            error: function() { $loadingIndicator.text("Failed to connect to server.").addClass('text-red-500'); }
-        });
-
-        $('#visualize-button').on('click', function() {
-            const selectedId = $('#visualiser-target-select').val();
-            if (!selectedId) { alert("Please select a valid extension."); return; }
-
-            const btn = $(this);
-            const originalText = btn.text();
-            btn.prop('disabled', true).text('Generating...');
-            $('#call-flow-diagram').html('<div class="flex flex-col items-center"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700 mb-4"></div><p>Tracing call flow...</p></div>');
-            $('#zoom-controls').hide();
-
-            fetch(`/api/rc/trace-flow/${selectedId}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        // SAFETY CHECK
-                        if (typeof data.mermaid_graph === 'string') {
-                            renderMermaid(data.mermaid_graph);
-                        } else {
-                            $('#call-flow-diagram').html(`<div class="text-red-500 p-4">Error: Server returned empty graph.</div>`);
-                        }
-                        updateApiLog(data.api_log);
-                    }
-                    else { $('#call-flow-diagram').html(`<div class="text-red-500 p-4 font-bold">Error: ${data.message}</div>`); }
+@viz_bp.route('/api/rc/visualiser/search', methods=['GET'])
+def search_for_visualiser_targets():
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
+    
+    query = request.args.get('query', '').lower().strip()
+    return_all = (len(query) == 0)
+    results = []
+    
+    try:
+        # Phones
+        phones = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
+        for p in phones:
+            if p.get('usageType') in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber']:
+                num = p.get('phoneNumber', '')
+                if not return_all and query not in num: continue
+                if p.get('extension', {}).get('id'):
+                    results.append({
+                        'id': p['extension']['id'],
+                        'text': f"{num} ({p.get('usageType')})",
+                        'type': 'PhoneNumber'
+                    })
+        
+        # Extensions
+        exts = fetch_all_pages("/restapi/v1.0/account/~/extension")
+        ALLOWED = ['IvrMenu', 'CallQueue', 'Department', 'Site', 'ApplicationExtension', 'User', 'DigitalUser', 'VirtualUser', 'Limited']
+        
+        for e in exts:
+            ename = e.get('name', 'Unknown')
+            enum = e.get('extensionNumber', '')
+            etype = e.get('type', 'Unknown')
+            
+            if not return_all:
+                if query not in ename.lower() and query != enum: continue
+            
+            if etype in ALLOWED:
+                status = "" if e.get('status') == 'Enabled' else " [Disabled]"
+                results.append({
+                    'id': e['id'],
+                    'text': f"[{etype}] {ename} (Ext: {enum}){status}",
+                    'type': etype
                 })
-                .catch(err => $('#call-flow-diagram').html(`<div class="text-red-500 p-4">System Error: ${err}</div>`))
-                .finally(() => btn.prop('disabled', false).text(originalText));
-        });
 
-        async function renderMermaid(graph) {
-            const el = document.querySelector('#call-flow-diagram');
-            if(panZoomInstance) { panZoomInstance.destroy(); panZoomInstance = null; }
-            try {
-                const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
-                el.innerHTML = svg;
-                const svgEl = el.querySelector('svg');
-                svgEl.style.width = '100%'; svgEl.style.height = '100%'; svgEl.style.maxWidth = 'none';
-                panZoomInstance = svgPanZoom(svgEl, { zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10 });
-                $('#zoom-controls').show();
-                
-                // Bind Exports
-                $('#btn-zoom-in').off().on('click', function(){ panZoomInstance.zoomIn(); });
-                $('#btn-zoom-out').off().on('click', function(){ panZoomInstance.zoomOut(); });
-                $('#btn-reset').off().on('click', function(){ panZoomInstance.resetZoom(); panZoomInstance.center(); });
-                $('#btn-export-toggle').off().on('click', function(e){ e.stopPropagation(); $('#export-menu').toggle(); });
-                $(document).on('click', function(){ $('#export-menu').hide(); });
+        final = []
+        seen = set()
+        for r in results:
+            if r['id'] not in seen:
+                final.append(r)
+                seen.add(r['id'])
+        
+        final.sort(key=lambda x: {'Site':0, 'IvrMenu':1, 'CallQueue':2}.get(x['type'], 5))
+        return jsonify({'status': 'success', 'results': final})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
-                $('#btn-save-svg').off().on('click', function() {
-                    const svgEl = document.querySelector('#call-flow-diagram svg');
-                    const serializer = new XMLSerializer();
-                    let source = serializer.serializeToString(svgEl);
-                    source = source.replace(/<br>/g, '<br/>');
-                    if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
-                    const url = URL.createObjectURL(new Blob([source], {type: 'image/svg+xml;charset=utf-8'}));
-                    const link = document.createElement('a'); link.href = url; link.download = 'call_flow.svg';
-                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                });
-
-                $('#btn-save-png').off().on('click', function() {
-                    const svgEl = document.querySelector('#call-flow-diagram svg');
-                    const clone = svgEl.cloneNode(true);
-                    clone.setAttribute('style', ''); clone.removeAttribute('transform');
-                    if(clone.querySelector('.svg-pan-zoom_viewport')) clone.querySelector('.svg-pan-zoom_viewport').setAttribute('transform', 'matrix(1,0,0,1,0,0)');
-                    const serializer = new XMLSerializer();
-                    let svgData = serializer.serializeToString(clone).replace(/<br>/g, '<br/>');
-                    const img = new Image();
-                    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
-                    img.onload = function() {
-                        const canvas = document.createElement('canvas');
-                        const bbox = svgEl.getBBox(); const scale = 2;
-                        canvas.width = (bbox.width + 100) * scale; canvas.height = (bbox.height + 100) * scale;
-                        const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        ctx.scale(scale, scale); ctx.drawImage(img, 50, 50);
-                        const link = document.createElement('a'); link.download = 'call_flow.png'; link.href = canvas.toDataURL('image/png');
-                        link.click();
-                    };
-                });
-            } catch (e) { el.innerHTML = `<div class="text-red-500 p-4">Render Error: ${e.message}</div>`; }
-        }
-
-        function updateApiLog(logs) {
-            if (!logs || !logs.length) return;
-            $('#api-log-container').html(logs.map(l => `<div class="mb-2 pb-2 border-b border-gray-700"><span class="text-green-400">[${l.method}]</span> <span class="text-blue-300">${l.url}</span><div class="text-gray-400 pl-4">Status: ${l.status} duration:${l.duration}</div></div>`).join(''));
-        }
-    });
-</script>
+@viz_bp.route('/api/rc/trace-flow/<ext_id>', methods=['GET'])
+def visualize_call_flow_api(ext_id):
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
+    
+    try:
+        # Using the new Class-based Bridge
+        graph, logs = generate_mermaid_flow(ext_id)
+        
+        return jsonify({
+            'status': 'success',
+            'mermaid_graph': graph,
+            'api_log': logs
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e), 'api_log': []}), 500
