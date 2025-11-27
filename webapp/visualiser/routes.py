@@ -1,154 +1,75 @@
 # webapp/visualiser/routes.py
+import sys
+import json
 from flask import Blueprint, jsonify, request, session
 from webapp.auth_utils import is_authenticated, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.visualiser.utils import generate_mermaid_flow
-import time
 
 viz_bp = Blueprint('visualiser', __name__)
 
-def fetch_all_pages(endpoint, params=None):
-    """
-    FAILSAFE: Loops through all pages. Includes Retry/Fallback logic.
-    """
-    if params is None:
-        params = {}
-    
-    # Clone params to avoid modifying the original dict references
-    current_params = params.copy()
-    current_params['perPage'] = 1000
-    current_params['page'] = 1
-    
-    all_records = []
-    page_count = 0
-    
-    print(f"--- [DEBUG] Starting Fetch: {endpoint} ---")
-    
-    while True:
-        try:
-            # Construct URL manually to ensure control over encoding
-            query_string = "&".join([f"{k}={v}" for k, v in current_params.items()])
-            separator = '&' if '?' in endpoint else '?'
-            full_url = f"{endpoint}{separator}{query_string}"
-            
-            response = rc_api_call(full_url)
-            
-            if not response:
-                print(f"   [DEBUG] API returned None for {full_url}")
-                break
-                
-            if 'errorCode' in response:
-                print(f"   [DEBUG] API Error: {response.get('message')}")
-                break
-
-            records = response.get('records', [])
-            count = len(records)
-            all_records.extend(records)
-            page_count += 1
-            print(f"   [DEBUG] Page {page_count}: Found {count} records.")
-            
-            # Pagination Check
-            navigation = response.get('navigation', {})
-            next_page = navigation.get('nextPage')
-            
-            if next_page:
-                current_params['page'] += 1
-                time.sleep(0.1) # Tiny pause to be nice to API rate limits
-            else:
-                break
-                
-        except Exception as e:
-            print(f"   [DEBUG] Exception during fetch: {e}")
-            break
-            
-    print(f"--- [DEBUG] Total for {endpoint}: {len(all_records)} ---")
-    return all_records
+def log_to_cloud(msg, severity="INFO"):
+    """Forces logs to appear in Cloud Run immediately."""
+    # Cloud Run reads stdout/stderr. We format it slightly for readability.
+    if severity == "ERROR":
+        print(f"[ERROR] {msg}", file=sys.stderr)
+    else:
+        print(f"[INFO] {msg}", file=sys.stdout)
 
 @viz_bp.route('/api/rc/visualiser/search', methods=['GET'])
 def search_for_visualiser_targets():
+    """
+    DIAGNOSTIC MODE: Fetches one page and DUMPS the raw response to logs.
+    """
     if not is_authenticated() or not get_rc_access_token():
         return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
     
-    query = request.args.get('query', '').lower().strip()
-    return_all = (len(query) == 0)
+    log_to_cloud("--- STARTING DIAGNOSTIC FETCH ---")
     
-    results = []
+    # 1. Try to fetch just 5 extensions
+    endpoint = "/restapi/v1.0/account/~/extension?perPage=5"
+    log_to_cloud(f"Calling Endpoint: {endpoint}")
     
-    # 1. Phone Numbers
-    phone_records = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
-    for record in phone_records:
-        if record.get('usageType') in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber']:
-            p_number = record.get('phoneNumber', '')
-            p_ext = record.get('extension')
-            
-            # If searching, filter text. If loading all, take all.
-            if return_all or (query in p_number):
-                if p_ext:
-                    results.append({
-                        'id': p_ext['id'],
-                        'text': f"📞 {p_number} ({record.get('usageType')})",
-                        'type': 'PhoneNumber'
-                    })
+    try:
+        response = rc_api_call(endpoint)
+        
+        # --- CRITICAL: DUMP THE RAW RESPONSE TO LOGS ---
+        # This will tell us if we are getting a 403, 401, or just empty data.
+        log_to_cloud(f"RAW RESPONSE TYPE: {type(response)}")
+        log_to_cloud(f"RAW RESPONSE DATA: {json.dumps(response, default=str)}")
+        # -----------------------------------------------
 
-    # 2. Extensions (The big list)
-    # Note: We removed the 'status=Enabled' filter for debugging to ensure we see EVERYTHING
-    ext_records = fetch_all_pages("/restapi/v1.0/account/~/extension") 
-    
-    for ext in ext_records:
-        e_name = ext.get('name', 'Unknown')
-        e_number = ext.get('extensionNumber', '')
-        e_type = ext.get('type', 'Unknown')
-        e_status = ext.get('status', 'Disabled')
-        
-        # Filter: If searching, match text. If returning all, skip "dirty" data
-        if not return_all:
-             if query not in e_name.lower() and query != e_number:
-                 continue
-        
-        # Only add relevant types to the dropdown
-        if e_type in ['IvrMenu', 'CallQueue', 'Department', 'Site', 'User', 'ApplicationExtension']:
-            
-            # Icon Logic
-            icon = "👤"
-            if e_type == 'IvrMenu': icon = "🎹"
-            elif e_type == 'CallQueue': icon = "👥"
-            elif e_type == 'Site': icon = "🏢"
-            
-            # Add status to text if disabled
-            status_text = "" if e_status == 'Enabled' else " (Disabled)"
-            
+        if not response:
+            log_to_cloud("Response is None/Empty. Connection Failed.", "ERROR")
+            return jsonify({'status': 'success', 'results': [{'id': 'err', 'text': '❌ Connection Failed (See Logs)', 'disabled': True}]})
+
+        if 'errorCode' in response:
+             log_to_cloud(f"API returned Error Code: {response.get('errorCode')}", "ERROR")
+             return jsonify({'status': 'success', 'results': [{'id': 'err', 'text': f"❌ API Error: {response.get('errorCode')}", 'disabled': True}]})
+             
+        records = response.get('records', [])
+        log_to_cloud(f"Records found in list: {len(records)}")
+
+        results = []
+        for ext in records:
             results.append({
                 'id': ext['id'],
-                'text': f"{icon} {e_name} - Ext: {e_number}{status_text}",
-                'type': e_type
+                'text': f"✅ {ext.get('name')} (Ext: {ext.get('extensionNumber')})",
+                'type': ext.get('type')
             })
+            
+        if not results:
+             return jsonify({'status': 'success', 'results': [{'id': 'empty', 'text': '⚠️ No Extensions Found (Permissions Issue?)', 'disabled': True}]})
 
-    # Deduplicate
-    final_results = []
-    seen_ids = set()
-    for item in results:
-        if item['id'] not in seen_ids:
-            final_results.append(item)
-            seen_ids.add(item['id'])
-    
-    # Sort
-    def sort_key(x):
-        priority = {'Site': 0, 'IvrMenu': 1, 'CallQueue': 2, 'User': 4}
-        return priority.get(x['type'], 5)
-    final_results.sort(key=sort_key)
+        return jsonify({'status': 'success', 'results': results})
 
-    # DEBUG: If empty, inject a fake error item so the user sees it in the UI
-    if not final_results:
-        print("!!! [DEBUG] No results found after all fetches. Sending UI Error.")
-        return jsonify({
-            'status': 'success', 
-            'results': [{'id': 'error', 'text': '⚠️ No Extensions Found (Check Server Logs)', 'disabled': True}]
-        })
-
-    return jsonify({'status': 'success', 'results': final_results})
+    except Exception as e:
+        log_to_cloud(f"EXCEPTION: {str(e)}", "ERROR")
+        return jsonify({'status': 'success', 'results': [{'id': 'err', 'text': f"❌ System Error: {str(e)}", 'disabled': True}]})
 
 @viz_bp.route('/api/rc/trace-flow/<ext_id>', methods=['GET'])
 def visualize_call_flow_api(ext_id):
+    # Keep existing logic for the visualize step
     if not is_authenticated() or not get_rc_access_token():
         return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
     
@@ -159,4 +80,4 @@ def visualize_call_flow_api(ext_id):
         return jsonify({'status': 'success', 'mermaid_graph': mermaid_graph_string, 'api_log': api_log_data})
     except Exception as e:
         api_log_data = session.pop('api_log', [])
-        return jsonify({'status': 'error', 'message': str(e), 'api_log': api_log_data}), 500
+        return jsonify({'status': 'error', 'message': f'Error: {str(e)}', 'api_log': api_log_data}), 500
