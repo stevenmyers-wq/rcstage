@@ -132,6 +132,8 @@ class CallFlowTracer:
 
     def get_action_description(self, rule):
         action = rule.get('callHandlingAction')
+        if not action: return "Ring Members" # Default null action
+        
         if action == 'TransferToExtension':
             ext = rule.get('transfer', {}).get('extension', {})
             return f"Transfer to Ext {ext.get('extensionNumber', '?')}"
@@ -172,7 +174,7 @@ class CallFlowTracer:
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Node Creation ---
+        # --- Nodes ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -200,10 +202,10 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- SPECIAL QUEUE LOGIC (Overflow & Wait Settings) ---
+        # --- CALL QUEUE LOGIC ---
         if e_type == 'CallQueue':
             try:
-                # 1. Fetch Agents (Standard)
+                # 1. Members
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
                     m_list = []
@@ -215,44 +217,52 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
 
-                # 2. Fetch Overflow / Transfer Settings (CRITICAL FIX)
-                # We perform a specific call to the Queue Endpoint to get 'transfer' actions
+                # 2. OVERFLOW SETTINGS (Detailed Inspection)
                 if ext_id not in self.queue_settings_cache:
                     q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
                     self.queue_settings_cache[ext_id] = q_settings
                 
                 q = self.queue_settings_cache.get(ext_id)
                 if q:
-                    # Logic: Check for 'transfer' action which handles Overflow/Wait Time
-                    transfer_info = q.get('transfer')
+                    # Capture Data for Display
                     max_wait = q.get('maxWaitTime', 0)
+                    max_callers = q.get('maxCallers', 0)
                     
-                    if transfer_info:
-                        target_ext = transfer_info.get('extension')
-                        if target_ext and target_ext.get('id'):
-                            # FOUND IT! This is the IVR or Extension it overflows to
-                            overflow_target_id = target_ext['id']
-                            
-                            if max_wait == 0:
-                                # "Don't Wait" Scenario
-                                self.trace(overflow_target_id, nid, "Immediate Overflow (Don't Wait)", new_hist)
-                            else:
-                                # "Wait then Transfer" Scenario
-                                self.trace(overflow_target_id, nid, f"Overflow (after {max_wait}s)", new_hist)
+                    overflow_info = []
+                    overflow_info.append(f"Wait Time: {max_wait}s")
+                    if max_wait == 0: overflow_info[-1] += " (Don't Wait)"
+                    
+                    # Detect Overflow Target
+                    overflow_target = None
+                    if q.get('transfer') and q['transfer'].get('extension'):
+                        overflow_target = q['transfer']['extension']['id']
+                        overflow_info.append(f"Overflow Target: {overflow_target}")
+                    else:
+                        overflow_info.append("Overflow Target: None")
+
+                    # Draw Settings Box (So you can see if the API actually sent the target)
+                    conf_id = f"conf_{self.node_counter}"; self.node_counter += 1
+                    self.graph_lines.append(f'{conf_id}["<b>Queue Settings:</b><br/>{ "<br/>".join(overflow_info) }"]:::infoStyle')
+                    self.graph_lines.append(f'{nid} -.-> {conf_id}')
+
+                    # Draw Line if Target Found
+                    if overflow_target:
+                        lbl = "Immediate Overflow" if max_wait == 0 else f"Overflow (> {max_wait}s)"
+                        self.trace(overflow_target, nid, lbl, new_hist)
 
             except Exception as e:
-                print(f"Queue Logic Error: {e}")
+                print(f"Queue Detail Error: {e}")
 
-        # --- Standard Rules ---
+        # --- ROUTING RULES ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
                 if rules and rules.get('records'):
                     for r in rules['records']:
-                        is_active = r.get('enabled', True)
-                        status_txt = "" if is_active else " <i>(Inactive)</i>"
-                        node_style = "logicStyle" if is_active else "inactiveStyle"
-                        link_arrow = "-->" if is_active else "-.->"
+                        is_active_rule = r.get('enabled', True)
+                        status_txt = "" if is_active_rule else " <i>(Inactive)</i>"
+                        node_style_class = "logicStyle" if is_active_rule else "inactiveStyle"
+                        rule_link = "-->" if is_active_rule else "-.->"
 
                         rtype = r.get('type', 'Custom')
                         rname = r.get('name', 'Rule')
@@ -290,17 +300,17 @@ class CallFlowTracer:
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
-                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style}')
-                                self.graph_lines.append(f'{nid} {link_arrow} {lid}')
-                                self.trace(target, lid, "Matches", new_hist, is_active=is_active)
+                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style_class}')
+                                self.graph_lines.append(f'{nid} {rule_link} {lid}')
+                                self.trace(target, lid, "Matches", new_hist, is_active=is_active_rule)
                             else:
-                                self.trace(target, nid, rname + status_txt, new_hist, is_active=is_active)
+                                self.trace(target, nid, rname + status_txt, new_hist, is_active=is_active_rule)
                         else:
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
-                            det = action
+                            det = action or "Ring Members"
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style}')
-                            self.graph_lines.append(f'{nid} {link_arrow} {iid}')
+                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style_class}')
+                            self.graph_lines.append(f'{nid} {rule_link} {iid}')
             except Exception as e:
                 print(f"Rule Error: {e}")
 
