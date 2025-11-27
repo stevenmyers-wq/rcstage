@@ -15,10 +15,11 @@ class CallFlowTracer:
         self.ext_num_map = {} 
 
     def log_api_call(self, endpoint):
+        """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
-            # Force cache bust for queues
+            # Force cache bust for queues to ensure fresh overflow settings
             final_url = endpoint
             if "call-queues" in endpoint and "?" not in endpoint:
                 final_url = f"{endpoint}?_={int(time.time())}"
@@ -65,8 +66,10 @@ class CallFlowTracer:
         return None
 
     def get_extension_id_by_number(self, ext_num):
+        """Resolves Number -> ID using API if not in cache."""
         s_num = str(ext_num)
         if s_num in self.ext_num_map: return self.ext_num_map[s_num]
+        
         info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}")
         if info and info.get('id'):
             self.extension_cache[str(info['id'])] = info
@@ -85,6 +88,7 @@ class CallFlowTracer:
             if schedule_obj.get('weeklyRanges'):
                 weekly_data = schedule_obj['weeklyRanges']
                 normalized_items = []
+                # Handle Dict vs List formats
                 if isinstance(weekly_data, dict):
                     for day_key, periods in weekly_data.items():
                         if isinstance(periods, dict): periods = [periods]
@@ -222,7 +226,7 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- QUEUE LOGIC (EXHAUSTIVE SEARCH) ---
+        # --- QUEUE LOGIC ---
         if e_type == 'CallQueue':
             try:
                 # 1. Agents
@@ -237,16 +241,16 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
 
-                # 2. OVERFLOW / SETTINGS
+                # 2. OVERFLOW
                 if ext_id not in self.queue_settings_cache:
                     q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
-                    # Fallback to Extension View
+                    # Fallback
                     if not q_settings or not q_settings.get('transfer'):
                         ext_dump = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}?view=Detailed")
                         if ext_dump:
                             if not q_settings: q_settings = ext_dump
                             else:
-                                for k in ['transfer', 'unconditionalForwarding', 'maxWaitTime', 'maxWaitTimeAction', 'missedCall']:
+                                for k in ['transfer', 'unconditionalForwarding', 'maxWaitTime', 'maxWaitTimeAction']:
                                     if ext_dump.get(k): q_settings[k] = ext_dump[k]
                     self.queue_settings_cache[ext_id] = q_settings
                 
@@ -256,25 +260,12 @@ class CallFlowTracer:
                     wait_action = q.get('maxWaitTimeAction', 'Unknown')
                     
                     target_id = None
-                    target_source = "None"
-                    
-                    # --- SEARCH 1: TRANSFER (Standard) ---
                     if q.get('transfer') and q['transfer'].get('extension'):
                         if q['transfer']['extension'].get('id'):
                             target_id = q['transfer']['extension']['id']
                         elif q['transfer']['extension'].get('extensionNumber'):
                             target_id = self.get_extension_id_by_number(q['transfer']['extension']['extensionNumber'])
-                        target_source = "transfer"
 
-                    # --- SEARCH 2: MISSED CALL (Common for 0s Wait) ---
-                    if not target_id and q.get('missedCall') and q['missedCall'].get('extension'):
-                         if q['missedCall']['extension'].get('id'):
-                             target_id = q['missedCall']['extension']['id']
-                         elif q['missedCall']['extension'].get('extensionNumber'):
-                             target_id = self.get_extension_id_by_number(q['missedCall']['extension']['extensionNumber'])
-                         target_source = "missedCall"
-
-                    # --- SEARCH 3: UNCONDITIONAL FORWARDING ---
                     if not target_id and q.get('unconditionalForwarding'):
                         uf = q['unconditionalForwarding']
                         if uf.get('extension'):
@@ -282,9 +273,7 @@ class CallFlowTracer:
                             elif uf['extension'].get('extensionNumber'): target_id = self.get_extension_id_by_number(uf['extension']['extensionNumber'])
                         elif uf.get('phoneNumber'):
                             target_id = f"ext_{uf['phoneNumber']}"
-                        target_source = "unconditional"
 
-                    # Visualization
                     info_txt = [f"Wait: {max_wait}s"]
                     if max_wait == 0: info_txt[0] += " (Immediate)"
                     info_txt.append(f"Action: {wait_action}")
@@ -293,12 +282,9 @@ class CallFlowTracer:
                         lbl = "Immediate Overflow" if max_wait == 0 else f"Overflow (> {max_wait}s)"
                         self.trace(target_id, nid, lbl, new_hist)
                     else:
-                        # Dump Debug if still missing
                         if wait_action not in ['Voicemail', 'Unknown']:
                             info_txt.append("⚠️ <b>TARGET MISSING</b>")
-                            # Dump the JSON nicely
-                            debug_json = json.dumps(q, default=str)[:300]
-                            info_txt.append(f"Debug: {self.clean_text(debug_json)}")
+                            info_txt.append(f"Raw Keys: {', '.join(q.keys())}")
 
                     conf_id = f"conf_{self.node_counter}"; self.node_counter += 1
                     self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ "<br/>".join(info_txt) }"]:::infoStyle')
@@ -307,7 +293,7 @@ class CallFlowTracer:
             except Exception as e:
                 print(f"Queue Error: {e}")
 
-        # --- ROUTING RULES ---
+        # --- ROUTING RULES (CRITICAL FIX APPLIED HERE) ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
@@ -333,13 +319,26 @@ class CallFlowTracer:
                             logic_text = f"<b>{self.clean_text(rname)}</b>{status_txt}<br/><i>{action_desc}</i>"
 
                         target = None
+                        
+                        # --- 1. TransferToExtension Fix ---
                         if action == 'TransferToExtension':
-                            target = r.get('transfer', {}).get('extension', {}).get('id')
+                            ext_obj = r.get('transfer', {}).get('extension', {})
+                            if ext_obj.get('id'):
+                                target = ext_obj.get('id')
+                            elif ext_obj.get('extensionNumber'):
+                                # Fallback Lookup
+                                target = self.get_extension_id_by_number(ext_obj.get('extensionNumber'))
+                        
+                        # --- 2. UnconditionalForwarding Fix ---
                         elif action == 'UnconditionalForwarding':
-                            ph = r.get('unconditionalForwarding', {}).get('phoneNumber')
-                            ex = r.get('unconditionalForwarding', {}).get('extension', {})
-                            if ex.get('id'): target = ex['id']
-                            elif ph: target = f"ext_{ph}"
+                            uf = r.get('unconditionalForwarding', {})
+                            if uf.get('phoneNumber'):
+                                target = f"ext_{uf['phoneNumber']}"
+                            elif uf.get('extension'):
+                                if uf['extension'].get('id'): target = uf['extension']['id']
+                                elif uf['extension'].get('extensionNumber'):
+                                    target = self.get_extension_id_by_number(uf['extension']['extensionNumber'])
+                        
                         elif action == 'ForwardCalls':
                             fwd_rules = r.get('forwarding', {}).get('rules', [])
                             for fr in fwd_rules:
@@ -360,6 +359,13 @@ class CallFlowTracer:
                             else:
                                 self.trace(target, nid, rname + status_txt, new_hist, is_active)
                         else:
+                            # Show "Missing Target" warning if action is Transfer but no target found
+                            if action == 'TransferToExtension':
+                                logic_text += "<br/>⚠️ <b>[Target ID Missing]</b>"
+                                # Dump raw for debugging
+                                raw_dump = json.dumps(r.get('transfer', {}))[:50]
+                                logic_text += f"<br/>Raw: {self.clean_text(raw_dump)}"
+
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
                             det = action or "Ring Members"
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
