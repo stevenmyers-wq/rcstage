@@ -55,100 +55,112 @@ class CallFlowTracer:
 
     def clean_text(self, text):
         if not text: return ""
-        # Remove quotes and special chars that break Mermaid syntax
         return str(text).replace('"', "'").replace('#', '').strip()
 
     # ==========================================
-    #  TRANSPARENT PARSER (No Hiding Errors)
+    #  UNIVERSAL SCHEDULE PARSER (FIXED)
     # ==========================================
     def parse_schedule(self, schedule_obj):
-        """
-        Parses schedule. If it fails, DUMPS RAW JSON so we can see the data.
-        """
         if not schedule_obj: return "24/7 (Open)"
         
+        output_lines = []
+        
         try:
-            output_lines = []
-            
-            # 1. Weekly Ranges
+            # 1. Weekly Ranges - Normalize Data Structure
             if schedule_obj.get('weeklyRanges'):
+                weekly_data = schedule_obj['weeklyRanges']
+                normalized_items = []
+
+                # DATA REPAIR: Check if it is a Dict or List
+                if isinstance(weekly_data, dict):
+                    # Format: { 'monday': [{'from': '09:00', 'to': '17:00'}], ... }
+                    for day_key, periods in weekly_data.items():
+                        # periods might be a single dict or list of dicts
+                        if isinstance(periods, dict): periods = [periods]
+                        for p in periods:
+                            normalized_items.append({
+                                'day': day_key,
+                                'from': p.get('from'),
+                                'to': p.get('to')
+                            })
+                
+                elif isinstance(weekly_data, list):
+                    # Format: [ { 'dayOfWeek': 'Monday', 'from': '09:00', ... } ]
+                    for item in weekly_data:
+                        normalized_items.append({
+                            'day': item.get('dayOfWeek', 'Unknown'),
+                            'from': item.get('from'),
+                            'to': item.get('to')
+                        })
+
+                # Now process the clean list
                 time_map = {}
-                for item in schedule_obj['weeklyRanges']:
-                    # Extract raw values
-                    raw_s = item.get('from', '00:00')
-                    raw_e = item.get('to', '23:59')
+                for item in normalized_items:
+                    raw_s = item.get('from')
+                    raw_e = item.get('to')
                     
-                    # Handle "09:00:00" vs "09:00"
-                    s_str = str(raw_s).split(':')
-                    e_str = str(raw_e).split(':')
+                    # Handle None/Null (Midnight)
+                    s_str = str(raw_s).split(':') if raw_s else ['00', '00']
+                    e_str = str(raw_e).split(':') if raw_e else ['23', '59']
                     
-                    # Safe formatting
+                    # Format HH:MM
                     s_fmt = f"{s_str[0]}:{s_str[1]}" if len(s_str) >= 2 else "00:00"
                     e_fmt = f"{e_str[0]}:{e_str[1]}" if len(e_str) >= 2 else "23:59"
                     
                     time_key = f"{s_fmt}-{e_fmt}"
-                    day_short = item.get('dayOfWeek', '???')[:3]
+                    
+                    # Clean Day Name (monday -> Mon)
+                    day_raw = item.get('day', '???')
+                    day_short = day_raw[:1].upper() + day_raw[1:3].lower() # Cap first letter
                     
                     if time_key not in time_map: time_map[time_key] = []
                     time_map[time_key].append(day_short)
 
-                # Sort and textify
+                # Format for Display
                 days_order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                
                 for t_str, days in time_map.items():
+                    # Sort
                     days.sort(key=lambda d: days_order.index(d) if d in days_order else 99)
+                    
+                    # Group
                     d_label = ",".join(days)
                     if len(days) == 5 and 'Mon' in days and 'Fri' in days: d_label = "Mon-Fri"
                     elif len(days) == 7: d_label = "Everyday"
                     elif len(days) == 2 and 'Sat' in days and 'Sun' in days: d_label = "Weekends"
+                    
                     output_lines.append(f"{d_label}: {t_str}")
 
-            # 2. Ranges (Holidays)
+            # 2. Specific Ranges (Holidays)
             if schedule_obj.get('ranges'):
                 for r in schedule_obj['ranges']:
-                    f = r.get('from', '?').replace('T', ' ')[:16]
-                    t = r.get('to', '?').replace('T', ' ')[:16]
+                    f = str(r.get('from', '')).replace('T', ' ')[:16]
+                    t = str(r.get('to', '')).replace('T', ' ')[:16]
                     output_lines.append(f"{f} to {t}")
 
             if not output_lines:
-                # If object exists but empty ranges, dump it to be safe
-                return f"Empty Sched: {json.dumps(schedule_obj)}"
+                return "24/7 (Open)"
                 
             return "<br/>".join(output_lines)
 
         except Exception as e:
-            # DATA DUMP ON ERROR - Show the user exactly what failed
-            try:
-                raw_json = json.dumps(schedule_obj, indent=0).replace('"', "'")
-                return f"FORMAT ERR: {str(e)}<br/>Data: {raw_json[:100]}..." 
-            except:
-                return f"CRITICAL DATA ERR: {str(e)}"
+            # Last Resort: Dump raw json keys so we can debug further if needed
+            return f"Data Error: {str(e)}<br/>Raw: {str(schedule_obj)[:50]}"
 
     def get_schedule_summary(self, ext_id):
         if ext_id in self.schedule_cache: return self.schedule_cache[ext_id]
-        
         try:
-            # Fetch
             resp = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
             
-            # 1. API Failure Check
-            if resp is None: 
-                return "API: No Response (Null)"
-            
-            if 'errorCode' in resp:
-                return f"API Err: {resp.get('errorCode')}"
-                
-            # 2. Data Check
-            if 'schedule' not in resp: 
-                return f"No 'schedule' key. Keys: {list(resp.keys())}"
+            if not resp: return "24/7 (Default)"
+            if 'schedule' not in resp: return "24/7"
             
             sched = resp['schedule']
             res = self.parse_schedule(sched)
             self.schedule_cache[ext_id] = res
             return res
-            
-        except Exception as e:
-            # Reveal the exact python error
-            return f"Py Err: {str(e)}"
+        except Exception as e: 
+            return f"Fetch Err: {str(e)}"
 
     def format_custom_rule(self, rule):
         try:
@@ -163,7 +175,7 @@ class CallFlowTracer:
                 nums = [n.get('phoneNumber', '?') for n in rule['calledNumbers']]
                 conds.append(f"To: {', '.join(nums)}")
             
-            # Schedule
+            # Schedule (Uses Universal Parser)
             if rule.get('schedule'):
                 sch_text = self.parse_schedule(rule['schedule'])
                 if sch_text != "24/7 (Open)":
@@ -189,7 +201,7 @@ class CallFlowTracer:
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Types ---
+        # --- Nodes ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -247,9 +259,10 @@ class CallFlowTracer:
                         
                         logic = ""
                         if rtype == 'BusinessHours':
-                            # Logic: Fetch schedule using strict parser
+                            # Safe Fetch
                             logic = f"<b>Business Hours</b><br/>{self.get_schedule_summary(ext_id)}"
                         elif rtype == 'Custom':
+                            # Safe Fetch
                             logic = f"<b>Custom: {self.clean_text(rname)}</b><br/>{self.format_custom_rule(r)}"
                         elif rtype == 'AfterHours':
                             logic = f"<b>After Hours</b>"
@@ -284,6 +297,7 @@ class CallFlowTracer:
             except Exception as e:
                 print(f"Rule Error: {e}")
 
+        # --- IVR ---
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
