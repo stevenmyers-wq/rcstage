@@ -43,7 +43,7 @@
     .export-menu {
         display: none; position: absolute; right: 0; bottom: 45px;
         background: white; border: 1px solid #ccc; border-radius: 6px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 160px; overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 180px; overflow: hidden;
     }
     .export-item {
         display: block; width: 100%; padding: 10px 12px; text-align: left;
@@ -194,18 +194,29 @@
                     $('#export-menu').toggle();
                 });
                 
-                // Close menu when clicking elsewhere
                 $(document).on('click', function(){ $('#export-menu').hide(); });
 
-                // --- EXPORT LOGIC ---
+                // --- FIXED EXPORT LOGIC ---
                 
-                // 1. Export SVG (Vector - Best for Large Graphs)
+                // 1. Export SVG (Vector - Corrected for XML Validity)
                 $('#btn-save-svg').off().on('click', function() {
                     if(!panZoomInstance) return;
                     
-                    // Get raw SVG string
-                    const svgData = document.querySelector('#call-flow-diagram svg').outerHTML;
-                    const blob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+                    const svgEl = document.querySelector('#call-flow-diagram svg');
+                    
+                    // Use XMLSerializer (Not outerHTML) to ensure tags like <br> are closed (<br/>)
+                    const serializer = new XMLSerializer();
+                    let source = serializer.serializeToString(svgEl);
+                    
+                    // Safety check: Ensure all breaks are self-closing (browsers vary on this)
+                    source = source.replace(/<br>/g, '<br/>');
+
+                    // Add namespace if missing
+                    if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
+                        source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+                    }
+                    
+                    const blob = new Blob([source], {type: 'image/svg+xml;charset=utf-8'});
                     const url = URL.createObjectURL(blob);
                     
                     const link = document.createElement('a');
@@ -216,34 +227,29 @@
                     document.body.removeChild(link);
                 });
 
-                // 2. Export High-Res PNG (Canvas Render)
+                // 2. Export High-Res PNG
                 $('#btn-save-png').off().on('click', function() {
                     const svgEl = document.querySelector('#call-flow-diagram svg');
                     if(!svgEl) return;
 
-                    // 1. Clone the SVG to not mess up the view
                     const clone = svgEl.cloneNode(true);
-                    
-                    // 2. Reset Pan/Zoom on clone to get full image
-                    clone.setAttribute('style', ''); // Clear styles
+                    clone.setAttribute('style', ''); 
                     clone.removeAttribute('transform');
-                    // Find the group panzoom uses and reset it
                     const g = clone.querySelector('.svg-pan-zoom_viewport');
                     if(g) g.setAttribute('transform', 'matrix(1,0,0,1,0,0)');
                     
-                    // 3. Serialize
-                    const svgData = new XMLSerializer().serializeToString(clone);
+                    // Serialize properly
+                    const serializer = new XMLSerializer();
+                    let svgData = serializer.serializeToString(clone);
+                    svgData = svgData.replace(/<br>/g, '<br/>'); // Fix breaks
                     
-                    // 4. Create Image
                     const img = new Image();
                     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
                     
                     img.onload = function() {
                         const canvas = document.createElement('canvas');
-                        // Use original SVG viewbox size
                         const bbox = svgEl.getBBox(); 
-                        // Scale up 2x for better quality
-                        const scale = 2; 
+                        const scale = 2; // High Res
                         canvas.width = (bbox.width + 100) * scale;
                         canvas.height = (bbox.height + 100) * scale;
                         
@@ -251,7 +257,7 @@
                         ctx.fillStyle = 'white';
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
                         ctx.scale(scale, scale);
-                        ctx.drawImage(img, 50, 50); // Margin
+                        ctx.drawImage(img, 50, 50);
                         
                         const link = document.createElement('a');
                         link.download = 'call_flow.png';
