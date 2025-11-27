@@ -25,7 +25,7 @@ class CallFlowTracer:
             
             self.request_logs.append({
                 'method': 'GET',
-                'url': endpoint, # Ensuring key is exactly 'url'
+                'url': endpoint,
                 'status': status,
                 'duration': f"{duration}ms"
             })
@@ -226,7 +226,6 @@ class CallFlowTracer:
                             else:
                                 self.trace(target, nid, rname, new_hist)
                         else:
-                            # Non-transfer
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
                             det = action
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
