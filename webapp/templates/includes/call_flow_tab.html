@@ -1,23 +1,42 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <style>
-    #call-flow-diagram { min-height: 700px; border: 2px solid #e2e8f0; position: relative; cursor: default; background: #fafafa; }
-    #call-flow-diagram.pan-enabled { cursor: grab; }
-    #call-flow-diagram.pan-enabled:active { cursor: grabbing; }
-    #call-flow-diagram svg { max-width: none !important; height: auto !important; }
-    
-    .zoom-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 5px; z-index: 1000; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 2px solid #6366f1; }
-    .zoom-controls-row { display: flex; gap: 5px; justify-content: center; }
-    .zoom-btn { background: #6366f1; color: white; border: none; width: 40px; height: 40px; border-radius: 6px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; font-weight: bold; }
-    .zoom-btn:hover { background: #4f46e5; }
+    #call-flow-diagram { 
+        min-height: 700px; 
+        height: 80vh; 
+        border: 2px solid #e2e8f0; 
+        position: relative; 
+        background: #fafafa; 
+        overflow: hidden; /* Important for SVG pan zoom */
+    }
     
     /* Select2 Customization */
     .select2-container .select2-selection--single { height: 50px !important; border: 1px solid #d1d5db !important; border-radius: 0.5rem !important; display: flex !important; align-items: center !important; }
     .select2-selection__arrow { height: 48px !important; }
     .select2-container--default .select2-selection--single .select2-selection__rendered { color: #374151 !important; font-size: 16px; padding-left: 12px; }
+    
+    /* Overlay Controls */
+    .controls-overlay {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        z-index: 100;
+        background: rgba(255,255,255,0.9);
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border: 1px solid #ddd;
+        display: flex;
+        gap: 5px;
+    }
+    .ctrl-btn {
+        background: #fff; border: 1px solid #ccc; width: 36px; height: 36px;
+        border-radius: 4px; font-weight: bold; cursor: pointer; color: #555;
+        display: flex; align-items: center; justify-content: center; font-size: 18px;
+    }
+    .ctrl-btn:hover { background: #f0f0f0; color: #000; }
 </style>
 
 <div class="space-y-6">
@@ -43,22 +62,25 @@
     <div class="w-full bg-white rounded-xl shadow-lg border border-gray-200 p-6 space-y-3">
         <div class="flex justify-between items-center">
             <h4 class="text-lg font-semibold text-gray-800">2. Call Flow Diagram</h4>
-            <div id="export-controls" class="flex gap-2" style="display:none;">
-                <button id="save-pdf-btn" class="bg-gray-600 text-white text-sm py-2 px-4 rounded-lg hover:bg-gray-700 transition">Save as PDF</button>
+            <div id="export-controls" style="display:none;">
+                <button id="save-pdf-btn" class="bg-gray-600 text-white text-sm py-2 px-4 rounded-lg hover:bg-gray-700 transition">Save Image</button>
             </div>
         </div>
         
         <div style="position: relative;">
-            <div id="zoom-controls" class="zoom-controls" style="display:none;">
-                <div class="zoom-controls-row"><button class="zoom-btn" id="zoom-in-btn">+</button><button class="zoom-btn" id="zoom-out-btn">−</button></div>
-                <div class="zoom-controls-row"><button class="zoom-btn" id="pan-up-btn">↑</button></div>
-                <div class="zoom-controls-row"><button class="zoom-btn" id="pan-left-btn">←</button><button class="zoom-btn" id="pan-right-btn">→</button></div>
-                <div class="zoom-controls-row"><button class="zoom-btn" id="pan-down-btn">↓</button></div>
-                <div class="zoom-controls-row"><button class="zoom-btn small-text" id="zoom-reset-btn">⟲</button><button class="zoom-btn small-text" id="fit-btn">⊡</button></div>
-            </div>
-            <div id="call-flow-diagram" class="mt-4 w-full bg-white rounded-lg flex items-center justify-center text-gray-400 overflow-hidden p-4">
+            <div id="call-flow-diagram" class="mt-4 w-full bg-white rounded-lg flex items-center justify-center text-gray-400">
                 Select an extension above and click 'Visualize'.
             </div>
+            
+            <div id="zoom-controls" class="controls-overlay" style="display:none;">
+                <button class="ctrl-btn" id="btn-zoom-in" title="Zoom In">+</button>
+                <button class="ctrl-btn" id="btn-zoom-out" title="Zoom Out">−</button>
+                <button class="ctrl-btn" id="btn-reset" title="Reset View">⟲</button>
+            </div>
+        </div>
+        
+        <div class="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+            💡 <strong>Tip:</strong> Mouse Wheel to Zoom • Click & Drag to Pan
         </div>
     </div>
     
@@ -69,31 +91,27 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 
 <script>
     mermaid.initialize({ startOnLoad: false, theme: 'base', flowchart: { useMaxWidth: false, htmlLabels: true, curve: 'basis' } });
 
-    $(document).ready(function() {
-        // Initialize Select2 placeholder
-        $('#visualiser-target-select').select2({ placeholder: "Wait, loading data...", width: '100%' });
+    let panZoomInstance = null;
 
+    $(document).ready(function() {
+        // Init Select2
+        $('#visualiser-target-select').select2({ placeholder: "Wait, loading data...", width: '100%' });
         const $loadingIndicator = $('#loading-indicator');
 
-        // Fetch Data
+        // Fetch Extensions
         $.ajax({
             url: '/api/rc/visualiser/search',
             method: 'GET',
             success: function(response) {
                 if(response.status === 'success') {
                     $loadingIndicator.hide();
-                    
-                    // DESTROY AND RE-INIT (Fixes rendering issues)
-                    if ($('#visualiser-target-select').data('select2')) {
-                        $('#visualiser-target-select').select2('destroy');
-                    }
+                    if ($('#visualiser-target-select').data('select2')) $('#visualiser-target-select').select2('destroy');
                     
                     $('#visualiser-target-select').empty().select2({
                         placeholder: "Select a Call Flow Start Point",
@@ -106,11 +124,11 @@
                 }
             },
             error: function(err) {
-                console.error("API Fetch Error:", err);
                 $loadingIndicator.text("Failed to connect to server.").addClass('text-red-500');
             }
         });
 
+        // Visualize Click
         $('#visualize-button').on('click', function() {
             const selectedId = $('#visualiser-target-select').val();
             if (!selectedId || selectedId === 'error') { alert("Please select a valid extension."); return; }
@@ -118,7 +136,12 @@
             const btn = $(this);
             const originalText = btn.text();
             btn.prop('disabled', true).text('Generating...');
-            $('#call-flow-diagram').html('<div class="flex flex-col items-center"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700 mb-4"></div><p>Tracing call flow...</p></div>');
+            
+            // Show Spinner
+            $('#call-flow-diagram').html('<div class="flex flex-col items-center"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700 mb-4"></div><p>Tracing call flow (This may take 10-20s)...</p></div>');
+            
+            // Hide controls during load
+            $('#zoom-controls, #export-controls').hide();
 
             fetch(`/api/rc/trace-flow/${selectedId}`)
                 .then(res => res.json())
@@ -132,32 +155,55 @@
 
         async function renderMermaid(graph) {
             const el = document.querySelector('#call-flow-diagram');
+            
+            // Clean up old instance
+            if(panZoomInstance) { panZoomInstance.destroy(); panZoomInstance = null; }
+            
             try {
                 const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
                 el.innerHTML = svg;
+                
                 const svgEl = el.querySelector('svg');
-                if (svgEl) {
-                    const panzoom = Panzoom(svgEl, { maxScale: 5, minScale: 0.1, contain: 'outside', startScale: 0.8 });
-                    $('#zoom-in-btn').off().on('click', panzoom.zoomIn);
-                    $('#zoom-out-btn').off().on('click', panzoom.zoomOut);
-                    $('#zoom-reset-btn').off().on('click', panzoom.reset);
-                    $('#fit-btn').off().on('click', () => { panzoom.reset(); panzoom.zoom(0.8); });
-                    el.addEventListener('wheel', panzoom.zoomWithWheel);
-                    el.classList.add('pan-enabled');
-                    $('#zoom-controls, #export-controls').show();
-                }
-            } catch (e) { el.innerHTML = `<div class="text-red-500 p-4">Mermaid Error: ${e.message}</div>`; }
+                
+                // Set SVG to fill container for proper zooming
+                svgEl.style.width = '100%';
+                svgEl.style.height = '100%';
+                
+                // Initialize SVG-Pan-Zoom
+                panZoomInstance = svgPanZoom(svgEl, {
+                    zoomEnabled: true,
+                    controlIconsEnabled: false, // We use custom buttons
+                    fit: true,
+                    center: true,
+                    minZoom: 0.1,
+                    maxZoom: 10
+                });
+                
+                // Show Controls
+                $('#zoom-controls, #export-controls').show();
+                
+                // Bind Custom Buttons
+                $('#btn-zoom-in').off().on('click', function(){ panZoomInstance.zoomIn(); });
+                $('#btn-zoom-out').off().on('click', function(){ panZoomInstance.zoomOut(); });
+                $('#btn-reset').off().on('click', function(){ panZoomInstance.resetZoom(); panZoomInstance.center(); });
+                
+            } catch (e) { 
+                el.innerHTML = `<div class="text-red-500 p-4">Mermaid Render Error: ${e.message}</div>`; 
+            }
         }
 
         $('#save-pdf-btn').on('click', function() {
             const el = document.querySelector('#call-flow-diagram');
             if(!el.querySelector('svg')) return;
+            
+            // Reset zoom to fetch full image
+            if(panZoomInstance) { panZoomInstance.resetZoom(); panZoomInstance.center(); }
+            
             html2canvas(el).then(canvas => {
-                const img = canvas.toDataURL('image/png');
-                const { jsPDF } = window.jspdf;
-                const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
-                pdf.addImage(img, 'PNG', 0, 0, canvas.width, canvas.height);
-                pdf.save('call-flow.pdf');
+                const link = document.createElement('a');
+                link.download = 'call-flow.png';
+                link.href = canvas.toDataURL();
+                link.click();
             });
         });
 
