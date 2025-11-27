@@ -47,11 +47,11 @@ def search_for_visualiser_targets():
             p_number = record.get('phoneNumber', '')
             if not return_all and query not in p_number: continue
             
-            # Simple icon for phone numbers
             if record.get('extension'):
+                # CLEAN TEXT - NO ICONS
                 results.append({
                     'id': record['extension']['id'],
-                    'text': f"📞 {p_number} ({record.get('usageType')})",
+                    'text': f"{p_number} ({record.get('usageType')})",
                     'type': 'PhoneNumber'
                 })
 
@@ -66,18 +66,13 @@ def search_for_visualiser_targets():
              if query not in e_name.lower() and query != e_number: continue
         
         if e_type in ['IvrMenu', 'CallQueue', 'Department', 'Site', 'User', 'ApplicationExtension']:
-            # UPDATED ICONS
-            icon = "📞"
-            if e_type == 'IvrMenu': icon = "🤖"   # Robot for IVR
-            elif e_type == 'CallQueue': icon = "👥" # People for Queue
-            elif e_type == 'User': icon = "👤"      # Single person for User
-            elif e_type == 'Site': icon = "🏢"      # Building for Site
             
-            status = "" if ext.get('status') == 'Enabled' else " (Disabled)"
+            status = "" if ext.get('status') == 'Enabled' else " [Disabled]"
             
+            # CLEAN TEXT - Format: "[Type] Name (Ext)"
             results.append({
                 'id': ext['id'],
-                'text': f"{icon} {e_name} (Ext: {e_number}){status}",
+                'text': f"[{e_type}] {e_name} (Ext: {e_number}){status}",
                 'type': e_type
             })
     
