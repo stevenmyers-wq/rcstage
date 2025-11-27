@@ -13,7 +13,6 @@ class CallFlowTracer:
         self.node_counter = 0
 
     def log_api_call(self, endpoint):
-        """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
@@ -42,7 +41,6 @@ class CallFlowTracer:
 
     def get_extension_info(self, ext_id):
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
-        
         for i in range(3):
             info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
             if info and 'errorCode' not in info:
@@ -61,11 +59,9 @@ class CallFlowTracer:
         if not schedule_obj: return "24/7 (Open)"
         try:
             output_lines = []
-            # 1. Weekly Ranges
             if schedule_obj.get('weeklyRanges'):
                 weekly_data = schedule_obj['weeklyRanges']
                 normalized_items = []
-
                 if isinstance(weekly_data, dict):
                     for day_key, periods in weekly_data.items():
                         if isinstance(periods, dict): periods = [periods]
@@ -96,7 +92,6 @@ class CallFlowTracer:
                     elif len(days) == 2 and 'Sat' in days and 'Sun' in days: d_label = "Weekends"
                     output_lines.append(f"{d_label}: {t_str}")
 
-            # 2. Ranges
             if schedule_obj.get('ranges'):
                 for r in schedule_obj['ranges']:
                     f = str(r.get('from', '')).replace('T', ' ')[:16]
@@ -155,37 +150,23 @@ class CallFlowTracer:
         if action == 'PlayAnnouncementOnly': return "Play Announcement"
         return action
 
-    # ----------------------------------------------------
-    #  TRACE FUNCTION (FIXED LINK LOGIC)
-    # ----------------------------------------------------
     def trace(self, ext_id, parent_id=None, link_label="", history=None, is_active=True):
         if history is None: history = []
-        
-        # Determine Link Style based on Active Status
-        # Active: Solid Arrow (-->)
-        # Inactive: Dotted Arrow (-.->)
-        # Mermaid text syntax: -- "Label" -->  OR  -. "Label" .->
         
         arrow_code = "-->" if is_active else "-.->"
         
         if link_label:
             clean_lbl = self.clean_text(link_label)
-            if is_active:
-                link_syntax = f'-- "{clean_lbl}" -->'
-            else:
-                link_syntax = f'-. "{clean_lbl}" .->'
+            link_syntax = f'-- "{clean_lbl}" -->' if is_active else f'-. "{clean_lbl}" .->'
         else:
             link_syntax = arrow_code
 
-        # Loop Check
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
-                # Close loop with dotted line
                 self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
             return
         if ext_id in self.node_map:
             if parent_id: 
-                # Link to existing node
                 self.graph_lines.append(f'{parent_id} {link_syntax} {self.node_map[ext_id]}')
             return
 
@@ -194,7 +175,7 @@ class CallFlowTracer:
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Node Creation ---
+        # --- Node Types ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -220,12 +201,12 @@ class CallFlowTracer:
         style = {'Site': 'siteStyle', 'IvrMenu': 'ivrStyle', 'CallQueue': 'queueStyle'}.get(e_type, 'userStyle')
         self.graph_lines.append(f'{nid}["{label}"]:::{style}')
         
-        # Link from Parent
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- Queue Agents ---
+        # --- Queue Logic (Agents + Overflow) ---
         if e_type == 'CallQueue':
             try:
+                # 1. Fetch Agents (Existing)
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
                     m_list = []
@@ -236,7 +217,33 @@ class CallFlowTracer:
                     iid = f"info_{self.node_counter}"; self.node_counter += 1
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
-            except: pass
+
+                # 2. Fetch Overflow/Wait Settings (NEW)
+                # We need the direct queue object to see "Wait Settings"
+                q_details = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
+                if q_details:
+                    # Logic: If transfer action is set, map it.
+                    # RC Fields: 'transfer', 'maxWaitTimeAction'
+                    
+                    # Check Max Wait Time
+                    max_wait = q_details.get('maxWaitTime', 0)
+                    
+                    # Look for transfer target in the 'transfer' object
+                    transfer_target_id = None
+                    if q_details.get('transfer') and q_details['transfer'].get('extension'):
+                        transfer_target_id = q_details['transfer']['extension']['id']
+                    
+                    if transfer_target_id:
+                        # Determine label
+                        if max_wait == 0:
+                            # Immediate Overflow ("Don't Wait")
+                            self.trace(transfer_target_id, nid, "Immediate Overflow (Don't Wait)", new_hist)
+                        else:
+                            # Standard Overflow
+                            self.trace(transfer_target_id, nid, f"Overflow (> {max_wait}s)", new_hist)
+
+            except Exception as e:
+                print(f"Queue Detail Error: {e}")
 
         # --- Routing Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
@@ -244,14 +251,9 @@ class CallFlowTracer:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
                 if rules and rules.get('records'):
                     for r in rules['records']:
-                        # Status Check
                         is_rule_active = r.get('enabled', True)
                         status_text = "" if is_rule_active else " <i>(Inactive)</i>"
-                        
-                        # Style for Logic Node
-                        logic_node_style = "logicStyle" if is_rule_active else "inactiveStyle"
-                        
-                        # Link Style for logic node connection
+                        node_style_class = "logicStyle" if is_rule_active else "inactiveStyle"
                         logic_link = "-->" if is_rule_active else "-.->"
 
                         rtype = r.get('type', 'Custom')
@@ -290,19 +292,16 @@ class CallFlowTracer:
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
-                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{logic_node_style}')
+                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style_class}')
                                 self.graph_lines.append(f'{nid} {logic_link} {lid}')
-                                # Pass is_active down to the next link
                                 self.trace(target, lid, "Matches", new_hist, is_active=is_rule_active)
                             else:
-                                # Direct trace with status style
                                 self.trace(target, nid, rname + status_text, new_hist, is_active=is_rule_active)
                         else:
-                            # Non-transfer
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
                             det = action
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{logic_node_style}')
+                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style_class}')
                             self.graph_lines.append(f'{nid} {logic_link} {iid}')
             except Exception as e:
                 print(f"Rule Error: {e}")
