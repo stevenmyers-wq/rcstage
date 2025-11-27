@@ -11,7 +11,7 @@ viz_bp = Blueprint('visualiser', __name__)
 def fetch_all_pages(endpoint, params=None):
     if params is None: params = {}
     current_params = params.copy()
-    current_params['perPage'] = 1000
+    current_params['perPage'] = 500 # Lowered from 1000 for stability
     current_params['page'] = 1
     all_records = []
     
@@ -29,7 +29,7 @@ def fetch_all_pages(endpoint, params=None):
             
             if resp.get('navigation', {}).get('nextPage'):
                 current_params['page'] += 1
-                time.sleep(0.1)
+                time.sleep(0.05)
             else: break
         except Exception as e:
             print(f"[ERROR] Fetch failed: {e}", file=sys.stderr)
@@ -61,24 +61,33 @@ def search_for_visualiser_targets():
                     })
         
         # 2. Extensions
+        # Fetching basic info for ALL extensions
         exts = fetch_all_pages("/restapi/v1.0/account/~/extension")
+        
+        # Expanded List of Allowed Types to catch missing extensions
+        ALLOWED_TYPES = [
+            'IvrMenu', 'CallQueue', 'Department', 'Site', 'ApplicationExtension',
+            'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited', 'Bot'
+        ]
+        
         for e in exts:
             ename = e.get('name', 'Unknown')
             enum = e.get('extensionNumber', '')
             etype = e.get('type', 'Unknown')
             
+            # Filter Logic
             if not return_all:
                 if query not in ename.lower() and query != enum: continue
             
-            if etype in ['IvrMenu', 'CallQueue', 'Department', 'Site', 'User', 'ApplicationExtension']:
+            if etype in ALLOWED_TYPES:
                 status = "" if e.get('status') == 'Enabled' else " [Disabled]"
-                # No Emojis, Clean Text
                 results.append({
                     'id': e['id'],
                     'text': f"[{etype}] {ename} (Ext: {enum}){status}",
                     'type': etype
                 })
 
+        # Deduplicate
         final_results = []
         seen = set()
         for r in results:
@@ -97,7 +106,6 @@ def search_for_visualiser_targets():
 def visualize_call_flow_api(ext_id):
     if not is_authenticated() or not get_rc_access_token():
         return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
-    
     session['api_log'] = []
     try:
         graph = generate_mermaid_flow(ext_id)
