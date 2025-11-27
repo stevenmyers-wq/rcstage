@@ -43,7 +43,6 @@ class CallFlowTracer:
     def get_extension_info(self, ext_id):
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
         
-        # Retry logic
         for i in range(3):
             info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
             if info and 'errorCode' not in info:
@@ -56,117 +55,100 @@ class CallFlowTracer:
 
     def clean_text(self, text):
         if not text: return ""
-        # Remove quotes that break Mermaid syntax
+        # Remove quotes and special chars that break Mermaid syntax
         return str(text).replace('"', "'").replace('#', '').strip()
 
     # ==========================================
-    #  NEW: ROBUST SCHEDULE PARSER (The Fix)
+    #  TRANSPARENT PARSER (No Hiding Errors)
     # ==========================================
     def parse_schedule(self, schedule_obj):
         """
-        Parses RingCentral schedule objects into readable HTML strings.
-        Returns RAW data if parsing fails, ensuring data is always visible.
+        Parses schedule. If it fails, DUMPS RAW JSON so we can see the data.
         """
         if not schedule_obj: return "24/7 (Open)"
         
-        # Buffer to hold lines of text
-        output_lines = []
-        
         try:
-            # 1. Weekly Ranges (Standard Business Hours)
-            # Format: [{ "from": "09:00", "to": "17:00", "dayOfWeek": "Monday" }]
+            output_lines = []
+            
+            # 1. Weekly Ranges
             if schedule_obj.get('weeklyRanges'):
-                # Group days by time range
-                # Map: "09:00-17:00" -> ["Mon", "Tue"]
                 time_map = {}
-                
                 for item in schedule_obj['weeklyRanges']:
-                    # Robust Time Extraction
-                    raw_s = item.get('from')
-                    raw_e = item.get('to')
+                    # Extract raw values
+                    raw_s = item.get('from', '00:00')
+                    raw_e = item.get('to', '23:59')
                     
-                    # RC sometimes sends "09:00:00" or just "09:00" or None (Midnight)
-                    s_str = str(raw_s).split(':') if raw_s else ['00', '00']
-                    e_str = str(raw_e).split(':') if raw_e else ['23', '59']
+                    # Handle "09:00:00" vs "09:00"
+                    s_str = str(raw_s).split(':')
+                    e_str = str(raw_e).split(':')
                     
-                    # Force 2-digit format
-                    start_fmt = f"{s_str[0]}:{s_str[1]}" if len(s_str) >= 2 else "00:00"
-                    end_fmt = f"{e_str[0]}:{e_str[1]}" if len(e_str) >= 2 else "23:59"
+                    # Safe formatting
+                    s_fmt = f"{s_str[0]}:{s_str[1]}" if len(s_str) >= 2 else "00:00"
+                    e_fmt = f"{e_str[0]}:{e_str[1]}" if len(e_str) >= 2 else "23:59"
                     
-                    time_key = f"{start_fmt}-{end_fmt}"
-                    
-                    # Day Extraction
-                    day_full = item.get('dayOfWeek', 'Unknown')
-                    day_short = day_full[:3] # Mon, Tue...
+                    time_key = f"{s_fmt}-{e_fmt}"
+                    day_short = item.get('dayOfWeek', '???')[:3]
                     
                     if time_key not in time_map: time_map[time_key] = []
                     time_map[time_key].append(day_short)
 
-                # Format Logic
+                # Sort and textify
                 days_order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                
                 for t_str, days in time_map.items():
-                    # Sort days logically
                     days.sort(key=lambda d: days_order.index(d) if d in days_order else 99)
-                    
-                    # Create Label
                     d_label = ",".join(days)
                     if len(days) == 5 and 'Mon' in days and 'Fri' in days: d_label = "Mon-Fri"
-                    if len(days) == 7: d_label = "Everyday"
-                    if len(days) == 2 and 'Sat' in days and 'Sun' in days: d_label = "Weekends"
-                    
+                    elif len(days) == 7: d_label = "Everyday"
+                    elif len(days) == 2 and 'Sat' in days and 'Sun' in days: d_label = "Weekends"
                     output_lines.append(f"{d_label}: {t_str}")
 
-            # 2. Specific Ranges (Holidays / Custom Dates)
-            # Format: [{ "from": "2023-12-25T00:00...", "to": "..." }]
+            # 2. Ranges (Holidays)
             if schedule_obj.get('ranges'):
                 for r in schedule_obj['ranges']:
-                    # Parse ISO strings "2023-12-25T09:00:00"
-                    f_iso = r.get('from', '')
-                    t_iso = r.get('to', '')
-                    
-                    # Extract simple Date/Time
-                    f_clean = f_iso.replace('T', ' ')[:16] # 2023-12-25 09:00
-                    t_clean = t_iso.replace('T', ' ')[:16]
-                    
-                    output_lines.append(f"{f_clean} to {t_clean}")
-                    
-                    # Limit long lists
-                    if len(output_lines) > 4:
-                        output_lines.append(f"(... and {len(schedule_obj['ranges']) - 4} more)")
-                        break
+                    f = r.get('from', '?').replace('T', ' ')[:16]
+                    t = r.get('to', '?').replace('T', ' ')[:16]
+                    output_lines.append(f"{f} to {t}")
 
             if not output_lines:
-                return "24/7 (Open)"
+                # If object exists but empty ranges, dump it to be safe
+                return f"Empty Sched: {json.dumps(schedule_obj)}"
                 
             return "<br/>".join(output_lines)
 
         except Exception as e:
-            # FATAL PARSER ERROR -> Dump Raw Data
-            # This ensures you see the data even if my code breaks
-            print(f"Schedule Parser Error: {e}")
-            raw_dump = []
-            if schedule_obj.get('weeklyRanges'):
-                for w in schedule_obj['weeklyRanges']:
-                    raw_dump.append(f"{w.get('dayOfWeek')} {w.get('from')}-{w.get('to')}")
-            return "Raw: " + "; ".join(raw_dump)
+            # DATA DUMP ON ERROR - Show the user exactly what failed
+            try:
+                raw_json = json.dumps(schedule_obj, indent=0).replace('"', "'")
+                return f"FORMAT ERR: {str(e)}<br/>Data: {raw_json[:100]}..." 
+            except:
+                return f"CRITICAL DATA ERR: {str(e)}"
 
     def get_schedule_summary(self, ext_id):
         if ext_id in self.schedule_cache: return self.schedule_cache[ext_id]
         
         try:
-            # Always fetch fresh
+            # Fetch
             resp = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
             
-            if not resp or 'schedule' not in resp: 
-                return "24/7 (Default)"
+            # 1. API Failure Check
+            if resp is None: 
+                return "API: No Response (Null)"
+            
+            if 'errorCode' in resp:
+                return f"API Err: {resp.get('errorCode')}"
+                
+            # 2. Data Check
+            if 'schedule' not in resp: 
+                return f"No 'schedule' key. Keys: {list(resp.keys())}"
             
             sched = resp['schedule']
             res = self.parse_schedule(sched)
             self.schedule_cache[ext_id] = res
             return res
-        except: 
-            return "Fetch Error"
+            
+        except Exception as e:
+            # Reveal the exact python error
+            return f"Py Err: {str(e)}"
 
     def format_custom_rule(self, rule):
         try:
@@ -181,20 +163,19 @@ class CallFlowTracer:
                 nums = [n.get('phoneNumber', '?') for n in rule['calledNumbers']]
                 conds.append(f"To: {', '.join(nums)}")
             
-            # Schedule (Passed to new parser)
+            # Schedule
             if rule.get('schedule'):
                 sch_text = self.parse_schedule(rule['schedule'])
-                # Only show if it's not the default open
                 if sch_text != "24/7 (Open)":
                     conds.append(f"<b>Time:</b> {sch_text}")
 
             return "<br/>".join(conds) if conds else "Matches All Calls"
-        except: return "Complex Rule"
+        except Exception as e:
+            return f"Rule Err: {str(e)}"
 
     def trace(self, ext_id, parent_id=None, link_label="", history=None):
         if history is None: history = []
         
-        # Loop Check
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
                 self.graph_lines.append(f'{parent_id} -- "{self.clean_text(link_label)} (Loop)" --> {self.node_map[ext_id]}')
@@ -203,28 +184,23 @@ class CallFlowTracer:
             if parent_id: self.graph_lines.append(f'{parent_id} -- "{self.clean_text(link_label)}" --> {self.node_map[ext_id]}')
             return
 
-        # Node ID Generation
         nid = f"n{self.node_counter}"
         self.node_counter += 1
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- TYPES ---
-        
-        # 1. External
+        # --- Types ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
             if parent_id: self.graph_lines.append(f'{parent_id} -- "{self.clean_text(link_label)}" --> {nid}')
             return
 
-        # 2. Voicemail
         if str(ext_id).startswith("vm_"):
             self.graph_lines.append(f'{nid}(("[Voicemail]")):::userStyle')
             if parent_id: self.graph_lines.append(f'{parent_id} -- "{self.clean_text(link_label)}" --> {nid}')
             return
 
-        # 3. Standard
         info = self.get_extension_info(ext_id)
         if not info:
             self.graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
@@ -241,9 +217,7 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} -- "{self.clean_text(link_label)}" --> {nid}')
 
-        # --- DETAILS ---
-
-        # Queue Agents
+        # --- Details ---
         if e_type == 'CallQueue':
             try:
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
@@ -259,10 +233,9 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{nid} -.-> {iid}')
             except: pass
 
-        # Rules
+        # --- Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
-                # IMPORTANT: Fetch Detailed Rules
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=false")
                 if rules and rules.get('records'):
                     for r in rules['records']:
@@ -274,10 +247,9 @@ class CallFlowTracer:
                         
                         logic = ""
                         if rtype == 'BusinessHours':
-                            # Use new robust parser
+                            # Logic: Fetch schedule using strict parser
                             logic = f"<b>Business Hours</b><br/>{self.get_schedule_summary(ext_id)}"
                         elif rtype == 'Custom':
-                            # Use new robust parser
                             logic = f"<b>Custom: {self.clean_text(rname)}</b><br/>{self.format_custom_rule(r)}"
                         elif rtype == 'AfterHours':
                             logic = f"<b>After Hours</b>"
@@ -298,7 +270,6 @@ class CallFlowTracer:
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
-                                # IMPORTANT: Sanitized logic text to prevent breaks
                                 self.graph_lines.append(f'{lid}{{"{self.clean_text(logic)}"}}:::logicStyle')
                                 self.graph_lines.append(f'{nid} --> {lid}')
                                 self.trace(target, lid, "Matches", new_hist)
@@ -313,7 +284,6 @@ class CallFlowTracer:
             except Exception as e:
                 print(f"Rule Error: {e}")
 
-        # IVR
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
