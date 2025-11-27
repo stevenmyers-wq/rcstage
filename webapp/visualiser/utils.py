@@ -21,27 +21,69 @@ def get_extension_info(ext_id):
     return None
 
 def parse_weekly_ranges(weekly_ranges):
-    """Parses standard weekly schedules (Mon-Fri)."""
+    """
+    Robust parser for weekly schedules. 
+    Handles null values, missing keys, and odd formats safely.
+    """
     if not weekly_ranges: return None
+    
     try:
         time_groups = {}
         for item in weekly_ranges:
-            start = item.get('from', '00:00').split(':')
-            end = item.get('to', '23:59').split(':')
-            t_str = f"{start[0]}:{start[1]}-{end[0]}:{end[1]}"
+            # 1. Handle Nulls safely (RC sends null for 00:00 or 23:59 sometimes)
+            raw_from = item.get('from')
+            raw_to = item.get('to')
+            
+            s_str = str(raw_from) if raw_from else '00:00'
+            e_str = str(raw_to) if raw_to else '23:59'
+            
+            # 2. Extract HH:MM
+            # Split ensures we discard seconds if present (09:00:00 -> 09:00)
+            s_parts = s_str.split(':')
+            e_parts = e_str.split(':')
+            
+            if len(s_parts) >= 2: s_str = f"{s_parts[0]}:{s_parts[1]}"
+            if len(e_parts) >= 2: e_str = f"{e_parts[0]}:{e_parts[1]}"
+            
+            t_str = f"{s_str}-{e_str}"
+            
+            # 3. Get Day
             day = item.get('dayOfWeek', '???')[:3]
+            
             if t_str not in time_groups: time_groups[t_str] = []
             time_groups[t_str].append(day)
 
+        # 4. Sort and Format
         lines = []
+        # Logical sort order for days
+        day_map = {'Sun':0, 'Mon':1, 'Tue':2, 'Wed':3, 'Thu':4, 'Fri':5, 'Sat':6}
+        
         for t_str, days in time_groups.items():
+            # Sort days: Mon, Tue, Wed...
+            days.sort(key=lambda d: day_map.get(d, 99))
+            
             day_lbl = ",".join(days)
             if len(days) == 5 and 'Mon' in days and 'Fri' in days: day_lbl = "Mon-Fri"
             if len(days) == 7: day_lbl = "Everyday"
+            if len(days) == 2 and 'Sat' in days and 'Sun' in days: day_lbl = "Weekends"
+            
             lines.append(f"{day_lbl}: {t_str}")
+            
         return "<br/>".join(lines)
-    except:
-        return "Complex Schedule"
+        
+    except Exception as e:
+        print(f"Schedule Parse Error: {e}")
+        # FALLBACK: If pretty printing fails, dump the raw data so user sees SOMETHING.
+        try:
+            fallback = []
+            for item in weekly_ranges:
+                d = item.get('dayOfWeek', '?')[:3]
+                s = item.get('from', '00:00')
+                e = item.get('to', '23:59')
+                fallback.append(f"{d} {s}-{e}")
+            return "<br/>".join(fallback)
+        except:
+            return "Invalid Data"
 
 def get_schedule_summary(ext_id):
     """Fetches Business Hours."""
@@ -60,10 +102,7 @@ def get_schedule_summary(ext_id):
         return "Schedule Error"
 
 def format_custom_rule(rule):
-    """
-    ROBUST parser for custom rules (Caller ID, Called Number, Schedules).
-    Wrap in try/except to prevent the node from disappearing if parsing fails.
-    """
+    """Parses Custom Rules with safe fallback."""
     try:
         conds = []
         
@@ -81,17 +120,17 @@ def format_custom_rule(rule):
             
         # 3. Schedules
         schedule = rule.get('schedule', {})
-        
-        # 3a. Weekly Ranges
         if schedule.get('weeklyRanges'):
             w_text = parse_weekly_ranges(schedule['weeklyRanges'])
             if w_text: conds.append(f"<b>Time:</b> {w_text}")
             
-        # 3b. Specific Ranges (Holidays/Specific Dates)
         if schedule.get('ranges'):
-            # Just show a summary for holidays to keep box small
-            count = len(schedule['ranges'])
-            conds.append(f"<b>Specific Dates:</b> ({count} Ranges defined)")
+            # Ranges are usually holidays. Show the first one or a count.
+            r_count = len(schedule['ranges'])
+            first_r = schedule['ranges'][0]
+            f_from = first_r.get('from', '').split('T')[0] # 2023-12-25
+            f_to = first_r.get('to', '').split('T')[0]
+            conds.append(f"<b>Date:</b> {f_from} to {f_to} (+{r_count-1} more)" if r_count > 1 else f"<b>Date:</b> {f_from} to {f_to}")
 
         if not conds: return "Matches All"
         return "<br/>".join(conds)
@@ -156,7 +195,7 @@ def generate_mermaid_flow(start_ext_id):
         info = get_extension_info(ext_id)
         nid = f"n{node_counter}"; node_counter += 1
         node_map[ext_id] = nid
-        new_hist = history + [ext_id]
+        new_history = history + [ext_id]
 
         if not info:
             graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
@@ -203,10 +242,13 @@ def generate_mermaid_flow(start_ext_id):
                         logic_desc = ""
                         if rtype == 'BusinessHours':
                             rname = "Business Hours"
-                            logic_desc = f"<b>{rname}</b><br/>{get_schedule_summary(ext_id)}"
+                            # Helper renders actual times
+                            sched = get_schedule_summary(ext_id)
+                            logic_desc = f"<b>{rname}</b><br/>{sched}"
                         elif rtype == 'Custom':
-                            # Safe wrapper call
-                            logic_desc = f"<b>Custom: {clean_text(rname)}</b><br/>{format_custom_rule(r)}"
+                            # Helper extracts conditions
+                            conds = format_custom_rule(r)
+                            logic_desc = f"<b>Custom: {clean_text(rname)}</b><br/>{conds}"
                         else:
                             if rtype == 'AfterHours': rname = "After Hours"
                             logic_desc = f"<b>{rname}</b>"
@@ -225,7 +267,7 @@ def generate_mermaid_flow(start_ext_id):
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{node_counter}"; node_counter += 1
-                                # Logic Node (Hexagon)
+                                # Hexagon logic node
                                 graph_lines.append(f'{lid}{{"{clean_text(logic_desc)}"}}:::logicStyle')
                                 graph_lines.append(f'{nid} --> {lid}')
                                 _trace(target, lid, "Matches", new_hist)
