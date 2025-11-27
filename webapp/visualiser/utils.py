@@ -3,15 +3,48 @@ import json
 import time
 from webapp.rc_api import rc_api_call
 
-# Caches
+# Global Caches
 extension_cache = {}
 schedule_cache = {}
+
+# Local Log Tracker (Reset per request)
+request_logs = []
+
+def logged_rc_call(endpoint):
+    """
+    Wrapper around rc_api_call that forces logging for the frontend debug panel.
+    Fixes the "[GET] undefined" issue.
+    """
+    start = time.time()
+    try:
+        response = rc_api_call(endpoint)
+        duration = round((time.time() - start) * 1000, 2)
+        
+        status = "SUCCESS"
+        if not response: status = "EMPTY"
+        elif 'errorCode' in response: status = f"ERROR: {response.get('errorCode')}"
+        
+        # Log to our global list
+        request_logs.append({
+            'method': 'GET',
+            'url': endpoint,
+            'status': status,
+            'duration': f"{duration}ms"
+        })
+        return response
+    except Exception as e:
+        request_logs.append({
+            'method': 'GET',
+            'url': endpoint,
+            'status': f"EXCEPTION: {str(e)}"
+        })
+        return None
 
 def get_extension_info(ext_id):
     if ext_id in extension_cache: return extension_cache[ext_id]
     for i in range(3):
         try:
-            info = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
+            info = logged_rc_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
             if info and 'errorCode' not in info:
                 extension_cache[ext_id] = info
                 return info
@@ -20,97 +53,103 @@ def get_extension_info(ext_id):
         except: time.sleep(0.5)
     return None
 
-def parse_schedule_safely(weekly_ranges):
+def parse_schedule_safely(schedule_obj):
     """
-    Safely parses weekly ranges into a readable string.
-    Guaranteed to return a string, never raises an exception.
+    Aggressive parser: Returns readable text if possible, RAW text if not.
+    Never raises an exception.
     """
-    if not weekly_ranges: return "24/7"
-    
     try:
-        # Grouping Logic
-        groups = {}
-        for item in weekly_ranges:
-            # 1. Safe Time Extraction
-            raw_from = item.get('from', '00:00')
-            raw_to = item.get('to', '23:59')
-            # Convert "09:00:00" -> "09:00"
-            s = str(raw_from).split(':')
-            e = str(raw_to).split(':')
-            t_str = f"{s[0]}:{s[1]}-{e[0]}:{e[1]}"
-            
-            # 2. Day Extraction
-            d = item.get('dayOfWeek', '???')[:3]
-            
-            if t_str not in groups: groups[t_str] = []
-            groups[t_str].append(d)
+        # 1. Weekly Ranges (Standard Mon-Fri)
+        if schedule_obj.get('weeklyRanges'):
+            weekly = schedule_obj['weeklyRanges']
+            groups = {}
+            for item in weekly:
+                raw_from = item.get('from', '00:00')
+                raw_to = item.get('to', '23:59')
+                # Clean up "09:00:00" -> "09:00"
+                s = str(raw_from).split(':')
+                e = str(raw_to).split(':')
+                t_str = f"{s[0]}:{s[1]}-{e[0]}:{e[1]}"
+                
+                d = item.get('dayOfWeek', '???')[:3]
+                if t_str not in groups: groups[t_str] = []
+                groups[t_str].append(d)
+                
+            lines = []
+            day_map = {'Sun':0, 'Mon':1, 'Tue':2, 'Wed':3, 'Thu':4, 'Fri':5, 'Sat':6}
+            for t, days in groups.items():
+                days.sort(key=lambda x: day_map.get(x, 99))
+                d_lbl = ",".join(days)
+                if len(days) == 5 and 'Mon' in days and 'Fri' in days: d_lbl = "Mon-Fri"
+                if len(days) == 7: d_lbl = "Everyday"
+                lines.append(f"{d_lbl}: {t}")
+            return "<br/>".join(lines)
 
-        # Formatting Logic
-        lines = []
-        day_map = {'Sun':0, 'Mon':1, 'Tue':2, 'Wed':3, 'Thu':4, 'Fri':5, 'Sat':6}
-        
-        for t_str, days in groups.items():
-            days.sort(key=lambda x: day_map.get(x, 99))
-            d_lbl = ",".join(days)
-            if len(days) == 5 and 'Mon' in days and 'Fri' in days: d_lbl = "Mon-Fri"
-            if len(days) == 7: d_lbl = "Everyday"
-            if len(days) == 2 and 'Sat' in days and 'Sun' in days: d_lbl = "Weekends"
-            lines.append(f"{d_lbl}: {t_str}")
+        # 2. Ranges (Specific Dates / Holidays)
+        if schedule_obj.get('ranges'):
+            ranges = schedule_obj['ranges']
+            lines = []
+            for r in ranges[:3]: # Show first 3
+                f = r.get('from', '').split('T')[0]
+                t = r.get('to', '').split('T')[0]
+                lines.append(f"{f} to {t}")
+            if len(ranges) > 3: lines.append(f"(+{len(ranges)-3} more)")
+            return "<br/>".join(lines)
             
-        return "<br/>".join(lines)
-        
-    except Exception:
-        # Emergency Fallback: Just dump the raw values so the user sees *something*
-        try:
-            raw_lines = []
-            for item in weekly_ranges:
-                raw_lines.append(f"{item.get('dayOfWeek','')[:3]} {item.get('from','')} - {item.get('to','')}")
-            return "<br/>".join(raw_lines)
-        except:
-            return "Schedule Data Error"
+        return "24/7 (Open)"
+    except Exception as e:
+        # FALLBACK: Return raw string of object keys so we see something
+        return f"Raw: {str(schedule_obj)[:50]}..."
 
 def get_schedule_summary(ext_id):
     if ext_id in schedule_cache: return schedule_cache[ext_id]
     try:
-        resp = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
-        if not resp or 'schedule' not in resp: return "24/7"
+        # Always fetch fresh
+        resp = logged_rc_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
+        
+        if not resp: return "24/7 (Default)"
+        if 'schedule' not in resp: return "24/7"
         
         sched = resp['schedule']
-        if not sched.get('weeklyRanges'): return "24/7"
-        
-        res = parse_schedule_safely(sched['weeklyRanges'])
+        # If both are missing, it's open
+        if not sched.get('weeklyRanges') and not sched.get('ranges'):
+            return "24/7 (Open)"
+            
+        res = parse_schedule_safely(sched)
         schedule_cache[ext_id] = res
         return res
-    except: return "Sched Err"
+    except: 
+        return "Fetch Error"
 
 def format_custom_rule(rule):
     try:
         conds = []
-        # Caller ID
         if rule.get('callers'):
             names = [c.get('name', c.get('callerId', '?')) for c in rule['callers']]
-            txt = f"From: {', '.join(names[:2])}"
-            if len(names) > 2: txt += f" (+{len(names)-2})"
-            conds.append(txt)
-        # Called Number
+            conds.append(f"From: {', '.join(names)}")
+            
         if rule.get('calledNumbers'):
             nums = [n.get('phoneNumber', '?') for n in rule['calledNumbers']]
             conds.append(f"To: {', '.join(nums)}")
-        # Schedule
-        sch = rule.get('schedule', {})
-        if sch.get('weeklyRanges'):
-            conds.append(f"<b>Time:</b> {parse_schedule_safely(sch['weeklyRanges'])}")
-        if sch.get('ranges'):
-            conds.append(f"<b>Dates:</b> {len(sch['ranges'])} Specific Ranges")
             
+        # Parse Rule-Specific Schedule
+        if rule.get('schedule'):
+            sch_text = parse_schedule_safely(rule['schedule'])
+            if sch_text != "24/7 (Open)":
+                conds.append(f"<b>Time:</b> {sch_text}")
+
         return "<br/>".join(conds) if conds else "Matches All"
-    except: return "Custom Rule (Err)"
+    except: return "Complex Rule"
 
 def clean_text(text):
     if not text: return ""
     return str(text).replace('"', "'").replace('#', '').strip()
 
 def generate_mermaid_flow(start_ext_id):
+    # Reset logs for this run
+    global request_logs
+    request_logs = []
+    
     extension_cache.clear()
     schedule_cache.clear()
     
@@ -133,7 +172,7 @@ def generate_mermaid_flow(start_ext_id):
         nonlocal node_counter
         if history is None: history = []
         
-        # 1. Loop Prevention
+        # Cycle Check
         if ext_id in history:
             if ext_id in node_map and parent_id:
                 graph_lines.append(f'{parent_id} -- "{clean_text(link_label)} (Loop)" --> {node_map[ext_id]}')
@@ -142,34 +181,32 @@ def generate_mermaid_flow(start_ext_id):
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {node_map[ext_id]}')
             return
 
-        # 2. Node Generation
-        if str(ext_id).startswith("ext_"): # External
+        # --- Node Creation ---
+        if str(ext_id).startswith("ext_"):
             nid = f"n{node_counter}"; node_counter+=1
             node_map[ext_id] = nid
             graph_lines.append(f'{nid}["[External]<br/><b>{ext_id.replace("ext_","")}</b>"]:::siteStyle')
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
             return
-            
-        if str(ext_id).startswith("vm_"): # VM
+        if str(ext_id).startswith("vm_"):
             nid = f"n{node_counter}"; node_counter+=1
             node_map[ext_id] = nid
             graph_lines.append(f'{nid}(("[Voicemail]")):::userStyle')
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
             return
 
-        # Fetch Info
         info = get_extension_info(ext_id)
         nid = f"n{node_counter}"; node_counter+=1
         node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
         if not info:
-            graph_lines.append(f'{nid}["[Unknown ID: {ext_id}]"]:::missingStyle')
+            graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
             return
 
         e_type = info.get('type', 'Unknown')
-        if e_type == 'Department' and rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}"):
+        if e_type == 'Department' and logged_rc_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}"):
             e_type = 'CallQueue'
 
         label = f"[{e_type}]<br/><b>{clean_text(info.get('name'))}</b><br/>{info.get('extensionNumber', '')}"
@@ -177,12 +214,10 @@ def generate_mermaid_flow(start_ext_id):
         graph_lines.append(f'{nid}["{label}"]:::{style}')
         if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
 
-        # 3. Queue Members (Agents)
+        # --- Queue Agents ---
         if e_type == 'CallQueue':
             try:
-                # Sleep briefly to prevent rate limit triggers
-                time.sleep(0.05)
-                m_resp = rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
+                m_resp = logged_rc_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
                     m_list = []
                     for m in m_resp['records'][:6]:
@@ -195,23 +230,14 @@ def generate_mermaid_flow(start_ext_id):
                         graph_lines.append(f'{nid} -.-> {iid}')
             except: pass
 
-        # 4. Routing Rules - ROBUST BLOCK
+        # --- Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
-                time.sleep(0.05) # Rate limit safety
-                rules_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=false"
-                rules = rc_api_call(rules_url)
+                # Use Detailed View
+                rules = logged_rc_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=false")
                 
-                # Check for API Failure
-                if rules is None:
-                    # Draw error node so we KNOW it failed
-                    err_id = f"err_{node_counter}"; node_counter+=1
-                    graph_lines.append(f'{err_id}["⚠️ Error Loading Rules"]:::errorStyle')
-                    graph_lines.append(f'{nid} -.-> {err_id}')
-                
-                elif rules.get('records'):
+                if rules and rules.get('records'):
                     for r in rules['records']:
-                        # INDIVIDUAL TRY-CATCH per rule to prevent total crash
                         try:
                             if not r.get('enabled'): continue
                             
@@ -244,7 +270,6 @@ def generate_mermaid_flow(start_ext_id):
                             if target:
                                 if rtype in ['BusinessHours', 'Custom']:
                                     lid = f"log_{node_counter}"; node_counter+=1
-                                    # Use safe description
                                     graph_lines.append(f'{lid}{{"{clean_text(logic_desc)}"}}:::logicStyle')
                                     graph_lines.append(f'{nid} --> {lid}')
                                     _trace(target, lid, "Matches", new_hist)
@@ -256,21 +281,18 @@ def generate_mermaid_flow(start_ext_id):
                                 iid = f"cfg_{node_counter}"; node_counter+=1
                                 graph_lines.append(f'{iid}["{clean_text(logic_desc)}<br/>Action: {detail}"]:::logicStyle')
                                 graph_lines.append(f'{nid} -.-> {iid}')
-                                
                         except Exception as e:
-                            print(f"Skipping single rule due to error: {e}")
+                            print(f"Skipping bad rule: {e}")
 
             except Exception as e:
-                print(f"Failed to fetch rules for {ext_id}: {e}")
                 err_id = f"err_{node_counter}"; node_counter+=1
-                graph_lines.append(f'{err_id}["⚠️ System Error: Rules"]:::errorStyle')
+                graph_lines.append(f'{err_id}["⚠️ Rules Error: {str(e)[:30]}"]:::errorStyle')
                 graph_lines.append(f'{nid} -.-> {err_id}')
 
-        # 5. IVR
+        # --- IVR ---
         if e_type == 'IvrMenu':
             try:
-                time.sleep(0.05)
-                ivr = rc_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
+                ivr = logged_rc_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
                 if ivr and ivr.get('actions'):
                     for act in ivr['actions']:
                         key = act.get('input', '?')
@@ -281,4 +303,5 @@ def generate_mermaid_flow(start_ext_id):
             except: pass
 
     _trace(start_ext_id)
-    return "\n".join(graph_lines)
+    # Return Tuple (Graph, Logs)
+    return "\n".join(graph_lines), request_logs
