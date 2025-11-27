@@ -59,40 +59,31 @@ class CallFlowTracer:
 
     def parse_schedule(self, schedule_obj):
         if not schedule_obj: return "24/7 (Open)"
-        
-        output_lines = []
         try:
+            output_lines = []
             # 1. Weekly Ranges
             if schedule_obj.get('weeklyRanges'):
                 weekly_data = schedule_obj['weeklyRanges']
                 normalized_items = []
 
-                # Normalize Dict vs List
                 if isinstance(weekly_data, dict):
                     for day_key, periods in weekly_data.items():
                         if isinstance(periods, dict): periods = [periods]
                         for p in periods:
                             normalized_items.append({'day': day_key, 'from': p.get('from'), 'to': p.get('to')})
-                
                 elif isinstance(weekly_data, list):
                     for item in weekly_data:
                         normalized_items.append({'day': item.get('dayOfWeek', 'Unknown'), 'from': item.get('from'), 'to': item.get('to')})
 
                 time_map = {}
                 for item in normalized_items:
-                    raw_s = item.get('from')
-                    raw_e = item.get('to')
-                    
-                    s_str = str(raw_s).split(':') if raw_s else ['00', '00']
-                    e_str = str(raw_e).split(':') if raw_e else ['23', '59']
-                    
+                    s_str = str(item.get('from') or '00:00').split(':')
+                    e_str = str(item.get('to') or '23:59').split(':')
                     s_fmt = f"{s_str[0]}:{s_str[1]}" if len(s_str) >= 2 else "00:00"
                     e_fmt = f"{e_str[0]}:{e_str[1]}" if len(e_str) >= 2 else "23:59"
                     time_key = f"{s_fmt}-{e_fmt}"
-                    
                     day_raw = item.get('day', '???')
                     day_short = day_raw[:1].upper() + day_raw[1:3].lower()
-                    
                     if time_key not in time_map: time_map[time_key] = []
                     time_map[time_key].append(day_short)
 
@@ -114,21 +105,17 @@ class CallFlowTracer:
 
             if not output_lines: return "24/7 (Open)"
             return "<br/>".join(output_lines)
-
-        except Exception as e:
-            return f"Data Error: {str(e)}<br/>Raw: {str(schedule_obj)[:50]}"
+        except: return f"Raw: {str(schedule_obj)[:50]}"
 
     def get_schedule_summary(self, ext_id):
         if ext_id in self.schedule_cache: return self.schedule_cache[ext_id]
         try:
             resp = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
-            if not resp: return "24/7 (Default)"
-            if 'schedule' not in resp: return "24/7"
+            if not resp or 'schedule' not in resp: return "24/7 (Default)"
             res = self.parse_schedule(resp['schedule'])
             self.schedule_cache[ext_id] = res
             return res
-        except Exception as e: 
-            return f"Fetch Err: {str(e)}"
+        except: return "Fetch Err"
 
     def format_custom_rule(self, rule):
         try:
@@ -136,22 +123,17 @@ class CallFlowTracer:
             if rule.get('callers'):
                 names = [c.get('name', c.get('callerId', '?')) for c in rule['callers']]
                 conds.append(f"From: {', '.join(names[:2])}" + (f"..." if len(names)>2 else ""))
-            
             if rule.get('calledNumbers'):
                 nums = [n.get('phoneNumber', '?') for n in rule['calledNumbers']]
                 conds.append(f"To: {', '.join(nums)}")
-            
             if rule.get('schedule'):
                 sch_text = self.parse_schedule(rule['schedule'])
                 if sch_text != "24/7 (Open)":
                     conds.append(f"<b>Time:</b> {sch_text}")
-
             return "<br/>".join(conds) if conds else "Matches All Calls"
-        except Exception as e:
-            return f"Rule Err: {str(e)}"
+        except: return "Complex Rule"
 
     def get_action_description(self, rule):
-        """Describe Action."""
         action = rule.get('callHandlingAction')
         if action == 'TransferToExtension':
             ext = rule.get('transfer', {}).get('extension', {})
@@ -173,19 +155,38 @@ class CallFlowTracer:
         if action == 'PlayAnnouncementOnly': return "Play Announcement"
         return action
 
-    def trace(self, ext_id, parent_id=None, link_label="", history=None):
+    # ----------------------------------------------------
+    #  TRACE FUNCTION (FIXED LINK LOGIC)
+    # ----------------------------------------------------
+    def trace(self, ext_id, parent_id=None, link_label="", history=None, is_active=True):
         if history is None: history = []
         
+        # Determine Link Style based on Active Status
+        # Active: Solid Arrow (-->)
+        # Inactive: Dotted Arrow (-.->)
+        # Mermaid text syntax: -- "Label" -->  OR  -. "Label" .->
+        
+        arrow_code = "-->" if is_active else "-.->"
+        
+        if link_label:
+            clean_lbl = self.clean_text(link_label)
+            if is_active:
+                link_syntax = f'-- "{clean_lbl}" -->'
+            else:
+                link_syntax = f'-. "{clean_lbl}" .->'
+        else:
+            link_syntax = arrow_code
+
+        # Loop Check
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
-                # Use solid or dotted line based on previous logic?
-                # Simple loop closure
+                # Close loop with dotted line
                 self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
             return
         if ext_id in self.node_map:
             if parent_id: 
-                # Use dotted link for re-entry to be safe
-                self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
+                # Link to existing node
+                self.graph_lines.append(f'{parent_id} {link_syntax} {self.node_map[ext_id]}')
             return
 
         nid = f"n{self.node_counter}"
@@ -197,18 +198,18 @@ class CallFlowTracer:
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
-            if parent_id: self.graph_lines.append(f'{parent_id} --> {nid}')
+            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
         if str(ext_id).startswith("vm_"):
             self.graph_lines.append(f'{nid}(("[Voicemail]")):::userStyle')
-            if parent_id: self.graph_lines.append(f'{parent_id} --> {nid}')
+            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
         info = self.get_extension_info(ext_id)
         if not info:
             self.graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
-            if parent_id: self.graph_lines.append(f'{parent_id} --> {nid}')
+            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
         e_type = info.get('type', 'Unknown')
@@ -219,8 +220,8 @@ class CallFlowTracer:
         style = {'Site': 'siteStyle', 'IvrMenu': 'ivrStyle', 'CallQueue': 'queueStyle'}.get(e_type, 'userStyle')
         self.graph_lines.append(f'{nid}["{label}"]:::{style}')
         
-        # Standard Parent Link (Active)
-        if parent_id: self.graph_lines.append(f'{parent_id} --> {nid}')
+        # Link from Parent
+        if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
         # --- Queue Agents ---
         if e_type == 'CallQueue':
@@ -240,21 +241,18 @@ class CallFlowTracer:
         # --- Routing Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
-                # Fetch ALL rules (showInactive=true)
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
-                
                 if rules and rules.get('records'):
                     for r in rules['records']:
-                        # Determine Active Status
-                        is_active = r.get('enabled', True)
+                        # Status Check
+                        is_rule_active = r.get('enabled', True)
+                        status_text = "" if is_rule_active else " <i>(Inactive)</i>"
                         
-                        # Style & Text based on Status
-                        # Link Style: Active = --> (Solid), Inactive = -.-> (Dotted)
-                        link_arrow = "-->" if is_active else "-.->"
-                        # Node Style: Logic node gets special style if inactive
-                        node_style_class = "logicStyle" if is_active else "inactiveStyle"
-                        # Text: Add (Inactive) marker
-                        status_text = "" if is_active else " <i>(Inactive)</i>"
+                        # Style for Logic Node
+                        logic_node_style = "logicStyle" if is_rule_active else "inactiveStyle"
+                        
+                        # Link Style for logic node connection
+                        logic_link = "-->" if is_rule_active else "-.->"
 
                         rtype = r.get('type', 'Custom')
                         rname = r.get('name', 'Rule')
@@ -292,32 +290,20 @@ class CallFlowTracer:
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
-                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style_class}')
-                                self.graph_lines.append(f'{nid} {link_arrow} {lid}')
-                                # For inactive rules, we still trace, but pass 'parent_link' logic down?
-                                # Actually the _trace function hardcodes --> for parents.
-                                # To keep visuals consistent, we might want the NEXT link to be dotted too if this rule is inactive?
-                                # For now, just tracing it normally allows seeing the path structure.
-                                self.trace(target, lid, "Matches", new_hist)
+                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{logic_node_style}')
+                                self.graph_lines.append(f'{nid} {logic_link} {lid}')
+                                # Pass is_active down to the next link
+                                self.trace(target, lid, "Matches", new_hist, is_active=is_rule_active)
                             else:
-                                self.graph_lines.append(f'{nid} {link_arrow} {self.node_map.get(target, "temp")}') # Wait, can't link to temp
-                                # Direct trace
-                                self.trace(target, nid, rname + status_text, new_hist)
-                                # Fix the link style in trace? 
-                                # Actually trace() creates the link from parent. 
-                                # We need to pass the arrow style to trace(). 
-                                # But trace() takes simple label.
-                                # Simplified Approach: Since trace() generates the "parent --> node" line,
-                                # we can't easily change THAT line's style from here without modifying trace signature.
-                                # Workaround: We use the Logic Node (Diamond) for EVERYTHING complex/inactive.
-                                
+                                # Direct trace with status style
+                                self.trace(target, nid, rname + status_text, new_hist, is_active=is_rule_active)
                         else:
-                            # Non-transfer rule
+                            # Non-transfer
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
                             det = action
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style_class}')
-                            self.graph_lines.append(f'{nid} {link_arrow} {iid}')
+                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{logic_node_style}')
+                            self.graph_lines.append(f'{nid} {logic_link} {iid}')
             except Exception as e:
                 print(f"Rule Error: {e}")
 
