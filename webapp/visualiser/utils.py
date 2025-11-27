@@ -7,7 +7,7 @@ class CallFlowTracer:
     def __init__(self):
         self.extension_cache = {}
         self.schedule_cache = {}
-        self.queue_details_cache = {}  # Cache for deep queue settings
+        self.queue_settings_cache = {}
         self.request_logs = []
         self.graph_lines = []
         self.node_map = {}
@@ -57,7 +57,6 @@ class CallFlowTracer:
         if not text: return ""
         return str(text).replace('"', "'").replace('#', '').strip()
 
-    # --- Schedule Parsers ---
     def parse_schedule(self, schedule_obj):
         if not schedule_obj: return "24/7 (Open)"
         try:
@@ -65,7 +64,6 @@ class CallFlowTracer:
             if schedule_obj.get('weeklyRanges'):
                 weekly_data = schedule_obj['weeklyRanges']
                 normalized_items = []
-                # Normalize Dict vs List
                 if isinstance(weekly_data, dict):
                     for day_key, periods in weekly_data.items():
                         if isinstance(periods, dict): periods = [periods]
@@ -154,30 +152,19 @@ class CallFlowTracer:
         if action == 'PlayAnnouncementOnly': return "Play Announcement"
         return action
 
-    # ----------------------------------------------------
-    #  MAIN TRACE LOGIC
-    # ----------------------------------------------------
     def trace(self, ext_id, parent_id=None, link_label="", history=None, is_active=True):
         if history is None: history = []
         
-        # Link Style
         arrow_code = "-->" if is_active else "-.->"
         clean_lbl = self.clean_text(link_label)
-        
-        # Mermaid Syntax: A -- "Label" --> B  OR  A -. "Label" .-> B
-        if clean_lbl:
-            link_syntax = f'-- "{clean_lbl}" -->' if is_active else f'-. "{clean_lbl}" .->'
-        else:
-            link_syntax = arrow_code
+        link_syntax = f'-- "{clean_lbl}" -->' if (is_active and clean_lbl) else (f'-. "{clean_lbl}" .->' if clean_lbl else arrow_code)
 
-        # Loop Detection
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
                 self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
             return
         if ext_id in self.node_map:
-            if parent_id: 
-                self.graph_lines.append(f'{parent_id} {link_syntax} {self.node_map[ext_id]}')
+            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {self.node_map[ext_id]}')
             return
 
         nid = f"n{self.node_counter}"
@@ -185,7 +172,7 @@ class CallFlowTracer:
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Draw Node ---
+        # --- Node Creation ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -213,10 +200,10 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- CALL QUEUE LOGIC (Members + Overflow) ---
+        # --- SPECIAL QUEUE LOGIC (Overflow & Wait Settings) ---
         if e_type == 'CallQueue':
             try:
-                # 1. Members
+                # 1. Fetch Agents (Standard)
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
                     m_list = []
@@ -224,64 +211,48 @@ class CallFlowTracer:
                         mi = self.get_extension_info(m['id'])
                         if mi: m_list.append(f"- {self.clean_text(mi.get('name'))}")
                     if len(m_resp['records']) > 6: m_list.append(f"... {len(m_resp['records'])-6} more")
-                    
                     iid = f"info_{self.node_counter}"; self.node_counter += 1
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
 
-                # 2. OVERFLOW / SETTINGS
-                # Check cache first (avoid infinite recursion loops re-fetching settings)
-                if ext_id not in self.queue_details_cache:
-                    q_details = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
-                    self.queue_details_cache[ext_id] = q_details
+                # 2. Fetch Overflow / Transfer Settings (CRITICAL FIX)
+                # We perform a specific call to the Queue Endpoint to get 'transfer' actions
+                if ext_id not in self.queue_settings_cache:
+                    q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
+                    self.queue_settings_cache[ext_id] = q_settings
                 
-                q_details = self.queue_details_cache.get(ext_id)
-                
-                if q_details:
-                    # A. Max Wait Time (The "Don't Wait" / Overflow logic)
-                    max_wait = q_details.get('maxWaitTime', 0)
-                    transfer_target = None
-                    if q_details.get('transfer'):
-                        # Check extension transfer
-                        if q_details['transfer'].get('extension'):
-                            transfer_target = q_details['transfer']['extension']['id']
+                q = self.queue_settings_cache.get(ext_id)
+                if q:
+                    # Logic: Check for 'transfer' action which handles Overflow/Wait Time
+                    transfer_info = q.get('transfer')
+                    max_wait = q.get('maxWaitTime', 0)
                     
-                    if transfer_target:
-                        if max_wait == 0:
-                            self.trace(transfer_target, nid, "Immediate Overflow (Don't Wait)", new_hist)
-                        else:
-                            self.trace(transfer_target, nid, f"Overflow (> {max_wait}s)", new_hist)
-
-                    # B. Max Callers (Queue Full)
-                    max_callers = q_details.get('maxCallers', 0)
-                    full_action = q_details.get('maxCallersAction', 'Voicemail')
-                    
-                    if full_action == 'Voicemail':
-                        pass # Implicit
-                    elif full_action == 'TransferToExtension':
-                        # Where does it transfer?
-                        # Usually implicitly shares the 'transfer' settings or has specific field depending on API version
-                        # We will try to assume it shares transfer target if not specified
-                        if transfer_target:
-                            self.trace(transfer_target, nid, f"Queue Full (> {max_callers})", new_hist)
+                    if transfer_info:
+                        target_ext = transfer_info.get('extension')
+                        if target_ext and target_ext.get('id'):
+                            # FOUND IT! This is the IVR or Extension it overflows to
+                            overflow_target_id = target_ext['id']
+                            
+                            if max_wait == 0:
+                                # "Don't Wait" Scenario
+                                self.trace(overflow_target_id, nid, "Immediate Overflow (Don't Wait)", new_hist)
+                            else:
+                                # "Wait then Transfer" Scenario
+                                self.trace(overflow_target_id, nid, f"Overflow (after {max_wait}s)", new_hist)
 
             except Exception as e:
-                print(f"Queue Detail Error: {e}")
+                print(f"Queue Logic Error: {e}")
 
-        # --- ROUTING RULES ---
+        # --- Standard Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
-                # Fetch detailed rules including Inactive
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
-                
                 if rules and rules.get('records'):
                     for r in rules['records']:
-                        is_active_rule = r.get('enabled', True)
-                        
-                        # Style & Text
-                        status_txt = "" if is_active_rule else " <i>(Inactive)</i>"
-                        logic_node_style = "logicStyle" if is_active_rule else "inactiveStyle"
-                        rule_link = "-->" if is_active_rule else "-.->"
+                        is_active = r.get('enabled', True)
+                        status_txt = "" if is_active else " <i>(Inactive)</i>"
+                        node_style = "logicStyle" if is_active else "inactiveStyle"
+                        link_arrow = "-->" if is_active else "-.->"
 
                         rtype = r.get('type', 'Custom')
                         rname = r.get('name', 'Rule')
@@ -298,8 +269,6 @@ class CallFlowTracer:
                             logic_text = f"<b>{self.clean_text(rname)}</b>{status_txt}<br/><i>{action_desc}</i>"
 
                         target = None
-                        
-                        # Detect Target ID
                         if action == 'TransferToExtension':
                             target = r.get('transfer', {}).get('extension', {}).get('id')
                         elif action == 'UnconditionalForwarding':
@@ -308,7 +277,6 @@ class CallFlowTracer:
                             if ex.get('id'): target = ex['id']
                             elif ph: target = f"ext_{ph}"
                         elif action == 'ForwardCalls':
-                            # Check forwarding list for external numbers
                             fwd_rules = r.get('forwarding', {}).get('rules', [])
                             for fr in fwd_rules:
                                 for fn in fr.get('forwardingNumbers', []):
@@ -320,22 +288,19 @@ class CallFlowTracer:
                             target = f"vm_{ext_id}"
 
                         if target:
-                            # Draw Logic Node (Diamond) -> Target
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
-                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{logic_node_style}')
-                                self.graph_lines.append(f'{nid} {rule_link} {lid}')
-                                self.trace(target, lid, "Matches", new_hist, is_active=is_active_rule)
+                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style}')
+                                self.graph_lines.append(f'{nid} {link_arrow} {lid}')
+                                self.trace(target, lid, "Matches", new_hist, is_active=is_active)
                             else:
-                                # Direct connection
-                                self.trace(target, nid, rname + status_txt, new_hist, is_active=is_active_rule)
+                                self.trace(target, nid, rname + status_txt, new_hist, is_active=is_active)
                         else:
-                            # No target (e.g. Play Announcement)
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
                             det = action
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{logic_node_style}')
-                            self.graph_lines.append(f'{nid} {rule_link} {iid}')
+                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style}')
+                            self.graph_lines.append(f'{nid} {link_arrow} {iid}')
             except Exception as e:
                 print(f"Rule Error: {e}")
 
