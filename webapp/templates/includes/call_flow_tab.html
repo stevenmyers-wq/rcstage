@@ -87,8 +87,6 @@
             url: '/api/rc/visualiser/search',
             method: 'GET',
             success: function(response) {
-                console.log("Search API Response:", response); // CHECK BROWSER CONSOLE
-                
                 if(response.status === 'success') {
                     $loadingIndicator.hide();
                     
