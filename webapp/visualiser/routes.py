@@ -8,67 +8,52 @@ from webapp.visualiser.utils import generate_mermaid_flow
 
 viz_bp = Blueprint('visualiser', __name__)
 
-def fetch_all_pages_robust(endpoint, params=None):
+def fetch_all_pages(endpoint, params=None):
     """
-    Robust fetcher that handles pagination with retries.
-    Ensures we don't silently lose data if one page fails.
+    Standard, reliable paginator.
     """
     if params is None: params = {}
     
-    # Force high limit and explicit status
-    # Requesting ALL statuses ensures we don't miss 'NotActivated' queues or 'Disabled' users
-    params['perPage'] = 1000 
-    params['page'] = 1
-    if 'status' not in params:
-        params['status'] = 'Enabled,Disabled,NotActivated'
-        
+    # 1. Set Safe Defaults
+    current_params = params.copy()
+    current_params['perPage'] = 1000 
+    current_params['page'] = 1
+    
     all_records = []
     
-    print(f"[INFO] Starting Robust Fetch: {endpoint}", file=sys.stdout)
+    print(f"[INFO] Fetching: {endpoint}", file=sys.stdout)
     
     while True:
-        success = False
-        retry_count = 0
-        
-        # Retry loop for the CURRENT page
-        while retry_count < 3 and not success:
-            try:
-                query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-                sep = '&' if '?' in endpoint else '?'
-                url = f"{endpoint}{sep}{query_string}"
-                
-                resp = rc_api_call(url)
-                
-                if resp and 'records' in resp:
-                    all_records.extend(resp['records'])
-                    success = True
-                else:
-                    # If API returns garbage/None, wait and retry
-                    print(f"[WARN] Page {params['page']} failed (Attempt {retry_count+1}). Retrying...", file=sys.stderr)
-                    retry_count += 1
-                    time.sleep(0.5)
-                    
-            except Exception as e:
-                print(f"[ERROR] Page {params['page']} Exception: {e}", file=sys.stderr)
-                retry_count += 1
-                time.sleep(0.5)
-        
-        if not success:
-            print(f"[CRITICAL] Failed to fetch Page {params['page']} after 3 attempts. Stopping fetch.", file=sys.stderr)
-            break
-            
-        # Check for Next Page
         try:
-            nav = resp.get('navigation', {})
+            # Construct URL
+            query_string = "&".join([f"{k}={v}" for k, v in current_params.items()])
+            sep = '&' if '?' in endpoint else '?'
+            url = f"{endpoint}{sep}{query_string}"
+            
+            response = rc_api_call(url)
+            
+            # Error Handling
+            if not response:
+                print(f"[WARN] Fetch returned None for page {current_params['page']}", file=sys.stderr)
+                break
+                
+            if 'records' in response:
+                all_records.extend(response['records'])
+            
+            # Pagination Check
+            nav = response.get('navigation', {})
             if nav.get('nextPage'):
-                params['page'] += 1
-                time.sleep(0.1) # Gentle rate limit
+                current_params['page'] += 1
+                # Tiny sleep to prevent 429 errors
+                time.sleep(0.05)
             else:
                 break
-        except:
+                
+        except Exception as e:
+            print(f"[ERROR] Pagination Exception: {e}", file=sys.stderr)
             break
             
-    print(f"[INFO] Fetch Complete. Total Records: {len(all_records)}", file=sys.stdout)
+    print(f"[INFO] Fetch Complete. Count: {len(all_records)}", file=sys.stdout)
     return all_records
 
 @viz_bp.route('/api/rc/visualiser/search', methods=['GET'])
@@ -81,12 +66,16 @@ def search_for_visualiser_targets():
     results = []
     
     try:
-        # 1. Fetch Phones
-        phones = fetch_all_pages_robust("/restapi/v1.0/account/~/phone-number")
+        # 1. Phones
+        # We fetch ALL numbers to ensure we don't miss any
+        phones = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
+        
         for p in phones:
-            if p.get('usageType') in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber']:
+            # Loose usage filtering
+            if p.get('usageType') in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber', 'NumberPool']:
                 num = p.get('phoneNumber', '')
-                # Simple filter
+                
+                # Search Filter
                 if not return_all and query not in num: continue
                 
                 if p.get('extension', {}).get('id'):
@@ -96,15 +85,17 @@ def search_for_visualiser_targets():
                         'type': 'PhoneNumber'
                     })
         
-        # 2. Fetch Extensions (The Critical Part)
-        # We deliberately don't filter by type in the API call, we filter in Python
-        exts = fetch_all_pages_robust("/restapi/v1.0/account/~/extension")
+        # 2. Extensions
+        # Fetch Enabled AND Disabled. 
+        # Note: We intentionally do not filter by type in the API call to ensure we get everything.
+        ext_params = {'status': 'Enabled,Disabled'} 
+        exts = fetch_all_pages("/restapi/v1.0/account/~/extension", ext_params)
         
-        # EXPANDED Type List - ensuring we don't miss exotic queue types
+        # Broad list of allowed types
         ALLOWED_TYPES = [
-            'User', 'DigitalUser', 'VirtualUser', 'FaxUser', 'FlexibleUser', 'Limited',
-            'CallQueue', 'Department', 'IvrMenu', 'ApplicationExtension', 
-            'Site', 'ParkLocation', 'SharedLinesGroup', 'Bot', 'Room'
+            'IvrMenu', 'CallQueue', 'Department', 'Site', 'ApplicationExtension', 
+            'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited', 
+            'Bot', 'Room', 'ParkLocation', 'SharedLinesGroup'
         ]
         
         for e in exts:
@@ -116,33 +107,35 @@ def search_for_visualiser_targets():
             if not return_all:
                 if query not in ename.lower() and query != enum: continue
             
-            # Type Filter
             if etype in ALLOWED_TYPES:
-                status_marker = "" 
-                if e.get('status') != 'Enabled':
-                    status_marker = f" [{e.get('status')}]"
-                
+                status_mk = "" if e.get('status') == 'Enabled' else " [Disabled]"
                 results.append({
                     'id': e['id'],
-                    'text': f"[{etype}] {ename} (Ext: {enum}){status_marker}",
+                    'text': f"[{etype}] {ename} (Ext: {enum}){status_mk}",
                     'type': etype
                 })
 
-        # Deduplicate based on ID
+        # Deduplicate
         final_results = []
-        seen_ids = set()
+        seen = set()
         for r in results:
-            if r['id'] not in seen_ids:
+            if r['id'] not in seen:
                 final_results.append(r)
-                seen_ids.add(r['id'])
+                seen.add(r['id'])
         
-        # Sort: Call Queues & IVRs at the top
-        def sort_priority(item):
-            # Higher number = lower in list
-            order = {'Site': 0, 'CallQueue': 1, 'IvrMenu': 2, 'Department': 3}
-            return order.get(item['type'], 10)
+        # Sort: Queues & IVRs first
+        def sort_key(x):
+            order = {'Site':0, 'CallQueue':1, 'IvrMenu':2}
+            return order.get(x['type'], 99)
             
-        final_results.sort(key=sort_priority)
+        final_results.sort(key=sort_key)
+
+        # DIAGNOSTIC: If empty, tell the user why
+        if not final_results:
+            return jsonify({
+                'status': 'success', 
+                'results': [{'id': 'err', 'text': '⚠️ No Extensions Found (Check API Logs)', 'disabled': True}]
+            })
 
         return jsonify({'status': 'success', 'results': final_results})
 
@@ -156,7 +149,7 @@ def visualize_call_flow_api(ext_id):
         return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
     
     try:
-        # Use the class-based generator from utils
+        # Generate Graph
         graph, logs = generate_mermaid_flow(ext_id)
         
         return jsonify({
