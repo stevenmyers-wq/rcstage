@@ -1,3 +1,4 @@
+# webapp/visualiser/utils.py
 import json
 import time
 from webapp.rc_api import rc_api_call
@@ -14,10 +15,12 @@ class CallFlowTracer:
         self.ext_num_map = {} 
 
     def log_api_call(self, endpoint):
+        """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
             final_url = endpoint
+            # Force cache bust for queues to ensure fresh data
             if "call-queues" in endpoint and "?" not in endpoint:
                 final_url = f"{endpoint}?_={int(time.time())}"
 
