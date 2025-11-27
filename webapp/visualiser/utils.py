@@ -12,18 +12,17 @@ class CallFlowTracer:
         self.graph_lines = []
         self.node_map = {}
         self.node_counter = 0
-        self.ext_num_map = {} # Cache for Number -> ID resolution
+        self.ext_num_map = {} 
 
     def log_api_call(self, endpoint):
-        """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
-            # Force cache bust for critical queue details to ensure we get fresh data
+            # Cache buster for queue settings to ensure freshness
             final_url = endpoint
-            if "call-queues/" in endpoint and "?" not in endpoint:
-                final_url = f"{endpoint}?_={int(time.time()*1000)}"
-            
+            if "call-queues" in endpoint and "?" not in endpoint:
+                final_url = f"{endpoint}?_={int(time.time())}"
+
             response = rc_api_call(final_url)
             duration = round((time.time() - start) * 1000, 2)
             
@@ -47,36 +46,35 @@ class CallFlowTracer:
             })
             return None
 
-    def get_extension_info(self, ext_id):
-        if ext_id in self.extension_cache: return self.extension_cache[ext_id]
-        # Check if we accidentally passed a number
-        if str(ext_id) in self.ext_num_map:
-            real_id = self.ext_num_map[str(ext_id)]
-            if real_id in self.extension_cache: return self.extension_cache[real_id]
+    def get_extension_info(self, ext_identifier):
+        """
+        Smart fetcher: works with IDs or Extension Numbers.
+        Always returns the object and ensures ID is cached.
+        """
+        # 1. Check ID Cache
+        if str(ext_identifier) in self.extension_cache: 
+            return self.extension_cache[str(ext_identifier)]
+        
+        # 2. Check Number Map
+        if str(ext_identifier) in self.ext_num_map:
+            real_id = self.ext_num_map[str(ext_identifier)]
+            if real_id in self.extension_cache: 
+                return self.extension_cache[real_id]
 
+        # 3. API Fetch
         for i in range(3):
-            info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
+            # We use the extension endpoint because it handles numbers AND IDs
+            info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_identifier}")
+            
             if info and 'errorCode' not in info:
-                self.extension_cache[ext_id] = info
+                real_id = str(info['id'])
+                self.extension_cache[real_id] = info
                 if info.get('extensionNumber'):
-                    self.ext_num_map[str(info['extensionNumber'])] = str(info['id'])
+                    self.ext_num_map[str(info['extensionNumber'])] = real_id
                 return info
             elif info and info.get('errorCode') in ['CMN-102', 'OGE-101']:
                 return {'type': 'Unknown', 'name': 'Deleted', 'extensionNumber': '???'}
             time.sleep(0.1)
-        return None
-
-    def get_extension_id_by_number(self, ext_num):
-        """Helper to resolve an Extension Number to an ID on the fly."""
-        s_num = str(ext_num)
-        if s_num in self.ext_num_map: return self.ext_num_map[s_num]
-        
-        # specific lookup
-        info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}")
-        if info and info.get('id'):
-            self.extension_cache[str(info['id'])] = info
-            self.ext_num_map[s_num] = str(info['id'])
-            return str(info['id'])
         return None
 
     def clean_text(self, text):
@@ -158,6 +156,7 @@ class CallFlowTracer:
 
     def get_action_description(self, rule):
         action = rule.get('callHandlingAction')
+        if not action or action == 'AgentQueue': return "Ring Queue Members"
         if action == 'TransferToExtension':
             ext = rule.get('transfer', {}).get('extension', {})
             return f"Transfer to Ext {ext.get('extensionNumber', '?')}"
@@ -178,13 +177,27 @@ class CallFlowTracer:
         if action == 'PlayAnnouncementOnly': return "Play Announcement"
         return action
 
-    def trace(self, ext_id, parent_id=None, link_label="", history=None, is_active=True):
+    def trace(self, input_id, parent_id=None, link_label="", history=None, is_active=True):
         if history is None: history = []
         
+        # --- 1. RESOLVE ID (CRITICAL FIX) ---
+        # Ensure we are working with a Real ID, not a Number
+        info = self.get_extension_info(input_id)
+        if not info:
+            # Fallback node if truly not found
+            nid = f"n{self.node_counter}"; self.node_counter += 1
+            if parent_id: self.graph_lines.append(f'{parent_id} -.-> {nid}')
+            self.graph_lines.append(f'{nid}["[Unknown ID: {input_id}]"]:::missingStyle')
+            return
+
+        ext_id = str(info['id']) # Use this ID for all subsequent API calls
+        
+        # Link Style
         arrow_code = "-->" if is_active else "-.->"
         clean_lbl = self.clean_text(link_label)
         link_syntax = f'-- "{clean_lbl}" -->' if (is_active and clean_lbl) else (f'-. "{clean_lbl}" .->' if clean_lbl else arrow_code)
 
+        # Loop Detection
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
                 self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
@@ -199,25 +212,10 @@ class CallFlowTracer:
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Node Creation ---
-        if str(ext_id).startswith("ext_"):
-            lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
-            self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
-            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
-            return
-
-        if str(ext_id).startswith("vm_"):
-            self.graph_lines.append(f'{nid}(("[Voicemail]")):::userStyle')
-            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
-            return
-
-        info = self.get_extension_info(ext_id)
-        if not info:
-            self.graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
-            if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
-            return
-
+        # --- Node Drawing ---
         e_type = info.get('type', 'Unknown')
+        
+        # Check Department -> Queue
         if e_type == 'Department' and self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}"):
             e_type = 'CallQueue'
 
@@ -227,10 +225,12 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- QUEUE LOGIC (Smart Overflow Resolution) ---
+        # ==========================================
+        #  DEEP ANALYSIS: CALL QUEUE CONFIG
+        # ==========================================
         if e_type == 'CallQueue':
             try:
-                # 1. Agents
+                # 1. Members
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
                     m_list = []
@@ -242,23 +242,23 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
 
-                # 2. OVERFLOW / SETTINGS
+                # 2. OVERFLOW / SETTINGS (The Forensic Search)
                 if ext_id not in self.queue_settings_cache:
-                    # Attempt 1: Call Queue Endpoint
+                    # A. Primary Endpoint (Strict ID)
                     q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
                     
-                    # Attempt 2: Fallback to Extension Endpoint (The Fix)
-                    if not q_settings or not q_settings.get('transfer'):
-                        # Fetch Extension with ?view=Detailed
-                        # Sometimes Queue info is nested here for permissions reasons
+                    # B. Fallback Endpoint (Extension Detail)
+                    # Use this if 'transfer' is missing from A
+                    if not q_settings or 'transfer' not in q_settings:
                         ext_dump = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}?view=Detailed")
                         if ext_dump:
-                            # Merge finding back into q_settings (preferred)
                             if not q_settings: q_settings = ext_dump
                             else:
-                                # Copy relevant fields if found
+                                # Merge
                                 if ext_dump.get('transfer'): q_settings['transfer'] = ext_dump['transfer']
                                 if ext_dump.get('unconditionalForwarding'): q_settings['unconditionalForwarding'] = ext_dump['unconditionalForwarding']
+                                if ext_dump.get('maxWaitTime'): q_settings['maxWaitTime'] = ext_dump['maxWaitTime']
+                                if ext_dump.get('maxWaitTimeAction'): q_settings['maxWaitTimeAction'] = ext_dump['maxWaitTimeAction']
 
                     self.queue_settings_cache[ext_id] = q_settings
                 
@@ -267,26 +267,24 @@ class CallFlowTracer:
                     max_wait = q.get('maxWaitTime', 0)
                     wait_action = q.get('maxWaitTimeAction', 'Unknown')
                     
-                    # Target Finder
+                    # Target Hunt
                     target_id = None
                     
-                    # Priority 1: Direct Transfer Object
+                    # A. Standard Transfer
                     if q.get('transfer') and q['transfer'].get('extension'):
                         if q['transfer']['extension'].get('id'):
                             target_id = q['transfer']['extension']['id']
                         elif q['transfer']['extension'].get('extensionNumber'):
-                            num = str(q['transfer']['extension']['extensionNumber'])
-                            target_id = self.get_extension_id_by_number(num)
+                            # Resolve Number to ID
+                            target_id = self.get_extension_id_by_number(q['transfer']['extension']['extensionNumber'])
 
-                    # Priority 2: Unconditional Forwarding
+                    # B. Unconditional (Immediate)
                     if not target_id and q.get('unconditionalForwarding'):
                         uf = q['unconditionalForwarding']
                         if uf.get('extension'):
-                            if uf['extension'].get('id'):
-                                target_id = uf['extension']['id']
+                            if uf['extension'].get('id'): target_id = uf['extension']['id']
                             elif uf['extension'].get('extensionNumber'):
-                                num = str(uf['extension']['extensionNumber'])
-                                target_id = self.get_extension_id_by_number(num)
+                                target_id = self.get_extension_id_by_number(uf['extension']['extensionNumber'])
                         elif uf.get('phoneNumber'):
                             target_id = f"ext_{uf['phoneNumber']}"
 
@@ -295,17 +293,27 @@ class CallFlowTracer:
                     if max_wait == 0: info_txt[0] += " (Immediate)"
                     info_txt.append(f"Action: {wait_action}")
                     
-                    if target_id:
-                        lbl = "Immediate Overflow" if max_wait == 0 else f"Overflow (> {max_wait}s)"
-                        self.trace(target_id, nid, lbl, new_hist)
-                    else:
-                        # DUMP KEYS IF FAILED so we can debug
-                        info_txt.append("⚠️ <b>TARGET MISSING</b>")
-                        info_txt.append(f"Avail Keys: {', '.join(q.keys())}")
-
+                    # The "Overflow" Node
                     conf_id = f"conf_{self.node_counter}"; self.node_counter += 1
-                    self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ "<br/>".join(info_txt) }"]:::infoStyle')
-                    self.graph_lines.append(f'{nid} -.-> {conf_id}')
+                    
+                    if target_id:
+                        # Success: Draw config and link to target
+                        self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ "<br/>".join(info_txt) }"]:::infoStyle')
+                        self.graph_lines.append(f'{nid} -.-> {conf_id}')
+                        
+                        lbl = "Immediate Overflow" if max_wait == 0 else f"Overflow (> {max_wait}s)"
+                        # Draw line from Config Box to Target
+                        self.trace(target_id, conf_id, lbl, new_hist)
+                    else:
+                        # Failure: Show raw data
+                        if wait_action not in ['Voicemail', 'Unknown']:
+                            info_txt.append("⚠️ <b>TARGET MISSING</b>")
+                            # Dump what we have
+                            if q.get('transfer'): info_txt.append(f"Raw Trans: {str(q['transfer'])[:50]}")
+                            else: info_txt.append(f"Avail Keys: {', '.join(q.keys())}")
+                        
+                        self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ "<br/>".join(info_txt) }"]:::infoStyle')
+                        self.graph_lines.append(f'{nid} -.-> {conf_id}')
 
             except Exception as e:
                 print(f"Queue Error: {e}")
@@ -359,15 +367,23 @@ class CallFlowTracer:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
                                 self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style}')
                                 self.graph_lines.append(f'{nid} {link_arrow} {lid}')
-                                self.trace(target, lid, "Matches", new_hist, is_active=is_active)
+                                self.trace(target, lid, "Matches", new_hist, is_active)
                             else:
-                                self.trace(target, nid, rname + status_txt, new_hist, is_active=is_active)
+                                self.trace(target, nid, rname + status_txt, new_hist, is_active)
                         else:
+                            # Handling "AgentQueue" (Ring Members)
+                            # Connect it to the Config/Overflow block if it exists?
+                            # For now, just show the Logic Node
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
-                            det = action or "Ring Members"
-                            if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style}')
+                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}"]:::{node_style}')
                             self.graph_lines.append(f'{nid} {link_arrow} {iid}')
+                            
+                            # If action is AgentQueue/RingMembers, imply flow to Queue Config
+                            if action == 'AgentQueue' or not action:
+                                # We can't easily link to the 'conf_id' created above because it's local scope
+                                # But visually it appears attached to the same parent, which is correct.
+                                pass
+
             except Exception as e:
                 print(f"Rule Error: {e}")
 
