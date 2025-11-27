@@ -19,9 +19,9 @@ class CallFlowTracer:
         start = time.time()
         status = "SUCCESS"
         try:
+            # Force cache bust for queues/rules to ensure freshness
             final_url = endpoint
-            # Force cache bust for queues to ensure fresh data
-            if "call-queues" in endpoint and "?" not in endpoint:
+            if ("call-queues" in endpoint or "answering-rule" in endpoint) and "?" not in endpoint:
                 final_url = f"{endpoint}?_={int(time.time())}"
 
             response = rc_api_call(final_url)
@@ -48,20 +48,40 @@ class CallFlowTracer:
             return None
 
     def get_extension_info(self, ext_id):
+        """
+        Robust Fetcher: Tries Extension Endpoint -> Number Map -> IVR Endpoint -> Returns Deleted.
+        """
+        # 1. Check Caches
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
         if str(ext_id) in self.ext_num_map:
             real_id = self.ext_num_map[str(ext_id)]
             if real_id in self.extension_cache: return self.extension_cache[real_id]
 
+        # 2. Try Standard Extension Endpoint
         for i in range(3):
             info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
+            
+            # SUCCESS
             if info and 'errorCode' not in info:
                 self.extension_cache[ext_id] = info
                 if info.get('extensionNumber'):
                     self.ext_num_map[str(info['extensionNumber'])] = str(info['id'])
                 return info
+            
+            # FAILURE - RESOURCE NOT FOUND
             elif info and info.get('errorCode') in ['CMN-102', 'OGE-101']:
-                return {'type': 'Unknown', 'name': 'Deleted', 'extensionNumber': '???'}
+                # FALLBACK: It might be a standalone IVR menu not listed in /extension
+                # Some accounts hide IVRs from the main list.
+                ivr_check = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
+                if ivr_check and not ivr_check.get('errorCode'):
+                    # It was a hidden IVR!
+                    ivr_check['type'] = 'IvrMenu' # Ensure type is set
+                    self.extension_cache[ext_id] = ivr_check
+                    return ivr_check
+                
+                # If both fail, it's truly deleted.
+                return {'type': 'Unknown', 'name': 'Deleted/Invalid', 'extensionNumber': '???'}
+                
             time.sleep(0.1)
         return None
 
@@ -242,16 +262,15 @@ class CallFlowTracer:
                 if target:
                     targets.append((target, f"{rule_name} - Forward"))
             
-            # Check voicemail (create voicemail node)
+            # Check voicemail
             if rule.get('voicemail'):
                 targets.append((f"vm_{rule.get('extension', {}).get('id', 'unknown')}", 
                               f"{rule_name} - Voicemail"))
             
-            # Check greetings that might have actions
+            # Check greetings
             if rule.get('greetings'):
                 for greeting in rule['greetings']:
                     if greeting.get('preset') == 'CompanyMessageOnly':
-                        # This plays message and disconnects, note it
                         pass
         except Exception as e:
             print(f"Error extracting targets from rule: {e}")
@@ -293,7 +312,8 @@ class CallFlowTracer:
 
         info = self.get_extension_info(ext_id)
         if not info:
-            self.graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
+            # Handle Deleted/Unknown
+            self.graph_lines.append(f'{nid}["[Deleted/Invalid: {ext_id}]"]:::missingStyle')
             if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
@@ -330,7 +350,7 @@ class CallFlowTracer:
                         if ext_dump:
                             if not q_settings: q_settings = ext_dump
                             else:
-                                for k in ['transfer', 'unconditionalForwarding', 'maxWaitTime', 'maxWaitTimeAction']:
+                                for k in ['transfer', 'unconditionalForwarding', 'maxWaitTime', 'maxWaitTimeAction', 'missedCall']:
                                     if ext_dump.get(k): q_settings[k] = ext_dump[k]
                     self.queue_settings_cache[ext_id] = q_settings
                 
@@ -343,6 +363,8 @@ class CallFlowTracer:
                     target_id = self.extract_target_from_transfer(q.get('transfer'))
                     if not target_id:
                         target_id = self.extract_target_from_transfer(q.get('unconditionalForwarding'))
+                    if not target_id:
+                        target_id = self.extract_target_from_transfer(q.get('missedCall'))
 
                     # Visualization
                     info_txt = [f"Wait: {max_wait}s"]
@@ -446,8 +468,9 @@ class CallFlowTracer:
             except: pass
 
     def generate(self, start_ext_id):
+        # NEW: Switch to Left-Right Layout for readability
         self.graph_lines = [
-            '---', 'title: Call Flow Diagram', '---', 'graph TD',
+            '---', 'title: Call Flow Diagram', '---', 'graph LR',
             'classDef siteStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20',
             'classDef ivrStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1',
             'classDef queueStyle fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100',
@@ -465,7 +488,7 @@ class CallFlowTracer:
         
         graph_str = "\n".join(self.graph_lines)
         if not graph_str.strip():
-            graph_str = "graph TD\nError[No Data Generated]"
+            graph_str = "graph LR\nError[No Data Generated]"
             
         return graph_str, self.request_logs
 
