@@ -12,14 +12,19 @@ class CallFlowTracer:
         self.graph_lines = []
         self.node_map = {}
         self.node_counter = 0
-        self.ext_num_map = {}
+        self.ext_num_map = {} # Cache for Number -> ID resolution
 
     def log_api_call(self, endpoint):
         """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
-            response = rc_api_call(endpoint)
+            # Force cache bust for critical queue details to ensure we get fresh data
+            final_url = endpoint
+            if "call-queues/" in endpoint and "?" not in endpoint:
+                final_url = f"{endpoint}?_={int(time.time()*1000)}"
+            
+            response = rc_api_call(final_url)
             duration = round((time.time() - start) * 1000, 2)
             
             if response is None: status = "EMPTY (None)"
@@ -28,7 +33,7 @@ class CallFlowTracer:
             
             self.request_logs.append({
                 'method': 'GET',
-                'url': endpoint,
+                'url': final_url,
                 'status': status,
                 'duration': f"{duration}ms"
             })
@@ -44,6 +49,7 @@ class CallFlowTracer:
 
     def get_extension_info(self, ext_id):
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
+        # Check if we accidentally passed a number
         if str(ext_id) in self.ext_num_map:
             real_id = self.ext_num_map[str(ext_id)]
             if real_id in self.extension_cache: return self.extension_cache[real_id]
@@ -61,8 +67,11 @@ class CallFlowTracer:
         return None
 
     def get_extension_id_by_number(self, ext_num):
+        """Helper to resolve an Extension Number to an ID on the fly."""
         s_num = str(ext_num)
         if s_num in self.ext_num_map: return self.ext_num_map[s_num]
+        
+        # specific lookup
         info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}")
         if info and info.get('id'):
             self.extension_cache[str(info['id'])] = info
