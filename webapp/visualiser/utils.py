@@ -42,7 +42,6 @@ class CallFlowTracer:
 
     def get_extension_info(self, ext_id):
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
-        
         for i in range(3):
             info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
             if info and 'errorCode' not in info:
@@ -57,133 +56,114 @@ class CallFlowTracer:
         if not text: return ""
         return str(text).replace('"', "'").replace('#', '').strip()
 
-    # ==========================================
-    #  UNIVERSAL SCHEDULE PARSER (FIXED)
-    # ==========================================
     def parse_schedule(self, schedule_obj):
         if not schedule_obj: return "24/7 (Open)"
-        
-        output_lines = []
-        
         try:
-            # 1. Weekly Ranges - Normalize Data Structure
+            output_lines = []
+            # 1. Weekly Ranges
             if schedule_obj.get('weeklyRanges'):
                 weekly_data = schedule_obj['weeklyRanges']
                 normalized_items = []
-
-                # DATA REPAIR: Check if it is a Dict or List
+                
+                # Normalize Dict vs List
                 if isinstance(weekly_data, dict):
-                    # Format: { 'monday': [{'from': '09:00', 'to': '17:00'}], ... }
                     for day_key, periods in weekly_data.items():
-                        # periods might be a single dict or list of dicts
                         if isinstance(periods, dict): periods = [periods]
                         for p in periods:
-                            normalized_items.append({
-                                'day': day_key,
-                                'from': p.get('from'),
-                                'to': p.get('to')
-                            })
-                
+                            normalized_items.append({'day': day_key, 'from': p.get('from'), 'to': p.get('to')})
                 elif isinstance(weekly_data, list):
-                    # Format: [ { 'dayOfWeek': 'Monday', 'from': '09:00', ... } ]
                     for item in weekly_data:
-                        normalized_items.append({
-                            'day': item.get('dayOfWeek', 'Unknown'),
-                            'from': item.get('from'),
-                            'to': item.get('to')
-                        })
+                        normalized_items.append({'day': item.get('dayOfWeek', 'Unknown'), 'from': item.get('from'), 'to': item.get('to')})
 
-                # Now process the clean list
                 time_map = {}
                 for item in normalized_items:
-                    raw_s = item.get('from')
-                    raw_e = item.get('to')
+                    s_str = str(item.get('from') or '00:00').split(':')
+                    e_str = str(item.get('to') or '23:59').split(':')
                     
-                    # Handle None/Null (Midnight)
-                    s_str = str(raw_s).split(':') if raw_s else ['00', '00']
-                    e_str = str(raw_e).split(':') if raw_e else ['23', '59']
-                    
-                    # Format HH:MM
                     s_fmt = f"{s_str[0]}:{s_str[1]}" if len(s_str) >= 2 else "00:00"
                     e_fmt = f"{e_str[0]}:{e_str[1]}" if len(e_str) >= 2 else "23:59"
-                    
                     time_key = f"{s_fmt}-{e_fmt}"
                     
-                    # Clean Day Name (monday -> Mon)
                     day_raw = item.get('day', '???')
-                    day_short = day_raw[:1].upper() + day_raw[1:3].lower() # Cap first letter
+                    day_short = day_raw[:1].upper() + day_raw[1:3].lower()
                     
                     if time_key not in time_map: time_map[time_key] = []
                     time_map[time_key].append(day_short)
 
-                # Format for Display
                 days_order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                
                 for t_str, days in time_map.items():
-                    # Sort
                     days.sort(key=lambda d: days_order.index(d) if d in days_order else 99)
-                    
-                    # Group
                     d_label = ",".join(days)
                     if len(days) == 5 and 'Mon' in days and 'Fri' in days: d_label = "Mon-Fri"
                     elif len(days) == 7: d_label = "Everyday"
                     elif len(days) == 2 and 'Sat' in days and 'Sun' in days: d_label = "Weekends"
-                    
                     output_lines.append(f"{d_label}: {t_str}")
 
-            # 2. Specific Ranges (Holidays)
+            # 2. Ranges
             if schedule_obj.get('ranges'):
                 for r in schedule_obj['ranges']:
                     f = str(r.get('from', '')).replace('T', ' ')[:16]
                     t = str(r.get('to', '')).replace('T', ' ')[:16]
                     output_lines.append(f"{f} to {t}")
 
-            if not output_lines:
-                return "24/7 (Open)"
-                
-            return "<br/>".join(output_lines)
-
-        except Exception as e:
-            # Last Resort: Dump raw json keys so we can debug further if needed
-            return f"Data Error: {str(e)}<br/>Raw: {str(schedule_obj)[:50]}"
+            return "<br/>".join(output_lines) if output_lines else "24/7 (Open)"
+        except: return f"Raw: {str(schedule_obj)[:50]}"
 
     def get_schedule_summary(self, ext_id):
         if ext_id in self.schedule_cache: return self.schedule_cache[ext_id]
         try:
             resp = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
-            
-            if not resp: return "24/7 (Default)"
-            if 'schedule' not in resp: return "24/7"
-            
-            sched = resp['schedule']
-            res = self.parse_schedule(sched)
+            if not resp or 'schedule' not in resp: return "24/7 (Default)"
+            res = self.parse_schedule(resp['schedule'])
             self.schedule_cache[ext_id] = res
             return res
-        except Exception as e: 
-            return f"Fetch Err: {str(e)}"
+        except: return "Fetch Err"
 
     def format_custom_rule(self, rule):
         try:
             conds = []
-            # Caller ID
             if rule.get('callers'):
                 names = [c.get('name', c.get('callerId', '?')) for c in rule['callers']]
                 conds.append(f"From: {', '.join(names[:2])}" + (f"..." if len(names)>2 else ""))
-            
-            # Called Number
             if rule.get('calledNumbers'):
                 nums = [n.get('phoneNumber', '?') for n in rule['calledNumbers']]
                 conds.append(f"To: {', '.join(nums)}")
-            
-            # Schedule (Uses Universal Parser)
             if rule.get('schedule'):
                 sch_text = self.parse_schedule(rule['schedule'])
                 if sch_text != "24/7 (Open)":
                     conds.append(f"<b>Time:</b> {sch_text}")
-
             return "<br/>".join(conds) if conds else "Matches All Calls"
-        except Exception as e:
-            return f"Rule Err: {str(e)}"
+        except: return "Complex Rule"
+
+    def get_action_description(self, rule):
+        """Returns a readable string description of what the rule actually DOES."""
+        action = rule.get('callHandlingAction')
+        
+        if action == 'TransferToExtension':
+            ext = rule.get('transfer', {}).get('extension', {})
+            return f"Transfer to Ext {ext.get('extensionNumber', '?')}"
+            
+        if action == 'UnconditionalForwarding':
+            ph = rule.get('unconditionalForwarding', {}).get('phoneNumber')
+            if ph: return f"Forward to {ph}"
+            ext = rule.get('unconditionalForwarding', {}).get('extension', {})
+            if ext: return f"Forward to Ext {ext.get('extensionNumber', '?')}"
+            
+        if action == 'ForwardCalls':
+            # Check detailed forwarding rules
+            fwd_rules = rule.get('forwarding', {}).get('rules', [])
+            targets = []
+            for r in fwd_rules:
+                for n in r.get('forwardingNumbers', []):
+                    if n.get('phoneNumber'): targets.append(n['phoneNumber'])
+            if targets:
+                return f"Forward to {', '.join(targets[:1])}" + ("..." if len(targets)>1 else "")
+            return "Ring Devices"
+            
+        if action == 'TakeMessagesOnly': return "Send to Voicemail"
+        if action == 'PlayAnnouncementOnly': return "Play Announcement"
+        
+        return action
 
     def trace(self, ext_id, parent_id=None, link_label="", history=None):
         if history is None: history = []
@@ -201,7 +181,7 @@ class CallFlowTracer:
         self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Nodes ---
+        # --- Node Creation ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -229,7 +209,7 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} -- "{self.clean_text(link_label)}" --> {nid}')
 
-        # --- Details ---
+        # --- Queue Agents ---
         if e_type == 'CallQueue':
             try:
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
@@ -239,13 +219,12 @@ class CallFlowTracer:
                         mi = self.get_extension_info(m['id'])
                         if mi: m_list.append(f"- {self.clean_text(mi.get('name'))}")
                     if len(m_resp['records']) > 6: m_list.append(f"... {len(m_resp['records'])-6} more")
-                    
                     iid = f"info_{self.node_counter}"; self.node_counter += 1
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
             except: pass
 
-        # --- Rules ---
+        # --- Routing Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=false")
@@ -257,42 +236,56 @@ class CallFlowTracer:
                         rname = r.get('name', 'Rule')
                         action = r.get('callHandlingAction')
                         
-                        logic = ""
+                        # 1. Build Node Text (Condition + Action)
+                        action_desc = self.get_action_description(r)
+                        logic_text = ""
+                        
                         if rtype == 'BusinessHours':
-                            # Safe Fetch
-                            logic = f"<b>Business Hours</b><br/>{self.get_schedule_summary(ext_id)}"
+                            logic_text = f"<b>Business Hours</b><br/>{self.get_schedule_summary(ext_id)}<br/><i>{action_desc}</i>"
                         elif rtype == 'Custom':
-                            # Safe Fetch
-                            logic = f"<b>Custom: {self.clean_text(rname)}</b><br/>{self.format_custom_rule(r)}"
-                        elif rtype == 'AfterHours':
-                            logic = f"<b>After Hours</b>"
+                            logic_text = f"<b>Custom: {self.clean_text(rname)}</b><br/>{self.format_custom_rule(r)}<br/><i>{action_desc}</i>"
                         else:
-                            logic = f"<b>{self.clean_text(rname)}</b>"
+                            if rtype == 'AfterHours': rname = "After Hours"
+                            logic_text = f"<b>{self.clean_text(rname)}</b><br/><i>{action_desc}</i>"
 
+                        # 2. Determine Target
                         target = None
+                        
                         if action == 'TransferToExtension':
                             target = r.get('transfer', {}).get('extension', {}).get('id')
+                            
                         elif action == 'UnconditionalForwarding':
                             ph = r.get('unconditionalForwarding', {}).get('phoneNumber')
                             ex = r.get('unconditionalForwarding', {}).get('extension', {})
                             if ex.get('id'): target = ex['id']
                             elif ph: target = f"ext_{ph}"
+                            
+                        elif action == 'ForwardCalls':
+                            # Dig for external numbers in forwarding rules
+                            fwd_rules = r.get('forwarding', {}).get('rules', [])
+                            for fr in fwd_rules:
+                                for fn in fr.get('forwardingNumbers', []):
+                                    if fn.get('phoneNumber'):
+                                        target = f"ext_{fn['phoneNumber']}"
+                                        break # Just take the first one found
+                                if target: break
+                                
                         elif action == 'TakeMessagesOnly':
                             target = f"vm_{ext_id}"
 
+                        # 3. Draw Node
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
                                 lid = f"log_{self.node_counter}"; self.node_counter += 1
-                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic)}"}}:::logicStyle')
+                                self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::logicStyle')
                                 self.graph_lines.append(f'{nid} --> {lid}')
                                 self.trace(target, lid, "Matches", new_hist)
                             else:
                                 self.trace(target, nid, rname, new_hist)
                         else:
+                            # No target found (e.g. Announcement or Ring Devices without external num)
                             iid = f"cfg_{self.node_counter}"; self.node_counter += 1
-                            det = action
-                            if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                            self.graph_lines.append(f'{iid}["{self.clean_text(logic)}<br/>Action: {det}"]:::logicStyle')
+                            self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}"]:::logicStyle')
                             self.graph_lines.append(f'{nid} -.-> {iid}')
             except Exception as e:
                 print(f"Rule Error: {e}")
@@ -322,7 +315,6 @@ class CallFlowTracer:
             'classDef errorStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#c62828',
             'classDef missingStyle fill:#cfd8dc,stroke:#607d8b,stroke-width:2px,stroke-dasharray: 5 5'
         ]
-        
         try:
             self.trace(start_ext_id)
         except Exception as e:
