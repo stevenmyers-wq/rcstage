@@ -12,10 +12,9 @@ class CallFlowTracer:
         self.graph_lines = []
         self.node_map = {}
         self.node_counter = 0
-        # Map Ext Number -> ID for fallback lookups
-        self.ext_num_map = {} 
 
     def log_api_call(self, endpoint):
+        """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
@@ -43,21 +42,12 @@ class CallFlowTracer:
             return None
 
     def get_extension_info(self, ext_id):
-        # Check ID cache
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
         
-        # Check if ext_id is actually a number we've mapped
-        if str(ext_id) in self.ext_num_map:
-            real_id = self.ext_num_map[str(ext_id)]
-            if real_id in self.extension_cache: return self.extension_cache[real_id]
-
         for i in range(3):
             info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
             if info and 'errorCode' not in info:
                 self.extension_cache[ext_id] = info
-                # Update Number Map
-                if info.get('extensionNumber'):
-                    self.ext_num_map[str(info['extensionNumber'])] = str(info['id'])
                 return info
             elif info and info.get('errorCode') in ['CMN-102', 'OGE-101']:
                 return {'type': 'Unknown', 'name': 'Deleted', 'extensionNumber': '???'}
@@ -72,9 +62,11 @@ class CallFlowTracer:
         if not schedule_obj: return "24/7 (Open)"
         try:
             output_lines = []
+            # 1. Weekly Ranges
             if schedule_obj.get('weeklyRanges'):
                 weekly_data = schedule_obj['weeklyRanges']
                 normalized_items = []
+
                 if isinstance(weekly_data, dict):
                     for day_key, periods in weekly_data.items():
                         if isinstance(periods, dict): periods = [periods]
@@ -105,6 +97,7 @@ class CallFlowTracer:
                     elif len(days) == 2 and 'Sat' in days and 'Sun' in days: d_label = "Weekends"
                     output_lines.append(f"{d_label}: {t_str}")
 
+            # 2. Ranges
             if schedule_obj.get('ranges'):
                 for r in schedule_obj['ranges']:
                     f = str(r.get('from', '')).replace('T', ' ')[:16]
@@ -212,7 +205,7 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- QUEUE LOGIC (Smart Overflow Resolution) ---
+        # --- CALL QUEUE LOGIC (Smart Overflow) ---
         if e_type == 'CallQueue':
             try:
                 # 1. Agents
@@ -227,7 +220,7 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
 
-                # 2. OVERFLOW
+                # 2. OVERFLOW / SETTINGS
                 if ext_id not in self.queue_settings_cache:
                     q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
                     self.queue_settings_cache[ext_id] = q_settings
@@ -235,43 +228,45 @@ class CallFlowTracer:
                 q = self.queue_settings_cache.get(ext_id)
                 if q:
                     max_wait = q.get('maxWaitTime', 0)
-                    transfer = q.get('transfer', {})
+                    wait_action = q.get('maxWaitTimeAction', 'Voicemail')
                     
-                    # Try ID, Fallback to Extension Number
+                    # Log basics
+                    info_txt = [f"Wait: {max_wait}s ({wait_action})"]
+                    
                     target_id = None
-                    if transfer.get('extension'):
-                        if transfer['extension'].get('id'):
-                            target_id = transfer['extension']['id']
-                        elif transfer['extension'].get('extensionNumber'):
-                            # Fallback: Look up ID by Number using map
-                            num = str(transfer['extension']['extensionNumber'])
-                            if num in self.ext_num_map:
-                                target_id = self.ext_num_map[num]
-                            else:
-                                # Last ditch: Try to fetch info for this number
-                                tmp_info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{num}") # Often works
-                                if tmp_info: target_id = tmp_info['id']
-
-                    # Debug Display
-                    ovf_txt = f"Wait: {max_wait}s"
-                    if max_wait == 0: ovf_txt += " (Immediate)"
                     
+                    # Strategy A: Check 'transfer' object (Standard)
+                    if q.get('transfer') and q['transfer'].get('extension'):
+                        target_id = q['transfer']['extension'].get('id')
+                    
+                    # Strategy B: Check 'unconditionalForwarding' (Fallback for Immediate)
+                    if not target_id and q.get('unconditionalForwarding'):
+                        uf = q['unconditionalForwarding']
+                        if uf.get('extension'): target_id = uf['extension'].get('id')
+                        if uf.get('phoneNumber'): target_id = f"ext_{uf['phoneNumber']}"
+
+                    # Strategy C: Check 'maxWaitTimeAction' hints
+                    if not target_id and wait_action == 'TransferToExtension':
+                        info_txt.append("(Target Missing in API)")
+
                     if target_id:
-                        ovf_txt += f"<br/>Overflow -> {target_id}"
                         lbl = "Immediate Overflow" if max_wait == 0 else f"Overflow (> {max_wait}s)"
                         self.trace(target_id, nid, lbl, new_hist)
                     else:
-                        # DUMP RAW IF FAILED
-                        ovf_txt += f"<br/>Raw Transfer: {str(transfer)[:100]}"
+                        # Dump Raw for Debug if it's supposed to transfer but failed
+                        if wait_action == 'TransferToExtension':
+                            raw_dump = str(q.get('transfer', 'No Transfer Obj'))[:50]
+                            info_txt.append(f"Raw: {raw_dump}")
 
+                    # Config Node
                     conf_id = f"conf_{self.node_counter}"; self.node_counter += 1
-                    self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ovf_txt}"]:::infoStyle')
+                    self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ "<br/>".join(info_txt) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {conf_id}')
 
             except Exception as e:
                 print(f"Queue Error: {e}")
 
-        # --- RULES ---
+        # --- ROUTING RULES ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
