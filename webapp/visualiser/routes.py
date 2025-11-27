@@ -33,7 +33,7 @@ def fetch_all_pages(endpoint, params=None):
         if 'records' in response:
             all_records.extend(response['records'])
         
-        # Check if there is a next page
+        # Check if there is a next page in the navigation object
         navigation = response.get('navigation', {})
         next_page = navigation.get('nextPage')
         
@@ -56,13 +56,12 @@ def search_for_visualiser_targets():
     query = request.args.get('query', '').lower().strip()
     return_all = (len(query) == 0) # If query is empty, return everything
     
-    # Logic: If we are searching (query exists), we can trust RC search or fetch all and filter.
-    # To be a true failsafe, we fetch all entry points and filter in Python.
-    
     results = []
     
     # 1. Fetch ALL Phone Numbers (Main numbers often hide here)
+    # We fetch all pages to ensure we don't miss the main company number if it's record #1001
     phone_records = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
+    
     for record in phone_records:
         p_usage = record.get('usageType', '')
         # Filter for relevant main numbers
@@ -70,7 +69,7 @@ def search_for_visualiser_targets():
             p_number = record.get('phoneNumber', '')
             p_ext = record.get('extension')
             
-            # If we are searching, check match
+            # If we are searching specific text, check match
             if not return_all and (query not in p_number and query not in p_usage.lower()):
                 continue
 
@@ -96,6 +95,7 @@ def search_for_visualiser_targets():
 
     # 3. Fetch ALL Extensions (IVRs, Queues, Users)
     # We fetch inactive ones too, just in case a flow involves them.
+    # We use fetch_all_pages to ensure we get every single extension.
     ext_records = fetch_all_pages("/restapi/v1.0/account/~/extension", {'status': 'Enabled'})
     
     for ext in ext_records:
@@ -110,7 +110,7 @@ def search_for_visualiser_targets():
         
         # Categorize for the dropdown groups
         if e_type in ['IvrMenu', 'CallQueue', 'Department', 'Site', 'User', 'ApplicationExtension']:
-            # For Select2, we can group them later or just format the text nicely
+            # Icons help distinguish types in the dropdown
             icon = "👤" if e_type == 'User' else "🏢"
             if e_type == 'IvrMenu': icon = "🎹"
             if e_type == 'CallQueue': icon = "👥"
@@ -119,10 +119,10 @@ def search_for_visualiser_targets():
                 'id': ext['id'],
                 'text': f"{icon} {e_name} (Ext: {e_number})",
                 'type': e_type,
-                'category': e_type # Useful for grouping in Select2
+                'category': e_type 
             })
     
-    # Deduplicate by ID
+    # Deduplicate by ID (in case an extension appeared in multiple lists)
     final_results = []
     seen_ids = set()
     for item in results:
@@ -130,7 +130,7 @@ def search_for_visualiser_targets():
             final_results.append(item)
             seen_ids.add(item['id'])
     
-    # Sort: IVRs and Queues first, then Users
+    # Sort: IVRs and Queues first, then Users for better UX
     def sort_key(x):
         priority = {'Site': 0, 'IvrMenu': 1, 'CallQueue': 2, 'Department': 3, 'User': 4}
         return priority.get(x['type'], 5)
@@ -147,10 +147,14 @@ def visualize_call_flow_api(ext_id):
     if not is_authenticated() or not get_rc_access_token():
         return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
     
+    # Initialize API log in session
     session['api_log'] = []
     
     try:
+        # Generate the mermaid graph
         mermaid_graph_string = generate_mermaid_flow(ext_id)
+        
+        # Get the API log data
         api_log_data = session.pop('api_log', [])
         
         return jsonify({
