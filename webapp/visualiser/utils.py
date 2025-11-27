@@ -19,7 +19,6 @@ class CallFlowTracer:
         start = time.time()
         status = "SUCCESS"
         try:
-            # Force cache bust for queues/rules to ensure freshness
             final_url = endpoint
             if ("call-queues" in endpoint or "answering-rule" in endpoint) and "?" not in endpoint:
                 final_url = f"{endpoint}?_={int(time.time())}"
@@ -48,40 +47,20 @@ class CallFlowTracer:
             return None
 
     def get_extension_info(self, ext_id):
-        """
-        Robust Fetcher: Tries Extension Endpoint -> Number Map -> IVR Endpoint -> Returns Deleted.
-        """
-        # 1. Check Caches
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
         if str(ext_id) in self.ext_num_map:
             real_id = self.ext_num_map[str(ext_id)]
             if real_id in self.extension_cache: return self.extension_cache[real_id]
 
-        # 2. Try Standard Extension Endpoint
         for i in range(3):
             info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
-            
-            # SUCCESS
             if info and 'errorCode' not in info:
                 self.extension_cache[ext_id] = info
                 if info.get('extensionNumber'):
                     self.ext_num_map[str(info['extensionNumber'])] = str(info['id'])
                 return info
-            
-            # FAILURE - RESOURCE NOT FOUND
             elif info and info.get('errorCode') in ['CMN-102', 'OGE-101']:
-                # FALLBACK: It might be a standalone IVR menu not listed in /extension
-                # Some accounts hide IVRs from the main list.
-                ivr_check = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
-                if ivr_check and not ivr_check.get('errorCode'):
-                    # It was a hidden IVR!
-                    ivr_check['type'] = 'IvrMenu' # Ensure type is set
-                    self.extension_cache[ext_id] = ivr_check
-                    return ivr_check
-                
-                # If both fail, it's truly deleted.
-                return {'type': 'Unknown', 'name': 'Deleted/Invalid', 'extensionNumber': '???'}
-                
+                return {'type': 'Unknown', 'name': 'Deleted', 'extensionNumber': '???'}
             time.sleep(0.1)
         return None
 
@@ -195,34 +174,24 @@ class CallFlowTracer:
         return action
 
     def extract_target_from_transfer(self, transfer_obj):
-        """Extract target extension ID from various transfer object formats"""
         if not transfer_obj: return None
-        
-        # Handle array format
         if isinstance(transfer_obj, list):
             for t in transfer_obj:
                 target = self.extract_target_from_transfer(t)
                 if target: return target
-        
-        # Handle single transfer object
         if isinstance(transfer_obj, dict):
-            # Direct extension reference
             if transfer_obj.get('extension'):
                 ext = transfer_obj['extension']
                 if ext.get('id'): return str(ext['id'])
                 if ext.get('extensionNumber'): 
                     return self.get_extension_id_by_number(ext['extensionNumber'])
-            
-            # Phone number
             if transfer_obj.get('phoneNumber'):
                 return f"ext_{transfer_obj['phoneNumber']}"
-        
         return None
 
     def process_call_queue_advanced_rules(self, ext_id, nid, history):
-        """Process business-hours-rule and after-hours-rule for call queues"""
         try:
-            # Business Hours Rule
+            # Business Hours
             bh_rule = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule")
             if bh_rule and not bh_rule.get('errorCode'):
                 targets = self.extract_queue_targets_from_rule(bh_rule, 'Business Hours')
@@ -230,7 +199,7 @@ class CallFlowTracer:
                     if target_id and target_id not in history:
                         self.trace(target_id, nid, label, history, True)
             
-            # After Hours Rule
+            # After Hours
             ah_rule = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/after-hours-rule")
             if ah_rule and not ah_rule.get('errorCode'):
                 targets = self.extract_queue_targets_from_rule(ah_rule, 'After Hours')
@@ -241,40 +210,27 @@ class CallFlowTracer:
             print(f"Error processing advanced queue rules for {ext_id}: {e}")
 
     def extract_queue_targets_from_rule(self, rule, rule_name):
-        """Extract all targets from a call queue rule"""
         targets = []
-        
         try:
-            # Check queue.transfer array (can have multiple actions)
             if rule.get('queue', {}).get('transfer'):
                 transfers = rule['queue']['transfer']
                 if not isinstance(transfers, list): transfers = [transfers]
-                
                 for t in transfers:
                     action = t.get('action', 'Transfer')
                     target = self.extract_target_from_transfer(t)
                     if target:
                         targets.append((target, f"{rule_name} - {action}"))
             
-            # Check unconditionalForwarding
             if rule.get('unconditionalForwarding'):
                 target = self.extract_target_from_transfer(rule['unconditionalForwarding'])
                 if target:
                     targets.append((target, f"{rule_name} - Forward"))
             
-            # Check voicemail
             if rule.get('voicemail'):
                 targets.append((f"vm_{rule.get('extension', {}).get('id', 'unknown')}", 
                               f"{rule_name} - Voicemail"))
-            
-            # Check greetings
-            if rule.get('greetings'):
-                for greeting in rule['greetings']:
-                    if greeting.get('preset') == 'CompanyMessageOnly':
-                        pass
         except Exception as e:
             print(f"Error extracting targets from rule: {e}")
-        
         return targets
 
     def trace(self, ext_id, parent_id=None, link_label="", history=None, is_active=True):
@@ -284,36 +240,45 @@ class CallFlowTracer:
         clean_lbl = self.clean_text(link_label)
         link_syntax = f'-- "{clean_lbl}" -->' if (is_active and clean_lbl) else (f'-. "{clean_lbl}" .->' if clean_lbl else arrow_code)
 
+        # Loop Check
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
                 self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
             return
-        if ext_id in self.node_map:
+        
+        # Existing Node Check (Skip if it's a VM to allow de-coupling)
+        is_vm = str(ext_id).startswith("vm_")
+        if not is_vm and ext_id in self.node_map:
             if parent_id: 
                 self.graph_lines.append(f'{parent_id} {link_syntax} {self.node_map[ext_id]}')
             return
 
+        # Unique Node Generation (For new nodes OR all VMs)
         nid = f"n{self.node_counter}"
         self.node_counter += 1
-        self.node_map[ext_id] = nid
+        
+        # Only cache non-VM nodes to prevent reuse of VM nodes (De-coupling)
+        if not is_vm:
+            self.node_map[ext_id] = nid
+            
         new_hist = history + [ext_id]
 
-        # --- Node Creation ---
+        # --- DRAWING ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
             if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
-        if str(ext_id).startswith("vm_"):
-            self.graph_lines.append(f'{nid}(("[Voicemail]")):::userStyle')
+        if is_vm:
+            # Simple terminal node, always unique
+            self.graph_lines.append(f'{nid}(("🛑 Voicemail")):::termStyle')
             if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
         info = self.get_extension_info(ext_id)
         if not info:
-            # Handle Deleted/Unknown
-            self.graph_lines.append(f'{nid}["[Deleted/Invalid: {ext_id}]"]:::missingStyle')
+            self.graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
             if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
             return
 
@@ -327,7 +292,7 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # --- QUEUE LOGIC (Enhanced) ---
+        # --- RECURSION ---
         if e_type == 'CallQueue':
             try:
                 # 1. Agents
@@ -342,7 +307,7 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {iid}')
 
-                # 2. Basic Settings
+                # 2. Settings
                 if ext_id not in self.queue_settings_cache:
                     q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
                     if not q_settings or not q_settings.get('transfer'):
@@ -359,14 +324,10 @@ class CallFlowTracer:
                     max_wait = q.get('maxWaitTime', 0)
                     wait_action = q.get('maxWaitTimeAction', 'Unknown')
                     
-                    # Try multiple locations for transfer target
                     target_id = self.extract_target_from_transfer(q.get('transfer'))
-                    if not target_id:
-                        target_id = self.extract_target_from_transfer(q.get('unconditionalForwarding'))
-                    if not target_id:
-                        target_id = self.extract_target_from_transfer(q.get('missedCall'))
+                    if not target_id: target_id = self.extract_target_from_transfer(q.get('unconditionalForwarding'))
+                    if not target_id: target_id = self.extract_target_from_transfer(q.get('missedCall'))
 
-                    # Visualization
                     info_txt = [f"Wait: {max_wait}s"]
                     if max_wait == 0: info_txt[0] += " (Immediate)"
                     info_txt.append(f"Action: {wait_action}")
@@ -382,7 +343,6 @@ class CallFlowTracer:
                     self.graph_lines.append(f'{conf_id}["<b>Queue Config:</b><br/>{ "<br/>".join(info_txt) }"]:::infoStyle')
                     self.graph_lines.append(f'{nid} -.-> {conf_id}')
 
-                # 3. Overflow Settings API
                 try:
                     overflow_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/overflow-settings")
                     if overflow_resp and overflow_resp.get('enabled') and overflow_resp.get('items'):
@@ -391,13 +351,10 @@ class CallFlowTracer:
                                 self.trace(item['id'], nid, "Queue Overflow", new_hist)
                 except: pass
 
-                # 4. ENHANCED: Business Hours and After Hours Rules
                 self.process_call_queue_advanced_rules(ext_id, nid, new_hist)
 
-            except Exception as e:
-                print(f"Queue Error: {e}")
+            except Exception as e: print(f"Queue Error: {e}")
 
-        # --- ROUTING RULES ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
@@ -422,12 +379,10 @@ class CallFlowTracer:
                             if rtype == 'AfterHours': rname = "After Hours"
                             logic_text = f"<b>{self.clean_text(rname)}</b>{status_txt}<br/><i>{action_desc}</i>"
 
-                        target = None
-                        if action == 'TransferToExtension':
-                            target = r.get('transfer', {}).get('extension', {}).get('id')
-                        elif action == 'UnconditionalForwarding':
-                            target = self.extract_target_from_transfer(r.get('unconditionalForwarding'))
-                        elif action == 'ForwardCalls':
+                        target = self.extract_target_from_transfer(r.get('transfer'))
+                        if not target: target = self.extract_target_from_transfer(r.get('unconditionalForwarding'))
+                        
+                        if action == 'ForwardCalls' and not target:
                             fwd_rules = r.get('forwarding', {}).get('rules', [])
                             for fr in fwd_rules:
                                 for fn in fr.get('forwardingNumbers', []):
@@ -435,8 +390,7 @@ class CallFlowTracer:
                                         target = f"ext_{fn['phoneNumber']}"
                                         break
                                 if target: break
-                        elif action == 'TakeMessagesOnly':
-                            target = f"vm_{ext_id}"
+                        if action == 'TakeMessagesOnly' and not target: target = f"vm_{ext_id}"
 
                         if target:
                             if rtype in ['BusinessHours', 'Custom']:
@@ -452,10 +406,8 @@ class CallFlowTracer:
                             if action == 'PlayAnnouncementOnly': det = "Play Announcement"
                             self.graph_lines.append(f'{iid}["{self.clean_text(logic_text)}<br/>Action: {det}"]:::{node_style}')
                             self.graph_lines.append(f'{nid} {link_arrow} {iid}')
-            except Exception as e:
-                print(f"Rule Error: {e}")
+            except Exception as e: print(f"Rule Error: {e}")
 
-        # --- IVR ---
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
@@ -468,7 +420,6 @@ class CallFlowTracer:
             except: pass
 
     def generate(self, start_ext_id):
-        # NEW: Switch to Left-Right Layout for readability
         self.graph_lines = [
             '---', 'title: Call Flow Diagram', '---', 'graph LR',
             'classDef siteStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20',
@@ -479,6 +430,7 @@ class CallFlowTracer:
             'classDef inactiveStyle fill:#f5f5f5,stroke:#9e9e9e,stroke-width:1px,stroke-dasharray: 2 2,color:#757575,font-size:12px,font-style:italic',
             'classDef infoStyle fill:#fff,stroke:#b0bec5,stroke-width:1px,stroke-dasharray: 2 2,color:#37474f,font-size:11px',
             'classDef errorStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#c62828',
+            'classDef termStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#c62828,rx:10,ry:10',
             'classDef missingStyle fill:#cfd8dc,stroke:#607d8b,stroke-width:2px,stroke-dasharray: 5 5'
         ]
         try:
@@ -487,9 +439,7 @@ class CallFlowTracer:
             self.graph_lines.append(f'error_node["⚠️ Generator Error: {str(e)}"]:::errorStyle')
         
         graph_str = "\n".join(self.graph_lines)
-        if not graph_str.strip():
-            graph_str = "graph LR\nError[No Data Generated]"
-            
+        if not graph_str.strip(): graph_str = "graph LR\nError[No Data Generated]"
         return graph_str, self.request_logs
 
 def generate_mermaid_flow(start_ext_id):
