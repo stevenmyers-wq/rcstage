@@ -9,7 +9,7 @@
         border: 2px solid #e2e8f0; 
         position: relative; 
         background: #fafafa; 
-        overflow: hidden; /* Important for SVG pan zoom */
+        overflow: hidden; 
     }
     
     /* Select2 Customization */
@@ -23,20 +23,33 @@
         bottom: 20px;
         right: 20px;
         z-index: 100;
-        background: rgba(255,255,255,0.9);
-        padding: 10px;
+        background: rgba(255,255,255,0.95);
+        padding: 8px;
         border-radius: 8px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         border: 1px solid #ddd;
         display: flex;
-        gap: 5px;
+        gap: 8px;
     }
     .ctrl-btn {
         background: #fff; border: 1px solid #ccc; width: 36px; height: 36px;
         border-radius: 4px; font-weight: bold; cursor: pointer; color: #555;
         display: flex; align-items: center; justify-content: center; font-size: 18px;
     }
-    .ctrl-btn:hover { background: #f0f0f0; color: #000; }
+    .ctrl-btn:hover { background: #f0f0f0; color: #000; border-color: #999; }
+    
+    /* Export Dropdown */
+    .export-group { position: relative; display: inline-block; }
+    .export-menu {
+        display: none; position: absolute; right: 0; bottom: 45px;
+        background: white; border: 1px solid #ccc; border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 160px; overflow: hidden;
+    }
+    .export-item {
+        display: block; width: 100%; padding: 10px 12px; text-align: left;
+        background: none; border: none; cursor: pointer; font-size: 14px; color: #333;
+    }
+    .export-item:hover { background: #f3f4f6; }
 </style>
 
 <div class="space-y-6">
@@ -60,12 +73,7 @@
     </div>
 
     <div class="w-full bg-white rounded-xl shadow-lg border border-gray-200 p-6 space-y-3">
-        <div class="flex justify-between items-center">
-            <h4 class="text-lg font-semibold text-gray-800">2. Call Flow Diagram</h4>
-            <div id="export-controls" style="display:none;">
-                <button id="save-pdf-btn" class="bg-gray-600 text-white text-sm py-2 px-4 rounded-lg hover:bg-gray-700 transition">Save Image</button>
-            </div>
-        </div>
+        <h4 class="text-lg font-semibold text-gray-800">2. Call Flow Diagram</h4>
         
         <div style="position: relative;">
             <div id="call-flow-diagram" class="mt-4 w-full bg-white rounded-lg flex items-center justify-center text-gray-400">
@@ -76,11 +84,18 @@
                 <button class="ctrl-btn" id="btn-zoom-in" title="Zoom In">+</button>
                 <button class="ctrl-btn" id="btn-zoom-out" title="Zoom Out">−</button>
                 <button class="ctrl-btn" id="btn-reset" title="Reset View">⟲</button>
+                <div class="export-group">
+                    <button class="ctrl-btn" id="btn-export-toggle" title="Save Image">💾</button>
+                    <div id="export-menu" class="export-menu">
+                        <button class="export-item" id="btn-save-svg">Download SVG (Vector)</button>
+                        <button class="export-item" id="btn-save-png">Download PNG (Image)</button>
+                    </div>
+                </div>
             </div>
         </div>
         
         <div class="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-            💡 <strong>Tip:</strong> Mouse Wheel to Zoom • Click & Drag to Pan
+            💡 <strong>Tip:</strong> Mouse Wheel to Zoom • Click & Drag to Pan • SVG Export is recommended for large diagrams.
         </div>
     </div>
     
@@ -91,12 +106,10 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 
 <script>
     mermaid.initialize({ startOnLoad: false, theme: 'base', flowchart: { useMaxWidth: false, htmlLabels: true, curve: 'basis' } });
-
     let panZoomInstance = null;
 
     $(document).ready(function() {
@@ -137,11 +150,8 @@
             const originalText = btn.text();
             btn.prop('disabled', true).text('Generating...');
             
-            // Show Spinner
             $('#call-flow-diagram').html('<div class="flex flex-col items-center"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700 mb-4"></div><p>Tracing call flow (This may take 10-20s)...</p></div>');
-            
-            // Hide controls during load
-            $('#zoom-controls, #export-controls').hide();
+            $('#zoom-controls').hide();
 
             fetch(`/api/rc/trace-flow/${selectedId}`)
                 .then(res => res.json())
@@ -155,57 +165,105 @@
 
         async function renderMermaid(graph) {
             const el = document.querySelector('#call-flow-diagram');
-            
-            // Clean up old instance
             if(panZoomInstance) { panZoomInstance.destroy(); panZoomInstance = null; }
             
             try {
                 const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
                 el.innerHTML = svg;
-                
                 const svgEl = el.querySelector('svg');
                 
-                // Set SVG to fill container for proper zooming
+                // CSS Reset for export quality
                 svgEl.style.width = '100%';
                 svgEl.style.height = '100%';
+                svgEl.style.maxWidth = 'none';
                 
-                // Initialize SVG-Pan-Zoom
                 panZoomInstance = svgPanZoom(svgEl, {
-                    zoomEnabled: true,
-                    controlIconsEnabled: false, // We use custom buttons
-                    fit: true,
-                    center: true,
-                    minZoom: 0.1,
-                    maxZoom: 10
+                    zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10
                 });
                 
-                // Show Controls
-                $('#zoom-controls, #export-controls').show();
+                $('#zoom-controls').show();
                 
-                // Bind Custom Buttons
+                // Bind Controls
                 $('#btn-zoom-in').off().on('click', function(){ panZoomInstance.zoomIn(); });
                 $('#btn-zoom-out').off().on('click', function(){ panZoomInstance.zoomOut(); });
                 $('#btn-reset').off().on('click', function(){ panZoomInstance.resetZoom(); panZoomInstance.center(); });
                 
+                // Export Menu Toggle
+                $('#btn-export-toggle').off().on('click', function(e){
+                    e.stopPropagation();
+                    $('#export-menu').toggle();
+                });
+                
+                // Close menu when clicking elsewhere
+                $(document).on('click', function(){ $('#export-menu').hide(); });
+
+                // --- EXPORT LOGIC ---
+                
+                // 1. Export SVG (Vector - Best for Large Graphs)
+                $('#btn-save-svg').off().on('click', function() {
+                    if(!panZoomInstance) return;
+                    
+                    // Get raw SVG string
+                    const svgData = document.querySelector('#call-flow-diagram svg').outerHTML;
+                    const blob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+                    const url = URL.createObjectURL(blob);
+                    
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'call_flow.svg';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                });
+
+                // 2. Export High-Res PNG (Canvas Render)
+                $('#btn-save-png').off().on('click', function() {
+                    const svgEl = document.querySelector('#call-flow-diagram svg');
+                    if(!svgEl) return;
+
+                    // 1. Clone the SVG to not mess up the view
+                    const clone = svgEl.cloneNode(true);
+                    
+                    // 2. Reset Pan/Zoom on clone to get full image
+                    clone.setAttribute('style', ''); // Clear styles
+                    clone.removeAttribute('transform');
+                    // Find the group panzoom uses and reset it
+                    const g = clone.querySelector('.svg-pan-zoom_viewport');
+                    if(g) g.setAttribute('transform', 'matrix(1,0,0,1,0,0)');
+                    
+                    // 3. Serialize
+                    const svgData = new XMLSerializer().serializeToString(clone);
+                    
+                    // 4. Create Image
+                    const img = new Image();
+                    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+                    
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        // Use original SVG viewbox size
+                        const bbox = svgEl.getBBox(); 
+                        // Scale up 2x for better quality
+                        const scale = 2; 
+                        canvas.width = (bbox.width + 100) * scale;
+                        canvas.height = (bbox.height + 100) * scale;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.scale(scale, scale);
+                        ctx.drawImage(img, 50, 50); // Margin
+                        
+                        const link = document.createElement('a');
+                        link.download = 'call_flow.png';
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                    };
+                });
+
             } catch (e) { 
-                el.innerHTML = `<div class="text-red-500 p-4">Mermaid Render Error: ${e.message}</div>`; 
+                el.innerHTML = `<div class="text-red-500 p-4">Render Error: ${e.message}</div>`; 
             }
         }
-
-        $('#save-pdf-btn').on('click', function() {
-            const el = document.querySelector('#call-flow-diagram');
-            if(!el.querySelector('svg')) return;
-            
-            // Reset zoom to fetch full image
-            if(panZoomInstance) { panZoomInstance.resetZoom(); panZoomInstance.center(); }
-            
-            html2canvas(el).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'call-flow.png';
-                link.href = canvas.toDataURL();
-                link.click();
-            });
-        });
 
         function updateApiLog(logs) {
             if (!logs || !logs.length) return;
