@@ -4,93 +4,20 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <style>
-    #call-flow-diagram {
-        min-height: 700px;
-        border: 2px solid #e2e8f0;
-        position: relative;
-        cursor: default;
-        background: #fafafa;
-    }
+    #call-flow-diagram { min-height: 700px; border: 2px solid #e2e8f0; position: relative; cursor: default; background: #fafafa; }
+    #call-flow-diagram.pan-enabled { cursor: grab; }
+    #call-flow-diagram.pan-enabled:active { cursor: grabbing; }
+    #call-flow-diagram svg { max-width: none !important; height: auto !important; }
     
-    #call-flow-diagram.pan-enabled {
-        cursor: grab;
-    }
+    .zoom-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 5px; z-index: 1000; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 2px solid #6366f1; }
+    .zoom-controls-row { display: flex; gap: 5px; justify-content: center; }
+    .zoom-btn { background: #6366f1; color: white; border: none; width: 40px; height: 40px; border-radius: 6px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; font-weight: bold; }
+    .zoom-btn:hover { background: #4f46e5; }
     
-    #call-flow-diagram.pan-enabled:active {
-        cursor: grabbing;
-    }
-    
-    #call-flow-diagram svg {
-        max-width: none !important;
-        height: auto !important;
-    }
-    
-    .zoom-controls {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        z-index: 1000;
-        background: white;
-        padding: 8px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        border: 2px solid #6366f1;
-    }
-    
-    .zoom-controls-row {
-        display: flex;
-        gap: 5px;
-        justify-content: center;
-    }
-    
-    .zoom-btn {
-        background: #6366f1;
-        color: white;
-        border: none;
-        width: 40px;
-        height: 40px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s;
-        font-weight: bold;
-    }
-    
-    .zoom-btn:hover {
-        background: #4f46e5;
-    }
-    
-    .zoom-btn:active {
-        background: #4338ca;
-        transform: scale(0.95);
-    }
-    
-    .zoom-btn.small-text {
-        font-size: 16px;
-    }
-
-    /* Select2 Customization to match Tailwind styles */
-    .select2-container .select2-selection--single {
-        height: 50px !important;
-        border: 1px solid #d1d5db !important;
-        border-radius: 0.5rem !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-    .select2-selection__arrow {
-        height: 48px !important;
-    }
-    .select2-container--default .select2-selection--single .select2-selection__rendered {
-        color: #374151 !important;
-        font-size: 16px;
-        padding-left: 12px;
-    }
+    /* Select2 Customization */
+    .select2-container .select2-selection--single { height: 50px !important; border: 1px solid #d1d5db !important; border-radius: 0.5rem !important; display: flex !important; align-items: center !important; }
+    .select2-selection__arrow { height: 48px !important; }
+    .select2-container--default .select2-selection--single .select2-selection__rendered { color: #374151 !important; font-size: 16px; padding-left: 12px; }
 </style>
 
 <div class="space-y-6">
@@ -101,13 +28,13 @@
         <div class="flex gap-4 items-center">
             <div class="w-full">
                 <select id="visualiser-target-select" class="w-full" style="width: 100%;">
-                    <option></option> </select>
+                    <option></option>
+                </select>
                 <p id="loading-indicator" class="text-xs text-gray-500 mt-1">
-                    Loading all sites, queues, and IVRs... (This may take a moment for large accounts)
+                    Loading account data...
                 </p>
             </div>
-            <button type="button" id="visualize-button"
-                    class="bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 transition whitespace-nowrap h-[50px]">
+            <button type="button" id="visualize-button" class="bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 transition whitespace-nowrap h-[50px]">
                 Visualize
             </button>
         </div>
@@ -117,50 +44,27 @@
         <div class="flex justify-between items-center">
             <h4 class="text-lg font-semibold text-gray-800">2. Call Flow Diagram</h4>
             <div id="export-controls" class="flex gap-2" style="display:none;">
-                <button id="save-pdf-btn" class="bg-gray-600 text-white text-sm py-2 px-4 rounded-lg hover:bg-gray-700 transition">
-                    Save as PDF
-                </button>
+                <button id="save-pdf-btn" class="bg-gray-600 text-white text-sm py-2 px-4 rounded-lg hover:bg-gray-700 transition">Save as PDF</button>
             </div>
         </div>
         
         <div style="position: relative;">
             <div id="zoom-controls" class="zoom-controls" style="display:none;">
-                <div class="zoom-controls-row">
-                    <button class="zoom-btn" id="zoom-in-btn" title="Zoom In">+</button>
-                    <button class="zoom-btn" id="zoom-out-btn" title="Zoom Out">−</button>
-                </div>
-                <div class="zoom-controls-row">
-                    <button class="zoom-btn" id="pan-up-btn" title="Pan Up">↑</button>
-                </div>
-                <div class="zoom-controls-row">
-                    <button class="zoom-btn" id="pan-left-btn" title="Pan Left">←</button>
-                    <button class="zoom-btn" id="pan-right-btn" title="Pan Right">→</button>
-                </div>
-                <div class="zoom-controls-row">
-                    <button class="zoom-btn" id="pan-down-btn" title="Pan Down">↓</button>
-                </div>
-                <div class="zoom-controls-row">
-                    <button class="zoom-btn small-text" id="zoom-reset-btn" title="Reset Zoom">⟲</button>
-                    <button class="zoom-btn small-text" id="fit-btn" title="Fit to View">⊡</button>
-                </div>
+                <div class="zoom-controls-row"><button class="zoom-btn" id="zoom-in-btn">+</button><button class="zoom-btn" id="zoom-out-btn">−</button></div>
+                <div class="zoom-controls-row"><button class="zoom-btn" id="pan-up-btn">↑</button></div>
+                <div class="zoom-controls-row"><button class="zoom-btn" id="pan-left-btn">←</button><button class="zoom-btn" id="pan-right-btn">→</button></div>
+                <div class="zoom-controls-row"><button class="zoom-btn" id="pan-down-btn">↓</button></div>
+                <div class="zoom-controls-row"><button class="zoom-btn small-text" id="zoom-reset-btn">⟲</button><button class="zoom-btn small-text" id="fit-btn">⊡</button></div>
             </div>
-            <div id="call-flow-diagram"
-                 class="mt-4 w-full bg-white rounded-lg flex items-center justify-center text-gray-400 overflow-hidden p-4">
+            <div id="call-flow-diagram" class="mt-4 w-full bg-white rounded-lg flex items-center justify-center text-gray-400 overflow-hidden p-4">
                 Select an extension above and click 'Visualize'.
             </div>
-        </div>
-        
-        <div class="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-            💡 <strong>Tip:</strong> You can search the dropdown by typing name or extension number. Use the controls to zoom/pan the diagram.
         </div>
     </div>
     
     <div class="card space-y-3">
         <h4 class="text-lg font-semibold text-gray-800">3. Live API Debug Log</h4>
-        <div id="api-log-container"
-             class="mt-4 p-4 border border-gray-200 bg-gray-900 text-white rounded-lg max-h-96 overflow-y-auto font-mono text-xs">
-            API calls will appear here after visualization.
-        </div>
+        <div id="api-log-container" class="mt-4 p-4 border border-gray-200 bg-gray-900 text-white rounded-lg max-h-96 overflow-y-auto font-mono text-xs"></div>
     </div>
 </div>
 
@@ -170,164 +74,98 @@
 <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
 <script>
-    // Initialize Mermaid.js
-    mermaid.initialize({ 
-        startOnLoad: false,
-        theme: 'base',
-        themeVariables: {
-            fontSize: '20px',
-            fontFamily: 'arial, sans-serif'
-        },
-        flowchart: {
-            useMaxWidth: false,
-            htmlLabels: true,
-            curve: 'basis',
-            padding: 30,
-            nodeSpacing: 120,
-            rankSpacing: 120
-        }
-    });
+    mermaid.initialize({ startOnLoad: false, theme: 'base', flowchart: { useMaxWidth: false, htmlLabels: true, curve: 'basis' } });
 
     $(document).ready(function() {
-        // 1. Initialize Select2 with a placeholder
-        $('#visualiser-target-select').select2({
-            placeholder: "Search for a Site, Queue, or IVR Extension...",
-            allowClear: true,
-            width: '100%'
-        });
+        // Initialize Select2 placeholder
+        $('#visualiser-target-select').select2({ placeholder: "Wait, loading data...", width: '100%' });
 
         const $loadingIndicator = $('#loading-indicator');
 
-        // 2. Load ALL Data on Page Load (The Failsafe)
-        // We do not send a 'query' parameter, prompting the backend to fetch everything.
+        // Fetch Data
         $.ajax({
-            url: '/api/rc/visualiser/search', 
+            url: '/api/rc/visualiser/search',
             method: 'GET',
             success: function(response) {
+                console.log("Search API Response:", response); // CHECK BROWSER CONSOLE
+                
                 if(response.status === 'success') {
-                    // Hide the loading text
                     $loadingIndicator.hide();
                     
-                    // Clear and update Select2
+                    // DESTROY AND RE-INIT (Fixes rendering issues)
+                    if ($('#visualiser-target-select').data('select2')) {
+                        $('#visualiser-target-select').select2('destroy');
+                    }
+                    
                     $('#visualiser-target-select').empty().select2({
                         placeholder: "Select a Call Flow Start Point",
-                        data: response.results, // Select2 automatically maps 'id' and 'text'
-                        width: '100%'
+                        data: response.results,
+                        width: '100%',
+                        allowClear: true
                     });
                 } else {
-                    $loadingIndicator.text("Error loading data: " + response.message).addClass('text-red-500');
+                    $loadingIndicator.text("Error: " + response.message).addClass('text-red-500');
                 }
             },
             error: function(err) {
-                console.error("Failed to load targets", err);
-                $loadingIndicator.text("Error connecting to server. Please refresh.").addClass('text-red-500');
+                console.error("API Fetch Error:", err);
+                $loadingIndicator.text("Failed to connect to server.").addClass('text-red-500');
             }
         });
 
-        // 3. Visualize Button Click
         $('#visualize-button').on('click', function() {
             const selectedId = $('#visualiser-target-select').val();
-            
-            if (!selectedId) {
-                alert("Please select a target first.");
-                return;
-            }
+            if (!selectedId || selectedId === 'error') { alert("Please select a valid extension."); return; }
 
-            // Show loading state
             const btn = $(this);
             const originalText = btn.text();
             btn.prop('disabled', true).text('Generating...');
-            
             $('#call-flow-diagram').html('<div class="flex flex-col items-center"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700 mb-4"></div><p>Tracing call flow...</p></div>');
 
-            // Call the trace API
             fetch(`/api/rc/trace-flow/${selectedId}`)
-                .then(response => response.json())
+                .then(res => res.json())
                 .then(data => {
-                    if (data.status === 'success') {
-                        renderMermaid(data.mermaid_graph);
-                        updateApiLog(data.api_log);
-                    } else {
-                        $('#call-flow-diagram').html(`<div class="text-red-500 font-bold p-4">Error: ${data.message}</div>`);
-                    }
+                    if (data.status === 'success') { renderMermaid(data.mermaid_graph); updateApiLog(data.api_log); }
+                    else { $('#call-flow-diagram').html(`<div class="text-red-500 p-4 font-bold">Error: ${data.message}</div>`); }
                 })
-                .catch(error => {
-                    $('#call-flow-diagram').html(`<div class="text-red-500 font-bold p-4">System Error: ${error}</div>`);
-                })
-                .finally(() => {
-                    btn.prop('disabled', false).text(originalText);
-                });
+                .catch(err => $('#call-flow-diagram').html(`<div class="text-red-500 p-4">System Error: ${err}</div>`))
+                .finally(() => btn.prop('disabled', false).text(originalText));
         });
-        
-        // Helper: Render Mermaid
-        async function renderMermaid(graphDefinition) {
-            const element = document.querySelector('#call-flow-diagram');
+
+        async function renderMermaid(graph) {
+            const el = document.querySelector('#call-flow-diagram');
             try {
-                const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graphDefinition);
-                element.innerHTML = svg;
-                
-                // Re-initialize Panzoom
-                const svgElement = element.querySelector('svg');
-                if (svgElement) {
-                    const panzoom = Panzoom(svgElement, {
-                        maxScale: 5,
-                        minScale: 0.1,
-                        contain: 'outside',
-                        startScale: 0.8 
-                    });
-                    
-                    // Wire up zoom buttons
+                const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
+                el.innerHTML = svg;
+                const svgEl = el.querySelector('svg');
+                if (svgEl) {
+                    const panzoom = Panzoom(svgEl, { maxScale: 5, minScale: 0.1, contain: 'outside', startScale: 0.8 });
                     $('#zoom-in-btn').off().on('click', panzoom.zoomIn);
                     $('#zoom-out-btn').off().on('click', panzoom.zoomOut);
                     $('#zoom-reset-btn').off().on('click', panzoom.reset);
                     $('#fit-btn').off().on('click', () => { panzoom.reset(); panzoom.zoom(0.8); });
-                    $('#pan-left-btn').off().on('click', () => panzoom.pan(100, 0, { relative: true }));
-                    $('#pan-right-btn').off().on('click', () => panzoom.pan(-100, 0, { relative: true }));
-                    $('#pan-up-btn').off().on('click', () => panzoom.pan(0, 100, { relative: true }));
-                    $('#pan-down-btn').off().on('click', () => panzoom.pan(0, -100, { relative: true }));
-                    
-                    element.addEventListener('wheel', panzoom.zoomWithWheel);
-                    element.classList.add('pan-enabled');
-                    
-                    $('#zoom-controls').show();
-                    $('#export-controls').show();
+                    el.addEventListener('wheel', panzoom.zoomWithWheel);
+                    el.classList.add('pan-enabled');
+                    $('#zoom-controls, #export-controls').show();
                 }
-            } catch (error) {
-                element.innerHTML = `<div class="text-red-500 p-4">Mermaid Render Error: ${error.message}</div>`;
-            }
+            } catch (e) { el.innerHTML = `<div class="text-red-500 p-4">Mermaid Error: ${e.message}</div>`; }
         }
-        
-        // PDF Export
+
         $('#save-pdf-btn').on('click', function() {
-            const element = document.querySelector('#call-flow-diagram');
-            if (!element.querySelector('svg')) return;
-            
-            html2canvas(element).then(canvas => {
-                const imgData = canvas.toDataURL('image/png');
+            const el = document.querySelector('#call-flow-diagram');
+            if(!el.querySelector('svg')) return;
+            html2canvas(el).then(canvas => {
+                const img = canvas.toDataURL('image/png');
                 const { jsPDF } = window.jspdf;
-                const pdf = new jsPDF({
-                    orientation: 'landscape',
-                    unit: 'px',
-                    format: [canvas.width, canvas.height]
-                });
-                pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-                pdf.save('call-flow-diagram.pdf');
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
+                pdf.addImage(img, 'PNG', 0, 0, canvas.width, canvas.height);
+                pdf.save('call-flow.pdf');
             });
         });
 
-        // Helper: Update Log
         function updateApiLog(logs) {
-            const container = $('#api-log-container');
-            if (!logs || logs.length === 0) return;
-            
-            const logHtml = logs.map(l => `
-                <div class="mb-2 pb-2 border-b border-gray-700">
-                    <span class="text-green-400">[${l.method}]</span> 
-                    <span class="text-blue-300">${l.url}</span>
-                    <div class="text-gray-400 mt-1 pl-4">Status: ${l.status}</div>
-                </div>
-            `).join('');
-            container.html(logHtml);
+            if (!logs || !logs.length) return;
+            $('#api-log-container').html(logs.map(l => `<div class="mb-2 pb-2 border-b border-gray-700"><span class="text-green-400">[${l.method}]</span> <span class="text-blue-300">${l.url}</span><div class="text-gray-400 pl-4">Status: ${l.status}</div></div>`).join(''));
         }
     });
 </script>
