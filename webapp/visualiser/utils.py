@@ -20,72 +20,106 @@ def get_extension_info(ext_id):
         except: time.sleep(0.5)
     return None
 
+def parse_weekly_ranges(weekly_ranges):
+    """
+    Reusable helper to turn raw RC schedule objects into readable text.
+    Input: List of {from: '09:00', to: '17:00', dayOfWeek: 'Monday'}
+    Output: "Mon-Fri: 09:00-17:00"
+    """
+    if not weekly_ranges:
+        return None
+
+    # 1. Group days by identical time ranges
+    # Map: "09:00-17:00" -> ["Mon", "Tue", "Wed"]
+    time_groups = {}
+    
+    for item in weekly_ranges:
+        # Default to 00:00/23:59 if keys are missing (implies all day for that day)
+        start_t = item.get('from', '00:00').split(':')
+        end_t = item.get('to', '23:59').split(':')
+        
+        # Format HH:MM
+        time_str = f"{start_t[0]}:{start_t[1]}-{end_t[0]}:{end_t[1]}"
+        day_short = item.get('dayOfWeek', '???')[:3] # Mon, Tue...
+        
+        if time_str not in time_groups:
+            time_groups[time_str] = []
+        time_groups[time_str].append(day_short)
+
+    # 2. Format into lines
+    lines = []
+    days_order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    
+    for t_str, days in time_groups.items():
+        # Sort days to be pretty
+        days.sort(key=lambda d: days_order.index(d) if d in days_order else 99)
+        
+        day_label = ",".join(days)
+        
+        # Intelligent grouping
+        if len(days) == 5 and 'Mon' in days and 'Fri' in days:
+            day_label = "Mon-Fri"
+        elif len(days) == 7:
+            day_label = "Everyday"
+        elif len(days) == 2 and 'Sat' in days and 'Sun' in days:
+            day_label = "Weekends"
+            
+        lines.append(f"{day_label}: {t_str}")
+
+    return "<br/>".join(lines)
+
 def get_schedule_summary(ext_id):
-    """
-    Fetches Business Hours for Users, Queues, and Sites.
-    """
+    """Fetches the main Business Hours for an extension/queue."""
     if ext_id in schedule_cache: return schedule_cache[ext_id]
     
     try:
-        # This endpoint works for Extensions, Queues, and Sites
         resp = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours")
         
         if not resp or 'schedule' not in resp:
             return "24/7 (All Day)"
             
         schedule = resp['schedule']
-        if 'weeklyRanges' not in schedule:
-            return "24/7 (All Day)"
-
-        # Group similar time ranges
-        # Format: { "09:00-17:00": ["Mon", "Tue"] }
-        ranges = {}
-        for day_range in schedule['weeklyRanges']:
-            # Parse times safely
-            f_t = day_range.get('from', '00:00').split(':')
-            t_t = day_range.get('to', '23:59').split(':')
-            time_str = f"{f_t[0]}:{f_t[1]}-{t_t[0]}:{t_t[1]}"
+        
+        # If weeklyRanges is empty/missing, it usually means 24/7
+        if not schedule.get('weeklyRanges'):
+            return "24/7 (Open)"
             
-            if time_str not in ranges: ranges[time_str] = []
-            day = day_range.get('dayOfWeek', '???')[:3]
-            ranges[time_str].append(day)
+        # Use the helper to format it
+        readable_sched = parse_weekly_ranges(schedule['weeklyRanges'])
+        if not readable_sched:
+            return "24/7 (Open)"
             
-        # Build text string
-        lines = []
-        for t_str, days in ranges.items():
-            day_label = ",".join(days)
-            if len(days) == 5 and 'Mon' in days and 'Fri' in days: day_label = "Mon-Fri"
-            if len(days) == 7: day_label = "Everyday"
-            lines.append(f"{day_label}: {t_str}")
-            
-        res = "<br/>".join(lines)
-        schedule_cache[ext_id] = res
-        return res
+        schedule_cache[ext_id] = readable_sched
+        return readable_sched
+        
     except Exception as e:
-        return "Schedule Unavailable"
+        print(f"Sched Error {ext_id}: {e}")
+        return "24/7 (Default)"
 
 def format_custom_rule(rule):
-    """
-    Extracts readable conditions from a Custom Rule.
-    """
+    """Parses a Custom Rule to extract specific conditions."""
     conds = []
     
-    # 1. Who is calling? (Caller ID)
+    # 1. Caller ID
     if rule.get('callers'):
         names = [c.get('name', c.get('callerId', '?')) for c in rule['callers']]
-        if len(names) > 2:
-            conds.append(f"From: {', '.join(names[:2])} (+{len(names)-2})")
-        else:
-            conds.append(f"From: {', '.join(names)}")
+        txt = f"From: {', '.join(names[:2])}"
+        if len(names) > 2: txt += f" (+{len(names)-2})"
+        conds.append(txt)
 
-    # 2. What number did they dial? (DNIS)
+    # 2. Called Number
     if rule.get('calledNumbers'):
         nums = [n.get('phoneNumber', '?') for n in rule['calledNumbers']]
-        conds.append(f"Dialed: {', '.join(nums)}")
+        conds.append(f"To: {', '.join(nums)}")
         
-    # 3. When? (Specific Schedule)
+    # 3. Custom Schedule (FIXED: Now parses the time instead of generic text)
     if rule.get('schedule', {}).get('weeklyRanges'):
-        conds.append("During Specific Times")
+        sched_text = parse_weekly_ranges(rule['schedule']['weeklyRanges'])
+        if sched_text:
+            conds.append(f"<b>Time:</b> {sched_text}")
+    elif rule.get('schedule', {}).get('ranges'):
+        # Specific Dates (e.g. Holidays)
+        conds.append("Specific Dates (Holiday)")
         
     if not conds:
         return "Matches All Calls"
@@ -93,19 +127,14 @@ def format_custom_rule(rule):
     return "<br/>".join(conds)
 
 def clean_text(text):
-    """
-    Strict sanitizer for Mermaid labels. 
-    Removes quotes and special characters that break the syntax.
-    """
+    """Strict sanitizer for Mermaid labels."""
     if not text: return ""
-    # Replace double quotes with single, remove others
     return str(text).replace('"', "'").replace('#', '').strip()
 
 def generate_mermaid_flow(start_ext_id):
     extension_cache.clear()
     schedule_cache.clear()
     
-    # Define styles - PROFESSIONAL, NO ICONS
     graph_lines = [
         '---', 'title: Call Flow Diagram', '---', 'graph TD',
         'classDef siteStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20',
@@ -136,40 +165,35 @@ def generate_mermaid_flow(start_ext_id):
             return
 
         # --- Node Creation ---
-        # 1. External Number (PSTN)
-        if str(ext_id).startswith("ext_"):
+        if str(ext_id).startswith("ext_"): # External
             num = str(ext_id).replace("ext_", "")
             nid = f"n{node_counter}"; node_counter += 1
             node_map[ext_id] = nid
-            graph_lines.append(f'{nid}["[External Number]<br/><b>{num}</b>"]:::siteStyle')
+            graph_lines.append(f'{nid}["[External]<br/><b>{num}</b>"]:::siteStyle')
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
             return
 
-        # 2. Voicemail Box
-        if str(ext_id).startswith("vm_"):
+        if str(ext_id).startswith("vm_"): # Voicemail
             nid = f"n{node_counter}"; node_counter += 1
             node_map[ext_id] = nid
-            graph_lines.append(f'{nid}(("[Voicemail Box]")):::userStyle')
+            graph_lines.append(f'{nid}(("[Voicemail]")):::userStyle')
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
             return
 
-        # 3. Standard Extension
         info = get_extension_info(ext_id)
         nid = f"n{node_counter}"; node_counter += 1
         node_map[ext_id] = nid
         new_history = history + [ext_id]
 
         if not info:
-            graph_lines.append(f'{nid}["[Unknown ID: {ext_id}]"]:::missingStyle')
+            graph_lines.append(f'{nid}["[Unknown: {ext_id}]"]:::missingStyle')
             if parent_id: graph_lines.append(f'{parent_id} -- "{clean_text(link_label)}" --> {nid}')
             return
 
         e_type = info.get('type', 'Unknown')
-        # Normalize Department -> CallQueue if applicable
         if e_type == 'Department' and rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}"):
             e_type = 'CallQueue'
 
-        # Professional Label (No Icons)
         label = f"[{e_type}]<br/><b>{clean_text(info.get('name'))}</b><br/>{info.get('extensionNumber', '')}"
         style = {'Site': 'siteStyle', 'IvrMenu': 'ivrStyle', 'CallQueue': 'queueStyle'}.get(e_type, 'userStyle')
         
@@ -182,22 +206,19 @@ def generate_mermaid_flow(start_ext_id):
             try:
                 m_resp = rc_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
-                    # Fetch first 6 members
                     m_list = []
                     for m in m_resp['records'][:6]:
                         mi = get_extension_info(m['id'])
                         if mi: m_list.append(f"- {clean_text(mi.get('name'))}")
-                    
                     if len(m_resp['records']) > 6: m_list.append(f"... {len(m_resp['records'])-6} more")
-                    
                     if m_list:
                         iid = f"info_{node_counter}"; node_counter += 1
                         graph_lines.append(f'{iid}["<b>Agents:</b><br/>{ "<br/>".join(m_list) }"]:::infoStyle')
                         graph_lines.append(f'{nid} -.-> {iid}')
             except: pass
 
-        # --- Logic: Answering Rules (Business Hours, etc) ---
-        if e_type in ['User', 'CallQueue', 'Site', 'Department', 'ApplicationExtension']:
+        # --- Logic: Rules ---
+        if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
                 rules = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=false")
                 if rules and rules.get('records'):
@@ -208,23 +229,20 @@ def generate_mermaid_flow(start_ext_id):
                         r_name = r.get('name', 'Rule')
                         action = r.get('callHandlingAction')
                         
-                        # Build the "Logic Node" content
                         logic_desc = ""
-                        
                         if r_type == 'BusinessHours':
                             r_name = "Business Hours"
+                            # IMPORTANT: Now using the helper to render the actual times
                             sched = get_schedule_summary(ext_id)
                             logic_desc = f"<b>{r_name}</b><br/>{sched}"
-                        elif r_type == 'AfterHours':
-                            r_name = "After Hours"
-                            logic_desc = f"<b>{r_name}</b>"
                         elif r_type == 'Custom':
+                            # IMPORTANT: Now extracting the schedule from custom rules
                             conds = format_custom_rule(r)
                             logic_desc = f"<b>Custom: {clean_text(r_name)}</b><br/>{conds}"
                         else:
-                            logic_desc = f"<b>{clean_text(r_name)}</b>"
+                            if r_type == 'AfterHours': r_name = "After Hours"
+                            logic_desc = f"<b>{r_name}</b>"
 
-                        # Determine Target
                         target = None
                         if action == 'TransferToExtension':
                             target = r.get('transfer', {}).get('extension', {}).get('id')
@@ -237,28 +255,22 @@ def generate_mermaid_flow(start_ext_id):
                             target = f"vm_{ext_id}"
 
                         if target:
-                            # If it's a complex rule (Schedule/Custom), draw a Logic Node (Hexagon)
-                            # We use clean_text to ensure no quotes break the {{ }} syntax
+                            # Use Logic Node for Schedule/Custom
                             if r_type in ['BusinessHours', 'Custom']:
                                 lid = f"log_{node_counter}"; node_counter += 1
-                                # IMPORTANT: Sanitized logic_desc here
                                 graph_lines.append(f'{lid}{{"{clean_text(logic_desc)}"}}:::logicStyle')
                                 graph_lines.append(f'{nid} --> {lid}')
                                 _trace(target, lid, "Matches", new_history)
                             else:
-                                # Direct link for simple stuff (After Hours)
                                 _trace(target, nid, r_name, new_history)
                         else:
-                            # Non-transfer rule (e.g. Announcement)
+                            # Non-transfer rule
                             detail = action
                             if action == 'PlayAnnouncementOnly': detail = "Play Announcement"
-                            
                             iid = f"cfg_{node_counter}"; node_counter += 1
                             graph_lines.append(f'{iid}["{clean_text(logic_desc)}<br/>Action: {detail}"]:::logicStyle')
                             graph_lines.append(f'{nid} -.-> {iid}')
-
-            except Exception as e:
-                print(f"Rule Error {ext_id}: {e}")
+            except Exception as e: print(f"Rule Error: {e}")
 
         # --- Logic: IVR ---
         if e_type == 'IvrMenu':
