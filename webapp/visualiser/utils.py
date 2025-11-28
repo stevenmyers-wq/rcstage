@@ -19,10 +19,12 @@ class CallFlowTracer:
         start = time.time()
         status = "SUCCESS"
         try:
+            # Force cache bust
             final_url = endpoint
-            # Force cache bust for critical endpoints
-            if ("call-queues" in endpoint or "answering-rule" in endpoint) and "?" not in endpoint:
+            if ("call-queues" in endpoint or "answering-rule" in endpoint or "extension" in endpoint) and "?" not in endpoint:
                 final_url = f"{endpoint}?_={int(time.time())}"
+            elif "?" in endpoint:
+                final_url = f"{endpoint}&_={int(time.time())}"
 
             response = rc_api_call(final_url)
             duration = round((time.time() - start) * 1000, 2)
@@ -54,7 +56,8 @@ class CallFlowTracer:
             if real_id in self.extension_cache: return self.extension_cache[real_id]
 
         for i in range(3):
-            info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
+            # Always ask for Detailed View
+            info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}?view=Detailed")
             if info and 'errorCode' not in info:
                 self.extension_cache[ext_id] = info
                 if info.get('extensionNumber'):
@@ -68,7 +71,7 @@ class CallFlowTracer:
     def get_extension_id_by_number(self, ext_num):
         s_num = str(ext_num)
         if s_num in self.ext_num_map: return self.ext_num_map[s_num]
-        info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}")
+        info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}?view=Detailed")
         if info and info.get('id'):
             self.extension_cache[str(info['id'])] = info
             self.ext_num_map[s_num] = str(info['id'])
@@ -196,8 +199,8 @@ class CallFlowTracer:
         try:
             bh_rule = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule")
             if bh_rule and not bh_rule.get('errorCode'):
-                # Condense: If just "Ring Members", skip node
                 action = bh_rule.get('callHandlingAction')
+                # Only draw line if it's NOT just ringing the queue (avoid redundancy)
                 if not action or action == 'AgentQueue':
                     pass
                 else:
@@ -264,7 +267,6 @@ class CallFlowTracer:
         if not is_vm: self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Node Creation ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -286,7 +288,6 @@ class CallFlowTracer:
         if e_type == 'Department' and self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}"):
             e_type = 'CallQueue'
 
-        # --- GATHER NESTED DATA ---
         extra_html = ""
         overflow_targets = [] 
 
@@ -308,22 +309,20 @@ class CallFlowTracer:
                     if m_names:
                         extra_html += f"<hr/><b>👥 Agents:</b><br/>" + "<br/>".join(m_names)
 
-                # C. Settings - DEEP MERGE
+                # C. Settings (DEEP MERGE FLATTENER)
                 if ext_id not in self.queue_settings_cache:
                     q_settings = {}
-                    
-                    # 1. Try Call Queue Endpoint
+                    # 1. Queue Endpoint
                     q1 = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
                     if q1: q_settings.update(q1)
                     
-                    # 2. Try Extension Endpoint (Detailed) - Often contains the real 'callQueueInfo'
+                    # 2. Extension Endpoint (Deep View)
                     q2 = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}?view=Detailed")
                     if q2:
-                        # Top level merge
+                        # Extract root keys
                         for k in ['transfer', 'unconditionalForwarding', 'maxWaitTime', 'maxWaitTimeAction']:
                             if q2.get(k) is not None: q_settings[k] = q2[k]
-                        
-                        # Nested 'callQueueInfo' merge (CRITICAL for Wait/MaxCallers)
+                        # Extract nested keys (THE FIX)
                         if q2.get('callQueueInfo'):
                             for k, v in q2['callQueueInfo'].items():
                                 q_settings[k] = v
@@ -332,22 +331,23 @@ class CallFlowTracer:
                 
                 q = self.queue_settings_cache.get(ext_id)
                 if q:
-                    max_wait = q.get('maxWaitTime') # Don't default to 0
-                    max_callers = q.get('maxCallers', '?')
+                    max_wait = q.get('maxWaitTime')
+                    max_callers = q.get('maxCallers')
                     wait_action = q.get('maxWaitTimeAction', 'Unknown')
-                    max_callers_action = q.get('maxCallersAction', 'Unknown')
                     
                     if wait_action == 'Unknown' or wait_action == 'FixedWaitTime':
                         wait_action = "Ring Members"
 
-                    # Format Text
+                    # Format
                     wait_txt = "Unknown"
-                    if max_wait is not None:
-                        wait_txt = f"{max_wait}s" if max_wait > 0 else "0s (Immediate)"
+                    if max_wait is not None: wait_txt = f"{max_wait}s" if max_wait > 0 else "0s (Immediate)"
                     
-                    extra_html += f"<hr/><b>⚙️ Config:</b><br/>Wait: {wait_txt}<br/>Max Callers: {max_callers}<br/>Wait Action: {wait_action}"
-                    
-                    # Target Resolution
+                    callers_txt = "Unknown"
+                    if max_callers is not None: callers_txt = str(max_callers)
+
+                    extra_html += f"<hr/><b>⚙️ Config:</b><br/>Wait: {wait_txt}<br/>Max Callers: {callers_txt}<br/>Action: {wait_action}"
+
+                    # Targets
                     target_id = self.extract_target_from_transfer(q.get('transfer'))
                     if not target_id: target_id = self.extract_target_from_transfer(q.get('unconditionalForwarding'))
                     if not target_id: target_id = self.extract_target_from_transfer(q.get('missedCall'))
@@ -356,18 +356,11 @@ class CallFlowTracer:
                         lbl = "Immediate Overflow" if max_wait == 0 else f"Overflow (> {max_wait}s)"
                         overflow_targets.append((target_id, lbl))
                     else:
+                        # Debugging Info if Missing
                         if wait_action not in ['Voicemail', 'Ring Members', 'Unknown']:
-                            # Debug: Dump Keys if missing
-                            keys = list(q.keys())
-                            extra_html += f"<br/>⚠️ <i>Target Missing</i><br/>Keys: {str(keys)[:30]}"
-
-                    # Max Callers Logic
-                    # If we have a maxCallers setting, check for overflow
-                    # Often this is handled via the same 'transfer' or specific rules in advanced settings
-                    # We'll add visualization if specific maxCallersAction is transfer
-                    if max_callers_action == 'TransferToExtension':
-                         # Assume same target? Or need deeper dive?
-                         pass
+                            # List keys found in the MERGED object
+                            debug_keys = list(q.keys())
+                            extra_html += f"<br/>⚠️ <i>Target Missing</i><br/><span style='font-size:8px'>Keys: {', '.join(debug_keys)[:50]}...</span>"
 
                 try:
                     overflow_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/overflow-settings")
@@ -396,7 +389,6 @@ class CallFlowTracer:
         if e_type == 'CallQueue':
             self.process_call_queue_advanced_rules(ext_id, nid, new_hist)
 
-        # Trace Rules
         if e_type in ['User', 'Site', 'Department']:
             try:
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
@@ -405,16 +397,12 @@ class CallFlowTracer:
                         is_active = r.get('enabled', True)
                         status_txt = "" if is_active else " (Inactive)"
                         link_arrow = "-->" if is_active else "-.->"
-                        
-                        rtype = r.get('type', 'Custom')
-                        rname = r.get('name', 'Rule')
-                        node_shape_open = "{{" if rtype == 'Custom' else "("
-                        node_shape_close = "}}" if rtype == 'Custom' else ")"
                         node_style_class = "logicStyle" if is_active else "inactiveStyle"
 
+                        rtype = r.get('type', 'Custom')
+                        rname = r.get('name', 'Rule')
                         action = r.get('callHandlingAction')
                         
-                        # CONDENSE: Skip standard business hours if simple ring
                         if rtype == 'BusinessHours' and (not action or action == 'AgentQueue'):
                             continue
 
@@ -442,7 +430,7 @@ class CallFlowTracer:
 
                         if target:
                             lid = f"log_{self.node_counter}"; self.node_counter += 1
-                            self.graph_lines.append(f'{lid}{node_shape_open}"{self.clean_text(logic_text)}"{node_shape_close}:::{node_style_class}')
+                            self.graph_lines.append(f'{lid}{"{{"}{self.clean_text(logic_text)}{"}}"}:::{node_style_class}')
                             self.graph_lines.append(f'{nid} {link_arrow} {lid}')
                             self.trace(target, lid, "Matches", new_hist, is_active)
                         else:
@@ -455,7 +443,6 @@ class CallFlowTracer:
 
             except Exception as e: print(f"Rule Error: {e}")
 
-        # Trace IVR
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
