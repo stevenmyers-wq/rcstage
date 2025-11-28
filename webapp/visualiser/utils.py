@@ -19,10 +19,10 @@ class CallFlowTracer:
         start = time.time()
         status = "SUCCESS"
         try:
-            # Aggressive Cache Busting
+            # Force cache bust for queues and rules
             final_url = endpoint
-            sep = "&" if "?" in endpoint else "?"
-            final_url = f"{endpoint}{sep}_={int(time.time()*1000)}"
+            if ("call-queues" in endpoint or "answering-rule" in endpoint) and "?" not in endpoint:
+                final_url = f"{endpoint}?_={int(time.time())}"
 
             response = rc_api_call(final_url)
             duration = round((time.time() - start) * 1000, 2)
@@ -49,8 +49,6 @@ class CallFlowTracer:
 
     def get_extension_info(self, ext_id):
         if ext_id in self.extension_cache: return self.extension_cache[ext_id]
-        
-        # Check if it's a number
         if str(ext_id) in self.ext_num_map:
             real_id = self.ext_num_map[str(ext_id)]
             if real_id in self.extension_cache: return self.extension_cache[real_id]
@@ -178,6 +176,7 @@ class CallFlowTracer:
         return action
 
     def extract_target_from_transfer(self, transfer_obj):
+        """Extract target extension ID from various transfer object formats"""
         if not transfer_obj: return None
         if isinstance(transfer_obj, list):
             for t in transfer_obj:
@@ -381,12 +380,14 @@ class CallFlowTracer:
                         else:
                             if action != 'AgentQueue':
                                 iid = f"cfg_{self.node_counter}"; self.node_counter+=1
-                                self.graph_lines.append(f'{iid}["{self.clean_text(logic)}<br/>Action: {action}"]:::{style}')
+                                det = action or "Ring Members"
+                                if action == 'PlayAnnouncementOnly': det = "Play Announcement"
+                                self.graph_lines.append(f'{iid}["{self.clean_text(logic)}<br/>Action: {det}"]:::{style}')
                                 self.graph_lines.append(f'{nid} {link_arrow} {iid}')
 
             except Exception as e: print(f"Rules Err: {e}")
 
-        # --- IVR ---
+        # Trace IVR
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
