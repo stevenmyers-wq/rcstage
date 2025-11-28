@@ -15,7 +15,7 @@ def fetch_all_pages(endpoint, params=None):
     current_params['page'] = 1
     all_records = []
     
-    print(f"[INFO] Fetching: {endpoint}", file=sys.stdout)
+    print(f"[INFO] Fetching: {endpoint} | Params: {params}", file=sys.stdout)
     
     while True:
         try:
@@ -28,7 +28,7 @@ def fetch_all_pages(endpoint, params=None):
             if not resp: break
             if 'records' in resp: 
                 all_records.extend(resp['records'])
-            
+                
             nav = resp.get('navigation', {})
             if nav.get('nextPage'):
                 current_params['page'] += 1
@@ -50,11 +50,10 @@ def search_for_visualiser_targets():
     query = request.args.get('query', '').lower().strip()
     return_all = (len(query) == 0)
     
-    # We use a Dict to deduplicate by ID automatically
     results_map = {}
     
     try:
-        # --- STEP 1: PHONE NUMBERS (Map DIDs to Extensions) ---
+        # --- STEP 1: MAP PHONES (Do not add assigned numbers to results yet) ---
         phones = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
         phone_map = {} # { ext_id: [numbers] }
         
@@ -63,14 +62,14 @@ def search_for_visualiser_targets():
             usage = p.get('usageType', '')
             
             # Map to Extension if assigned
-            if p.get('extension', {}).get('id'):
-                eid = str(p['extension']['id'])
-                if eid not in phone_map: phone_map[eid] = []
-                phone_map[eid].append(p_num)
-
-            # Add standalone DID result (Main Number, etc)
-            if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber', 'NumberPool']:
-                if not p.get('extension'):
+            ext_id = str(p.get('extension', {}).get('id', ''))
+            
+            if ext_id and ext_id != 'None':
+                if ext_id not in phone_map: phone_map[ext_id] = []
+                phone_map[ext_id].append(p_num)
+            else:
+                # UNASSIGNED / MAIN NUMBERS: Add these immediately
+                if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber', 'NumberPool']:
                     if return_all or query in p_num:
                         pid = f"ext_{p_num}"
                         results_map[pid] = {
@@ -80,33 +79,34 @@ def search_for_visualiser_targets():
                             'sort': 99
                         }
 
-        # --- STEP 2: CALL QUEUES (Explicit Fetch) ---
-        # Guaranteed to get queues even if extension list fails/filters them
+        # --- STEP 2: CALL QUEUES (Specific Fetch) ---
         queues = fetch_all_pages("/restapi/v1.0/account/~/call-queues")
         for q in queues:
             qid = str(q['id'])
             qname = q.get('name', 'Unknown Queue')
             qnum = str(q.get('extensionNumber', ''))
             
+            # Attach Phones
+            assigned_phones = phone_map.get(qid, [])
+            phone_label = f" 📞 {', '.join(assigned_phones)}" if assigned_phones else ""
+            
             # Filter
             match = return_all
             if not match:
                 if query in qname.lower() or query in qnum: match = True
-                # Check assigned phones
-                for ph in phone_map.get(qid, []):
+                for ph in assigned_phones:
                     if query in ph: match = True
             
             if match:
-                phone_txt = f" 📞 {', '.join(phone_map.get(qid, []))}" if qid in phone_map else ""
                 results_map[qid] = {
                     'id': qid,
-                    'text': f"👥 [CallQueue] {qname} (Ext: {qnum}){phone_txt}",
+                    'text': f"👥 [CallQueue] {qname} (Ext: {qnum}){phone_label}",
                     'type': 'CallQueue',
                     'sort': 1
                 }
 
-        # --- STEP 3: ALL EXTENSIONS (Users, IVRs) ---
-        # Removed 'NotActivated' to prevent timeouts/errors on large accounts
+        # --- STEP 3: ALL EXTENSIONS (Users, IVRs, etc) ---
+        # Fetch Enabled AND Disabled
         ext_params = {'status': 'Enabled,Disabled'} 
         exts = fetch_all_pages("/restapi/v1.0/account/~/extension", ext_params)
         
@@ -119,7 +119,7 @@ def search_for_visualiser_targets():
         for e in exts:
             eid = str(e['id'])
             
-            # If we already have this ID (from Queue fetch), skip to preserve specific formatting
+            # If ID already exists (from Queue fetch), SKIP IT to preserve Queue formatting
             if eid in results_map: continue
             
             etype = e.get('type', 'Unknown')
@@ -128,16 +128,19 @@ def search_for_visualiser_targets():
             ename = e.get('name', 'Unknown')
             enum = str(e.get('extensionNumber', ''))
             
-            # Search Filter
+            # Attach Phones
+            assigned_phones = phone_map.get(eid, [])
+            phone_label = f" 📞 {', '.join(assigned_phones)}" if assigned_phones else ""
+            
+            # Filter
             match = return_all
             if not match:
                 if query in ename.lower() or query in enum: match = True
-                for ph in phone_map.get(eid, []):
+                for ph in assigned_phones:
                     if query in ph: match = True
             
             if match:
                 status_mk = "" if e.get('status') == 'Enabled' else f" [{e.get('status')}]"
-                phone_txt = f" 📞 {', '.join(phone_map.get(eid, []))}" if eid in phone_map else ""
                 
                 # Icons
                 icon = "👤"
@@ -146,7 +149,7 @@ def search_for_visualiser_targets():
                 
                 results_map[eid] = {
                     'id': eid,
-                    'text': f"{icon} [{etype}] {ename} (Ext: {enum}){phone_txt}{status_mk}",
+                    'text': f"{icon} [{etype}] {ename} (Ext: {enum}){phone_label}{status_mk}",
                     'type': etype,
                     'sort': 2 if etype == 'IvrMenu' else 3
                 }
