@@ -80,7 +80,7 @@ def search_for_visualiser_targets():
             usage = p.get('usageType', '')
             
             # Add standalone DID result
-            if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber']:
+            if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber', 'NumberPool']:
                 if return_all or query in p_num:
                     # If it's not assigned to an extension, add it as a standalone node
                     if not p.get('extension'):
@@ -109,7 +109,8 @@ def search_for_visualiser_targets():
             'Site', 'ParkLocation', 'SharedLinesGroup', 'Bot', 'Room'
         ]
         
-        for e in exs: # Iterate through the fetched list
+        # TYPO FIXED HERE: was 'for e in exs:'
+        for e in exts: 
             try:
                 eid = str(e['id'])
                 etype = e.get('type', 'Unknown')
