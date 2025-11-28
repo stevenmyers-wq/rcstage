@@ -7,7 +7,6 @@ class CallFlowTracer:
     def __init__(self):
         self.extension_cache = {}
         self.schedule_cache = {}
-        self.queue_settings_cache = {}
         self.request_logs = []
         self.graph_lines = []
         self.node_map = {}
@@ -19,10 +18,12 @@ class CallFlowTracer:
         start = time.time()
         status = "SUCCESS"
         try:
-            # Force cache bust for queues and rules
             final_url = endpoint
+            # Force cache bust
             if ("call-queues" in endpoint or "answering-rule" in endpoint) and "?" not in endpoint:
                 final_url = f"{endpoint}?_={int(time.time())}"
+            elif "?" in endpoint:
+                final_url = f"{endpoint}&_={int(time.time())}"
 
             response = rc_api_call(final_url)
             duration = round((time.time() - start) * 1000, 2)
@@ -152,29 +153,6 @@ class CallFlowTracer:
             return "<br/>".join(conds) if conds else "Matches All Calls"
         except: return "Complex Rule"
 
-    def get_action_description(self, rule):
-        action = rule.get('callHandlingAction')
-        if not action or action == 'AgentQueue': return "Ring Members"
-        if action == 'TransferToExtension':
-            ext = rule.get('transfer', {}).get('extension', {})
-            return f"Transfer to Ext {ext.get('extensionNumber', '?')}"
-        if action == 'UnconditionalForwarding':
-            ph = rule.get('unconditionalForwarding', {}).get('phoneNumber')
-            if ph: return f"Forward to {ph}"
-            ext = rule.get('unconditionalForwarding', {}).get('extension', {})
-            if ext: return f"Forward to Ext {ext.get('extensionNumber', '?')}"
-        if action == 'ForwardCalls':
-            fwd_rules = rule.get('forwarding', {}).get('rules', [])
-            targets = []
-            for r in fwd_rules:
-                for n in r.get('forwardingNumbers', []):
-                    if n.get('phoneNumber'): targets.append(n['phoneNumber'])
-            if targets: return f"Forward to {', '.join(targets[:1])}" + ("..." if len(targets)>1 else "")
-            return "Ring Devices"
-        if action == 'TakeMessagesOnly': return "Send to Voicemail"
-        if action == 'PlayAnnouncementOnly': return "Play Announcement"
-        return action
-
     def extract_target_from_transfer(self, transfer_obj):
         """Extract target extension ID from various transfer object formats"""
         if not transfer_obj: return None
@@ -192,39 +170,6 @@ class CallFlowTracer:
                 return f"ext_{transfer_obj['phoneNumber']}"
         return None
 
-    def extract_queue_targets_from_rule(self, rule):
-        """
-        Extracts targets specifically from Queue-type rules (where `queue` object exists).
-        """
-        targets = []
-        try:
-            # 1. Queue Transfer (The detailed Wait logic often lives here)
-            if rule.get('queue', {}).get('transfer'):
-                transfers = rule['queue']['transfer']
-                if not isinstance(transfers, list): transfers = [transfers]
-                for t in transfers:
-                    action = t.get('action', 'Transfer')
-                    if action == 'HoldTimeExpiration': action = "Hold Time Expired"
-                    if action == 'MaxCallers': action = "Queue Full"
-                    
-                    target = self.extract_target_from_transfer(t)
-                    if target:
-                        targets.append((target, action))
-            
-            # 2. Unconditional
-            if rule.get('unconditionalForwarding'):
-                target = self.extract_target_from_transfer(rule['unconditionalForwarding'])
-                if target:
-                    targets.append((target, "Forward"))
-            
-            # 3. Voicemail
-            if rule.get('voicemail'):
-                targets.append((f"vm_{rule.get('extension', {}).get('id', 'unknown')}", "Voicemail"))
-                
-        except Exception as e:
-            print(f"Extraction Error: {e}")
-        return targets
-
     def trace(self, ext_id, parent_id=None, link_label="", history=None, is_active=True):
         if history is None: history = []
         
@@ -232,22 +177,23 @@ class CallFlowTracer:
         clean_lbl = self.clean_text(link_label)
         link_syntax = f'-- "{clean_lbl}" -->' if (is_active and clean_lbl) else (f'-. "{clean_lbl}" .->' if clean_lbl else arrow_code)
 
-        # Loop Check
         if ext_id in history:
             if ext_id in self.node_map and parent_id:
                 self.graph_lines.append(f'{parent_id} -.-> {self.node_map[ext_id]}')
             return
-        if not str(ext_id).startswith("vm_") and ext_id in self.node_map:
+        
+        is_vm = str(ext_id).startswith("vm_")
+        if not is_vm and ext_id in self.node_map:
             if parent_id: 
                 self.graph_lines.append(f'{parent_id} {link_syntax} {self.node_map[ext_id]}')
             return
 
         nid = f"n{self.node_counter}"
         self.node_counter += 1
-        if not str(ext_id).startswith("vm_"): self.node_map[ext_id] = nid
+        if not is_vm: self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
-        # --- Nodes ---
+        # --- Node Creation ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -269,62 +215,83 @@ class CallFlowTracer:
         if e_type == 'Department' and self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}"):
             e_type = 'CallQueue'
 
-        # --- GATHER DATA ---
+        # --- GATHER NESTED DATA ---
         extra_html = ""
-        overflow_targets = [] # (id, label)
+        overflow_targets = [] 
+
+        # PRE-FETCH RULES (The Source of Truth)
+        bh_rule = None
+        try:
+            bh_rule = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule")
+        except: pass
 
         if e_type == 'CallQueue':
             try:
-                # A. Agents
+                # A. Schedule
+                q_schedule = self.get_schedule_summary(ext_id)
+                if q_schedule and q_schedule != "24/7 (Default)":
+                    extra_html += f"<hr/><b>🕒 Schedule:</b><br/>{q_schedule}"
+
+                # B. Agents
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
-                    m_list = []
+                    m_names = []
                     for m in m_resp['records'][:6]:
                         mi = self.get_extension_info(m['id'])
-                        if mi: m_list.append(f"- {self.clean_text(mi.get('name'))}")
-                    if len(m_resp['records']) > 6: m_list.append(f"<i>... {len(m_resp['records'])-6} more</i>")
-                    extra_html += f"<hr/><b>👥 Agents:</b><br/>" + "<br/>".join(m_list)
+                        if mi: m_names.append(f"- {self.clean_text(mi.get('name'))}")
+                    if len(m_resp['records']) > 6: m_names.append(f"<i>... {len(m_resp['records'])-6} more</i>")
+                    if m_names:
+                        extra_html += f"<hr/><b>👥 Agents:</b><br/>" + "<br/>".join(m_names)
 
-                # B. Rules (The "Don't Wait" Logic usually lives in Business Hours Rule)
-                bh_rule = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule")
+                # C. Queue Settings (Prioritize Rule Data)
+                wait_time = "Unknown"
+                max_callers = "?"
+                overflow_action = "Unknown"
                 
-                # Extract from Rule first (Priority)
-                rule_overflows = []
-                if bh_rule and not bh_rule.get('errorCode'):
-                    rule_overflows = self.extract_queue_targets_from_rule(bh_rule)
-                
-                # Extract from Settings second (Fallback)
-                settings_overflows = []
-                q_settings = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
-                if q_settings:
-                    # Wait Info
-                    wait = q_settings.get('maxWaitTime', '?')
-                    action = q_settings.get('maxWaitTimeAction', 'Unknown')
+                # 1. Try to get settings from the Rule's 'queue' object (Most Reliable)
+                if bh_rule and bh_rule.get('queue'):
+                    q_obj = bh_rule['queue']
+                    wait_time = q_obj.get('holdTime', 'Unknown') # holdTime = Max Wait
+                    max_callers = q_obj.get('maxCallers', '?')
+                    # Check for overflow transfer in rule queue settings
+                    if q_obj.get('transfer'):
+                         target_id = self.extract_target_from_transfer(q_obj['transfer'])
+                         if target_id:
+                             overflow_targets.append((target_id, f"Overflow (> {wait_time}s)"))
+                             overflow_action = "Transfer"
+
+                # 2. Fallback to standard Queue/Extension Endpoint if Rule missing data
+                if wait_time == "Unknown":
+                    q_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}")
+                    if not q_resp: q_resp = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}?view=Detailed")
                     
-                    # Check specific Overflow Settings endpoint
-                    try:
-                        ovf = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/overflow-settings")
-                        if ovf and ovf.get('enabled') and ovf.get('items'):
-                            for it in ovf['items']:
-                                if it.get('id'): settings_overflows.append((it['id'], "Queue Overflow"))
-                    except: pass
+                    if q_resp:
+                        wait_time = q_resp.get('maxWaitTime', wait_time)
+                        max_callers = q_resp.get('maxCallers', max_callers)
+                        # Try standard transfer/forwarding
+                        target_id = self.extract_target_from_transfer(q_resp.get('transfer'))
+                        if not target_id: target_id = self.extract_target_from_transfer(q_resp.get('unconditionalForwarding'))
+                        if target_id:
+                             lbl = "Immediate Overflow" if wait_time == 0 else "Overflow"
+                             overflow_targets.append((target_id, lbl))
+                             overflow_action = "Transfer"
 
-                    # If Rule had no logic, check Settings 'transfer'
-                    if not rule_overflows:
-                        target = self.extract_target_from_transfer(q_settings.get('transfer'))
-                        if target:
-                            lbl = "Immediate Overflow" if wait == 0 else f"Overflow (> {wait}s)"
-                            settings_overflows.append((target, lbl))
-                            
-                    # Add Config Text
-                    wait_txt = f"{wait}s" if wait != 0 else "0s (Immediate)"
-                    extra_html += f"<hr/><b>⚙️ Config:</b><br/>Wait: {wait_txt}<br/>Action: {action}"
+                # Format Wait Time Text
+                wait_display = f"{wait_time}s"
+                if wait_time == 0: wait_display = "0s (Immediate)"
+                
+                extra_html += f"<hr/><b>⚙️ Config:</b><br/>Wait: {wait_display}<br/>Max Callers: {max_callers}"
 
-                # Combine Targets (Rule overrides Settings)
-                final_overflows = rule_overflows if rule_overflows else settings_overflows
-                overflow_targets.extend(final_overflows)
+                # D. Overflow Queue Settings
+                try:
+                    overflow_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/overflow-settings")
+                    if overflow_resp and overflow_resp.get('enabled') and overflow_resp.get('items'):
+                        for item in overflow_resp['items']:
+                            if item.get('id'):
+                                overflow_targets.append((item['id'], "Queue Overflow"))
+                except: pass
 
-            except Exception as e: print(f"Queue Logic Err: {e}")
+            except Exception as e: print(f"Queue Data Error: {e}")
 
         # Draw Node
         name_txt = self.clean_text(info.get('name'))
@@ -336,58 +303,49 @@ class CallFlowTracer:
         
         if parent_id: self.graph_lines.append(f'{parent_id} {link_syntax} {nid}')
 
-        # Trace Overflows
+        # Trace Overflow Targets (High Priority)
+        seen_targets = set()
         for target, lbl in overflow_targets:
-            self.trace(target, nid, lbl, new_hist)
+            if target not in seen_targets:
+                self.trace(target, nid, lbl, new_hist)
+                seen_targets.add(target)
 
-        # --- RULES TRACING ---
-        # We trace After Hours and Custom Rules, but skip Business Hours if we already handled it in Queue Logic
+        # --- Trace Other Rules ---
         if e_type in ['User', 'CallQueue', 'Site', 'Department']:
             try:
+                # We already fetched BH Rule, trace it if we haven't handled it as overflow
+                # But wait, if it's a Call Queue, BH Rule often IS the overflow logic.
+                # We should trace After Hours and Custom Rules.
+                
                 rules = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true")
                 if rules and rules.get('records'):
                     for r in rules['records']:
-                        is_active = r.get('enabled', True)
                         rtype = r.get('type')
-                        
-                        # Skip Business Hours for queues (Handled in logic block)
+                        # Skip Business Hours for Queues as we handled it in Config
                         if e_type == 'CallQueue' and rtype == 'BusinessHours': continue
 
+                        is_active = r.get('enabled', True)
                         status_txt = "" if is_active else " (Inactive)"
                         link_arrow = "-->" if is_active else "-.->"
-                        style = "logicStyle" if is_active else "inactiveStyle"
+                        node_style_class = "logicStyle" if is_active else "inactiveStyle"
                         
                         rname = r.get('name', 'Rule')
-                        action = r.get('callHandlingAction')
-                        
-                        logic = ""
-                        if rtype == 'BusinessHours': 
-                            logic = f"<b>Business Hours</b><br/>{self.get_schedule_summary(ext_id)}"
-                        elif rtype == 'Custom':
-                            logic = f"<b>{self.clean_text(rname)}</b>{status_txt}<br/>{self.format_custom_rule(r)}"
-                        else:
-                            logic = f"<b>{self.clean_text(rname)}</b>{status_txt}"
+                        logic_text = f"<b>{self.clean_text(rname)}</b>{status_txt}"
+                        if rtype == 'Custom': logic_text += f"<br/>{self.format_custom_rule(r)}"
 
                         target = self.extract_target_from_transfer(r.get('transfer'))
                         if not target: target = self.extract_target_from_transfer(r.get('unconditionalForwarding'))
-                        if action == 'TakeMessagesOnly': target = f"vm_{ext_id}"
-                        
+                        if r.get('callHandlingAction') == 'TakeMessagesOnly': target = f"vm_{ext_id}"
+
                         if target:
-                            lid = f"log_{self.node_counter}"; self.node_counter+=1
-                            self.graph_lines.append(f'{lid}{{"{self.clean_text(logic)}"}}:::{style}')
+                            lid = f"log_{self.node_counter}"; self.node_counter += 1
+                            self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style_class}')
                             self.graph_lines.append(f'{nid} {link_arrow} {lid}')
                             self.trace(target, lid, "Matches", new_hist, is_active)
-                        else:
-                            if action != 'AgentQueue':
-                                iid = f"cfg_{self.node_counter}"; self.node_counter+=1
-                                det = action or "Ring Members"
-                                if action == 'PlayAnnouncementOnly': det = "Play Announcement"
-                                self.graph_lines.append(f'{iid}["{self.clean_text(logic)}<br/>Action: {det}"]:::{style}')
-                                self.graph_lines.append(f'{nid} {link_arrow} {iid}')
 
-            except Exception as e: print(f"Rules Err: {e}")
+            except Exception as e: print(f"Rule Error: {e}")
 
-        # Trace IVR
+        # Trace IVR Keys
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
@@ -395,7 +353,8 @@ class CallFlowTracer:
                     for act in ivr['actions']:
                         key = act.get('input', '?')
                         target = self.extract_target_from_transfer(act)
-                        if target: self.trace(target, nid, f"Key {key}", new_hist)
+                        if target:
+                            self.trace(target, nid, f"Key {key}", new_hist)
             except: pass
 
     def generate(self, start_ext_id):
