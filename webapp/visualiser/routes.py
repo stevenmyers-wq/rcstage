@@ -11,7 +11,7 @@ viz_bp = Blueprint('visualiser', __name__)
 def fetch_all_pages(endpoint, params=None):
     if params is None: params = {}
     current_params = params.copy()
-    current_params['perPage'] = 1000
+    current_params['perPage'] = 250 # Lower batch size for stability
     current_params['page'] = 1
     all_records = []
     
@@ -25,10 +25,13 @@ def fetch_all_pages(endpoint, params=None):
             
             resp = rc_api_call(url)
             
-            if not resp: break
+            if not resp: 
+                print(f"[WARN] No response for {url}", file=sys.stderr)
+                break
+                
             if 'records' in resp: 
                 all_records.extend(resp['records'])
-                
+            
             nav = resp.get('navigation', {})
             if nav.get('nextPage'):
                 current_params['page'] += 1
@@ -53,23 +56,22 @@ def search_for_visualiser_targets():
     results_map = {}
     
     try:
-        # --- STEP 1: MAP PHONES (Do not add assigned numbers to results yet) ---
+        # --- STEP 1: PHONE NUMBERS ---
         phones = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
-        phone_map = {} # { ext_id: [numbers] }
+        phone_map = {} 
         
         for p in phones:
             p_num = p.get('phoneNumber', '')
             usage = p.get('usageType', '')
             
-            # Map to Extension if assigned
+            # Map assigned numbers
             ext_id = str(p.get('extension', {}).get('id', ''))
-            
             if ext_id and ext_id != 'None':
                 if ext_id not in phone_map: phone_map[ext_id] = []
                 phone_map[ext_id].append(p_num)
             else:
-                # UNASSIGNED / MAIN NUMBERS: Add these immediately
-                if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber', 'NumberPool']:
+                # Add unassigned numbers
+                if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber']:
                     if return_all or query in p_num:
                         pid = f"ext_{p_num}"
                         results_map[pid] = {
@@ -79,36 +81,33 @@ def search_for_visualiser_targets():
                             'sort': 99
                         }
 
-        # --- STEP 2: CALL QUEUES (Specific Fetch) ---
+        # --- STEP 2: CALL QUEUES ---
         queues = fetch_all_pages("/restapi/v1.0/account/~/call-queues")
         for q in queues:
             qid = str(q['id'])
             qname = q.get('name', 'Unknown Queue')
             qnum = str(q.get('extensionNumber', ''))
             
-            # Attach Phones
-            assigned_phones = phone_map.get(qid, [])
-            phone_label = f" 📞 {', '.join(assigned_phones)}" if assigned_phones else ""
-            
-            # Filter
+            # Check match
             match = return_all
             if not match:
                 if query in qname.lower() or query in qnum: match = True
-                for ph in assigned_phones:
+                for ph in phone_map.get(qid, []):
                     if query in ph: match = True
             
             if match:
+                phone_txt = f" 📞 {', '.join(phone_map.get(qid, []))}" if qid in phone_map else ""
                 results_map[qid] = {
                     'id': qid,
-                    'text': f"👥 [CallQueue] {qname} (Ext: {qnum}){phone_label}",
+                    'text': f"👥 [CallQueue] {qname} (Ext: {qnum}){phone_txt}",
                     'type': 'CallQueue',
                     'sort': 1
                 }
 
-        # --- STEP 3: ALL EXTENSIONS (Users, IVRs, etc) ---
-        # Fetch Enabled AND Disabled
-        ext_params = {'status': 'Enabled,Disabled'} 
-        exts = fetch_all_pages("/restapi/v1.0/account/~/extension", ext_params)
+        # --- STEP 3: ALL EXTENSIONS (Users, IVRs) ---
+        # SAFE MODE: Removed 'status' filter to use default (Enabled). 
+        # Adding 'Disabled' or 'NotActivated' often causes 403/500 errors on large accounts.
+        exts = fetch_all_pages("/restapi/v1.0/account/~/extension")
         
         ALLOWED_TYPES = [
             'IvrMenu', 'Department', 'Site', 'ApplicationExtension', 
@@ -118,9 +117,7 @@ def search_for_visualiser_targets():
         
         for e in exts:
             eid = str(e['id'])
-            
-            # If ID already exists (from Queue fetch), SKIP IT to preserve Queue formatting
-            if eid in results_map: continue
+            if eid in results_map: continue # Already added
             
             etype = e.get('type', 'Unknown')
             if etype not in ALLOWED_TYPES: continue
@@ -128,41 +125,39 @@ def search_for_visualiser_targets():
             ename = e.get('name', 'Unknown')
             enum = str(e.get('extensionNumber', ''))
             
-            # Attach Phones
-            assigned_phones = phone_map.get(eid, [])
-            phone_label = f" 📞 {', '.join(assigned_phones)}" if assigned_phones else ""
-            
-            # Filter
+            # Match
             match = return_all
             if not match:
                 if query in ename.lower() or query in enum: match = True
-                for ph in assigned_phones:
+                for ph in phone_map.get(eid, []):
                     if query in ph: match = True
             
             if match:
                 status_mk = "" if e.get('status') == 'Enabled' else f" [{e.get('status')}]"
+                phone_txt = f" 📞 {', '.join(phone_map.get(eid, []))}" if eid in phone_map else ""
                 
-                # Icons
                 icon = "👤"
                 if etype == 'IvrMenu': icon = "🤖"
                 elif etype == 'Site': icon = "🏢"
                 
                 results_map[eid] = {
                     'id': eid,
-                    'text': f"{icon} [{etype}] {ename} (Ext: {enum}){phone_label}{status_mk}",
+                    'text': f"{icon} [{etype}] {ename} (Ext: {enum}){phone_txt}{status_mk}",
                     'type': etype,
                     'sort': 2 if etype == 'IvrMenu' else 3
                 }
 
-        # Convert to list and sort
+        # Debug Item if empty
+        if not results_map:
+            results_map['err'] = {'id': 'err', 'text': '⚠️ Debug: No extensions found from API', 'disabled': True, 'sort': 0}
+
         final_list = list(results_map.values())
         final_list.sort(key=lambda x: x['sort'])
         
-        print(f"[SEARCH] Returning {len(final_list)} items.", file=sys.stdout)
         return jsonify({'status': 'success', 'results': final_list})
 
     except Exception as e:
-        print(f"[SEARCH ERROR] {e}", file=sys.stderr)
+        print(f"[SEARCH CRASH] {e}", file=sys.stderr)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @viz_bp.route('/api/rc/trace-flow/<ext_id>', methods=['GET'])
