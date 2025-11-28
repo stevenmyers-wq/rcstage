@@ -9,39 +9,52 @@ from webapp.visualiser.utils import generate_mermaid_flow
 viz_bp = Blueprint('visualiser', __name__)
 
 def fetch_all_pages(endpoint, params=None):
+    """
+    Robust Paginator with Rate Limit Handling.
+    """
     if params is None: params = {}
     current_params = params.copy()
-    current_params['perPage'] = 1000
+    current_params['perPage'] = 500 # Safe batch size
     current_params['page'] = 1
+    
     all_records = []
     
-    print(f"[INFO] Fetching: {endpoint} Params: {params}", file=sys.stdout)
+    print(f"[INFO] Fetching: {endpoint} | Params: {params}", file=sys.stdout)
     
     while True:
         try:
-            # Construct URL manually
             query_string = "&".join([f"{k}={v}" for k, v in current_params.items()])
             sep = '&' if '?' in endpoint else '?'
             url = f"{endpoint}{sep}{query_string}"
             
             resp = rc_api_call(url)
             
-            if not resp: break
-            if 'records' in resp: 
-                all_records.extend(resp['records'])
+            # 1. Handle Rate Limiting / Errors
+            if isinstance(resp, dict) and resp.get('errorCode') == 'CMN-429':
+                print(f"[WARN] Rate Limit Hit. Sleeping 2s...", file=sys.stderr)
+                time.sleep(2.0)
+                continue # Retry same page
                 
-            # Pagination
+            if not resp or 'records' not in resp:
+                print(f"[WARN] Page {current_params['page']} empty or failed.", file=sys.stderr)
+                break
+
+            # 2. Collect Data
+            all_records.extend(resp['records'])
+            
+            # 3. Next Page Logic
             nav = resp.get('navigation', {})
             if nav.get('nextPage'):
                 current_params['page'] += 1
-                time.sleep(0.05)
+                time.sleep(0.05) # Tiny pause to be nice
             else:
                 break
+                
         except Exception as e:
-            print(f"[ERROR] Pagination failed: {e}", file=sys.stderr)
+            print(f"[ERROR] Pagination Loop Error: {e}", file=sys.stderr)
             break
             
-    print(f"[INFO] Fetched {len(all_records)} records from {endpoint}", file=sys.stdout)
+    print(f"[INFO] Finished {endpoint}. Total: {len(all_records)}", file=sys.stdout)
     return all_records
 
 @viz_bp.route('/api/rc/visualiser/search', methods=['GET'])
@@ -52,116 +65,105 @@ def search_for_visualiser_targets():
     query = request.args.get('query', '').lower().strip()
     return_all = (len(query) == 0)
     
-    # Final list of objects
-    final_results = []
-    # Set to track processed IDs so we don't duplicate
-    processed_ids = set()
+    # We use a Dict to deduplicate by ID automatically
+    # Key: ID, Value: Item Dict
+    results_map = {}
     
     try:
-        # --- STEP 1: MAP PHONES TO EXTENSIONS ---
-        # We fetch ALL phones first so we can attach them to Queues/Users later.
-        phone_map = {} # { 'ext_id': ['+1555...', '+1666...'] }
-        
+        # --- STEP 1: PHONE NUMBERS (Map DIDs to Extensions) ---
+        # This helps us search by phone number later
         phones = fetch_all_pages("/restapi/v1.0/account/~/phone-number")
+        phone_map = {} # { ext_id: [numbers] }
+        
         for p in phones:
-            if p.get('usageType') in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber', 'NumberPool']:
-                p_num = p.get('phoneNumber', '')
-                ext_id = str(p.get('extension', {}).get('id', ''))
-                
-                if ext_id and ext_id != 'None':
-                    if ext_id not in phone_map: phone_map[ext_id] = []
-                    phone_map[ext_id].append(p_num)
-                    
-                # Also add unassigned/main numbers as standalone entries
-                if not ext_id or ext_id == 'None':
-                    # Only add if matching query
-                    if not return_all and query not in p_num: continue
-                    final_results.append({
-                        'id': f"ext_{p_num}", # Synthetic ID
-                        'text': f"📞 {p_num} ({p.get('usageType')})",
-                        'type': 'PhoneNumber',
-                        'sort': 0
-                    })
+            p_num = p.get('phoneNumber', '')
+            usage = p.get('usageType', '')
+            
+            # Add standalone DID result
+            if usage in ['MainCompanyNumber', 'DirectNumber', 'CompanyNumber']:
+                if return_all or query in p_num:
+                    # If it's not assigned to an extension, add it as a standalone node
+                    if not p.get('extension'):
+                        pid = f"ext_{p_num}"
+                        results_map[pid] = {
+                            'id': pid,
+                            'text': f"📞 {p_num} ({usage})",
+                            'type': 'PhoneNumber',
+                            'sort': 99
+                        }
 
-        # --- STEP 2: FETCH CALL QUEUES ---
-        # We fetch these explicitly because they are most important
-        queues = fetch_all_pages("/restapi/v1.0/account/~/call-queues")
-        for q in queues:
-            qid = str(q['id'])
-            qname = q.get('name', 'Unknown Queue')
-            qnum = str(q.get('extensionNumber', ''))
-            
-            # Get assigned phones
-            assigned_phones = phone_map.get(qid, [])
-            phone_label = f" 📞 {', '.join(assigned_phones)}" if assigned_phones else ""
-            
-            # Filter Logic (Name OR Ext OR Phone)
-            match = return_all
-            if not match:
-                if query in qname.lower() or query in qnum: match = True
-                for ph in assigned_phones:
-                    if query in ph: match = True
-            
-            if match:
-                final_results.append({
-                    'id': qid,
-                    'text': f"[CallQueue] {qname} (Ext: {qnum}){phone_label}",
-                    'type': 'CallQueue',
-                    'sort': 1
-                })
-                processed_ids.add(qid)
+            # Map to Extension if assigned
+            if p.get('extension', {}).get('id'):
+                eid = str(p['extension']['id'])
+                if eid not in phone_map: phone_map[eid] = []
+                phone_map[eid].append(p_num)
 
-        # --- STEP 3: FETCH ALL EXTENSIONS ---
-        # Catch Users, IVRs, and anything else missed
+        # --- STEP 2: ALL EXTENSIONS (Users, IVRs, Queues) ---
+        # We assume this is the "Source of Truth"
         ext_params = {'status': 'Enabled,Disabled,NotActivated'} 
         exts = fetch_all_pages("/restapi/v1.0/account/~/extension", ext_params)
         
-        ALLOWED_TYPES = [
-            'IvrMenu', 'Department', 'Site', 'ApplicationExtension', 
-            'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited', 
-            'Bot', 'Room', 'ParkLocation', 'SharedLinesGroup'
+        ALLOWED = [
+            'User', 'DigitalUser', 'VirtualUser', 'FaxUser', 'FlexibleUser', 'Limited',
+            'CallQueue', 'Department', 'IvrMenu', 'ApplicationExtension', 
+            'Site', 'ParkLocation', 'SharedLinesGroup', 'Bot', 'Room'
         ]
         
-        for e in exts:
-            eid = str(e['id'])
-            if eid in processed_ids: continue # Skip if already handled in Queue loop
-            
-            etype = e.get('type', 'Unknown')
-            if etype not in ALLOWED_TYPES and etype != 'CallQueue': continue
-            
-            ename = e.get('name', 'Unknown')
-            enum = str(e.get('extensionNumber', ''))
-            
-            # Get assigned phones
-            assigned_phones = phone_map.get(eid, [])
-            phone_label = f" 📞 {', '.join(assigned_phones)}" if assigned_phones else ""
-            
-            # Filter Logic
-            match = return_all
-            if not match:
-                if query in ename.lower() or query in enum: match = True
-                for ph in assigned_phones:
-                    if query in ph: match = True
-            
-            if match:
-                status_mk = "" if e.get('status') == 'Enabled' else f" [{e.get('status')}]"
+        for e in exs: # Iterate through the fetched list
+            try:
+                eid = str(e['id'])
+                etype = e.get('type', 'Unknown')
                 
-                final_results.append({
-                    'id': eid,
-                    'text': f"[{etype}] {ename} (Ext: {enum}){phone_label}{status_mk}",
-                    'type': etype,
-                    'sort': 2 if etype == 'IvrMenu' else 3
-                })
-                processed_ids.add(eid)
+                # Filter by Type
+                if etype not in ALLOWED: continue
+                
+                ename = e.get('name', 'Unknown')
+                enum = str(e.get('extensionNumber', ''))
+                
+                # Attach Phones
+                my_phones = phone_map.get(eid, [])
+                phone_txt = f" 📞 {', '.join(my_phones)}" if my_phones else ""
+                
+                # Search Filter
+                match = return_all
+                if not match:
+                    if query in ename.lower(): match = True
+                    elif query in enum: match = True
+                    # Also search inside assigned phone numbers
+                    elif any(query in ph for ph in my_phones): match = True
+                
+                if match:
+                    # Format Status
+                    status_mk = "" 
+                    if e.get('status') != 'Enabled': status_mk = f" [{e.get('status')}]"
+                    
+                    # Icons for UX
+                    icon = "👤"
+                    if etype == 'CallQueue': icon = "👥"
+                    elif etype == 'IvrMenu': icon = "🤖"
+                    elif etype == 'Site': icon = "🏢"
+                    
+                    results_map[eid] = {
+                        'id': eid,
+                        'text': f"{icon} [{etype}] {ename} (Ext: {enum}){phone_txt}{status_mk}",
+                        'type': etype,
+                        'sort': 1 if etype == 'CallQueue' else (2 if etype == 'IvrMenu' else 3)
+                    }
+            except Exception as inner_e:
+                print(f"Skipping bad extension record: {inner_e}")
+                continue
 
-        # Sort
+        # Convert map to list
+        final_results = list(results_map.values())
+        
+        # Sort (Queues -> IVRs -> Users -> Others)
         final_results.sort(key=lambda x: x['sort'])
         
         print(f"[SEARCH] Returning {len(final_results)} items.", file=sys.stdout)
         return jsonify({'status': 'success', 'results': final_results})
 
     except Exception as e:
-        print(f"[SEARCH ERROR] {e}", file=sys.stderr)
+        print(f"[CRITICAL SEARCH ERROR] {e}", file=sys.stderr)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @viz_bp.route('/api/rc/trace-flow/<ext_id>', methods=['GET'])
