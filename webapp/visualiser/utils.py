@@ -15,21 +15,14 @@ class CallFlowTracer:
         self.ext_num_map = {} 
 
     def log_api_call(self, endpoint):
+        """Wrapper to track API calls for the frontend debug log."""
         start = time.time()
         status = "SUCCESS"
         try:
-            # Force cache bust + Detailed View
             final_url = endpoint
-            
-            # Smart URL construction
-            if "?" in final_url:
-                final_url += f"&_={int(time.time())}"
-            else:
-                final_url += f"?_={int(time.time())}"
-            
-            # Force Detailed view if fetching extension
-            if "/extension/" in final_url and "view=" not in final_url:
-                final_url += "&view=Detailed"
+            # Force cache bust for critical endpoints
+            if ("call-queues" in endpoint or "answering-rule" in endpoint) and "?" not in endpoint:
+                final_url = f"{endpoint}?_={int(time.time())}"
 
             response = rc_api_call(final_url)
             duration = round((time.time() - start) * 1000, 2)
@@ -61,8 +54,7 @@ class CallFlowTracer:
             if real_id in self.extension_cache: return self.extension_cache[real_id]
 
         for i in range(3):
-            # Always ask for Detailed view
-            info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}?view=Detailed")
+            info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}")
             if info and 'errorCode' not in info:
                 self.extension_cache[ext_id] = info
                 if info.get('extensionNumber'):
@@ -76,7 +68,7 @@ class CallFlowTracer:
     def get_extension_id_by_number(self, ext_num):
         s_num = str(ext_num)
         if s_num in self.ext_num_map: return self.ext_num_map[s_num]
-        info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}?view=Detailed")
+        info = self.log_api_call(f"/restapi/v1.0/account/~/extension/{s_num}")
         if info and info.get('id'):
             self.extension_cache[str(info['id'])] = info
             self.ext_num_map[s_num] = str(info['id'])
@@ -184,6 +176,7 @@ class CallFlowTracer:
         return action
 
     def extract_target_from_transfer(self, transfer_obj):
+        """Extract target extension ID from various transfer object formats"""
         if not transfer_obj: return None
         if isinstance(transfer_obj, list):
             for t in transfer_obj:
@@ -203,6 +196,7 @@ class CallFlowTracer:
         try:
             bh_rule = self.log_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule")
             if bh_rule and not bh_rule.get('errorCode'):
+                # Condense: If just "Ring Members", skip node
                 action = bh_rule.get('callHandlingAction')
                 if not action or action == 'AgentQueue':
                     pass
@@ -270,6 +264,7 @@ class CallFlowTracer:
         if not is_vm: self.node_map[ext_id] = nid
         new_hist = history + [ext_id]
 
+        # --- Node Creation ---
         if str(ext_id).startswith("ext_"):
             lbl = f"[External]<br/><b>{ext_id.replace('ext_', '')}</b>"
             self.graph_lines.append(f'{nid}["{lbl}"]:::siteStyle')
@@ -297,12 +292,12 @@ class CallFlowTracer:
 
         if e_type == 'CallQueue':
             try:
-                # Schedule
+                # A. Schedule
                 q_schedule = self.get_schedule_summary(ext_id)
                 if q_schedule and q_schedule != "24/7 (Default)":
                     extra_html += f"<hr/><b>🕒 Schedule:</b><br/>{q_schedule}"
 
-                # Agents
+                # B. Agents
                 m_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
                 if m_resp and m_resp.get('records'):
                     m_names = []
@@ -313,7 +308,7 @@ class CallFlowTracer:
                     if m_names:
                         extra_html += f"<hr/><b>👥 Agents:</b><br/>" + "<br/>".join(m_names)
 
-                # Settings - DEEP MERGE with FORCE
+                # C. Settings - DEEP MERGE
                 if ext_id not in self.queue_settings_cache:
                     q_settings = {}
                     
@@ -337,9 +332,10 @@ class CallFlowTracer:
                 
                 q = self.queue_settings_cache.get(ext_id)
                 if q:
-                    max_wait = q.get('maxWaitTime')
+                    max_wait = q.get('maxWaitTime') # Don't default to 0
                     max_callers = q.get('maxCallers', '?')
                     wait_action = q.get('maxWaitTimeAction', 'Unknown')
+                    max_callers_action = q.get('maxCallersAction', 'Unknown')
                     
                     if wait_action == 'Unknown' or wait_action == 'FixedWaitTime':
                         wait_action = "Ring Members"
@@ -349,8 +345,8 @@ class CallFlowTracer:
                     if max_wait is not None:
                         wait_txt = f"{max_wait}s" if max_wait > 0 else "0s (Immediate)"
                     
-                    extra_html += f"<hr/><b>⚙️ Config:</b><br/>Wait: {wait_txt}<br/>Max Callers: {max_callers}<br/>Action: {wait_action}"
-
+                    extra_html += f"<hr/><b>⚙️ Config:</b><br/>Wait: {wait_txt}<br/>Max Callers: {max_callers}<br/>Wait Action: {wait_action}"
+                    
                     # Target Resolution
                     target_id = self.extract_target_from_transfer(q.get('transfer'))
                     if not target_id: target_id = self.extract_target_from_transfer(q.get('unconditionalForwarding'))
@@ -364,6 +360,14 @@ class CallFlowTracer:
                             # Debug: Dump Keys if missing
                             keys = list(q.keys())
                             extra_html += f"<br/>⚠️ <i>Target Missing</i><br/>Keys: {str(keys)[:30]}"
+
+                    # Max Callers Logic
+                    # If we have a maxCallers setting, check for overflow
+                    # Often this is handled via the same 'transfer' or specific rules in advanced settings
+                    # We'll add visualization if specific maxCallersAction is transfer
+                    if max_callers_action == 'TransferToExtension':
+                         # Assume same target? Or need deeper dive?
+                         pass
 
                 try:
                     overflow_resp = self.log_api_call(f"/restapi/v1.0/account/~/call-queues/{ext_id}/overflow-settings")
@@ -401,12 +405,16 @@ class CallFlowTracer:
                         is_active = r.get('enabled', True)
                         status_txt = "" if is_active else " (Inactive)"
                         link_arrow = "-->" if is_active else "-.->"
-                        node_style_class = "logicStyle" if is_active else "inactiveStyle"
-
+                        
                         rtype = r.get('type', 'Custom')
                         rname = r.get('name', 'Rule')
+                        node_shape_open = "{{" if rtype == 'Custom' else "("
+                        node_shape_close = "}}" if rtype == 'Custom' else ")"
+                        node_style_class = "logicStyle" if is_active else "inactiveStyle"
+
                         action = r.get('callHandlingAction')
                         
+                        # CONDENSE: Skip standard business hours if simple ring
                         if rtype == 'BusinessHours' and (not action or action == 'AgentQueue'):
                             continue
 
@@ -434,7 +442,7 @@ class CallFlowTracer:
 
                         if target:
                             lid = f"log_{self.node_counter}"; self.node_counter += 1
-                            self.graph_lines.append(f'{lid}{{"{self.clean_text(logic_text)}"}}:::{node_style_class}')
+                            self.graph_lines.append(f'{lid}{node_shape_open}"{self.clean_text(logic_text)}"{node_shape_close}:::{node_style_class}')
                             self.graph_lines.append(f'{nid} {link_arrow} {lid}')
                             self.trace(target, lid, "Matches", new_hist, is_active)
                         else:
@@ -447,6 +455,7 @@ class CallFlowTracer:
 
             except Exception as e: print(f"Rule Error: {e}")
 
+        # Trace IVR
         if e_type == 'IvrMenu':
             try:
                 ivr = self.log_api_call(f"/restapi/v1.0/account/~/ivr-menus/{ext_id}")
