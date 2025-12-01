@@ -5,6 +5,7 @@ import requests
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
+# Ensure format_phone is available from utils
 from .utils import build_v1_payload, format_phone
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
@@ -21,84 +22,95 @@ def get_extension_id(extension_number):
         return resp['records'][0]['id']
     return None
 
-def get_phone_number_id(phone_number):
+def transform_v1_to_v2(v1_payload):
     """
-    CRITICAL FOR V2: Resolves an E.164 string to a RingCentral ID.
-    V2 'CalledNumber' conditions REQUIRE an ID, not a string.
-    """
-    try:
-        resp = rc_api_call('/restapi/v1.0/account/~/phone-number', params={'phoneNumber': phone_number})
-        if resp and 'records' in resp and len(resp['records']) > 0:
-            return resp['records'][0]['id']
-    except:
-        pass
-    return None
-
-def build_v2_payload(v1_payload):
-    """
-    Reconstructs V1 data into V2 Interaction Rule format.
-    PERFORMS API LOOKUPS for Called Numbers.
+    Reconstructs V1 data into V2 Interaction Rule format based on your JSON example.
     """
     v2 = {
-        "name": v1_payload.get("name"),
+        "displayName": v1_payload.get("name"), # V2 uses 'displayName'
         "enabled": v1_payload.get("enabled"),
-        "conditions": {},
-        "actions": []
+        "conditions": [],
+        "dispatching": {
+            "type": "Terminate",
+            "actions": []
+        }
     }
     
-    # 1. Map Callers (Strings are allowed in V2)
-    if "callers" in v1_payload:
-        v2["conditions"]["callers"] = v1_payload["callers"]
-        
-    # 2. Map Schedule
-    if "schedule" in v1_payload:
-        v2["conditions"]["schedule"] = v1_payload["schedule"]
-        
-    # 3. Map Called Numbers (CRITICAL: Must convert String -> ID)
+    # --- 1. BUILD CONDITIONS (Array of Objects) ---
+    interaction_cond = {
+        "type": "Interaction",
+        "to": [],
+        "from": []
+    }
+    has_interaction = False
+
+    # Map Called Numbers -> "to" array
     if "calledNumbers" in v1_payload:
-        v2_called = []
-        for item in v1_payload["calledNumbers"]:
-            ph_str = item.get("phoneNumber")
-            if ph_str:
-                ph_id = get_phone_number_id(ph_str) # <--- API LOOKUP
-                if ph_id:
-                    v2_called.append({"id": ph_id})
-                else:
-                    print(f"DEBUG: Could not find ID for {ph_str}")
+        # Extract just the phone number strings (e.g. "+61...")
+        to_list = [item['phoneNumber'] for item in v1_payload['calledNumbers']]
+        interaction_cond["to"] = to_list
+        has_interaction = True
+
+    # Map Caller IDs -> "from" array
+    if "callers" in v1_payload:
+        from_list = [item['callerId'] for item in v1_payload['callers']]
+        interaction_cond["from"] = from_list
+        has_interaction = True
+
+    # Clean up empty arrays
+    if not interaction_cond["to"]: del interaction_cond["to"]
+    if not interaction_cond["from"]: del interaction_cond["from"]
+
+    # Only add condition object if it has data
+    if has_interaction:
+        v2["conditions"].append(interaction_cond)
         
-        if v2_called:
-            v2["conditions"]["calledNumbers"] = v2_called
-        else:
-            # If we had called numbers but failed to resolve ANY IDs, 
-            # return None to signal failure (avoids sending empty condition)
-            return None
+    # Note: Schedule logic is complex in V2. 
+    # For now, we focus on fixing the CMN-414 error for numbers.
 
-    # 4. Map Actions (Array Format)
+    # --- 2. BUILD ACTIONS (Dispatching) ---
     v1_act = v1_payload.get("callHandlingAction")
-    act_obj = {"type": "ForwardCalls"} # Default
-
+    
+    # Unconditional Forwarding (Transfer to External)
     if v1_act == "UnconditionalForwarding":
-        act_obj["type"] = "UnconditionalForwarding"
-        if "unconditionalForwarding" in v1_payload:
-            raw = v1_payload["unconditionalForwarding"].get("phoneNumber")
-            act_obj["phoneNumber"] = format_phone(raw)
+        dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
+        action = {
+            "type": "TerminatingAction",
+            "terminatingTargetType": "PhoneNumberTerminatingTarget",
+            "targets": [{
+                "type": "PhoneNumberTerminatingTarget",
+                "destination": {"phoneNumber": dest_num}
+            }]
+        }
+        v2["dispatching"]["actions"].append(action)
 
+    # Transfer to Extension
     elif v1_act == "TransferToExtension":
-        act_obj["type"] = "Transfer"
-        if "transfer" in v1_payload:
-            act_obj["extension"] = v1_payload["transfer"].get("extension")
+        ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
+        action = {
+            "type": "TerminatingAction",
+            "terminatingTargetType": "ExtensionTerminatingTarget",
+            "targets": [{
+                "type": "ExtensionTerminatingTarget",
+                "extension": {"id": ext_id}
+            }]
+        }
+        v2["dispatching"]["actions"].append(action)
 
+    # Voicemail
     elif v1_act == "TakeMessagesOnly":
-        act_obj["type"] = "Voicemail"
-        if "voicemail" in v1_payload:
-            act_obj["extension"] = v1_payload["voicemail"].get("recipient")
+        # Voicemail usually targets the owner, or a specific recipient
+        vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
+        action = {
+            "type": "TerminatingAction",
+            "terminatingTargetType": "VoiceMailTerminatingTarget",
+            "targets": [{
+                "type": "VoiceMailTerminatingTarget",
+                "mailbox": {"id": vm_recipient_id} 
+            }]
+        }
+        v2["dispatching"]["actions"].append(action)
 
-    elif v1_act == "PlayAnnouncementOnly":
-        act_obj["type"] = "PlayAnnouncement"
-        # Note: V2 PlayAnnouncement implies an announcement ID. 
-        # If missing, RC might default or error. We send type and hope for default.
-
-    v2["actions"].append(act_obj)
     return v2
 
 # --- ROUTES ---
@@ -149,6 +161,7 @@ def update_rules():
             elif action_type == 'TakeMessagesOnly' and pd.notna(row.get('Voicemail Recipient')):
                 vm_id = get_extension_id(row.get('Voicemail Recipient'))
                 if vm_id: payload['voicemail'] = {'recipient': {'id': vm_id}}
+                else: payload['voicemail'] = {'recipient': {'id': ext_id}} # Default to self
 
             # Paths
             rule_id = str(row.get('Rule ID')).replace('.0', '').strip() if pd.notna(row.get('Rule ID')) else ""
@@ -172,17 +185,13 @@ def update_rules():
                 # Check for V2 Upgrade
                 if "NewCallHandlingAndForwarding" in http_err.response.text:
                     try:
-                        # BUILD V2 PAYLOAD (With API Lookups)
-                        v2_payload = build_v2_payload(payload)
+                        # BUILD V2 PAYLOAD (Using new transformer)
+                        v2_payload = transform_v1_to_v2(payload)
                         
-                        # Check validity
-                        if v2_payload is None:
-                            results.append(f"❌ Ext {raw_ext_num}: V2 Conversion Failed. Could not find ID for Called Number.")
-                            continue
-                        
+                        # Debugging Check
                         if not v2_payload['conditions']:
-                            results.append(f"⚠️ Ext {raw_ext_num}: V2 Payload empty conditions (IDs might be missing).")
-                            continue
+                             results.append(f"⚠️ Ext {raw_ext_num}: V2 Skipped - Conditions empty.")
+                             continue
 
                         rc_api_call(v2_url, method=method, json=v2_payload, raise_error=True)
                         results.append(f"✅ {method} Rule Ext {raw_ext_num} (V2)")
