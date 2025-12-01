@@ -1,45 +1,77 @@
-<div class="tool-content">
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <h2>Extension Renamer</h2>
-            <p class="text-muted">Bulk edit RingCentral extension names using Excel.</p>
-        </div>
+<div class="space-y-6 animate-fade-in">
+    
+    <div>
+        <h2 class="text-2xl font-bold text-blue-700">Extension Renamer</h2>
+        <p class="text-gray-600 mt-1">Bulk edit RingCentral extension names using an Excel template.</p>
     </div>
 
-    <div class="card mb-4">
-        <div class="card-header bg-light">
-            <h5 class="mb-0">1. Download Template</h5>
-        </div>
-        <div class="card-body">
-            <p>Fetch all current extensions and download them as an Excel file.</p>
-            <button id="renamer-download-btn" class="btn btn-primary" onclick="renamerDownloadTemplate()">
+    <div class="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg shadow-sm">
+        <h3 class="font-semibold text-blue-800 mb-2">Instructions</h3>
+        <ol class="list-decimal list-inside text-gray-700 space-y-1 text-sm">
+            <li>Click <span class="font-semibold">Fetch & Download Template</span> to get the current list of extensions.</li>
+            <li>Open the Excel file and edit the <span class="font-semibold text-blue-600">New Name</span> column.</li>
+            <li>Save the file and upload it in the section below.</li>
+            <li>Click <span class="font-semibold text-green-600">Start Updating</span> to process changes one by one.</li>
+        </ol>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
+            <div>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">1</div>
+                    <h3 class="text-lg font-bold text-gray-800">Download Template</h3>
+                </div>
+                <p class="text-gray-600 text-sm mb-6">Generates an Excel file containing all active extensions and their current names.</p>
+            </div>
+            
+            <button id="renamer-download-btn" onclick="renamerDownloadTemplate()" 
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
                 Fetch & Download Template
             </button>
         </div>
-    </div>
 
-    <div class="card mb-4">
-        <div class="card-header bg-light">
-            <h5 class="mb-0">2. Upload & Process</h5>
-        </div>
-        <div class="card-body">
-            <p>Upload your edited Excel file. The system will process changes one by one.</p>
-            <div class="mb-3">
-                <input type="file" class="form-control" id="renamer-file-input" accept=".xlsx" />
+        <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
+            <div>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="bg-green-100 text-green-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">2</div>
+                    <h3 class="text-lg font-bold text-gray-800">Upload & Process</h3>
+                </div>
+                <p class="text-gray-600 text-sm mb-4">Upload your modified Excel file to apply changes sequentially.</p>
+                
+                <input type="file" id="renamer-file-input" accept=".xlsx"
+                       class="block w-full text-sm text-gray-500
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-full file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-blue-50 file:text-blue-700
+                              hover:file:bg-blue-100 cursor-pointer mb-2"/>
             </div>
-            <button id="renamer-process-btn" class="btn btn-success" onclick="renamerProcessFile()">
+
+            <button id="renamer-process-btn" onclick="renamerProcessFile()"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
                 Start Updating
             </button>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header bg-dark text-white">
-            <h5 class="mb-0">Activity Log</h5>
+    <div class="card p-0 overflow-hidden shadow-md">
+        <div class="bg-gray-800 text-gray-200 px-4 py-2 text-xs font-mono border-b border-gray-700 flex justify-between items-center">
+            <span class="font-bold">ACTIVITY LOG</span>
+            <span class="text-gray-500">Real-time updates</span>
         </div>
-        <div class="card-body bg-dark text-light" style="height: 300px; overflow-y: scroll; font-family: monospace;" id="renamer-logs">
-            </div>
+        <div id="renamer-logs" class="bg-gray-900 text-green-400 p-4 font-mono text-sm h-64 overflow-y-auto leading-relaxed">
+            <div class="text-gray-500 italic opacity-50">Waiting for user action...</div>
+        </div>
     </div>
+
 </div>
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
@@ -47,12 +79,19 @@
 <script>
     function renamerLog(msg, type="info") {
         const box = document.getElementById('renamer-logs');
-        const entry = document.createElement('div');
-        entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
         
-        if (type === 'success') entry.style.color = '#4caf50';
-        if (type === 'error') entry.style.color = '#ff5252';
-        else entry.style.color = '#81d4fa';
+        // Clear "Waiting..." text if it's the first log
+        if (box.children.length === 1 && box.children[0].classList.contains('text-gray-500')) {
+            box.innerHTML = '';
+        }
+
+        const entry = document.createElement('div');
+        const timestamp = new Date().toLocaleTimeString();
+        entry.innerHTML = `<span class="text-gray-500 select-none">[${timestamp}]</span> ${msg}`;
+        
+        if (type === 'success') entry.classList.add('text-green-400');
+        else if (type === 'error') entry.classList.add('text-red-400');
+        else entry.classList.add('text-blue-300');
 
         box.appendChild(entry);
         box.scrollTop = box.scrollHeight;
@@ -60,7 +99,10 @@
 
     async function renamerDownloadTemplate() {
         const btn = document.getElementById('renamer-download-btn');
+        const originalText = btn.innerHTML;
         btn.disabled = true;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Fetching...`;
+        
         renamerLog("Fetching extensions list...", "info");
 
         try {
@@ -75,7 +117,7 @@
                 "Type (DO NOT EDIT)": ext.type,
                 "Extension Number": ext.extensionNumber,
                 "Current Name": ext.name,
-                "New Name": ext.name // User edits this column
+                "New Name": ext.name 
             }));
 
             const ws = XLSX.utils.json_to_sheet(rows);
@@ -88,12 +130,17 @@
             renamerLog("Error: " + err.message, "error");
         } finally {
             btn.disabled = false;
+            btn.innerHTML = originalText;
         }
     }
 
     function renamerProcessFile() {
         const fileInput = document.getElementById('renamer-file-input');
         if (!fileInput.files[0]) return alert("Please select a file first.");
+
+        const btn = document.getElementById('renamer-process-btn');
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
 
         const reader = new FileReader();
         reader.onload = async (e) => {
@@ -103,7 +150,9 @@
             
             renamerLog(`Found ${jsonData.length} rows. Starting update process...`, "info");
             
-            // Iterate through rows sequentially
+            let successCount = 0;
+            let errorCount = 0;
+
             for (const row of jsonData) {
                 const id = row["ID (DO NOT EDIT)"];
                 const type = row["Type (DO NOT EDIT)"];
@@ -111,17 +160,17 @@
                 const newName = row["New Name"];
                 const currentName = row["Current Name"];
 
-                if (!id) continue; // Skip invalid rows
+                if (!id) continue; 
 
-                // Only update if name has changed
                 if (newName && newName !== currentName) {
                     await renamerUpdateSingle(id, type, extNum, newName);
-                    
-                    // Rate Limit Delay: Wait 3 seconds between calls to avoid hitting API limits
+                    // Rate Limit Delay
                     await new Promise(r => setTimeout(r, 3000)); 
                 }
             }
             renamerLog("--- Batch Process Complete ---", "success");
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
         };
         reader.readAsArrayBuffer(fileInput.files[0]);
     }
