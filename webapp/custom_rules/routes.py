@@ -30,7 +30,6 @@ def get_user_devices(ext_id):
 @require_rc_token
 def audit_rules():
     try:
-        # 1. Fetch All User Extensions
         ext_resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000, 'type': 'User'})
         if not ext_resp or 'records' not in ext_resp:
             return jsonify({"error": "Failed to fetch extensions list"}), 500
@@ -44,11 +43,10 @@ def audit_rules():
 
             rules_found = False
 
-            # --- TRY V2 FIRST ---
+            # Try V2
             try:
                 v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
                 v2_resp = rc_api_call(v2_url, raise_error=True)
-                
                 if v2_resp and 'records' in v2_resp:
                     for rule in v2_resp['records']:
                         row = parse_rule_to_row(ext, rule, is_v2=True)
@@ -57,7 +55,7 @@ def audit_rules():
             except Exception:
                 pass 
 
-            # --- FALLBACK TO V1 ---
+            # Fallback V1
             if not rules_found:
                 try:
                     v1_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', params={'view': 'Detailed'})
@@ -74,7 +72,6 @@ def audit_rules():
 
         df = pd.DataFrame(audit_data)
         
-        # UPDATED COLUMN ORDER TO INCLUDE SCHEDULE
         cols = ['Ext Number', 'Ext Name', 'Rule ID', 'Rule Name', 'Enabled', 
                 'Caller ID', 'Called Number', 
                 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Specific Dates',
@@ -104,7 +101,7 @@ def audit_rules():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ... (Keep update_rules and download_template exactly as they are) ...
+# --- UPDATE ROUTE ---
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
 @require_rc_token
 def update_rules():
@@ -126,11 +123,14 @@ def update_rules():
             if not ext_id:
                 results.append(f"Row {index}: ⚠️ Extension {raw_ext_num} not found.")
                 continue
+            
             user_devices = get_user_devices(ext_id)
             payload, action_type = build_v1_payload(row, ext_id)
+
             if not any(k in payload for k in ['callers', 'calledNumbers', 'schedule']):
                 results.append(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions found.")
                 continue
+
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                 raw_ph = str(row.get('External Number')).strip()
                 payload['unconditionalForwarding'] = {'phoneNumber': format_phone(raw_ph)}
@@ -144,13 +144,17 @@ def update_rules():
                 vm_id = get_extension_id(row.get('Voicemail Recipient'))
                 if vm_id: payload['voicemail'] = {'recipient': {'id': vm_id}}
                 else: payload['voicemail'] = {'recipient': {'id': ext_id}}
+
             rule_id = str(row.get('Rule ID')).replace('.0', '').strip() if pd.notna(row.get('Rule ID')) else ""
             is_update = bool(rule_id)
+            
             v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
             if is_update: v1_url += f"/{rule_id}"
             v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
             if is_update: v2_url += f"/{rule_id}"
+
             method = "PUT" if is_update else "POST"
+
             try:
                 rc_api_call(v1_url, method=method, json=payload, raise_error=True)
                 results.append(f"✅ {method} Rule Ext {raw_ext_num} (V1)")
@@ -168,16 +172,55 @@ def update_rules():
             results.append(f"❌ Error Ext {raw_ext_num}: {str(e)}")
     return jsonify({"logs": results})
 
+# --- TEMPLATE DOWNLOAD ROUTE (UPDATED) ---
 @custom_rules_bp.route('/api/custom_rules/template', methods=['GET'])
 def download_template():
-    columns = ['Ext Number', 'Ext Name', 'Rule Name', 'Rule ID', 'Enabled', 'Caller ID', 'Called Number', 'Work or After Hours', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Specific Dates', 'Action', 'Transfer Extension', 'External Number', 'Voicemail Recipient']
-    df = pd.DataFrame([], columns=columns)
+    # 1. Define Template Columns
+    columns = [
+        'Ext Number', 'Ext Name', 'Rule Name', 'Rule ID', 'Enabled', 
+        'Caller ID', 'Called Number', 
+        'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 
+        'Specific Dates', 
+        'Action', 'Transfer Extension', 'External Number', 'Voicemail Recipient'
+    ]
+    
+    # 2. Define Instructions / Examples
+    instructions_data = [
+        {"Field": "Ext Number", "Required": "Yes", "Format": "101", "Notes": "The extension the rule belongs to."},
+        {"Field": "Rule ID", "Required": "No", "Format": "123456", "Notes": "Leave BLANK to create a NEW rule. Fill to UPDATE an existing rule."},
+        {"Field": "Caller ID", "Required": "No", "Format": "+61400123456", "Notes": "Incoming numbers to match. Comma-separated."},
+        {"Field": "Called Number", "Required": "No", "Format": "+61299990000", "Notes": "The DID the caller dialed. Comma-separated."},
+        {"Field": "Days (Mon-Sun)", "Required": "No", "Format": "9:00 AM - 5:00 PM", "Notes": "12-hour format with AM/PM. Example: '9:00 AM - 12:00 PM, 1:00 PM - 5:00 PM'"},
+        {"Field": "Specific Dates", "Required": "No", "Format": "2024-12-25 00:00 to 2024-12-26 23:59", "Notes": "ISO Format (YYYY-MM-DD HH:MM). Must use keyword 'to'."},
+        {"Field": "Action", "Required": "Yes", "Format": "Select One", "Notes": "Transfer to External, Transfer to Extension, Send to Voicemail, Play Message"},
+        {"Field": "External Number", "Required": "If Action=Transfer", "Format": "+614...", "Notes": "E.164 format preferred."},
+        {"Field": "Enabled", "Required": "No", "Format": "Yes / No", "Notes": "Defaults to Yes."}
+    ]
+
+    # 3. Create DataFrames
+    df_template = pd.DataFrame([], columns=columns)
+    df_instructions = pd.DataFrame(instructions_data)
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Template')
-        worksheet = writer.sheets['Template']
-        for column in worksheet.columns:
+        # Sheet 1: Template
+        df_template.to_excel(writer, index=False, sheet_name='Template')
+        ws1 = writer.sheets['Template']
+        for column in ws1.columns:
             length = max(len(str(cell.value) or "") for cell in column)
-            worksheet.column_dimensions[column[0].column_letter].width = length + 5
+            ws1.column_dimensions[column[0].column_letter].width = length + 5
+
+        # Sheet 2: Format Guide
+        df_instructions.to_excel(writer, index=False, sheet_name='Format Guide')
+        ws2 = writer.sheets['Format Guide']
+        for column in ws2.columns:
+            length = max(len(str(cell.value) or "") for cell in column)
+            ws2.column_dimensions[column[0].column_letter].width = length + 10
+
     output.seek(0)
-    return send_file(output, download_name="custom_rules_template.xlsx", as_attachment=True, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    return send_file(
+        output, 
+        download_name="custom_rules_template.xlsx", 
+        as_attachment=True, 
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
