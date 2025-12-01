@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 from datetime import datetime
 
 def parse_time_range(range_str):
@@ -10,25 +11,53 @@ def parse_time_range(range_str):
                  "to": datetime.strptime(end.strip(), fmt_in).strftime(fmt_out)}]
     except: return None
 
+def format_phone(phone_val):
+    """
+    Ensures phone numbers are in E.164 format (starts with +).
+    """
+    if pd.isna(phone_val): return None
+    
+    # Clean string (remove spaces, dashes, parens)
+    clean_num = re.sub(r'[^\d+]', '', str(phone_val).strip())
+    
+    if not clean_num: return None
+    
+    # If it's a long number (likely international) and missing +, add it.
+    # Heuristic: If > 9 digits and doesn't start with +, assume it needs one.
+    if len(clean_num) > 9 and not clean_num.startswith('+'):
+        return f"+{clean_num}"
+    
+    return clean_num
+
 def build_rule_payload(row, ext_id):
     rule_name = row.get('Rule Name', f'Custom Rule {datetime.now()}')
-    enabled = str(row.get('Enabled', 'Yes')).lower() in ['yes', 'true', '1', 'on']
+    enabled_val = str(row.get('Enabled', 'Yes')).lower()
+    enabled = enabled_val in ['yes', 'true', '1', 'on']
     
     payload = {"type": "Custom", "name": rule_name, "enabled": enabled}
 
-    # 1. Caller ID
+    # 1. Caller ID (Apply Formatting)
     if pd.notna(row.get('Caller ID')):
-        callers = [{'callerId': c.strip()} for c in str(row.get('Caller ID')).split(',') if c.strip()]
+        raw_callers = str(row.get('Caller ID')).split(',')
+        callers = []
+        for c in raw_callers:
+            fmt = format_phone(c)
+            if fmt: callers.append({'callerId': fmt})
         if callers: payload['callers'] = callers
 
-    # 2. Called Number
+    # 2. Called Number (Apply Formatting)
     if pd.notna(row.get('Called Number')):
-        called = [{'phoneNumber': n.strip()} for n in str(row.get('Called Number')).split(',') if n.strip()]
+        raw_called = str(row.get('Called Number')).split(',')
+        called = []
+        for n in raw_called:
+            fmt = format_phone(n)
+            if fmt: called.append({'phoneNumber': fmt})
         if called: payload['calledNumbers'] = called
 
     # 3. Schedule
     schedule = {'weeklyRanges': {}}
-    days = {'Monday':'monday', 'Tuesday':'tuesday', 'Wednesday':'wednesday', 'Thursday':'thursday', 'Friday':'friday', 'Saturday':'saturday', 'Sunday':'sunday'}
+    days = {'Monday':'monday', 'Tuesday':'tuesday', 'Wednesday':'wednesday', 
+            'Thursday':'thursday', 'Friday':'friday', 'Saturday':'saturday', 'Sunday':'sunday'}
     has_schedule = False
     for col, key in days.items():
         if pd.notna(row.get(col)):
@@ -46,16 +75,22 @@ def build_rule_payload(row, ext_id):
         'Play Message': 'PlayAnnouncementOnly',
         'Play Message and Disconnect': 'PlayAnnouncementOnly'
     }
-    api_action = action_map.get(row.get('Action'), 'ForwardCalls')
+    user_action = row.get('Action')
+    api_action = action_map.get(user_action, 'ForwardCalls')
     payload['callHandlingAction'] = api_action
     
     return payload, api_action
 
 def transform_v1_to_v2(v1):
     """Maps V1 keys to V2 nested structure."""
-    v2 = {"name": v1.get("name"), "enabled": v1.get("enabled"), "conditions": {}, "actions": []}
+    v2 = {
+        "name": v1.get("name"), 
+        "enabled": v1.get("enabled"), 
+        "conditions": {}, 
+        "actions": []
+    }
     
-    # Map Conditions (Exact key match from V1)
+    # Map Conditions
     if "callers" in v1: v2["conditions"]["callers"] = v1["callers"]
     if "calledNumbers" in v1: v2["conditions"]["calledNumbers"] = v1["calledNumbers"]
     if "schedule" in v1: v2["conditions"]["schedule"] = v1["schedule"]
@@ -66,13 +101,21 @@ def transform_v1_to_v2(v1):
 
     if v1_act == "UnconditionalForwarding":
         act_obj["type"] = "UnconditionalForwarding"
-        if "unconditionalForwarding" in v1: act_obj["phoneNumber"] = v1["unconditionalForwarding"].get("phoneNumber")
+        if "unconditionalForwarding" in v1:
+            # Ensure Action Phone Number is formatted too
+            raw_ph = v1["unconditionalForwarding"].get("phoneNumber")
+            act_obj["phoneNumber"] = format_phone(raw_ph)
+            
     elif v1_act == "TransferToExtension":
         act_obj["type"] = "Transfer"
-        if "transfer" in v1: act_obj["extension"] = v1["transfer"].get("extension")
+        if "transfer" in v1: 
+            act_obj["extension"] = v1["transfer"].get("extension")
+            
     elif v1_act == "TakeMessagesOnly":
         act_obj["type"] = "Voicemail"
-        if "voicemail" in v1: act_obj["extension"] = v1["voicemail"].get("recipient")
+        if "voicemail" in v1: 
+            act_obj["extension"] = v1["voicemail"].get("recipient")
+            
     elif v1_act == "PlayAnnouncementOnly":
         act_obj["type"] = "PlayAnnouncement"
 
