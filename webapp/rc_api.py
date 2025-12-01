@@ -1,22 +1,22 @@
 import requests
 from flask import session, current_app
 
-def rc_api_call(endpoint, params=None, method='GET', **kwargs):
+def rc_api_call(endpoint, params=None, method='GET', raise_error=False, **kwargs):
     """
     Generic RingCentral API handler.
-    Automatically adds Authorization header from session.
-    Supports GET, POST, PUT, DELETE via the 'method' argument.
-    Pass JSON data using the 'json' argument.
+    - raise_error=True: Raises exception on failure (useful for debugging specific errors).
+    - raise_error=False: Returns None on failure (safer for general UI loading).
     """
     access_token = session.get('rc_access_token')
     if not access_token:
         print("Error: No access token in session.")
+        if raise_error:
+            raise Exception("No access token found. Please login again.")
         return None
 
-    # Get Base URL from config (default to Prod if missing)
+    # Get Base URL from config
     base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
     
-    # Ensure endpoint format
     if not endpoint.startswith('/'):
         endpoint = '/' + endpoint
     url = f"{base_url}{endpoint}"
@@ -28,7 +28,6 @@ def rc_api_call(endpoint, params=None, method='GET', **kwargs):
     }
 
     try:
-        # We pass **kwargs to allow arguments like 'json' or 'data' to flow through to requests
         response = requests.request(
             method=method,
             url=url,
@@ -37,18 +36,26 @@ def rc_api_call(endpoint, params=None, method='GET', **kwargs):
             **kwargs 
         )
         
-        # Handle 204 No Content (Common in updates)
+        # Handle 204 No Content (Success)
         if response.status_code == 204:
             return {"success": True}
 
-        # Raise error for 4xx/5xx to be caught by the except block
-        response.raise_for_status()
+        # If we want to catch specific errors in the route, raise them here
+        if raise_error:
+            response.raise_for_status()
+
+        # For normal mode, only raise if NOT raise_error (handled by except block below)
+        if not raise_error:
+            response.raise_for_status()
             
         return response.json()
 
     except Exception as e:
+        if raise_error:
+            # Re-raise the exception so routes.py can catch it and show the message
+            raise e
+            
         print(f"RC API Error [{method} {endpoint}]: {e}")
-        # If response exists, print the detailed error from RingCentral
         if 'response' in locals() and response is not None:
             print(f"Details: {response.text}")
         return None
