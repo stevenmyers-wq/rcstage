@@ -21,11 +21,26 @@ def get_extension_id(extension_number):
         return resp['records'][0]['id']
     return None
 
-def transform_v1_to_v2(v1_payload, owner_ext_id):
+def get_user_devices(ext_id):
+    """
+    Fetches all devices assigned to the user.
+    Required to satisfy CMN-100 'missedDevice' validator.
+    """
+    try:
+        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/device')
+        if resp and 'records' in resp:
+            return resp['records']
+    except:
+        pass
+    return []
+
+def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Injects BOTH 'AllMobileRingTarget' AND 'AllDesktopRingTarget' 
-    to satisfy strict CHF-211 and CHF-212 validators.
+    FIX: 
+    1. Injects 'AllMobile' and 'AllDesktop' (CHF-211/212).
+    2. Injects SPECIFIC USER DEVICES (CMN-100).
+    3. Adds the actual Forwarding/VM action at the end.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -52,40 +67,41 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
 
     v2["conditions"].append(interaction_cond)
 
-    # --- 2. ACTIONS ---
+    # --- 2. ACTIONS: INJECT DUMMY TARGETS ---
     
-    # [HACK] Inject Disabled Standard Ring Actions to satisfy API Validators
-    # The API requires these targets to exist for user rules.
-    
-    # 1. Mobile Apps (Fixes CHF-211)
+    # A. Mobile Apps (Satisfy CHF-211)
     v2["dispatching"]["actions"].append({
         "type": "RingGroupAction",
         "enabled": False, 
-        "targets": [
-            {
-                "type": "AllMobileRingTarget",
-                "name": "My mobile apps"
-            }
-        ],
+        "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}],
         "duration": 20
     })
 
-    # 2. Desktop Apps (Fixes CHF-212)
+    # B. Desktop Apps (Satisfy CHF-212)
     v2["dispatching"]["actions"].append({
         "type": "RingGroupAction",
         "enabled": False, 
-        "targets": [
-            {
-                "type": "AllDesktopRingTarget",
-                "name": "My desktop"
-            }
-        ],
+        "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}],
         "duration": 20
     })
 
+    # C. Physical Devices (Satisfy CMN-100 'missedDevice')
+    for dev in user_devices:
+        # We inject every device found on the extension as a disabled target
+        v2["dispatching"]["actions"].append({
+            "type": "RingGroupAction",
+            "enabled": False,
+            "targets": [{
+                "type": "DeviceRingTarget",
+                "device": {"id": dev['id']}
+            }],
+            "duration": 20
+        })
+
+    # --- 3. ACTIONS: REAL LOGIC ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Standard Prompt for Voicemail
+    # Standard Prompt
     vm_prompt = {
         "greeting": {
             "effectiveGreetingType": "Preset",
@@ -246,8 +262,11 @@ def update_rules():
             except requests.exceptions.HTTPError as http_err:
                 if "NewCallHandlingAndForwarding" in http_err.response.text:
                     try:
-                        # BUILD V2 PAYLOAD with EXT ID
-                        v2_payload = transform_v1_to_v2(payload, ext_id)
+                        # 1. Fetch User Devices (CRITICAL for CMN-100)
+                        user_devices = get_user_devices(ext_id)
+
+                        # 2. Build V2 Payload with Devices injected
+                        v2_payload = transform_v1_to_v2(payload, ext_id, user_devices)
                         
                         if not v2_payload['conditions']:
                              results.append(f"⚠️ Ext {raw_ext_num}: V2 Skipped - Conditions empty.")
