@@ -24,8 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Re-adds Voicemail Fallback but REMOVES explicit 'dispatchingType' from it
-    to strictly match the successful 200 OK trace.
+    FIX: Injects a disabled 'AllMobileRingTarget' action to satisfy the CHF-211 validator.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -53,6 +52,21 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     v2["conditions"].append(interaction_cond)
 
     # --- 2. ACTIONS ---
+    
+    # [HACK] Inject Disabled Mobile Ring Action to satisfy CHF-211 Error
+    # The API requires this target to exist when modifying rules for your own DID.
+    v2["dispatching"]["actions"].append({
+        "type": "RingGroupAction",
+        "enabled": False, # Disabled so it doesn't actually ring
+        "targets": [
+            {
+                "type": "AllMobileRingTarget",
+                "name": "My mobile apps"
+            }
+        ],
+        "duration": 20
+    })
+
     v1_act = v1_payload.get("callHandlingAction")
     
     # Define Standard Prompt for Voicemail
@@ -63,8 +77,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         }
     }
 
-    # Fallback VM Target object
-    # STRICT FIX: NO 'dispatchingType' here. The API infers it from ringingTargetType.
+    # Fallback VM Target
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
@@ -79,13 +92,13 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
-            "ringingTargetType": "VoiceMailTerminatingTarget", # REQUIRED
+            "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                fallback_vm_target, # Fallback First
+                fallback_vm_target,
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
-                    "dispatchingType": "Terminating" # Required here
+                    "dispatchingType": "Terminating" 
                 }
             ]
         }
@@ -97,13 +110,13 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "ExtensionTerminatingTarget",
-            "ringingTargetType": "VoiceMailTerminatingTarget", # REQUIRED
+            "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                fallback_vm_target, # Fallback First
+                fallback_vm_target,
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
-                    "dispatchingType": "Terminating" # Required here
+                    "dispatchingType": "Terminating"
                 }
             ]
         }
@@ -120,7 +133,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
-                    "dispatchingType": "Terminating", # Main target needs this
+                    "dispatchingType": "Terminating",
                     "prompt": vm_prompt
                 }
             ]
