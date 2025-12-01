@@ -5,7 +5,6 @@ import requests
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
-# Ensure format_phone is available from utils
 from .utils import build_v1_payload, format_phone
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
@@ -24,10 +23,11 @@ def get_extension_id(extension_number):
 
 def transform_v1_to_v2(v1_payload):
     """
-    Reconstructs V1 data into V2 Interaction Rule format based on your JSON example.
+    Reconstructs V1 data into V2 Interaction Rule format.
+    Ensures 'from' and 'to' arrays exist even if empty.
     """
     v2 = {
-        "displayName": v1_payload.get("name"), # V2 uses 'displayName'
+        "displayName": v1_payload.get("name"), 
         "enabled": v1_payload.get("enabled"),
         "conditions": [],
         "dispatching": {
@@ -39,34 +39,24 @@ def transform_v1_to_v2(v1_payload):
     # --- 1. BUILD CONDITIONS (Array of Objects) ---
     interaction_cond = {
         "type": "Interaction",
-        "to": [],
-        "from": []
+        "to": [],    # REQUIRED by V2 (even if empty)
+        "from": []   # REQUIRED by V2 (even if empty)
     }
-    has_interaction = False
 
     # Map Called Numbers -> "to" array
     if "calledNumbers" in v1_payload:
         # Extract just the phone number strings (e.g. "+61...")
         to_list = [item['phoneNumber'] for item in v1_payload['calledNumbers']]
         interaction_cond["to"] = to_list
-        has_interaction = True
 
     # Map Caller IDs -> "from" array
     if "callers" in v1_payload:
         from_list = [item['callerId'] for item in v1_payload['callers']]
         interaction_cond["from"] = from_list
-        has_interaction = True
 
-    # Clean up empty arrays
-    if not interaction_cond["to"]: del interaction_cond["to"]
-    if not interaction_cond["from"]: del interaction_cond["from"]
-
-    # Only add condition object if it has data
-    if has_interaction:
-        v2["conditions"].append(interaction_cond)
-        
-    # Note: Schedule logic is complex in V2. 
-    # For now, we focus on fixing the CMN-414 error for numbers.
+    # Only add condition object if it has meaningful data (or if mandatory)
+    # Since we are mapping a rule that MUST have conditions, we append it.
+    v2["conditions"].append(interaction_cond)
 
     # --- 2. BUILD ACTIONS (Dispatching) ---
     v1_act = v1_payload.get("callHandlingAction")
@@ -74,12 +64,15 @@ def transform_v1_to_v2(v1_payload):
     # Unconditional Forwarding (Transfer to External)
     if v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
+        # Ensure we format the destination number for V2 as well
+        formatted_dest = format_phone(dest_num)
+        
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
             "targets": [{
                 "type": "PhoneNumberTerminatingTarget",
-                "destination": {"phoneNumber": dest_num}
+                "destination": {"phoneNumber": formatted_dest}
             }]
         }
         v2["dispatching"]["actions"].append(action)
@@ -99,7 +92,6 @@ def transform_v1_to_v2(v1_payload):
 
     # Voicemail
     elif v1_act == "TakeMessagesOnly":
-        # Voicemail usually targets the owner, or a specific recipient
         vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
         action = {
             "type": "TerminatingAction",
@@ -149,15 +141,19 @@ def update_rules():
                 results.append(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions found.")
                 continue
 
-            # Add Complex Action Details
+            # Add Complex Action Details (APPLY FORMATTING HERE)
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
-                payload['unconditionalForwarding'] = {'phoneNumber': str(row.get('External Number')).strip()}
+                # FIX: Use format_phone to ensure +61... format for V1 and V2
+                raw_ph = str(row.get('External Number')).strip()
+                payload['unconditionalForwarding'] = {'phoneNumber': format_phone(raw_ph)}
+            
             elif action_type == 'TransferToExtension' and pd.notna(row.get('Transfer Extension')):
                 target_id = get_extension_id(row.get('Transfer Extension'))
                 if target_id: payload['transfer'] = {'extension': {'id': target_id}}
                 else:
                     results.append(f"⚠️ Target Ext {row.get('Transfer Extension')} not found.")
                     continue
+            
             elif action_type == 'TakeMessagesOnly' and pd.notna(row.get('Voicemail Recipient')):
                 vm_id = get_extension_id(row.get('Voicemail Recipient'))
                 if vm_id: payload['voicemail'] = {'recipient': {'id': vm_id}}
@@ -197,6 +193,7 @@ def update_rules():
                         results.append(f"✅ {method} Rule Ext {raw_ext_num} (V2)")
                         
                     except requests.exceptions.HTTPError as v2_err:
+                        # Clean JSON dump for readability in logs
                         debug_json = json.dumps(v2_payload, default=str)
                         results.append(f"❌ V2 Error Ext {raw_ext_num}: {v2_err.response.text}\nSent: {debug_json}")
                     except Exception as ex:
@@ -215,7 +212,6 @@ def update_rules():
 
 @custom_rules_bp.route('/api/custom_rules/template', methods=['GET'])
 def download_template():
-    # ... (Keep existing template logic) ...
     columns = ['Ext Number', 'Ext Name', 'Rule Name', 'Rule ID', 'Enabled', 'Caller ID', 'Called Number', 'Work or After Hours', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Specific Dates', 'Action', 'Transfer Extension', 'External Number', 'Voicemail Recipient']
     df = pd.DataFrame([], columns=columns)
     output = io.BytesIO()
