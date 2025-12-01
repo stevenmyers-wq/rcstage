@@ -2,6 +2,7 @@ import io
 import json
 import pandas as pd
 import requests
+from datetime import datetime # <--- ADDED MISSING IMPORT
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
@@ -24,13 +25,13 @@ def get_user_devices(ext_id):
         return resp.get('records', []) if resp else []
     except: return []
 
-# --- AUDIT ROUTE (FIXED LOGIC) ---
+# --- AUDIT ROUTE ---
 @custom_rules_bp.route('/api/custom_rules/audit', methods=['GET'])
 @require_rc_token
 def audit_rules():
     """
     Fetches ALL custom rules.
-    FIX: Prioritizes V2 API check. Falls back to V1 only if V2 fails.
+    Prioritizes V2 API check. Falls back to V1 only if V2 fails.
     """
     try:
         # 1. Fetch All User Extensions
@@ -41,11 +42,8 @@ def audit_rules():
         extensions = ext_resp['records']
         audit_data = []
 
-        print(f"DEBUG: Auditing {len(extensions)} extensions...")
-
         for ext in extensions:
             ext_id = ext['id']
-            # Optional: Skip disabled extensions to speed up
             if ext['status'] == 'Disabled': continue
 
             rules_found = False
@@ -53,20 +51,15 @@ def audit_rules():
             # --- STRATEGY: TRY V2 FIRST (New Architecture) ---
             try:
                 v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-                # raise_error=True allows us to catch the 404/400 if V2 isn't supported
                 v2_resp = rc_api_call(v2_url, raise_error=True)
                 
                 if v2_resp and 'records' in v2_resp:
                     for rule in v2_resp['records']:
-                        # V2 returns ALL rules (Business Hours, etc). 
-                        # We include them all so you can see what is happening.
                         row = parse_rule_to_row(ext, rule, is_v2=True)
                         audit_data.append(row)
                     rules_found = True
-            
             except Exception:
-                # V2 Failed (likely a V1 account or permission issue). 
-                pass
+                pass # V2 Failed, proceed to V1 fallback
 
             # --- STRATEGY: FALLBACK TO V1 (Legacy) ---
             if not rules_found:
@@ -74,7 +67,7 @@ def audit_rules():
                     v1_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', params={'view': 'Detailed'})
                     if v1_resp and 'records' in v1_resp:
                         for rule in v1_resp['records']:
-                            if rule['type'] == 'Custom': # V1 cleanly separates 'Custom' rules
+                            if rule['type'] == 'Custom':
                                 row = parse_rule_to_row(ext, rule, is_v2=False)
                                 audit_data.append(row)
                 except:
@@ -82,7 +75,6 @@ def audit_rules():
 
         # 3. Generate Excel
         if not audit_data:
-            # If truly nothing, return a blank template so user sees headers at least
             audit_data = [{'Ext Number': 'No Data', 'Rule Name': 'No Custom Rules Found'}]
 
         df = pd.DataFrame(audit_data)
@@ -91,7 +83,6 @@ def audit_rules():
         cols = ['Ext Number', 'Ext Name', 'Rule ID', 'Rule Name', 'Enabled', 'Caller ID', 'Called Number', 
                 'Action', 'External Number', 'Transfer Extension', 'Voicemail Recipient']
         
-        # Fill missing cols
         for c in cols: 
             if c not in df.columns: df[c] = ''
             
@@ -198,5 +189,9 @@ def download_template():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Template')
+        worksheet = writer.sheets['Template']
+        for column in worksheet.columns:
+            length = max(len(str(cell.value) or "") for cell in column)
+            worksheet.column_dimensions[column[0].column_letter].width = length + 5
     output.seek(0)
     return send_file(output, download_name="custom_rules_template.xlsx", as_attachment=True, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
