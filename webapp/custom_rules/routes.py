@@ -24,7 +24,9 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Adds mandatory 'prompt' object to ALL targets (Phone, Ext, VM) to satisfy CMN-414.
+    FIX: 
+    1. Removes 'prompt' from Phone/Extension targets (matches GET trace).
+    2. Sets Voicemail prompt to 'Unavailable' (Valid Enum for Standard Greeting).
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -54,19 +56,20 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Standard Prompt Object (Required for ALL targets)
-    standard_prompt = {
+    # Define Valid Prompt for Voicemail
+    # "Unavailable" = The standard "User is not available" system greeting
+    vm_prompt = {
         "greeting": {
-            "effectiveGreetingType": "Default" 
+            "effectiveGreetingType": "Unavailable" 
         }
     }
 
-    # Fallback VM Target (The safety net)
+    # Fallback VM Target
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
         "dispatchingType": "Ringing",
-        "prompt": standard_prompt # Mandatory
+        "prompt": vm_prompt # Mandatory
     }
 
     # CASE A: Unconditional Forwarding
@@ -82,8 +85,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
-                    "dispatchingType": "Terminating",
-                    "prompt": standard_prompt # <--- ADDED HERE
+                    "dispatchingType": "Terminating" 
+                    # NO PROMPT (Matching GET Trace)
                 },
                 fallback_vm_target
             ]
@@ -101,8 +104,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
-                    "dispatchingType": "Terminating",
-                    "prompt": standard_prompt # <--- ADDED HERE
+                    "dispatchingType": "Terminating"
+                    # NO PROMPT (Matching GET Trace)
                 },
                 fallback_vm_target
             ]
@@ -121,7 +124,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
                     "dispatchingType": "Terminating",
-                    "prompt": standard_prompt # Mandatory
+                    "prompt": vm_prompt # Mandatory
                 }
             ]
         }
@@ -137,7 +140,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                      "type": "PlayAnnouncementTerminatingTarget",
                      "dispatchingType": "Terminating",
-                     "prompt": standard_prompt # Mandatory
+                     "prompt": vm_prompt 
                 },
                 fallback_vm_target
             ]
