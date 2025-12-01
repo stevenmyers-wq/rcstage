@@ -21,10 +21,10 @@ def get_extension_id(extension_number):
         return resp['records'][0]['id']
     return None
 
-def transform_v1_to_v2(v1_payload):
+def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    Adds required 'dispatchingType' to targets.
+    CRITICAL FIX: Adds mandatory VoiceMail fallback target to satisfy CMN-414.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -36,7 +36,7 @@ def transform_v1_to_v2(v1_payload):
         }
     }
     
-    # --- 1. BUILD CONDITIONS ---
+    # --- 1. CONDITIONS ---
     interaction_cond = {
         "type": "Interaction",
         "to": [],
@@ -49,56 +49,91 @@ def transform_v1_to_v2(v1_payload):
     if "callers" in v1_payload:
         interaction_cond["from"] = [item['callerId'] for item in v1_payload['callers']]
 
-    # Add condition only if it has data (V2 requirement)
-    # We append it even if empty keys exist, because 'conditions' array cannot be empty
     v2["conditions"].append(interaction_cond)
 
-    # --- 2. BUILD ACTIONS ---
+    # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Unconditional Forwarding
+    # Define the Mandatory Voicemail Fallback Target (Self)
+    fallback_vm_target = {
+        "type": "VoiceMailTerminatingTarget",
+        "mailbox": {"id": owner_ext_id},
+        "dispatchingType": "Ringing" # This is the "Ringing" backup type
+    }
+
+    # CASE A: Unconditional Forwarding
     if v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
         formatted_dest = format_phone(dest_num)
         
         action = {
             "type": "TerminatingAction",
+            # V2 requires us to define which target does what
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
-            "targets": [{
-                "type": "PhoneNumberTerminatingTarget",
-                "destination": {"phoneNumber": formatted_dest},
-                "dispatchingType": "Terminating"  # <--- REQUIRED FIX
-            }]
+            "ringingTargetType": "VoiceMailTerminatingTarget", 
+            "targets": [
+                {
+                    "type": "PhoneNumberTerminatingTarget",
+                    "destination": {"phoneNumber": formatted_dest},
+                    "dispatchingType": "Terminating" 
+                },
+                fallback_vm_target # <--- MANDATORY INCLUSION
+            ]
         }
         v2["dispatching"]["actions"].append(action)
 
-    # Transfer to Extension
+    # CASE B: Transfer to Extension
     elif v1_act == "TransferToExtension":
-        ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
+        target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "ExtensionTerminatingTarget",
-            "targets": [{
-                "type": "ExtensionTerminatingTarget",
-                "extension": {"id": ext_id},
-                "dispatchingType": "Terminating"  # <--- REQUIRED FIX
-            }]
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "targets": [
+                {
+                    "type": "ExtensionTerminatingTarget",
+                    "extension": {"id": target_ext_id},
+                    "dispatchingType": "Terminating"
+                },
+                fallback_vm_target # <--- MANDATORY INCLUSION
+            ]
         }
         v2["dispatching"]["actions"].append(action)
 
-    # Voicemail
+    # CASE C: Voicemail
     elif v1_act == "TakeMessagesOnly":
         vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "VoiceMailTerminatingTarget",
-            "targets": [{
-                "type": "VoiceMailTerminatingTarget",
-                "mailbox": {"id": vm_recipient_id},
-                "dispatchingType": "Terminating"  # <--- REQUIRED FIX
-            }]
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "targets": [
+                {
+                    "type": "VoiceMailTerminatingTarget",
+                    "mailbox": {"id": vm_recipient_id},
+                    "dispatchingType": "Terminating"
+                }
+                # No fallback needed for Voicemail as it IS the fallback
+            ]
         }
         v2["dispatching"]["actions"].append(action)
+        
+    # CASE D: Play Announcement (Simple)
+    elif v1_act == "PlayAnnouncementOnly":
+         # This one is tricky in V2 without a Preset ID, but we try standard structure
+         action = {
+            "type": "TerminatingAction",
+            "terminatingTargetType": "PlayAnnouncementTerminatingTarget",
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "targets": [
+                {
+                     "type": "PlayAnnouncementTerminatingTarget",
+                     "dispatchingType": "Terminating"
+                },
+                fallback_vm_target
+            ]
+         }
+         v2["dispatching"]["actions"].append(action)
 
     return v2
 
@@ -171,11 +206,10 @@ def update_rules():
                 results.append(f"✅ {method} Rule Ext {raw_ext_num} (V1)")
             
             except requests.exceptions.HTTPError as http_err:
-                # Check for V2 Upgrade
                 if "NewCallHandlingAndForwarding" in http_err.response.text:
                     try:
-                        # BUILD V2 PAYLOAD
-                        v2_payload = transform_v1_to_v2(payload)
+                        # BUILD V2 PAYLOAD with EXT ID
+                        v2_payload = transform_v1_to_v2(payload, ext_id)
                         
                         if not v2_payload['conditions']:
                              results.append(f"⚠️ Ext {raw_ext_num}: V2 Skipped - Conditions empty.")
