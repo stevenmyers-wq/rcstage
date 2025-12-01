@@ -1,20 +1,19 @@
 import io
 import pandas as pd
+import requests # <--- Make sure this is imported
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
-# Import logic from the sibling utils.py file
 from .utils import build_rule_payload
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
 def get_extension_id(extension_number):
-    """Helper to find an extension ID by number using the shared API handler."""
-    # Note: We must strip whitespace and convert to string to avoid errors
     ext_num = str(extension_number).strip()
-    if ext_num.endswith('.0'): # Handle Excel float conversion (e.g., 101.0 -> 101)
+    if ext_num.endswith('.0'): 
         ext_num = ext_num[:-2]
 
+    # Keep raise_error=False here since "not found" is a valid state, not a crash
     resp = rc_api_call(
         '/restapi/v1.0/account/~/extension', 
         params={'extensionNumber': ext_num}
@@ -32,7 +31,6 @@ def update_rules():
 
     file = request.files['file']
     
-    # --- 1. Load File into Pandas ---
     try:
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
@@ -43,23 +41,22 @@ def update_rules():
 
     results = []
     
-    # --- 2. Iterate and Process ---
     for index, row in df.iterrows():
         raw_ext_num = row.get('Ext Number')
         if pd.isna(raw_ext_num): 
             continue
 
         try:
-            # Resolve Extension ID
+            # 1. Resolve Extension ID
             ext_id = get_extension_id(raw_ext_num)
             if not ext_id:
                 results.append(f"Row {index}: ⚠️ Extension {raw_ext_num} not found.")
                 continue
 
-            # Build Payload (using logic from utils.py)
+            # 2. Build Payload
             payload, action_type = build_rule_payload(row, ext_id)
 
-            # Handle Complex Actions (Transfers/Forwarding)
+            # 3. Handle Complex Actions
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                 payload['unconditionalForwarding'] = {'phoneNumber': str(row.get('External Number')).strip()}
             
@@ -76,36 +73,44 @@ def update_rules():
                 if vm_id: 
                     payload['voicemail'] = {'recipient': {'id': vm_id}}
 
-            # Send to RingCentral
+            # 4. Send to RingCentral (With Error Raising)
             rule_id = row.get('Rule ID')
             
-            # If Rule ID exists, UPDATE (PUT), otherwise CREATE (POST)
             if pd.notna(rule_id) and str(rule_id).strip():
-                # Clean float rule IDs from Excel (e.g. 1234.0 -> "1234")
                 rule_id_str = str(rule_id).replace('.0', '').strip()
-                
-                resp = rc_api_call(
+                rc_api_call(
                     f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id_str}",
                     method="PUT",
-                    json=payload
+                    json=payload,
+                    raise_error=True # <--- CRITICAL CHANGE
                 )
-                if resp is not None:
-                    results.append(f"✅ Updated Rule for Ext {raw_ext_num}")
-                else:
-                    results.append(f"❌ Failed to Update Rule for Ext {raw_ext_num}")
+                results.append(f"✅ Updated Rule for Ext {raw_ext_num}")
             else:
-                resp = rc_api_call(
+                rc_api_call(
                     f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule",
                     method="POST",
-                    json=payload
+                    json=payload,
+                    raise_error=True # <--- CRITICAL CHANGE
                 )
-                if resp is not None:
-                    results.append(f"✅ Created Rule for Ext {raw_ext_num}")
-                else:
-                    results.append(f"❌ Failed to Create Rule for Ext {raw_ext_num}")
+                results.append(f"✅ Created Rule for Ext {raw_ext_num}")
+
+        except requests.exceptions.HTTPError as http_err:
+            # Extract the REAL error message from RingCentral JSON
+            error_msg = "Unknown API Error"
+            try:
+                error_data = http_err.response.json()
+                if 'message' in error_data:
+                    error_msg = error_data['message']
+                if 'errors' in error_data and len(error_data['errors']) > 0:
+                    # Append specific field error (e.g. "Parameter [schedule] is invalid")
+                    error_msg += f" ({error_data['errors'][0].get('message', '')})"
+            except:
+                error_msg = http_err.response.text
+
+            results.append(f"❌ Failed Ext {raw_ext_num}: {error_msg}")
 
         except Exception as e:
-            results.append(f"❌ Error Ext {raw_ext_num}: {str(e)}")
+            results.append(f"❌ System Error Ext {raw_ext_num}: {str(e)}")
 
     return jsonify({"logs": results})
 
@@ -128,7 +133,6 @@ def download_template():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Template')
-        # Simple auto-width adjustment
         worksheet = writer.sheets['Template']
         for column in worksheet.columns:
             length = max(len(str(cell.value) or "") for cell in column)
