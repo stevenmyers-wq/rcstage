@@ -24,7 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    Adds mandatory 'prompt' object to all targets to satisfy CMN-414.
+    FIX: Only adds 'prompt' to VoiceMail targets. Uses 'None' type for default greeting.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -54,18 +54,20 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Standard Objects required by V2
-    default_prompt = {
+    # Define Standard Objects
+    # "None" tells RC to use the system default/no custom greeting
+    vm_prompt = {
         "greeting": {
-            "effectiveGreetingType": "Default"
+            "effectiveGreetingType": "None" 
         }
     }
 
+    # Fallback VM Target (Required by V2 for safety)
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
         "dispatchingType": "Ringing",
-        "prompt": default_prompt # <--- MANDATORY ADDITION
+        "prompt": vm_prompt # Mandatory for VM
     }
 
     # CASE A: Unconditional Forwarding
@@ -81,8 +83,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
-                    "dispatchingType": "Terminating",
-                    "prompt": default_prompt # <--- MANDATORY ADDITION
+                    "dispatchingType": "Terminating" 
+                    # No prompt for Phone Numbers
                 },
                 fallback_vm_target
             ]
@@ -100,8 +102,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
-                    "dispatchingType": "Terminating",
-                    "prompt": default_prompt # <--- MANDATORY ADDITION
+                    "dispatchingType": "Terminating"
+                    # No prompt for Extension Transfer
                 },
                 fallback_vm_target
             ]
@@ -120,7 +122,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
                     "dispatchingType": "Terminating",
-                    "prompt": default_prompt # <--- MANDATORY ADDITION
+                    "prompt": vm_prompt # Mandatory for VM
                 }
             ]
         }
@@ -128,6 +130,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         
     # CASE D: Play Announcement
     elif v1_act == "PlayAnnouncementOnly":
+         # PlayAnnouncement definitely needs a prompt, using None as placeholder
          action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PlayAnnouncementTerminatingTarget",
@@ -136,7 +139,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                      "type": "PlayAnnouncementTerminatingTarget",
                      "dispatchingType": "Terminating",
-                     "prompt": default_prompt # <--- MANDATORY ADDITION
+                     "prompt": vm_prompt 
                 },
                 fallback_vm_target
             ]
