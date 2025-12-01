@@ -1,0 +1,148 @@
+<div class="tool-content">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2>Extension Renamer</h2>
+            <p class="text-muted">Bulk edit RingCentral extension names using Excel.</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">1. Download Template</h5>
+        </div>
+        <div class="card-body">
+            <p>Fetch all current extensions and download them as an Excel file.</p>
+            <button id="renamer-download-btn" class="btn btn-primary" onclick="renamerDownloadTemplate()">
+                Fetch & Download Template
+            </button>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">2. Upload & Process</h5>
+        </div>
+        <div class="card-body">
+            <p>Upload your edited Excel file. The system will process changes one by one.</p>
+            <div class="mb-3">
+                <input type="file" class="form-control" id="renamer-file-input" accept=".xlsx" />
+            </div>
+            <button id="renamer-process-btn" class="btn btn-success" onclick="renamerProcessFile()">
+                Start Updating
+            </button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Activity Log</h5>
+        </div>
+        <div class="card-body bg-dark text-light" style="height: 300px; overflow-y: scroll; font-family: monospace;" id="renamer-logs">
+            </div>
+    </div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+<script>
+    function renamerLog(msg, type="info") {
+        const box = document.getElementById('renamer-logs');
+        const entry = document.createElement('div');
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        
+        if (type === 'success') entry.style.color = '#4caf50';
+        if (type === 'error') entry.style.color = '#ff5252';
+        else entry.style.color = '#81d4fa';
+
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function renamerDownloadTemplate() {
+        const btn = document.getElementById('renamer-download-btn');
+        btn.disabled = true;
+        renamerLog("Fetching extensions list...", "info");
+
+        try {
+            const res = await fetch('/api/renamer/list-extensions');
+            if (!res.ok) throw new Error("Failed to fetch extensions");
+            
+            const extensions = await res.json();
+            renamerLog(`Fetched ${extensions.length} extensions. Generating Excel...`, "info");
+
+            const rows = extensions.map(ext => ({
+                "ID (DO NOT EDIT)": ext.id,
+                "Type (DO NOT EDIT)": ext.type,
+                "Extension Number": ext.extensionNumber,
+                "Current Name": ext.name,
+                "New Name": ext.name // User edits this column
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Extensions");
+            XLSX.writeFile(wb, "RC_Extensions_Template.xlsx");
+            
+            renamerLog("Download complete.", "success");
+        } catch (err) {
+            renamerLog("Error: " + err.message, "error");
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function renamerProcessFile() {
+        const fileInput = document.getElementById('renamer-file-input');
+        if (!fileInput.files[0]) return alert("Please select a file first.");
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            
+            renamerLog(`Found ${jsonData.length} rows. Starting update process...`, "info");
+            
+            // Iterate through rows sequentially
+            for (const row of jsonData) {
+                const id = row["ID (DO NOT EDIT)"];
+                const type = row["Type (DO NOT EDIT)"];
+                const extNum = row["Extension Number"];
+                const newName = row["New Name"];
+                const currentName = row["Current Name"];
+
+                if (!id) continue; // Skip invalid rows
+
+                // Only update if name has changed
+                if (newName && newName !== currentName) {
+                    await renamerUpdateSingle(id, type, extNum, newName);
+                    
+                    // Rate Limit Delay: Wait 3 seconds between calls to avoid hitting API limits
+                    await new Promise(r => setTimeout(r, 3000)); 
+                }
+            }
+            renamerLog("--- Batch Process Complete ---", "success");
+        };
+        reader.readAsArrayBuffer(fileInput.files[0]);
+    }
+
+    async function renamerUpdateSingle(id, type, extNum, newName) {
+        try {
+            const res = await fetch('/api/renamer/update-extension', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id, type, newName })
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                renamerLog(`Updated Ext ${extNum}: ${newName}`, "success");
+            } else {
+                renamerLog(`Failed Ext ${extNum}: ${data.error}`, "error");
+            }
+        } catch (err) {
+            renamerLog(`Network Error on Ext ${extNum}`, "error");
+        }
+    }
+</script>
