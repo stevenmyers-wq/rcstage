@@ -1,47 +1,76 @@
-<div class="tab-pane fade" id="custom-rules" role="tabpanel">
-    <div class="card mt-3">
-        <div class="card-body">
-            <div class="flex justify-between items-center mb-4">
-                <h5 class="text-xl font-bold text-gray-800">Bulk Custom Rule Updater</h5>
-                <a href="{{ url_for('custom_rules.download_template') }}" class="bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 px-4 rounded inline-flex items-center transition">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Download Template
-                </a>
+<div class="space-y-6 animate-fade-in">
+    
+    <div>
+        <h2 class="text-2xl font-bold text-blue-700">Custom Rules Manager</h2>
+        <p class="text-gray-600 mt-1">Bulk create or update answering rules via CSV/Excel.</p>
+    </div>
+
+    <div class="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg shadow-sm">
+        <h3 class="font-semibold text-blue-800 mb-2">Instructions</h3>
+        <ol class="list-decimal list-inside text-gray-700 space-y-1 text-sm">
+            <li>Download the template to see the required format.</li>
+            <li>Fill in <strong>Ext Number</strong> (Required) and rule details.</li>
+            <li>Leave <strong>Rule ID</strong> empty to create a <em>New</em> rule. Fill it in to <em>Update</em> an existing one.</li>
+            <li>Upload your file and click Process.</li>
+        </ol>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
+            <div>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">1</div>
+                    <h3 class="text-lg font-bold text-gray-800">Get Template</h3>
+                </div>
+                <p class="text-gray-600 text-sm mb-6">Download a pre-formatted Excel file with column headers and examples.</p>
             </div>
+            
+            <a href="/api/custom_rules/template" 
+               class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm no-underline">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Template
+            </a>
+        </div>
 
-            <p class="text-sm text-gray-600 mb-4">
-                Upload an Excel/CSV file to update answering rules. 
-                Leave <strong>Rule ID</strong> empty to create new rules.
-            </p>
-
-            <form id="rulesUploadForm" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-gray-200">
-                    <div>
-                        <label for="custom_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
-                        <input type="text" id="custom_client_id" name="client_id" required 
-                               class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                               placeholder="Enter Client ID">
-                    </div>
-                    <div>
-                        <label for="custom_client_secret" class="block text-sm font-medium text-gray-700">Client Secret</label>
-                        <input type="password" id="custom_client_secret" name="client_secret" 
-                               class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                               placeholder="Optional (if PKCE)">
-                    </div>
-                </div>
-
+        <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
+            <form id="rulesUploadForm">
                 <div>
-                    <label for="ruleFile" class="block text-sm font-medium text-gray-700">Select File</label>
-                    <input class="mt-1 block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none p-2" 
-                           type="file" id="ruleFile" name="file" accept=".csv, .xlsx" required>
+                    <div class="flex items-center gap-2 mb-3">
+                        <div class="bg-green-100 text-green-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">2</div>
+                        <h3 class="text-lg font-bold text-gray-800">Upload & Process</h3>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4">Upload your completed Excel or CSV file.</p>
+                    
+                    <input type="file" id="ruleFile" name="file" accept=".csv, .xlsx" required
+                           class="block w-full text-sm text-gray-500
+                                  file:mr-4 file:py-2 file:px-4
+                                  file:rounded-full file:border-0
+                                  file:text-sm file:font-semibold
+                                  file:bg-blue-50 file:text-blue-700
+                                  hover:file:bg-blue-100 cursor-pointer mb-2"/>
                 </div>
 
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full transition">
+                <button type="submit" id="rulesProcessBtn"
+                        class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
                     Process Rules
                 </button>
             </form>
-            
-            <div id="ruleLogs" class="mt-4 p-4 bg-gray-50 rounded border border-gray-200 font-mono text-sm text-gray-700 h-64 overflow-y-auto whitespace-pre-line">Waiting for input...</div>
+        </div>
+    </div>
+
+    <div class="card p-0 overflow-hidden shadow-md">
+        <div class="bg-gray-800 text-gray-200 px-4 py-2 text-xs font-mono border-b border-gray-700 flex justify-between items-center">
+            <span class="font-bold">ACTIVITY LOG</span>
+            <span class="text-gray-500">Real-time updates</span>
+        </div>
+        <div id="ruleLogs" class="bg-gray-900 text-green-400 p-4 font-mono text-sm h-64 overflow-y-auto leading-relaxed whitespace-pre-line">
+            <div class="text-gray-500 italic opacity-50">Waiting for user action...</div>
         </div>
     </div>
 </div>
@@ -50,43 +79,53 @@
 document.getElementById('rulesUploadForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const btn = e.target.querySelector('button');
+    const btn = document.getElementById('rulesProcessBtn');
     const logDiv = document.getElementById('ruleLogs');
     
+    // UI State: Processing
     btn.disabled = true;
-    btn.textContent = 'Processing...';
-    logDiv.textContent = 'Starting upload...';
-    logDiv.className = "mt-4 p-4 bg-gray-50 rounded border border-gray-200 font-mono text-sm text-gray-700 h-64 overflow-y-auto whitespace-pre-line";
+    const originalBtnText = btn.innerHTML;
+    btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...`;
+    
+    logDiv.innerHTML = '<span class="text-blue-300">Starting upload... please wait.</span>';
 
     try {
         const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
         
-        // Check for HTML Error Response
+        // Handle Server Errors (HTML response instead of JSON)
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") === -1) {
             const text = await res.text();
-            logDiv.className = "mt-4 p-4 bg-red-50 rounded border border-red-200 font-mono text-sm text-red-800 h-64 overflow-y-auto whitespace-pre-line";
-            logDiv.textContent = `❌ Server Error (HTML Response):\n${text.substring(0, 500)}...`;
+            logDiv.innerHTML = `<span class="text-red-400">❌ Server Error: The server returned an HTML error page instead of JSON. Check your file format.</span>`;
             throw new Error("Server returned HTML");
         }
 
         const data = await res.json();
         
         if (res.ok) {
-            logDiv.textContent = data.logs ? data.logs.join('\n') : "Success!";
-            logDiv.className = "mt-4 p-4 bg-green-50 rounded border border-green-200 font-mono text-sm text-green-800 h-64 overflow-y-auto whitespace-pre-line";
+            // Success
+            if (data.logs && data.logs.length > 0) {
+                logDiv.innerHTML = data.logs.map(log => {
+                    if(log.includes("❌")) return `<div class="text-red-400">${log}</div>`;
+                    if(log.includes("⚠️")) return `<div class="text-yellow-400">${log}</div>`;
+                    return `<div class="text-green-400">${log}</div>`;
+                }).join('');
+            } else {
+                logDiv.innerHTML = '<span class="text-green-400">Process complete. No actions taken.</span>';
+            }
         } else {
-            logDiv.className = "mt-4 p-4 bg-red-50 rounded border border-red-200 font-mono text-sm text-red-800 h-64 overflow-y-auto whitespace-pre-line";
+            // API Error
             const details = data.details || data.error || "Unknown Error";
-            logDiv.textContent = `❌ Error: ${details}`;
+            logDiv.innerHTML = `<span class="text-red-400">❌ Error: ${details}</span>`;
         }
     } catch (err) {
         if (err.message !== "Server returned HTML") {
-            logDiv.textContent = "System Error: " + err.message;
+            logDiv.innerHTML = `<span class="text-red-400">System Error: ${err.message}</span>`;
         }
     }
     
+    // UI State: Reset
     btn.disabled = false;
-    btn.textContent = 'Process Rules';
+    btn.innerHTML = originalBtnText;
 });
 </script>
