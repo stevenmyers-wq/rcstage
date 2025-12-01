@@ -51,6 +51,10 @@ def create_app():
         from .custom_rules import routes as custom_rules_routes
         app.register_blueprint(custom_rules_routes.custom_rules_bp)
 
+        # Extension Renamer routes
+        from .extension_renamer import routes as extension_renamer_routes
+        app.register_blueprint(extension_renamer_routes.renamer_bp)
+
         # (When you add another new feature, you'll import and register its blueprint here)
 
     return app
