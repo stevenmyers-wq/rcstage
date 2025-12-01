@@ -24,7 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Uses 'Unavailable' (System Default) instead of 'Default' (Invalid).
+    FIX: Uses 'Preset' + ID 590080 (System VM Greeting) matching your successful API trace.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -54,15 +54,18 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Prompt for Voicemail
-    # "Unavailable" is the correct API Enum for "System Default Greeting"
+    # Define Standard Prompt using PRESET ID from your trace
+    # 590080 = Standard System Voicemail Greeting
     vm_prompt = {
         "greeting": {
-            "effectiveGreetingType": "Unavailable" 
+            "effectiveGreetingType": "Preset",
+            "preset": {
+                "id": "590080" 
+            }
         }
     }
 
-    # Fallback VM Target (Voicemail is the "Ringing" target)
+    # Fallback VM Target (The safety net)
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
@@ -79,8 +82,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                # FIX: Voicemail Target MUST come first (matches your successful trace)
-                fallback_vm_target, 
+                # FIX: Fallback Voicemail First (matches trace)
+                fallback_vm_target,
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
@@ -99,7 +102,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "ExtensionTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                # FIX: Voicemail Target MUST come first
+                # FIX: Fallback Voicemail First
                 fallback_vm_target,
                 {
                     "type": "ExtensionTerminatingTarget",
