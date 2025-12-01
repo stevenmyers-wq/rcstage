@@ -24,8 +24,8 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Removes Voicemail Fallback for Unconditional Forwarding.
-    Unconditional Forwarding must be a single-target TerminatingAction.
+    FIX: Re-adds Voicemail Fallback but REMOVES explicit 'dispatchingType' from it
+    to strictly match the successful 200 OK trace.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -59,12 +59,19 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     vm_prompt = {
         "greeting": {
             "effectiveGreetingType": "Preset",
-            "preset": {"id": "590080"} # System Standard
+            "preset": {"id": "590080"} 
         }
     }
 
-    # CASE A: Unconditional Forwarding (Blind Transfer to External)
-    # MUST be Single Target. No Fallback.
+    # Fallback VM Target object
+    # STRICT FIX: NO 'dispatchingType' here. The API infers it from ringingTargetType.
+    fallback_vm_target = {
+        "type": "VoiceMailTerminatingTarget",
+        "mailbox": {"id": owner_ext_id},
+        "prompt": vm_prompt 
+    }
+
+    # CASE A: Unconditional Forwarding
     if v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
         formatted_dest = format_phone(dest_num)
@@ -72,32 +79,31 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
-            # REMOVED ringingTargetType (Not allowed for pure forwarding)
+            "ringingTargetType": "VoiceMailTerminatingTarget", # REQUIRED
             "targets": [
+                fallback_vm_target, # Fallback First
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
-                    "dispatchingType": "Terminating"
-                    # NO PROMPT
+                    "dispatchingType": "Terminating" # Required here
                 }
             ]
         }
         v2["dispatching"]["actions"].append(action)
 
-    # CASE B: Transfer to Extension (Blind Transfer to Internal)
-    # MUST be Single Target. No Fallback.
+    # CASE B: Transfer to Extension
     elif v1_act == "TransferToExtension":
         target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "ExtensionTerminatingTarget",
-            # REMOVED ringingTargetType
+            "ringingTargetType": "VoiceMailTerminatingTarget", # REQUIRED
             "targets": [
+                fallback_vm_target, # Fallback First
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
-                    "dispatchingType": "Terminating"
-                    # NO PROMPT
+                    "dispatchingType": "Terminating" # Required here
                 }
             ]
         }
@@ -109,13 +115,13 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "VoiceMailTerminatingTarget",
-            # For pure VM, it is the terminating target.
+            "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
                 {
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
-                    "dispatchingType": "Terminating", 
-                    "prompt": vm_prompt # Mandatory
+                    "dispatchingType": "Terminating", # Main target needs this
+                    "prompt": vm_prompt
                 }
             ]
         }
@@ -126,7 +132,9 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
          action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PlayAnnouncementTerminatingTarget",
+            "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
+                fallback_vm_target,
                 {
                      "type": "PlayAnnouncementTerminatingTarget",
                      "dispatchingType": "Terminating",
