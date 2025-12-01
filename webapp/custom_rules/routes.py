@@ -1,6 +1,6 @@
 import io
 import pandas as pd
-import requests # <--- Make sure this is imported
+import requests
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
@@ -13,7 +13,6 @@ def get_extension_id(extension_number):
     if ext_num.endswith('.0'): 
         ext_num = ext_num[:-2]
 
-    # Keep raise_error=False here since "not found" is a valid state, not a crash
     resp = rc_api_call(
         '/restapi/v1.0/account/~/extension', 
         params={'extensionNumber': ext_num}
@@ -73,40 +72,52 @@ def update_rules():
                 if vm_id: 
                     payload['voicemail'] = {'recipient': {'id': vm_id}}
 
-            # 4. Send to RingCentral (With Error Raising)
+            # 4. Prepare API Paths (V1 Standard vs V2 New Call Handling)
             rule_id = row.get('Rule ID')
+            is_update = pd.notna(rule_id) and str(rule_id).strip()
             
-            if pd.notna(rule_id) and str(rule_id).strip():
-                rule_id_str = str(rule_id).replace('.0', '').strip()
-                rc_api_call(
-                    f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id_str}",
-                    method="PUT",
-                    json=payload,
-                    raise_error=True # <--- CRITICAL CHANGE
-                )
-                results.append(f"✅ Updated Rule for Ext {raw_ext_num}")
-            else:
-                rc_api_call(
-                    f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule",
-                    method="POST",
-                    json=payload,
-                    raise_error=True # <--- CRITICAL CHANGE
-                )
-                results.append(f"✅ Created Rule for Ext {raw_ext_num}")
+            # V1 Paths
+            v1_base = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
+            v1_url = f"{v1_base}/{str(rule_id).replace('.0', '').strip()}" if is_update else v1_base
+            
+            # V2 Paths (New Call Handling / Interaction Rules)
+            # Note: V2 uses 'accounts' (plural) and specific 'comm-handling' path
+            v2_base = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
+            v2_url = f"{v2_base}/{str(rule_id).replace('.0', '').strip()}" if is_update else v2_base
+
+            method = "PUT" if is_update else "POST"
+
+            try:
+                # Attempt V1 API first
+                rc_api_call(v1_url, method=method, json=payload, raise_error=True)
+                results.append(f"✅ {method} Rule Ext {raw_ext_num} (V1)")
+            
+            except requests.exceptions.HTTPError as http_err:
+                # Check for "NewCallHandlingAndForwarding" feature error
+                error_text = http_err.response.text
+                if "NewCallHandlingAndForwarding" in error_text:
+                    # Retry with V2 API
+                    try:
+                        rc_api_call(v2_url, method=method, json=payload, raise_error=True)
+                        results.append(f"✅ {method} Rule Ext {raw_ext_num} (V2)")
+                    except Exception as v2_err:
+                         results.append(f"❌ Failed V2 Retry Ext {raw_ext_num}: {str(v2_err)}")
+                else:
+                    # Re-raise other errors (like 400 Bad Request) to be caught below
+                    raise http_err
 
         except requests.exceptions.HTTPError as http_err:
-            # Extract the REAL error message from RingCentral JSON
+            # Extract detailed error message
             error_msg = "Unknown API Error"
             try:
                 error_data = http_err.response.json()
                 if 'message' in error_data:
                     error_msg = error_data['message']
                 if 'errors' in error_data and len(error_data['errors']) > 0:
-                    # Append specific field error (e.g. "Parameter [schedule] is invalid")
                     error_msg += f" ({error_data['errors'][0].get('message', '')})"
             except:
                 error_msg = http_err.response.text
-
+            
             results.append(f"❌ Failed Ext {raw_ext_num}: {error_msg}")
 
         except Exception as e:
