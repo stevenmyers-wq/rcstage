@@ -52,9 +52,10 @@ def build_rule_payload(row, ext_id):
     return payload, api_action
 
 def transform_v1_to_v2(v1):
+    """Maps V1 keys to V2 nested structure."""
     v2 = {"name": v1.get("name"), "enabled": v1.get("enabled"), "conditions": {}, "actions": []}
     
-    # Map Conditions
+    # Map Conditions (Exact key match from V1)
     if "callers" in v1: v2["conditions"]["callers"] = v1["callers"]
     if "calledNumbers" in v1: v2["conditions"]["calledNumbers"] = v1["calledNumbers"]
     if "schedule" in v1: v2["conditions"]["schedule"] = v1["schedule"]
