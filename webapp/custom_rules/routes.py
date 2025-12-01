@@ -24,7 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    CRITICAL FIX: Adds mandatory VoiceMail fallback target to satisfy CMN-414.
+    Adds mandatory 'prompt' object to all targets to satisfy CMN-414.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -54,11 +54,18 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define the Mandatory Voicemail Fallback Target (Self)
+    # Define Standard Objects required by V2
+    default_prompt = {
+        "greeting": {
+            "effectiveGreetingType": "Default"
+        }
+    }
+
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
-        "dispatchingType": "Ringing" # This is the "Ringing" backup type
+        "dispatchingType": "Ringing",
+        "prompt": default_prompt # <--- MANDATORY ADDITION
     }
 
     # CASE A: Unconditional Forwarding
@@ -68,16 +75,16 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         
         action = {
             "type": "TerminatingAction",
-            # V2 requires us to define which target does what
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
-            "ringingTargetType": "VoiceMailTerminatingTarget", 
+            "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
-                    "dispatchingType": "Terminating" 
+                    "dispatchingType": "Terminating",
+                    "prompt": default_prompt # <--- MANDATORY ADDITION
                 },
-                fallback_vm_target # <--- MANDATORY INCLUSION
+                fallback_vm_target
             ]
         }
         v2["dispatching"]["actions"].append(action)
@@ -93,9 +100,10 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
-                    "dispatchingType": "Terminating"
+                    "dispatchingType": "Terminating",
+                    "prompt": default_prompt # <--- MANDATORY ADDITION
                 },
-                fallback_vm_target # <--- MANDATORY INCLUSION
+                fallback_vm_target
             ]
         }
         v2["dispatching"]["actions"].append(action)
@@ -111,16 +119,15 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                 {
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
-                    "dispatchingType": "Terminating"
+                    "dispatchingType": "Terminating",
+                    "prompt": default_prompt # <--- MANDATORY ADDITION
                 }
-                # No fallback needed for Voicemail as it IS the fallback
             ]
         }
         v2["dispatching"]["actions"].append(action)
         
-    # CASE D: Play Announcement (Simple)
+    # CASE D: Play Announcement
     elif v1_act == "PlayAnnouncementOnly":
-         # This one is tricky in V2 without a Preset ID, but we try standard structure
          action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PlayAnnouncementTerminatingTarget",
@@ -128,7 +135,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "targets": [
                 {
                      "type": "PlayAnnouncementTerminatingTarget",
-                     "dispatchingType": "Terminating"
+                     "dispatchingType": "Terminating",
+                     "prompt": default_prompt # <--- MANDATORY ADDITION
                 },
                 fallback_vm_target
             ]
