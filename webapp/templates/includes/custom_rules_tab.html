@@ -12,6 +12,7 @@
             <li>Fill in <strong>Ext Number</strong> (Required) and rule details.</li>
             <li>Leave <strong>Rule ID</strong> empty to create a <em>New</em> rule. Fill it in to <em>Update</em> an existing one.</li>
             <li>Upload your file and click Process.</li>
+            <li>The tool will first try to add the rule using the V1 API, if it fails, it will try with V2 (New Call Handling)</li>
         </ol>
     </div>
 
@@ -129,3 +130,4 @@ document.getElementById('rulesUploadForm').addEventListener('submit', async (e) 
     btn.innerHTML = originalBtnText;
 });
 </script>
+
