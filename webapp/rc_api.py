@@ -1,42 +1,54 @@
-# webapp/rc_api.py
-import time
 import requests
 from flask import session, current_app
-from webapp.auth_utils import get_rc_access_token
 
-def rc_api_call(endpoint, method="GET", body=None, params=None) -> dict | None:
-    """Makes a generic, authenticated call to the RingCentral API with session logging."""
-    rc_token = get_rc_access_token()
-    
-    if 'api_log' not in session:
-        session['api_log'] = []
-
-    if not rc_token:
-        session['api_log'].append({'status': 'FAIL', 'endpoint': endpoint, 'detail': 'Token missing'})
-        session.modified = True
+def rc_api_call(endpoint, params=None, method='GET', **kwargs):
+    """
+    Generic RingCentral API handler.
+    Automatically adds Authorization header from session.
+    Supports GET, POST, PUT, DELETE via the 'method' argument.
+    Pass JSON data using the 'json' argument.
+    """
+    access_token = session.get('rc_access_token')
+    if not access_token:
+        print("Error: No access token in session.")
         return None
 
-    url = f"{current_app.config['RC_SERVER_URL']}{endpoint}"
-    headers = {"Authorization": f"Bearer {rc_token}", "Accept": "application/json"}
-    start_time = time.time()
+    # Get Base URL from config (default to Prod if missing)
+    base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
     
+    # Ensure endpoint format
+    if not endpoint.startswith('/'):
+        endpoint = '/' + endpoint
+    url = f"{base_url}{endpoint}"
+
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
     try:
-        response = requests.request(method.upper(), url, headers=headers, params=params, json=body)
-        # Gracefully handle 404 Not Found as a valid "empty" response
-        if response.status_code == 404:
-            return None
+        # We pass **kwargs to allow arguments like 'json' or 'data' to flow through to requests
+        response = requests.request(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            **kwargs 
+        )
         
+        # Handle 204 No Content (Common in updates)
+        if response.status_code == 204:
+            return {"success": True}
+
+        # Raise error for 4xx/5xx to be caught by the except block
         response.raise_for_status()
-        duration = (time.time() - start_time) * 1000
-        session['api_log'].append({'status': 'SUCCESS', 'endpoint': endpoint, 'code': response.status_code, 'duration': f"{duration:.0f}ms", 'method': method})
-        session.modified = True
-        return response.json() if response.content else {"status": "success", "content_empty": True}
-    except requests.exceptions.RequestException as e:
-        duration = (time.time() - start_time) * 1000
-        status_code = e.response.status_code if e.response is not None else 'N/A'
-        response_text = e.response.text if e.response is not None else 'No response body'
-        # Don't log expected 404s as failures
-        if status_code != 404:
-            session['api_log'].append({'status': 'FAIL', 'endpoint': endpoint, 'code': status_code, 'duration': f"{duration:.0f}ms", 'method': method, 'detail': response_text[:100]})
-            session.modified = True
+            
+        return response.json()
+
+    except Exception as e:
+        print(f"RC API Error [{method} {endpoint}]: {e}")
+        # If response exists, print the detailed error from RingCentral
+        if 'response' in locals() and response is not None:
+            print(f"Details: {response.text}")
         return None
