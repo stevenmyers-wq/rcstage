@@ -24,7 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Only adds 'prompt' to VoiceMail targets. Uses 'None' type for default greeting.
+    FIX: Sets effectiveGreetingType to 'Default' (valid) instead of 'None' (invalid).
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -55,10 +55,10 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     v1_act = v1_payload.get("callHandlingAction")
     
     # Define Standard Objects
-    # "None" tells RC to use the system default/no custom greeting
+    # FIX: Use "Default" instead of "None"
     vm_prompt = {
         "greeting": {
-            "effectiveGreetingType": "None" 
+            "effectiveGreetingType": "Default" 
         }
     }
 
@@ -67,7 +67,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
         "dispatchingType": "Ringing",
-        "prompt": vm_prompt # Mandatory for VM
+        "prompt": vm_prompt # Mandatory
     }
 
     # CASE A: Unconditional Forwarding
@@ -122,7 +122,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
                     "dispatchingType": "Terminating",
-                    "prompt": vm_prompt # Mandatory for VM
+                    "prompt": vm_prompt # Mandatory
                 }
             ]
         }
@@ -130,7 +130,6 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         
     # CASE D: Play Announcement
     elif v1_act == "PlayAnnouncementOnly":
-         # PlayAnnouncement definitely needs a prompt, using None as placeholder
          action = {
             "type": "TerminatingAction",
             "terminatingTargetType": "PlayAnnouncementTerminatingTarget",
