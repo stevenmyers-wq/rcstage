@@ -4,7 +4,8 @@ import requests
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
-from .utils import build_rule_payload
+# Import the new transformer function
+from .utils import build_rule_payload, transform_v1_to_v2
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
@@ -52,10 +53,10 @@ def update_rules():
                 results.append(f"Row {index}: ⚠️ Extension {raw_ext_num} not found.")
                 continue
 
-            # 2. Build Payload
+            # 2. Build Payload (V1 format initially)
             payload, action_type = build_rule_payload(row, ext_id)
 
-            # 3. Handle Complex Actions
+            # 3. Handle Complex Actions (Add details to V1 Payload)
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                 payload['unconditionalForwarding'] = {'phoneNumber': str(row.get('External Number')).strip()}
             
@@ -72,7 +73,7 @@ def update_rules():
                 if vm_id: 
                     payload['voicemail'] = {'recipient': {'id': vm_id}}
 
-            # 4. Prepare API Paths (V1 Standard vs V2 New Call Handling)
+            # 4. Prepare API Paths
             rule_id = row.get('Rule ID')
             is_update = pd.notna(rule_id) and str(rule_id).strip()
             
@@ -80,8 +81,7 @@ def update_rules():
             v1_base = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
             v1_url = f"{v1_base}/{str(rule_id).replace('.0', '').strip()}" if is_update else v1_base
             
-            # V2 Paths (New Call Handling / Interaction Rules)
-            # Note: V2 uses 'accounts' (plural) and specific 'comm-handling' path
+            # V2 Paths
             v2_base = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
             v2_url = f"{v2_base}/{str(rule_id).replace('.0', '').strip()}" if is_update else v2_base
 
@@ -96,18 +96,21 @@ def update_rules():
                 # Check for "NewCallHandlingAndForwarding" feature error
                 error_text = http_err.response.text
                 if "NewCallHandlingAndForwarding" in error_text:
-                    # Retry with V2 API
+                    # Retry with V2 API using the TRANSFORMED payload
                     try:
-                        rc_api_call(v2_url, method=method, json=payload, raise_error=True)
+                        v2_payload = transform_v1_to_v2(payload) # <--- CONVERT HERE
+                        rc_api_call(v2_url, method=method, json=v2_payload, raise_error=True)
                         results.append(f"✅ {method} Rule Ext {raw_ext_num} (V2)")
                     except Exception as v2_err:
-                         results.append(f"❌ Failed V2 Retry Ext {raw_ext_num}: {str(v2_err)}")
+                         # Detailed error logging for V2 failures
+                         err_msg = str(v2_err)
+                         if hasattr(v2_err, 'response') and v2_err.response is not None:
+                             err_msg = f"{v2_err.response.status_code} {v2_err.response.text}"
+                         results.append(f"❌ Failed V2 Retry Ext {raw_ext_num}: {err_msg}")
                 else:
-                    # Re-raise other errors (like 400 Bad Request) to be caught below
                     raise http_err
 
         except requests.exceptions.HTTPError as http_err:
-            # Extract detailed error message
             error_msg = "Unknown API Error"
             try:
                 error_data = http_err.response.json()
