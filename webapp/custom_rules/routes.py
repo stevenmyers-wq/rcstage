@@ -24,9 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: 
-    1. Removes 'prompt' from Phone/Extension targets (matches GET trace).
-    2. Sets Voicemail prompt to 'Unavailable' (Valid Enum for Standard Greeting).
+    Matches the "200 OK" trace provided by the user.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -56,20 +54,19 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Valid Prompt for Voicemail
-    # "Unavailable" = The standard "User is not available" system greeting
+    # Define Standard Prompt for Voicemail (Required)
     vm_prompt = {
         "greeting": {
-            "effectiveGreetingType": "Unavailable" 
+            "effectiveGreetingType": "Default"
         }
     }
 
-    # Fallback VM Target
+    # Fallback VM Target (The "Ringing" Target)
+    # FIX: Removed 'dispatchingType': 'Ringing' to match your successful trace.
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
-        "dispatchingType": "Ringing",
-        "prompt": vm_prompt # Mandatory
+        "prompt": vm_prompt 
     }
 
     # CASE A: Unconditional Forwarding
@@ -82,13 +79,14 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
+                # FIX: Voicemail target comes FIRST in the array (matching your trace)
+                fallback_vm_target,
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
                     "dispatchingType": "Terminating" 
-                    # NO PROMPT (Matching GET Trace)
-                },
-                fallback_vm_target
+                    # NO PROMPT
+                }
             ]
         }
         v2["dispatching"]["actions"].append(action)
@@ -101,18 +99,19 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "ExtensionTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
+                # FIX: Voicemail target comes FIRST
+                fallback_vm_target,
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
                     "dispatchingType": "Terminating"
-                    # NO PROMPT (Matching GET Trace)
-                },
-                fallback_vm_target
+                    # NO PROMPT
+                }
             ]
         }
         v2["dispatching"]["actions"].append(action)
 
-    # CASE C: Voicemail
+    # CASE C: Voicemail Only
     elif v1_act == "TakeMessagesOnly":
         vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
         action = {
@@ -124,7 +123,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
                     "dispatchingType": "Terminating",
-                    "prompt": vm_prompt # Mandatory
+                    "prompt": vm_prompt
                 }
             ]
         }
@@ -137,12 +136,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "PlayAnnouncementTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
+                fallback_vm_target,
                 {
                      "type": "PlayAnnouncementTerminatingTarget",
                      "dispatchingType": "Terminating",
                      "prompt": vm_prompt 
-                },
-                fallback_vm_target
+                }
             ]
          }
          v2["dispatching"]["actions"].append(action)
