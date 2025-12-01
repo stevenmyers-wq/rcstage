@@ -2,7 +2,7 @@ import io
 import json
 import pandas as pd
 import requests
-from datetime import datetime # <--- ADDED MISSING IMPORT
+from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
@@ -29,10 +29,6 @@ def get_user_devices(ext_id):
 @custom_rules_bp.route('/api/custom_rules/audit', methods=['GET'])
 @require_rc_token
 def audit_rules():
-    """
-    Fetches ALL custom rules.
-    Prioritizes V2 API check. Falls back to V1 only if V2 fails.
-    """
     try:
         # 1. Fetch All User Extensions
         ext_resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000, 'type': 'User'})
@@ -48,7 +44,7 @@ def audit_rules():
 
             rules_found = False
 
-            # --- STRATEGY: TRY V2 FIRST (New Architecture) ---
+            # --- TRY V2 FIRST ---
             try:
                 v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
                 v2_resp = rc_api_call(v2_url, raise_error=True)
@@ -59,9 +55,9 @@ def audit_rules():
                         audit_data.append(row)
                     rules_found = True
             except Exception:
-                pass # V2 Failed, proceed to V1 fallback
+                pass 
 
-            # --- STRATEGY: FALLBACK TO V1 (Legacy) ---
+            # --- FALLBACK TO V1 ---
             if not rules_found:
                 try:
                     v1_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', params={'view': 'Detailed'})
@@ -73,14 +69,15 @@ def audit_rules():
                 except:
                     pass 
 
-        # 3. Generate Excel
         if not audit_data:
             audit_data = [{'Ext Number': 'No Data', 'Rule Name': 'No Custom Rules Found'}]
 
         df = pd.DataFrame(audit_data)
         
-        # Ensure Column Order
-        cols = ['Ext Number', 'Ext Name', 'Rule ID', 'Rule Name', 'Enabled', 'Caller ID', 'Called Number', 
+        # UPDATED COLUMN ORDER TO INCLUDE SCHEDULE
+        cols = ['Ext Number', 'Ext Name', 'Rule ID', 'Rule Name', 'Enabled', 
+                'Caller ID', 'Called Number', 
+                'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Specific Dates',
                 'Action', 'External Number', 'Transfer Extension', 'Voicemail Recipient']
         
         for c in cols: 
@@ -107,12 +104,12 @@ def audit_rules():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ... (Keep update_rules and download_template exactly as they are) ...
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
 @require_rc_token
 def update_rules():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
-    
     try:
         if file.filename.endswith('.csv'): df = pd.read_csv(file)
         else: df = pd.read_excel(file)
@@ -121,25 +118,19 @@ def update_rules():
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
     results = []
-    
     for index, row in df.iterrows():
         raw_ext_num = row.get('Ext Number')
         if pd.isna(raw_ext_num): continue
-
         try:
             ext_id = get_extension_id(raw_ext_num)
             if not ext_id:
                 results.append(f"Row {index}: ⚠️ Extension {raw_ext_num} not found.")
                 continue
-
             user_devices = get_user_devices(ext_id)
             payload, action_type = build_v1_payload(row, ext_id)
-
             if not any(k in payload for k in ['callers', 'calledNumbers', 'schedule']):
                 results.append(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions found.")
                 continue
-
-            # Add Actions (Re-using fixed logic)
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                 raw_ph = str(row.get('External Number')).strip()
                 payload['unconditionalForwarding'] = {'phoneNumber': format_phone(raw_ph)}
@@ -153,17 +144,13 @@ def update_rules():
                 vm_id = get_extension_id(row.get('Voicemail Recipient'))
                 if vm_id: payload['voicemail'] = {'recipient': {'id': vm_id}}
                 else: payload['voicemail'] = {'recipient': {'id': ext_id}}
-
             rule_id = str(row.get('Rule ID')).replace('.0', '').strip() if pd.notna(row.get('Rule ID')) else ""
             is_update = bool(rule_id)
-            
             v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
             if is_update: v1_url += f"/{rule_id}"
             v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
             if is_update: v2_url += f"/{rule_id}"
-
             method = "PUT" if is_update else "POST"
-
             try:
                 rc_api_call(v1_url, method=method, json=payload, raise_error=True)
                 results.append(f"✅ {method} Rule Ext {raw_ext_num} (V1)")
@@ -179,7 +166,6 @@ def update_rules():
                     raise http_err
         except Exception as e:
             results.append(f"❌ Error Ext {raw_ext_num}: {str(e)}")
-
     return jsonify({"logs": results})
 
 @custom_rules_bp.route('/api/custom_rules/template', methods=['GET'])
