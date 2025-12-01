@@ -24,7 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    Matches the "200 OK" trace provided by the user.
+    FIX: Uses 'Unavailable' (System Default) instead of 'Default' (Invalid).
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -54,19 +54,19 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Standard Prompt for Voicemail (Required)
+    # Define Prompt for Voicemail
+    # "Unavailable" is the correct API Enum for "System Default Greeting"
     vm_prompt = {
         "greeting": {
-            "effectiveGreetingType": "Default"
+            "effectiveGreetingType": "Unavailable" 
         }
     }
 
-    # Fallback VM Target (The "Ringing" Target)
-    # FIX: Removed 'dispatchingType': 'Ringing' to match your successful trace.
+    # Fallback VM Target (Voicemail is the "Ringing" target)
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "mailbox": {"id": owner_ext_id},
-        "prompt": vm_prompt 
+        "prompt": vm_prompt # Mandatory
     }
 
     # CASE A: Unconditional Forwarding
@@ -79,13 +79,13 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                # FIX: Voicemail target comes FIRST in the array (matching your trace)
-                fallback_vm_target,
+                # FIX: Voicemail Target MUST come first (matches your successful trace)
+                fallback_vm_target, 
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
                     "dispatchingType": "Terminating" 
-                    # NO PROMPT
+                    # NO PROMPT for Phone Number
                 }
             ]
         }
@@ -99,13 +99,13 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "ExtensionTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                # FIX: Voicemail target comes FIRST
+                # FIX: Voicemail Target MUST come first
                 fallback_vm_target,
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
                     "dispatchingType": "Terminating"
-                    # NO PROMPT
+                    # NO PROMPT for Extension
                 }
             ]
         }
@@ -123,7 +123,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
                     "type": "VoiceMailTerminatingTarget",
                     "mailbox": {"id": vm_recipient_id},
                     "dispatchingType": "Terminating",
-                    "prompt": vm_prompt
+                    "prompt": vm_prompt # Mandatory
                 }
             ]
         }
