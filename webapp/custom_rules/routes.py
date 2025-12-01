@@ -24,7 +24,9 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Uses 'Preset' + ID 590080 (System VM Greeting) matching your successful API trace.
+    FIX: Strictly matches the "200 OK" trace structure.
+    - Voicemail Target: HAS Prompt, NO dispatchingType.
+    - Phone Target: NO Prompt, HAS dispatchingType="Terminating".
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -54,8 +56,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Standard Prompt using PRESET ID from your trace
-    # 590080 = Standard System Voicemail Greeting
+    # Define Standard Prompt for Voicemail (Required)
+    # Using Preset ID 590080 (System Standard) as per your trace
     vm_prompt = {
         "greeting": {
             "effectiveGreetingType": "Preset",
@@ -65,11 +67,13 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
         }
     }
 
-    # Fallback VM Target (The safety net)
+    # Fallback VM Target (The "Ringing" Target)
+    # FIX: REMOVED 'dispatchingType' to match trace. Added 'name'.
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
+        "name": "Voicemail",
         "mailbox": {"id": owner_ext_id},
-        "prompt": vm_prompt # Mandatory
+        "prompt": vm_prompt 
     }
 
     # CASE A: Unconditional Forwarding
@@ -124,9 +128,10 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "targets": [
                 {
                     "type": "VoiceMailTerminatingTarget",
+                    "name": "Voicemail",
                     "mailbox": {"id": vm_recipient_id},
-                    "dispatchingType": "Terminating",
-                    "prompt": vm_prompt # Mandatory
+                    "dispatchingType": "Terminating", # Main target needs this
+                    "prompt": vm_prompt
                 }
             ]
         }
