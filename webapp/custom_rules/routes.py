@@ -10,6 +10,7 @@ from .utils import build_rule_payload, transform_v1_to_v2
 custom_rules_bp = Blueprint('custom_rules', __name__)
 
 def get_extension_id(extension_number):
+    """Resolves Extension Number to ID."""
     ext_num = str(extension_number).strip()
     if ext_num.endswith('.0'): 
         ext_num = ext_num[:-2]
@@ -21,6 +22,23 @@ def get_extension_id(extension_number):
     
     if resp and 'records' in resp and len(resp['records']) > 0:
         return resp['records'][0]['id']
+    return None
+
+def get_phone_number_id(phone_number):
+    """
+    Resolves an E.164 phone number string to its RingCentral Resource ID.
+    Required for V2 Interaction Rules (Called Number condition).
+    """
+    try:
+        # We search the account's phone numbers for this specific number
+        resp = rc_api_call(
+            '/restapi/v1.0/account/~/phone-number',
+            params={'phoneNumber': phone_number}
+        )
+        if resp and 'records' in resp and len(resp['records']) > 0:
+            return resp['records'][0]['id']
+    except:
+        pass
     return None
 
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
@@ -66,7 +84,7 @@ def update_rules():
                 results.append(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions (Caller ID, Called Number, or Schedule) found in file.")
                 continue
 
-            # 4. Handle Actions
+            # 4. Handle Complex Actions
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                 payload['unconditionalForwarding'] = {'phoneNumber': str(row.get('External Number')).strip()}
             elif action_type == 'TransferToExtension' and pd.notna(row.get('Transfer Extension')):
@@ -105,22 +123,44 @@ def update_rules():
                 # Check for "NewCallHandling" Upgrade
                 if "NewCallHandlingAndForwarding" in error_text:
                     try:
-                        # Transform to V2
+                        # --- V2 DATA PREPARATION ---
+                        
+                        # Fix "Called Number": V2 requires ID, not string
+                        if 'calledNumbers' in payload:
+                            new_called_list = []
+                            for item in payload['calledNumbers']:
+                                ph_str = item.get('phoneNumber')
+                                if ph_str:
+                                    # Look up ID
+                                    ph_id = get_phone_number_id(ph_str)
+                                    if ph_id:
+                                        new_called_list.append({'id': ph_id})
+                                    else:
+                                        results.append(f"⚠️ Warning: Could not find ID for number {ph_str}. Rule might fail.")
+                            
+                            if new_called_list:
+                                payload['calledNumbers'] = new_called_list
+                            else:
+                                # If we failed to resolve any IDs, V2 will reject the empty list. 
+                                # Remove the key so transform doesn't send empty condition.
+                                del payload['calledNumbers']
+
+                        # Transform to V2 Structure
                         v2_payload = transform_v1_to_v2(payload)
                         
-                        # Verify V2 Conditions
+                        # Verify V2 Conditions exist
                         if not v2_payload.get('conditions'):
-                             results.append(f"⚠️ Ext {raw_ext_num}: V2 Transform resulted in empty conditions. (V1 had: {list(payload.keys())})")
+                             results.append(f"⚠️ Ext {raw_ext_num}: Skipped V2 Retry - Conditions empty after ID resolution failed.")
                              continue
                              
                         rc_api_call(v2_url, method=method, json=v2_payload, raise_error=True)
                         results.append(f"✅ {method} Rule Ext {raw_ext_num} (V2)")
+                    
                     except requests.exceptions.HTTPError as v2_err:
-                         # --- DEEP DEBUGGING ---
-                         # Use Safe JSON Dump to show user exactly what failed
+                         # Deep Debug
                          debug_json = json.dumps(v2_payload, default=str)
                          err_msg = v2_err.response.text
-                         results.append(f"❌ Failed V2 Retry Ext {raw_ext_num}.\nRC Response: {err_msg}\nPayload Sent: {debug_json}")
+                         results.append(f"❌ Failed V2 Retry Ext {raw_ext_num}.\nRC Response: {err_msg}")
                     except Exception as ex:
                          results.append(f"❌ Failed V2 Logic: {str(ex)}")
                 else:
