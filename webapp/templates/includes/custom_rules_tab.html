@@ -1,133 +1,147 @@
 <div class="space-y-6 animate-fade-in">
     
-    <div>
-        <h2 class="text-2xl font-bold text-blue-700">Custom Rules Manager</h2>
-        <p class="text-gray-600 mt-1">Bulk create or update answering rules via CSV/Excel.</p>
+    <div class="text-center mb-8">
+        <h2 class="text-3xl font-bold text-gray-800">Custom Rules Manager</h2>
+        <p class="text-gray-600 mt-2">Audit, Create, or Modify User Answering Rules in Bulk.</p>
     </div>
 
-    <div class="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg shadow-sm">
-        <h3 class="font-semibold text-blue-800 mb-2">Instructions</h3>
-        <ol class="list-decimal list-inside text-gray-700 space-y-1 text-sm">
-            <li>Download the template to see the required format.</li>
-            <li>Fill in <strong>Ext Number</strong> (Required) and rule details.</li>
-            <li>Leave <strong>Rule ID</strong> empty to create a <em>New</em> rule. Fill it in to <em>Update</em> an existing one.</li>
-            <li>Upload your file and click Process.</li>
-            <li>The tool will first try to add the rule using the V1 API, if it fails, it will try with V2 (New Call Handling)</li>
-        </ol>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
-            <div>
-                <div class="flex items-center gap-2 mb-3">
-                    <div class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">1</div>
-                    <h3 class="text-lg font-bold text-gray-800">Get Template</h3>
-                </div>
-                <p class="text-gray-600 text-sm mb-6">Download a pre-formatted Excel file with column headers and examples.</p>
-            </div>
-            
-            <a href="/api/custom_rules/template" 
-               class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm no-underline">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                 </svg>
-                Download Template
-            </a>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Audit Rules</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Generate a comprehensive Excel report of ALL custom rules on the account. Useful for backups or auditing logic.
+            </p>
+            <button onclick="auditRules()" id="auditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+                Generate Report
+            </button>
         </div>
 
-        <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
-            <form id="rulesUploadForm">
-                <div>
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="bg-green-100 text-green-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">2</div>
-                        <h3 class="text-lg font-bold text-gray-800">Upload & Process</h3>
-                    </div>
-                    <p class="text-gray-600 text-sm mb-4">Upload your completed Excel or CSV file.</p>
-                    
-                    <input type="file" id="ruleFile" name="file" accept=".csv, .xlsx" required
-                           class="block w-full text-sm text-gray-500
-                                  file:mr-4 file:py-2 file:px-4
-                                  file:rounded-full file:border-0
-                                  file:text-sm file:font-semibold
-                                  file:bg-blue-50 file:text-blue-700
-                                  hover:file:bg-blue-100 cursor-pointer mb-2"/>
-                </div>
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Create Rules</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Download a blank template to define new routing logic. Upload to create rules in bulk.
+            </p>
+            <div class="w-full space-y-2">
+                <a href="/api/custom_rules/template" class="block w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg text-sm transition">
+                    1. Download Blank Template
+                </a>
+                <label class="block w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors cursor-pointer">
+                    2. Upload & Create
+                    <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadRules(this)">
+                </label>
+            </div>
+        </div>
 
-                <button type="submit" id="rulesProcessBtn"
-                        class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm mt-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Process Rules
-                </button>
-            </form>
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Edit Rules</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Use the "Audit" report to get Rule IDs. Modify the Excel file and upload here to update existing rules.
+            </p>
+            <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">
+                Upload to Update
+                <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadRules(this)">
+            </label>
+        </div>
+
+    </div>
+
+    <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
+        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
+            <button onclick="document.getElementById('rulesLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+        </div>
+        <div id="rulesLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+            Ready for action...
         </div>
     </div>
 
-    <div class="card p-0 overflow-hidden shadow-md">
-        <div class="bg-gray-800 text-gray-200 px-4 py-2 text-xs font-mono border-b border-gray-700 flex justify-between items-center">
-            <span class="font-bold">ACTIVITY LOG</span>
-            <span class="text-gray-500">Real-time updates</span>
-        </div>
-        <div id="ruleLogs" class="bg-gray-900 text-green-400 p-4 font-mono text-sm h-64 overflow-y-auto leading-relaxed whitespace-pre-line">
-            <div class="text-gray-500 italic opacity-50">Waiting for user action...</div>
-        </div>
-    </div>
 </div>
 
 <script>
-document.getElementById('rulesUploadForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const btn = document.getElementById('rulesProcessBtn');
-    const logDiv = document.getElementById('ruleLogs');
-    
-    // UI State: Processing
-    btn.disabled = true;
-    const originalBtnText = btn.innerHTML;
-    btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...`;
-    
-    logDiv.innerHTML = '<span class="text-blue-300">Starting upload... please wait.</span>';
+    function logRule(msg, type='info') {
+        const box = document.getElementById('rulesLogs');
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
 
-    try {
-        const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
+    async function auditRules() {
+        const btn = document.getElementById('auditBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
         
-        // Handle Server Errors (HTML response instead of JSON)
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.indexOf("application/json") === -1) {
-            const text = await res.text();
-            logDiv.innerHTML = `<span class="text-red-400">❌ Server Error: The server returned an HTML error page instead of JSON. Check your file format.</span>`;
-            throw new Error("Server returned HTML");
-        }
+        logRule("Starting Audit... this may take a while depending on account size.");
 
-        const data = await res.json();
-        
-        if (res.ok) {
-            // Success
-            if (data.logs && data.logs.length > 0) {
-                logDiv.innerHTML = data.logs.map(log => {
-                    if(log.includes("❌")) return `<div class="text-red-400">${log}</div>`;
-                    if(log.includes("⚠️")) return `<div class="text-yellow-400">${log}</div>`;
-                    return `<div class="text-green-400">${log}</div>`;
-                }).join('');
-            } else {
-                logDiv.innerHTML = '<span class="text-green-400">Process complete. No actions taken.</span>';
+        try {
+            const res = await fetch('/api/custom_rules/audit');
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Audit failed");
             }
-        } else {
-            // API Error
-            const details = data.details || data.error || "Unknown Error";
-            logDiv.innerHTML = `<span class="text-red-400">❌ Error: ${details}</span>`;
-        }
-    } catch (err) {
-        if (err.message !== "Server returned HTML") {
-            logDiv.innerHTML = `<span class="text-red-400">System Error: ${err.message}</span>`;
+            
+            // Trigger Download
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Rules_Audit_${new Date().toISOString().slice(0,10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            logRule("Audit Complete! Downloading file...", "success");
+        } catch (e) {
+            logRule(`Audit Failed: ${e.message}`, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Generate Report";
         }
     }
-    
-    // UI State: Reset
-    btn.disabled = false;
-    btn.innerHTML = originalBtnText;
-});
-</script>
 
+    async function uploadRules(input) {
+        if (!input.files || !input.files[0]) return;
+        
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        logRule(`Uploading ${file.name}...`);
+        
+        try {
+            const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if (data.logs) {
+                data.logs.forEach(l => {
+                    const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
+                    logRule(l, type);
+                });
+            } else if (data.error) {
+                logRule(data.error, 'error');
+            }
+        } catch (e) {
+            logRule(`Upload Failed: ${e.message}`, 'error');
+        }
+        
+        // Reset input so same file can be selected again
+        input.value = '';
+    }
+</script>
