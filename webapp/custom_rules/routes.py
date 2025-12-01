@@ -24,9 +24,9 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Strictly matches the "200 OK" trace structure.
-    - Voicemail Target: HAS Prompt, NO dispatchingType.
-    - Phone Target: NO Prompt, HAS dispatchingType="Terminating".
+    FIX: 
+    1. Restore 'dispatchingType': 'Ringing' to VM target (Critical for Linkage).
+    2. Ensure Prompt is ONLY on VM target.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -56,23 +56,22 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
     # --- 2. ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Define Standard Prompt for Voicemail (Required)
-    # Using Preset ID 590080 (System Standard) as per your trace
+    # Define Standard Prompt for Voicemail
     vm_prompt = {
         "greeting": {
             "effectiveGreetingType": "Preset",
-            "preset": {
-                "id": "590080" 
-            }
+            "preset": {"id": "590080"} 
         }
     }
 
-    # Fallback VM Target (The "Ringing" Target)
-    # FIX: REMOVED 'dispatchingType' to match trace. Added 'name'.
+    # Fallback VM Target
+    # FIX: Added 'dispatchingType': 'Ringing' back. 
+    # The API requires the target designated as ringingTargetType to explicitly state it.
     fallback_vm_target = {
         "type": "VoiceMailTerminatingTarget",
         "name": "Voicemail",
         "mailbox": {"id": owner_ext_id},
+        "dispatchingType": "Ringing", # <--- RESTORED THIS
         "prompt": vm_prompt 
     }
 
@@ -86,13 +85,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                # FIX: Fallback Voicemail First (matches trace)
                 fallback_vm_target,
                 {
                     "type": "PhoneNumberTerminatingTarget",
                     "destination": {"phoneNumber": formatted_dest},
                     "dispatchingType": "Terminating" 
-                    # NO PROMPT for Phone Number
+                    # NO PROMPT (Correct per doc)
                 }
             ]
         }
@@ -106,13 +104,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "terminatingTargetType": "ExtensionTerminatingTarget",
             "ringingTargetType": "VoiceMailTerminatingTarget",
             "targets": [
-                # FIX: Fallback Voicemail First
                 fallback_vm_target,
                 {
                     "type": "ExtensionTerminatingTarget",
                     "extension": {"id": target_ext_id},
                     "dispatchingType": "Terminating"
-                    # NO PROMPT for Extension
+                    # NO PROMPT
                 }
             ]
         }
@@ -128,9 +125,8 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
             "targets": [
                 {
                     "type": "VoiceMailTerminatingTarget",
-                    "name": "Voicemail",
                     "mailbox": {"id": vm_recipient_id},
-                    "dispatchingType": "Terminating", # Main target needs this
+                    "dispatchingType": "Terminating",
                     "prompt": vm_prompt
                 }
             ]
