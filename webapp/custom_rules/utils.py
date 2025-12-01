@@ -19,23 +19,37 @@ def parse_time_range(range_str):
 def build_rule_payload(row, ext_id):
     """Constructs the API payload from a CSV row."""
     rule_name = row.get('Rule Name', f'Custom Rule {datetime.now()}')
-    enabled = True if str(row.get('Enabled')).lower() == 'yes' else False
     
+    # Handle Enabled/Disabled logic
+    enabled_val = str(row.get('Enabled', 'Yes')).lower()
+    enabled = True if enabled_val in ['yes', 'true', '1', 'on'] else False
+    
+    # FIXED: Do not initialize empty lists/dicts here. 
+    # RingCentral rejects empty 'schedule' objects.
     payload = {
-        "type": "Custom", "name": rule_name, "enabled": enabled,
-        "callers": [], "calledNumbers": [], "schedule": {}
+        "type": "Custom", 
+        "name": rule_name, 
+        "enabled": enabled
     }
 
-    # Conditions
+    # --- 1. Caller ID Condition ---
     if pd.notna(row.get('Caller ID')):
-        payload['callers'] = [{'callerId': c.strip()} for c in str(row.get('Caller ID')).split(',') if c.strip()]
-    if pd.notna(row.get('Called Number')):
-        payload['calledNumbers'] = [{'phoneNumber': n.strip()} for n in str(row.get('Called Number')).split(',') if n.strip()]
+        callers = [{'callerId': c.strip()} for c in str(row.get('Caller ID')).split(',') if c.strip()]
+        if callers:
+            payload['callers'] = callers
 
-    # Schedule
+    # --- 2. Called Number Condition ---
+    if pd.notna(row.get('Called Number')):
+        called_numbers = [{'phoneNumber': n.strip()} for n in str(row.get('Called Number')).split(',') if n.strip()]
+        if called_numbers:
+            payload['calledNumbers'] = called_numbers
+
+    # --- 3. Schedule Condition ---
     schedule = {'weeklyRanges': {}}
-    days_map = {'Monday': 'monday', 'Tuesday': 'tuesday', 'Wednesday': 'wednesday',
-                'Thursday': 'thursday', 'Friday': 'friday', 'Saturday': 'saturday', 'Sunday': 'sunday'}
+    days_map = {
+        'Monday': 'monday', 'Tuesday': 'tuesday', 'Wednesday': 'wednesday',
+        'Thursday': 'thursday', 'Friday': 'friday', 'Saturday': 'saturday', 'Sunday': 'sunday'
+    }
     
     has_schedule = False
     for col, api_key in days_map.items():
@@ -45,10 +59,11 @@ def build_rule_payload(row, ext_id):
                 schedule['weeklyRanges'][api_key] = ranges
                 has_schedule = True
     
+    # Only add the schedule object if we actually found valid times
     if has_schedule:
         payload['schedule'] = schedule
 
-    # Actions
+    # --- 4. Actions ---
     action_map = {
         'Transfer to External': 'UnconditionalForwarding',
         'Send to Voicemail': 'TakeMessagesOnly',
@@ -57,8 +72,10 @@ def build_rule_payload(row, ext_id):
         'Play Message and Disconnect': 'PlayAnnouncementOnly',
         'Fwd Direct To Main': 'ForwardCalls'
     }
-    api_action = action_map.get(row.get('Action'), 'ForwardCalls')
+    
+    # Default to ForwardCalls if action is missing/typo
+    user_action = row.get('Action')
+    api_action = action_map.get(user_action, 'ForwardCalls')
     payload['callHandlingAction'] = api_action
     
-    # We return the partial payload + action details needed so routes.py can resolve IDs
     return payload, api_action
