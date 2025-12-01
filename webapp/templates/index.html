@@ -78,6 +78,7 @@
                         ('authenticator', 'PKCE Setup', 'Manages RingCentral Authorization'),
                         ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'),
                         ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'),
+                        ('renamer', 'Extension Renamer', 'Bulk edit extension names'),
                         ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
                         ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
                         ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
@@ -104,6 +105,8 @@
                     {% include 'includes/sip_fetcher_tab.html' %}
                 {% elif current_tab == 'device_swap' %}
                     {% include 'includes/device_swap_tab.html' %}
+                {% elif current_tab == 'renamer' %}
+                    {% include 'includes/extension_renamer_tab.html' %}
                 {% elif current_tab == 'bulk_opening' %}
                     {% include 'includes/bulk_opening_tab.html' %}
                 {% elif current_tab == 'personal_address_book' %}
