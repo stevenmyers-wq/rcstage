@@ -24,7 +24,8 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload, owner_ext_id):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    FIX: Injects a disabled 'AllMobileRingTarget' action to satisfy the CHF-211 validator.
+    FIX: Injects BOTH 'AllMobileRingTarget' AND 'AllDesktopRingTarget' 
+    to satisfy strict CHF-211 and CHF-212 validators.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -53,15 +54,30 @@ def transform_v1_to_v2(v1_payload, owner_ext_id):
 
     # --- 2. ACTIONS ---
     
-    # [HACK] Inject Disabled Mobile Ring Action to satisfy CHF-211 Error
-    # The API requires this target to exist when modifying rules for your own DID.
+    # [HACK] Inject Disabled Standard Ring Actions to satisfy API Validators
+    # The API requires these targets to exist for user rules.
+    
+    # 1. Mobile Apps (Fixes CHF-211)
     v2["dispatching"]["actions"].append({
         "type": "RingGroupAction",
-        "enabled": False, # Disabled so it doesn't actually ring
+        "enabled": False, 
         "targets": [
             {
                 "type": "AllMobileRingTarget",
                 "name": "My mobile apps"
+            }
+        ],
+        "duration": 20
+    })
+
+    # 2. Desktop Apps (Fixes CHF-212)
+    v2["dispatching"]["actions"].append({
+        "type": "RingGroupAction",
+        "enabled": False, 
+        "targets": [
+            {
+                "type": "AllDesktopRingTarget",
+                "name": "My desktop"
             }
         ],
         "duration": 20
