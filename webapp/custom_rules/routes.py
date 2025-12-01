@@ -24,7 +24,7 @@ def get_extension_id(extension_number):
 def transform_v1_to_v2(v1_payload):
     """
     Reconstructs V1 data into V2 Interaction Rule format.
-    Ensures 'from' and 'to' arrays exist even if empty.
+    Adds required 'dispatchingType' to targets.
     """
     v2 = {
         "displayName": v1_payload.get("name"), 
@@ -36,35 +36,29 @@ def transform_v1_to_v2(v1_payload):
         }
     }
     
-    # --- 1. BUILD CONDITIONS (Array of Objects) ---
+    # --- 1. BUILD CONDITIONS ---
     interaction_cond = {
         "type": "Interaction",
-        "to": [],    # REQUIRED by V2 (even if empty)
-        "from": []   # REQUIRED by V2 (even if empty)
+        "to": [],
+        "from": []
     }
 
-    # Map Called Numbers -> "to" array
     if "calledNumbers" in v1_payload:
-        # Extract just the phone number strings (e.g. "+61...")
-        to_list = [item['phoneNumber'] for item in v1_payload['calledNumbers']]
-        interaction_cond["to"] = to_list
+        interaction_cond["to"] = [item['phoneNumber'] for item in v1_payload['calledNumbers']]
 
-    # Map Caller IDs -> "from" array
     if "callers" in v1_payload:
-        from_list = [item['callerId'] for item in v1_payload['callers']]
-        interaction_cond["from"] = from_list
+        interaction_cond["from"] = [item['callerId'] for item in v1_payload['callers']]
 
-    # Only add condition object if it has meaningful data (or if mandatory)
-    # Since we are mapping a rule that MUST have conditions, we append it.
+    # Add condition only if it has data (V2 requirement)
+    # We append it even if empty keys exist, because 'conditions' array cannot be empty
     v2["conditions"].append(interaction_cond)
 
-    # --- 2. BUILD ACTIONS (Dispatching) ---
+    # --- 2. BUILD ACTIONS ---
     v1_act = v1_payload.get("callHandlingAction")
     
-    # Unconditional Forwarding (Transfer to External)
+    # Unconditional Forwarding
     if v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
-        # Ensure we format the destination number for V2 as well
         formatted_dest = format_phone(dest_num)
         
         action = {
@@ -72,7 +66,8 @@ def transform_v1_to_v2(v1_payload):
             "terminatingTargetType": "PhoneNumberTerminatingTarget",
             "targets": [{
                 "type": "PhoneNumberTerminatingTarget",
-                "destination": {"phoneNumber": formatted_dest}
+                "destination": {"phoneNumber": formatted_dest},
+                "dispatchingType": "Terminating"  # <--- REQUIRED FIX
             }]
         }
         v2["dispatching"]["actions"].append(action)
@@ -85,7 +80,8 @@ def transform_v1_to_v2(v1_payload):
             "terminatingTargetType": "ExtensionTerminatingTarget",
             "targets": [{
                 "type": "ExtensionTerminatingTarget",
-                "extension": {"id": ext_id}
+                "extension": {"id": ext_id},
+                "dispatchingType": "Terminating"  # <--- REQUIRED FIX
             }]
         }
         v2["dispatching"]["actions"].append(action)
@@ -98,7 +94,8 @@ def transform_v1_to_v2(v1_payload):
             "terminatingTargetType": "VoiceMailTerminatingTarget",
             "targets": [{
                 "type": "VoiceMailTerminatingTarget",
-                "mailbox": {"id": vm_recipient_id} 
+                "mailbox": {"id": vm_recipient_id},
+                "dispatchingType": "Terminating"  # <--- REQUIRED FIX
             }]
         }
         v2["dispatching"]["actions"].append(action)
@@ -127,13 +124,12 @@ def update_rules():
         if pd.isna(raw_ext_num): continue
 
         try:
-            # Resolve Ext ID
             ext_id = get_extension_id(raw_ext_num)
             if not ext_id:
                 results.append(f"Row {index}: ⚠️ Extension {raw_ext_num} not found.")
                 continue
 
-            # Build Base Payload (V1 style)
+            # Build V1 Payload
             payload, action_type = build_v1_payload(row, ext_id)
 
             # Pre-flight Check
@@ -141,23 +137,20 @@ def update_rules():
                 results.append(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions found.")
                 continue
 
-            # Add Complex Action Details (APPLY FORMATTING HERE)
+            # Add Complex Action Details
             if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
-                # FIX: Use format_phone to ensure +61... format for V1 and V2
                 raw_ph = str(row.get('External Number')).strip()
                 payload['unconditionalForwarding'] = {'phoneNumber': format_phone(raw_ph)}
-            
             elif action_type == 'TransferToExtension' and pd.notna(row.get('Transfer Extension')):
                 target_id = get_extension_id(row.get('Transfer Extension'))
                 if target_id: payload['transfer'] = {'extension': {'id': target_id}}
                 else:
                     results.append(f"⚠️ Target Ext {row.get('Transfer Extension')} not found.")
                     continue
-            
             elif action_type == 'TakeMessagesOnly' and pd.notna(row.get('Voicemail Recipient')):
                 vm_id = get_extension_id(row.get('Voicemail Recipient'))
                 if vm_id: payload['voicemail'] = {'recipient': {'id': vm_id}}
-                else: payload['voicemail'] = {'recipient': {'id': ext_id}} # Default to self
+                else: payload['voicemail'] = {'recipient': {'id': ext_id}}
 
             # Paths
             rule_id = str(row.get('Rule ID')).replace('.0', '').strip() if pd.notna(row.get('Rule ID')) else ""
@@ -181,10 +174,9 @@ def update_rules():
                 # Check for V2 Upgrade
                 if "NewCallHandlingAndForwarding" in http_err.response.text:
                     try:
-                        # BUILD V2 PAYLOAD (Using new transformer)
+                        # BUILD V2 PAYLOAD
                         v2_payload = transform_v1_to_v2(payload)
                         
-                        # Debugging Check
                         if not v2_payload['conditions']:
                              results.append(f"⚠️ Ext {raw_ext_num}: V2 Skipped - Conditions empty.")
                              continue
@@ -193,7 +185,6 @@ def update_rules():
                         results.append(f"✅ {method} Rule Ext {raw_ext_num} (V2)")
                         
                     except requests.exceptions.HTTPError as v2_err:
-                        # Clean JSON dump for readability in logs
                         debug_json = json.dumps(v2_payload, default=str)
                         results.append(f"❌ V2 Error Ext {raw_ext_num}: {v2_err.response.text}\nSent: {debug_json}")
                     except Exception as ex:
