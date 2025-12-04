@@ -1,5 +1,6 @@
 import io
 import concurrent.futures
+import pandas as pd
 
 class NotificationManager:
     def __init__(self):
@@ -203,12 +204,13 @@ class NotificationManager:
 
         try:
             df = pd.read_excel(file_storage)
-            df.fillna('', inplace=True)
+            # Removed blanket fillna to allow detection of missing/empty cells
+            # df.fillna('', inplace=True) 
         except Exception as e:
             return ["❌ Error reading Excel file."]
 
         # Validate Headers (Check for core columns only, allowing optional columns to be missing)
-        core_columns = ['ExtensionNumber', 'EmailAddresses']
+        core_columns = ['ExtensionNumber'] # Reduced core requirement to allow very minimal updates
         if not set(core_columns).issubset(df.columns):
             missing = list(set(core_columns) - set(df.columns))
             return [f"❌ Invalid Template. Missing core columns: {missing}"]
@@ -219,7 +221,7 @@ class NotificationManager:
 
             ext_num = str(row['ExtensionNumber']).strip().replace('.0', '')
             
-            if not ext_num:
+            if not ext_num or ext_num.lower() == 'nan':
                 continue
                 
             ext_id = ext_map.get(ext_num)
@@ -228,7 +230,7 @@ class NotificationManager:
                 continue
 
             try:
-                # 1. Fetch CURRENT settings first to preserve other fields (like includeAttachment)
+                # 1. Fetch CURRENT settings first to preserve other fields
                 url = f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings"
                 get_resp = rc.get(url, token=token)
                 
@@ -239,28 +241,41 @@ class NotificationManager:
                 settings = get_resp.json()
 
                 # 2. Prepare Helper Functions
-                def get_bool(val):
-                    # Handle boolean, string, integer, and float (1.0) representations
+                def get_bool_or_none(col_name):
+                    # If column doesn't exist in Excel, return None (skip update)
+                    if col_name not in row: return None
+                    
+                    val = row[col_name]
+                    # Check for Pandas NaN/None or empty string
+                    if pd.isna(val) or str(val).strip() == '': return None
+                    
                     s = str(val).lower().strip()
-                    return s in ['true', '1', '1.0', 'yes', 't', 'on']
-                
-                def safe_get_bool(col_name):
-                    if col_name in row:
-                        return get_bool(row[col_name])
-                    return False
+                    if s in ['true', '1', '1.0', 'yes', 't', 'on']: return True
+                    if s in ['false', '0', '0.0', 'no', 'f', 'off']: return False
+                    return None # ambiguous
 
                 # 3. Modify the settings object
                 
                 # Parse Email List (Clean & Split)
-                email_list = [e.strip() for e in str(row['EmailAddresses']).split(',') if e.strip()]
+                # Only update if the column is present and not null.
+                if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
+                     email_raw = str(row['EmailAddresses'])
+                     email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
+                     settings["emailAddresses"] = email_list
+                else:
+                     # Keep existing if not provided
+                     email_list = settings.get("emailAddresses", [])
+
+                # Top Level Switches
+                val = get_bool_or_none('AdvancedMode')
+                if val is not None: settings["advancedMode"] = val
                 
-                # Update Top Level
-                settings["emailAddresses"] = email_list
+                val = get_bool_or_none('IncludeSms')
+                if val is not None: settings["includeSmsRecipients"] = val
                 
-                is_advanced = safe_get_bool('AdvancedMode')
-                settings["advancedMode"] = is_advanced
-                settings["includeSmsRecipients"] = safe_get_bool('IncludeSms')
-                
+                # Re-evaluate is_advanced based on LATEST state (fetched + updated)
+                is_advanced = settings.get("advancedMode", False)
+
                 # Category Map: Key -> (Email_Col, SMS_Col, Mark_Col)
                 categories = {
                     'voicemails': ('Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead'),
@@ -273,19 +288,27 @@ class NotificationManager:
                 for cat, cols in categories.items():
                     if cat not in settings: settings[cat] = {}
                     
-                    # Update Flags
-                    notify_email = safe_get_bool(cols[0])
-                    settings[cat]["notifyByEmail"] = notify_email
+                    # Update Flags if provided
+                    val_email = get_bool_or_none(cols[0])
+                    if val_email is not None: settings[cat]["notifyByEmail"] = val_email
                     
-                    notify_sms = safe_get_bool(cols[1])
-                    settings[cat]["notifyBySms"] = notify_sms
+                    val_sms = get_bool_or_none(cols[1])
+                    if val_sms is not None: settings[cat]["notifyBySms"] = val_sms
                     
+                    # Safe MarkAsRead update: Only if supported AND provided
                     if cols[2]:
-                        settings[cat]["markAsRead"] = safe_get_bool(cols[2])
+                        val_mark = get_bool_or_none(cols[2])
+                        # IMPORTANT: Check if key exists in original settings to ensure support
+                        # If the API didn't give us 'markAsRead', we shouldn't send it back.
+                        if val_mark is not None and 'markAsRead' in settings[cat]:
+                            settings[cat]["markAsRead"] = val_mark
                     
                     # --- ADVANCED MODE FIX ---
-                    # If Advanced Mode is ON, the API requires 'advancedEmailAddresses' 
-                    # to be populated if 'notifyByEmail' is True.
+                    # Logic: If notifying by email, ensure advanced list is populated.
+                    # We use the current email list (either newly updated or existing)
+                    notify_email = settings[cat].get("notifyByEmail", False)
+                    notify_sms = settings[cat].get("notifyBySms", False)
+
                     if is_advanced:
                         if notify_email:
                             settings[cat]["advancedEmailAddresses"] = email_list
