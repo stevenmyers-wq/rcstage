@@ -236,23 +236,12 @@ class NotificationManager:
             return ["❌ Error reading Excel file."]
 
         # --- AUTO-CLEAN QUEUES START ---
-        # Detect Call Queues
+        # Detect Call Queues - Log only, we will enforce in loop for safety.
         if 'ExtensionName' in df.columns:
              queue_mask = df['ExtensionName'].str.contains('Queue', case=False, na=False)
              if queue_mask.any():
                  count = queue_mask.sum()
-                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Disabling unsupported settings (Texts/MissedCalls/OutboundFax) to prevent 400 Errors.")
-                 
-                 # Force DISABLE these to prevent "InvalidParameter" errors
-                 # Queues often reject custom email lists for these specific features.
-                 cols_to_clean = [
-                     'OutboundFaxes_Email', 'OutboundFaxes_SMS',
-                     'InboundTexts_Email', 'InboundTexts_SMS',
-                     'MissedCalls_Email', 'MissedCalls_SMS'
-                 ]
-                 for col in cols_to_clean:
-                     if col in df.columns:
-                         df.loc[queue_mask, col] = False
+                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Enforcing strict compatibility in payload.")
         # --- AUTO-CLEAN QUEUES END ---
 
         # Validate Headers
@@ -311,16 +300,9 @@ class NotificationManager:
                       email_list = settings.get("emailAddresses", [])
 
                 val = get_bool_or_none('AdvancedMode')
-                
-                # QUEUE OVERRIDE: Call Queues do not support Advanced Mode.
-                # We strictly force it to FALSE.
-                if is_queue:
-                    settings["advancedMode"] = False
-                    user_wants_advanced = False
-                else:
-                    # Explicitly capture user intent
-                    user_wants_advanced = val
-                    if val is not None: settings["advancedMode"] = val
+                # Explicitly capture user intent
+                user_wants_advanced = val
+                if val is not None: settings["advancedMode"] = val
                 
                 val = get_bool_or_none('IncludeSms')
                 if val is not None: settings["includeSmsRecipients"] = val
@@ -362,6 +344,24 @@ class NotificationManager:
                              settings[cat]["advancedEmailAddresses"] = email_list
                          if cat == 'missedCalls' and notify_sms:
                              settings[cat]["advancedSmsEmailAddresses"] = email_list
+
+                # --- QUEUE SAFETY OVERRIDE START ---
+                # Call Queues throw "400 InvalidParameter: emailRecipients" if you try to set 
+                # custom emails for features that are locked to Manager (Texts/MissedCalls), 
+                # or features that don't exist (OutboundFax).
+                # We HARD FORCE these to False immediately before the PUT to ensure the payload is clean.
+                if is_queue:
+                    # 1. No Advanced Mode for Queues
+                    settings["advancedMode"] = False
+                    user_wants_advanced = False 
+                    
+                    # 2. Force Disable Unsupported/Conflicting Features
+                    conflicting_cats = ['inboundTexts', 'missedCalls', 'outboundFaxes']
+                    for conflict in conflicting_cats:
+                        if conflict in settings:
+                            settings[conflict]['notifyByEmail'] = False
+                            settings[conflict]['notifyBySms'] = False
+                # --- QUEUE SAFETY OVERRIDE END ---
 
                 # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
                 attempt = 0
