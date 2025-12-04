@@ -2,7 +2,7 @@
     
     <div class="text-center mb-8">
         <h2 class="text-3xl font-bold text-gray-800">Notification Settings Manager</h2>
-        <p class="text-gray-600 mt-2">Audit, Configure, or Bulk Update User Notification Preferences (Email, SMS, Voicemail). Uses V1 User Settings APIs.</p>
+        <p class="text-gray-600 mt-2">Audit, Configure, or Bulk Update User Notification Preferences. Uses RingCentral User Settings APIs.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -15,7 +15,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit Settings</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Scan all extensions and generate an Excel report of current Notification settings (Emails, SMS, Voicemail flags).
+                Scan all extensions and generate an Excel report of current Notification settings (Voicemail, Missed Calls, Texts).
             </p>
             <button onclick="auditNotifications()" id="auditNotifBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                 Generate Report
@@ -33,7 +33,7 @@
                 Download a blank Excel template structured for Notification updates.
             </p>
             <div class="w-full space-y-2">
-                <a href="/api/notifications/template" class="block w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors text-center">
+                <a href="/notifications/template" class="block w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors text-center">
                     Download Template
                 </a>
             </div>
@@ -59,11 +59,11 @@
 
     <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
         <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
-            <span class="font-mono font-bold text-sm">NOTIFICATION LOGS</span>
+            <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
             <button onclick="document.getElementById('notifyLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
         </div>
         <div id="notifyLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
-            Waiting for input...
+            Ready...
         </div>
     </div>
 
@@ -82,12 +82,12 @@
     async function auditNotifications() {
         const btn = document.getElementById('auditNotifBtn');
         btn.disabled = true;
-        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Scanning Extensions...`;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Auditing...`;
         
-        logNotify("Starting Notification Audit. This scans all extensions and may take time.");
+        logNotify("Starting Notification Audit (this may take 1-2 minutes for large accounts)...");
 
         try {
-            const res = await fetch('/api/notifications/audit');
+            const res = await fetch('/notifications/audit');
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || "Audit failed");
@@ -118,25 +118,26 @@
         const formData = new FormData();
         formData.append('file', file);
         
-        logNotify(`Uploading ${file.name} for processing...`);
+        logNotify(`Uploading ${file.name}...`);
         
         try {
-            const res = await fetch('/api/notifications/update', { method: 'POST', body: formData });
+            const res = await fetch('/notifications/update', { method: 'POST', body: formData });
             const data = await res.json();
             
             if (data.logs) {
                 data.logs.forEach(l => {
-                    const type = l.toLowerCase().includes('error') || l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
+                    const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
                     logNotify(l, type);
                 });
             } else if (data.error) {
                 logNotify(data.error, 'error');
             } else {
-                logNotify("Batch processing complete.", "success");
+                logNotify("Update process finished.", "success");
             }
         } catch (e) {
             logNotify(`Upload Failed: ${e.message}`, 'error');
         }
+        
         input.value = '';
     }
 </script>
