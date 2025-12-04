@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, session
 # Absolute import to navigate project structure without __init__.py in subfolder
 from webapp.notifications.utils import NotificationManager
 
@@ -11,8 +11,11 @@ manager = NotificationManager()
 @notifications_bp.route('/notifications/audit', methods=['GET'])
 def audit_notifications():
     try:
-        # Calls the utility to generate the Excel file in memory
-        output = manager.generate_audit_report()
+        # Get the token from the current session
+        token = session.get('rc_access_token')
+        
+        # Pass the token to the utility so it can use it in background/threads
+        output = manager.generate_audit_report(token=token)
         output.seek(0)
         
         return send_file(
@@ -48,8 +51,11 @@ def update_notifications():
         return jsonify({"error": "No file selected"}), 400
 
     try:
-        # Pass file stream to the utility
-        logs = manager.process_update_file(file)
+        # Get the token for the update process as well
+        token = session.get('rc_access_token')
+
+        # Pass file stream and token to the utility
+        logs = manager.process_update_file(file, token=token)
         return jsonify({"logs": logs})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
