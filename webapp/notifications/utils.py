@@ -309,7 +309,6 @@ class NotificationManager:
                             
                             # FIX 1: Dependency Check
                             # You cannot mark as read if you don't include the attachment.
-                            # If user wants markAsRead=True, we must ensure includeAttachment=True
                             if val_mark is True and 'includeAttachment' in settings[cat]:
                                 settings[cat]["includeAttachment"] = True
                     
@@ -323,9 +322,9 @@ class NotificationManager:
                         if cat == 'missedCalls' and notify_sms:
                             settings[cat]["advancedSmsEmailAddresses"] = email_list
 
-                # 4. PUT with Retry Logic (Handle MarkAsRead Validation Errors)
+                # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
                 attempt = 0
-                max_attempts = 2
+                max_attempts = 4 # Increased to handle potential multiple failures sequentially
                 
                 while attempt < max_attempts:
                     resp = rc.put(url, json=settings, token=token)
@@ -334,15 +333,26 @@ class NotificationManager:
                         logs.append(f"✅ Ext {ext_num}: Updated")
                         break
                     
-                    # If failed with 400 and markAsRead issue, strip it and retry
-                    is_mark_as_read_error = resp.status_code == 400 and "markAsRead" in resp.text
+                    err_text = resp.text
+                    fixed_something = False
                     
-                    if is_mark_as_read_error and attempt == 0:
-                        logs.append(f"⚠️ Ext {ext_num}: Retrying with 'markAsRead=False' (API Rejected Value)...")
-                        # Force markAsRead to False instead of just deleting
-                        for cat in categories:
+                    # Fix 1: MarkAsRead
+                    if resp.status_code == 400 and "markAsRead" in err_text:
+                         logs.append(f"⚠️ Ext {ext_num}: Retrying with 'markAsRead=False' (API Rejected Value)...")
+                         for cat in categories:
                             if cat in settings and 'markAsRead' in settings[cat]:
                                 settings[cat]['markAsRead'] = False
+                         fixed_something = True
+
+                    # Fix 2: IncludeSmsRecipients (CMN-451)
+                    if resp.status_code == 400 and "includeSmsRecipients" in err_text:
+                         logs.append(f"⚠️ Ext {ext_num}: Retrying without 'includeSmsRecipients' (API Forbidden Update)...")
+                         # Remove the key entirely
+                         if 'includeSmsRecipients' in settings:
+                             del settings['includeSmsRecipients']
+                         fixed_something = True
+
+                    if fixed_something:
                         attempt += 1
                         continue # Restart loop with modified settings
                     
