@@ -1,5 +1,5 @@
 import requests
-from flask import session, current_app
+from flask import session, current_app, has_request_context
 import logging
 
 # Configure logging
@@ -33,22 +33,35 @@ class RCWrapper:
 # Initialize the 'rc' instance immediately so it is available for imports
 rc = RCWrapper()
 
-def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_response=False, **kwargs):
+def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_response=False, token=None, **kwargs):
     """
     Generic RingCentral API handler.
     - raise_error=True: Raises exception on failure (useful for debugging specific errors).
     - raise_error=False: Returns None on failure (safer for general UI loading).
     - return_response=True: Returns the raw requests.Response object instead of JSON.
+    - token: Optional manual token override (essential for background tasks without session).
     """
-    access_token = session.get('rc_access_token')
+    access_token = token
+    
+    # Try to get token from session if not provided and context is available
     if not access_token:
-        print("Error: No access token in session.")
+        if has_request_context():
+            access_token = session.get('rc_access_token')
+        else:
+            # We are in a background task/thread without a user session
+            logger.debug("No request context. Skipping session token check.")
+
+    if not access_token:
+        print("Error: No access token found (session missing or empty).")
         if raise_error:
-            raise Exception("No access token found. Please login again.")
+            raise Exception("No access token found. Please login again or pass token explicitly.")
         return None
 
     # Get Base URL from config
-    base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
+    # Note: current_app requires app context. If running purely standalone, this might also need a fallback.
+    base_url = 'https://platform.ringcentral.com'
+    if current_app:
+        base_url = current_app.config.get('RC_SERVER_URL', base_url)
     
     if not endpoint.startswith('/'):
         endpoint = '/' + endpoint
