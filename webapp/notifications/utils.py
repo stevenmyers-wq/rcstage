@@ -31,9 +31,10 @@ class NotificationManager:
         while True:
             try:
                 # Pass token explicitly
+                # EXPANDED SEARCH: Include 'Department' (Call Queues) and 'Voicemail' (Msg Only)
                 resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
                     'status': ['Enabled', 'Disabled', 'NotActivated'], 
-                    'type': 'User', 
+                    'type': ['User', 'Department', 'Voicemail'], 
                     'perPage': 1000, 
                     'page': page
                 })
@@ -76,9 +77,12 @@ class NotificationManager:
             resp = rc.get(f"/restapi/v1.0/account/~/extension/{ext['id']}/notification-settings", token=token)
             
             if resp.status_code != 200:
+                # Some extensions (like limited ones) might not have notification settings.
+                # Return a basic error row or just skip? 
+                # Better to return error row so user knows it was skipped.
                 return {
                     'ExtensionNumber': ext.get('extensionNumber', ''),
-                    'ExtensionName': f"Error: {resp.status_code}"
+                    'ExtensionName': f"{ext.get('name', 'Unknown')} (No Settings Found - {resp.status_code})"
                 }
 
             settings = resp.json()
@@ -132,8 +136,12 @@ class NotificationManager:
         page = 1
         while True:
             # Pass token explicitly
+            # EXPANDED SEARCH: Include 'Department' and 'Voicemail' here too
             resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
-                'status': 'Enabled', 'type': 'User', 'perPage': 1000, 'page': page
+                'status': ['Enabled', 'Disabled', 'NotActivated'], 
+                'type': ['User', 'Department', 'Voicemail'], 
+                'perPage': 1000, 
+                'page': page
             })
             if resp.status_code != 200: break
             data = resp.json()
@@ -277,6 +285,8 @@ class NotificationManager:
                      email_list = settings.get("emailAddresses", [])
 
                 val = get_bool_or_none('AdvancedMode')
+                # Explicitly capture user intent
+                user_wants_advanced = val
                 if val is not None: settings["advancedMode"] = val
                 
                 val = get_bool_or_none('IncludeSms')
@@ -330,7 +340,14 @@ class NotificationManager:
                     resp = rc.put(url, json=settings, token=token)
                     
                     if resp.status_code == 200:
-                        logs.append(f"✅ Ext {ext_num}: Updated")
+                        # VERIFY: Did the setting actually stick?
+                        final_settings = resp.json()
+                        final_adv = final_settings.get('advancedMode', False)
+                        
+                        if user_wants_advanced is True and final_adv is False:
+                            logs.append(f"⚠️ Ext {ext_num}: Update success, BUT API ignored 'AdvancedMode' (reverted to False).")
+                        else:
+                            logs.append(f"✅ Ext {ext_num}: Updated")
                         break
                     
                     err_text = resp.text
