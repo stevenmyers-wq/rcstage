@@ -240,49 +240,62 @@ class NotificationManager:
 
                 # 2. Prepare Helper Functions
                 def get_bool(val):
-                    return str(val).lower() in ['true', '1', 'yes', 't']
+                    # Handle boolean, string, integer, and float (1.0) representations
+                    s = str(val).lower().strip()
+                    return s in ['true', '1', '1.0', 'yes', 't', 'on']
                 
-                # Safe Get: Returns False if column is missing or cell is blank
                 def safe_get_bool(col_name):
                     if col_name in row:
                         return get_bool(row[col_name])
                     return False
 
-                # 3. Modify the settings object (Merging Excel data into existing settings)
+                # 3. Modify the settings object
                 
-                # Email Addresses
-                settings["emailAddresses"] = [e.strip() for e in str(row['EmailAddresses']).split(',') if e.strip()]
+                # Parse Email List (Clean & Split)
+                email_list = [e.strip() for e in str(row['EmailAddresses']).split(',') if e.strip()]
                 
-                # Top Level Switches
-                settings["advancedMode"] = safe_get_bool('AdvancedMode')
+                # Update Top Level
+                settings["emailAddresses"] = email_list
+                
+                is_advanced = safe_get_bool('AdvancedMode')
+                settings["advancedMode"] = is_advanced
                 settings["includeSmsRecipients"] = safe_get_bool('IncludeSms')
                 
-                # Nested Objects - ensure keys exist, then update
-                if 'voicemails' not in settings: settings['voicemails'] = {}
-                settings["voicemails"]["notifyByEmail"] = safe_get_bool('Voicemails_Email')
-                settings["voicemails"]["notifyBySms"] = safe_get_bool('Voicemails_SMS')
-                settings["voicemails"]["markAsRead"] = safe_get_bool('Voicemails_MarkAsRead')
+                # Category Map: Key -> (Email_Col, SMS_Col, Mark_Col)
+                categories = {
+                    'voicemails': ('Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead'),
+                    'missedCalls': ('MissedCalls_Email', 'MissedCalls_SMS', None),
+                    'inboundTexts': ('InboundTexts_Email', 'InboundTexts_SMS', None),
+                    'inboundFaxes': ('InboundFaxes_Email', 'InboundFaxes_SMS', 'InboundFaxes_MarkAsRead'),
+                    'outboundFaxes': ('OutboundFaxes_Email', 'OutboundFaxes_SMS', None)
+                }
 
-                if 'missedCalls' not in settings: settings['missedCalls'] = {}
-                settings["missedCalls"]["notifyByEmail"] = safe_get_bool('MissedCalls_Email')
-                settings["missedCalls"]["notifyBySms"] = safe_get_bool('MissedCalls_SMS')
-
-                if 'inboundTexts' not in settings: settings['inboundTexts'] = {}
-                settings["inboundTexts"]["notifyByEmail"] = safe_get_bool('InboundTexts_Email')
-                settings["inboundTexts"]["notifyBySms"] = safe_get_bool('InboundTexts_SMS')
-
-                if 'inboundFaxes' not in settings: settings['inboundFaxes'] = {}
-                settings["inboundFaxes"]["notifyByEmail"] = safe_get_bool('InboundFaxes_Email')
-                settings["inboundFaxes"]["notifyBySms"] = safe_get_bool('InboundFaxes_SMS')
-                settings["inboundFaxes"]["markAsRead"] = safe_get_bool('InboundFaxes_MarkAsRead')
-
-                if 'outboundFaxes' not in settings: settings['outboundFaxes'] = {}
-                settings["outboundFaxes"]["notifyByEmail"] = safe_get_bool('OutboundFaxes_Email')
-                settings["outboundFaxes"]["notifyBySms"] = safe_get_bool('OutboundFaxes_SMS')
+                for cat, cols in categories.items():
+                    if cat not in settings: settings[cat] = {}
+                    
+                    # Update Flags
+                    notify_email = safe_get_bool(cols[0])
+                    settings[cat]["notifyByEmail"] = notify_email
+                    
+                    notify_sms = safe_get_bool(cols[1])
+                    settings[cat]["notifyBySms"] = notify_sms
+                    
+                    if cols[2]:
+                        settings[cat]["markAsRead"] = safe_get_bool(cols[2])
+                    
+                    # --- ADVANCED MODE FIX ---
+                    # If Advanced Mode is ON, the API requires 'advancedEmailAddresses' 
+                    # to be populated if 'notifyByEmail' is True.
+                    if is_advanced:
+                        if notify_email:
+                            settings[cat]["advancedEmailAddresses"] = email_list
+                        
+                        # Missed Calls specific: API complains if 'advancedSmsEmailAddresses' is empty 
+                        # when SMS is enabled in Advanced Mode. We populate it to be safe.
+                        if cat == 'missedCalls' and notify_sms:
+                            settings[cat]["advancedSmsEmailAddresses"] = email_list
 
                 # 4. PUT the updated object back
-                # url is already defined above
-                
                 resp = rc.put(url, json=settings, token=token)
 
                 if resp.status_code == 200:
