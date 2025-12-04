@@ -235,6 +235,30 @@ class NotificationManager:
         except Exception as e:
             return ["❌ Error reading Excel file."]
 
+        # --- AUTO-CLEAN QUEUES START ---
+        # Detect Call Queues and disable incompatible settings to prevent 400 Errors.
+        if 'ExtensionName' in df.columns:
+             # Find rows where name contains "Queue"
+             queue_mask = df['ExtensionName'].str.contains('Queue', case=False, na=False)
+             
+             if queue_mask.any():
+                 count = queue_mask.sum()
+                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Ignoring unsupported settings (OutboundFax) to prevent API errors.")
+                 
+                 # Columns to BLANK OUT (Set to None so they are skipped by logic below)
+                 # Queues CAN handle InboundTexts, InboundFaxes, and MissedCalls.
+                 # Queues CANNOT handle OutboundFaxes.
+                 cols_to_clean = [
+                     'OutboundFaxes_Email', 'OutboundFaxes_SMS'
+                 ]
+                 
+                 for col in cols_to_clean:
+                     if col in df.columns:
+                         # Setting to None ensures get_bool_or_none returns None, 
+                         # which prevents the script from adding these keys to the payload.
+                         df.loc[queue_mask, col] = None
+        # --- AUTO-CLEAN QUEUES END ---
+
         # Validate Headers
         core_columns = ['ExtensionNumber']
         if not set(core_columns).issubset(df.columns):
@@ -278,11 +302,11 @@ class NotificationManager:
 
                 # 3. Modify the settings object
                 if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
-                     email_raw = str(row['EmailAddresses'])
-                     email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
-                     settings["emailAddresses"] = email_list
+                      email_raw = str(row['EmailAddresses'])
+                      email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
+                      settings["emailAddresses"] = email_list
                 else:
-                     email_list = settings.get("emailAddresses", [])
+                      email_list = settings.get("emailAddresses", [])
 
                 val = get_bool_or_none('AdvancedMode')
                 # Explicitly capture user intent
@@ -357,8 +381,8 @@ class NotificationManager:
                     if resp.status_code == 400 and "markAsRead" in err_text:
                          logs.append(f"⚠️ Ext {ext_num}: Retrying with 'markAsRead=False' (API Rejected Value)...")
                          for cat in categories:
-                            if cat in settings and 'markAsRead' in settings[cat]:
-                                settings[cat]['markAsRead'] = False
+                           if cat in settings and 'markAsRead' in settings[cat]:
+                               settings[cat]['markAsRead'] = False
                          fixed_something = True
 
                     # Fix 2: IncludeSmsRecipients (CMN-451)
