@@ -306,6 +306,12 @@ class NotificationManager:
                         # Check existence before setting
                         if val_mark is not None and 'markAsRead' in settings[cat]:
                             settings[cat]["markAsRead"] = val_mark
+                            
+                            # FIX 1: Dependency Check
+                            # You cannot mark as read if you don't include the attachment.
+                            # If user wants markAsRead=True, we must ensure includeAttachment=True
+                            if val_mark is True and 'includeAttachment' in settings[cat]:
+                                settings[cat]["includeAttachment"] = True
                     
                     # Advanced Mode Population
                     notify_email = settings[cat].get("notifyByEmail", False)
@@ -332,11 +338,11 @@ class NotificationManager:
                     is_mark_as_read_error = resp.status_code == 400 and "markAsRead" in resp.text
                     
                     if is_mark_as_read_error and attempt == 0:
-                        logs.append(f"⚠️ Ext {ext_num}: Retrying without 'markAsRead' (API Rejected Value)...")
-                        # Strip markAsRead from all categories
+                        logs.append(f"⚠️ Ext {ext_num}: Retrying with 'markAsRead=False' (API Rejected Value)...")
+                        # Force markAsRead to False instead of just deleting
                         for cat in categories:
                             if cat in settings and 'markAsRead' in settings[cat]:
-                                del settings[cat]['markAsRead']
+                                settings[cat]['markAsRead'] = False
                         attempt += 1
                         continue # Restart loop with modified settings
                     
