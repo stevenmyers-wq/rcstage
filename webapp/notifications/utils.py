@@ -355,12 +355,28 @@ class NotificationManager:
                     settings["advancedMode"] = False
                     user_wants_advanced = False 
                     
-                    # 2. Force Disable Unsupported/Conflicting Features
-                    conflicting_cats = ['inboundTexts', 'missedCalls', 'outboundFaxes']
+                    # 2. DELETE OutboundFaxes entirely (Presence of key can trigger error)
+                    if 'outboundFaxes' in settings:
+                        del settings['outboundFaxes']
+                    
+                    # 3. Force Disable Unsupported/Conflicting Features and SCRUB advanced keys
+                    conflicting_cats = ['inboundTexts', 'missedCalls']
                     for conflict in conflicting_cats:
                         if conflict in settings:
                             settings[conflict]['notifyByEmail'] = False
                             settings[conflict]['notifyBySms'] = False
+                            
+                    # 4. Remove includeSmsRecipients globally
+                    if 'includeSmsRecipients' in settings:
+                        del settings['includeSmsRecipients']
+                
+                # Global cleanup: If Advanced Mode is FALSE (either naturally or forced by queue),
+                # we MUST remove lingering "advancedEmailAddresses" keys from all categories.
+                if not settings.get("advancedMode", False):
+                    for cat in categories:
+                        if cat in settings:
+                            settings[cat].pop('advancedEmailAddresses', None)
+                            settings[cat].pop('advancedSmsEmailAddresses', None)
                 # --- QUEUE SAFETY OVERRIDE END ---
 
                 # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
