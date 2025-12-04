@@ -1,4 +1,3 @@
-# webapp/__init__.py
 import os
 from flask import Flask
 from dotenv import load_dotenv
@@ -55,6 +54,8 @@ def create_app():
         from .extension_renamer import routes as extension_renamer_routes
         app.register_blueprint(extension_renamer_routes.renamer_bp)
 
-        # (When you add another new feature, you'll import and register its blueprint here)
+        # Notifications Manager routes
+        from .notifications import routes as notifications_routes
+        app.register_blueprint(notifications_routes.notifications_bp)
 
     return app
