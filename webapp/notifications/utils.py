@@ -241,11 +241,15 @@ class NotificationManager:
              queue_mask = df['ExtensionName'].str.contains('Queue', case=False, na=False)
              if queue_mask.any():
                  count = queue_mask.sum()
-                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Will strictly enforce compatible settings.")
+                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Disabling unsupported settings (Texts/MissedCalls/OutboundFax) to prevent 400 Errors.")
                  
-                 # ONLY clean OutboundFaxes as strictly invalid.
-                 # Set to False to FORCE disable it.
-                 cols_to_clean = ['OutboundFaxes_Email', 'OutboundFaxes_SMS']
+                 # Force DISABLE these to prevent "InvalidParameter" errors
+                 # Queues often reject custom email lists for these specific features.
+                 cols_to_clean = [
+                     'OutboundFaxes_Email', 'OutboundFaxes_SMS',
+                     'InboundTexts_Email', 'InboundTexts_SMS',
+                     'MissedCalls_Email', 'MissedCalls_SMS'
+                 ]
                  for col in cols_to_clean:
                      if col in df.columns:
                          df.loc[queue_mask, col] = False
