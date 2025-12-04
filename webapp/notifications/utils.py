@@ -228,6 +228,17 @@ class NotificationManager:
                 continue
 
             try:
+                # 1. Fetch CURRENT settings first to preserve other fields (like includeAttachment)
+                url = f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings"
+                get_resp = rc.get(url, token=token)
+                
+                if get_resp.status_code != 200:
+                    logs.append(f"❌ Ext {ext_num}: Failed to fetch current settings ({get_resp.status_code})")
+                    continue
+                
+                settings = get_resp.json()
+
+                # 2. Prepare Helper Functions
                 def get_bool(val):
                     return str(val).lower() in ['true', '1', 'yes', 't']
                 
@@ -237,38 +248,42 @@ class NotificationManager:
                         return get_bool(row[col_name])
                     return False
 
-                payload = {
-                    "emailAddresses": [e.strip() for e in str(row['EmailAddresses']).split(',') if e.strip()],
-                    "advancedMode": safe_get_bool('AdvancedMode'),
-                    "includeSmsRecipients": safe_get_bool('IncludeSms'),
-                    "voicemails": {
-                        "notifyByEmail": safe_get_bool('Voicemails_Email'),
-                        "notifyBySms": safe_get_bool('Voicemails_SMS'),
-                        "markAsRead": safe_get_bool('Voicemails_MarkAsRead')
-                    },
-                    "missedCalls": {
-                        "notifyByEmail": safe_get_bool('MissedCalls_Email'),
-                        "notifyBySms": safe_get_bool('MissedCalls_SMS')
-                    },
-                    "inboundTexts": {
-                        "notifyByEmail": safe_get_bool('InboundTexts_Email'),
-                        "notifyBySms": safe_get_bool('InboundTexts_SMS')
-                    },
-                    "inboundFaxes": {
-                        "notifyByEmail": safe_get_bool('InboundFaxes_Email'),
-                        "notifyBySms": safe_get_bool('InboundFaxes_SMS'),
-                        "markAsRead": safe_get_bool('InboundFaxes_MarkAsRead')
-                    },
-                    "outboundFaxes": {
-                        "notifyByEmail": safe_get_bool('OutboundFaxes_Email'),
-                        "notifyBySms": safe_get_bool('OutboundFaxes_SMS')
-                    }
-                }
-
-                url = f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings"
+                # 3. Modify the settings object (Merging Excel data into existing settings)
                 
-                # Pass token explicitly
-                resp = rc.put(url, json=payload, token=token)
+                # Email Addresses
+                settings["emailAddresses"] = [e.strip() for e in str(row['EmailAddresses']).split(',') if e.strip()]
+                
+                # Top Level Switches
+                settings["advancedMode"] = safe_get_bool('AdvancedMode')
+                settings["includeSmsRecipients"] = safe_get_bool('IncludeSms')
+                
+                # Nested Objects - ensure keys exist, then update
+                if 'voicemails' not in settings: settings['voicemails'] = {}
+                settings["voicemails"]["notifyByEmail"] = safe_get_bool('Voicemails_Email')
+                settings["voicemails"]["notifyBySms"] = safe_get_bool('Voicemails_SMS')
+                settings["voicemails"]["markAsRead"] = safe_get_bool('Voicemails_MarkAsRead')
+
+                if 'missedCalls' not in settings: settings['missedCalls'] = {}
+                settings["missedCalls"]["notifyByEmail"] = safe_get_bool('MissedCalls_Email')
+                settings["missedCalls"]["notifyBySms"] = safe_get_bool('MissedCalls_SMS')
+
+                if 'inboundTexts' not in settings: settings['inboundTexts'] = {}
+                settings["inboundTexts"]["notifyByEmail"] = safe_get_bool('InboundTexts_Email')
+                settings["inboundTexts"]["notifyBySms"] = safe_get_bool('InboundTexts_SMS')
+
+                if 'inboundFaxes' not in settings: settings['inboundFaxes'] = {}
+                settings["inboundFaxes"]["notifyByEmail"] = safe_get_bool('InboundFaxes_Email')
+                settings["inboundFaxes"]["notifyBySms"] = safe_get_bool('InboundFaxes_SMS')
+                settings["inboundFaxes"]["markAsRead"] = safe_get_bool('InboundFaxes_MarkAsRead')
+
+                if 'outboundFaxes' not in settings: settings['outboundFaxes'] = {}
+                settings["outboundFaxes"]["notifyByEmail"] = safe_get_bool('OutboundFaxes_Email')
+                settings["outboundFaxes"]["notifyBySms"] = safe_get_bool('OutboundFaxes_SMS')
+
+                # 4. PUT the updated object back
+                # url is already defined above
+                
+                resp = rc.put(url, json=settings, token=token)
 
                 if resp.status_code == 200:
                     logs.append(f"✅ Ext {ext_num}: Updated")
