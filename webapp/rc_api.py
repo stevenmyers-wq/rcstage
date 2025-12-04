@@ -1,5 +1,34 @@
 import requests
 from flask import session, current_app
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# --- Compatibility Layer ---
+# Defined at the top to prevent circular import issues where 'rc' 
+# is needed before the module fully initializes.
+
+class RCWrapper:
+    """
+    Wraps the functional rc_api_call into an object structure 
+    to satisfy imports expecting 'rc' (like in __init__.py).
+    """
+    def get(self, endpoint, **kwargs):
+        # Late binding ensures rc_api_call is found even if defined below
+        return rc_api_call(endpoint, method='GET', **kwargs)
+
+    def post(self, endpoint, **kwargs):
+        return rc_api_call(endpoint, method='POST', **kwargs)
+
+    def put(self, endpoint, **kwargs):
+        return rc_api_call(endpoint, method='PUT', **kwargs)
+
+    def delete(self, endpoint, **kwargs):
+        return rc_api_call(endpoint, method='DELETE', **kwargs)
+
+# Initialize the 'rc' instance immediately so it is available for imports
+rc = RCWrapper()
 
 def rc_api_call(endpoint, params=None, method='GET', raise_error=False, **kwargs):
     """
