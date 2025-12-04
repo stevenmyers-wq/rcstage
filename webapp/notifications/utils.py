@@ -236,26 +236,19 @@ class NotificationManager:
             return ["❌ Error reading Excel file."]
 
         # --- AUTO-CLEAN QUEUES START ---
-        # Detect Call Queues and disable incompatible settings to prevent 400 Errors.
+        # Detect Call Queues
+        is_queue_row = False # Track status per row later, but check globally for logs
         if 'ExtensionName' in df.columns:
-             # Find rows where name contains "Queue"
              queue_mask = df['ExtensionName'].str.contains('Queue', case=False, na=False)
-             
              if queue_mask.any():
                  count = queue_mask.sum()
-                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Ignoring unsupported settings (OutboundFax) to prevent API errors.")
+                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Will strictly enforce compatible settings.")
                  
-                 # Columns to BLANK OUT (Set to None so they are skipped by logic below)
-                 # Queues CAN handle InboundTexts, InboundFaxes, and MissedCalls.
-                 # Queues CANNOT handle OutboundFaxes.
-                 cols_to_clean = [
-                     'OutboundFaxes_Email', 'OutboundFaxes_SMS'
-                 ]
-                 
+                 # ONLY clean OutboundFaxes as strictly invalid.
+                 # We keep InboundTexts/MissedCalls active but will handle them carefully in the loop.
+                 cols_to_clean = ['OutboundFaxes_Email', 'OutboundFaxes_SMS']
                  for col in cols_to_clean:
                      if col in df.columns:
-                         # Setting to None ensures get_bool_or_none returns None, 
-                         # which prevents the script from adding these keys to the payload.
                          df.loc[queue_mask, col] = None
         # --- AUTO-CLEAN QUEUES END ---
 
@@ -270,6 +263,10 @@ class NotificationManager:
                 continue
 
             ext_num = str(row['ExtensionNumber']).strip().replace('.0', '')
+            ext_name = str(row.get('ExtensionName', '')).lower()
+            
+            # Determine if this specific row is a Queue
+            is_queue = 'queue' in ext_name
             
             if not ext_num or ext_num.lower() == 'nan':
                 continue
@@ -301,6 +298,8 @@ class NotificationManager:
                     return None
 
                 # 3. Modify the settings object
+                # IMPORTANT: Always populate the main email list. 
+                # This overrides "Notify Manager" logic for simple settings.
                 if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
                       email_raw = str(row['EmailAddresses'])
                       email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
@@ -341,8 +340,6 @@ class NotificationManager:
                         if val_mark is not None and 'markAsRead' in settings[cat]:
                             settings[cat]["markAsRead"] = val_mark
                             
-                            # FIX 1: Dependency Check
-                            # You cannot mark as read if you don't include the attachment.
                             if val_mark is True and 'includeAttachment' in settings[cat]:
                                 settings[cat]["includeAttachment"] = True
                     
@@ -351,10 +348,27 @@ class NotificationManager:
                     notify_sms = settings[cat].get("notifyBySms", False)
 
                     if is_advanced:
-                        if notify_email:
-                            settings[cat]["advancedEmailAddresses"] = email_list
-                        if cat == 'missedCalls' and notify_sms:
-                            settings[cat]["advancedSmsEmailAddresses"] = email_list
+                        # QUEUE SPECIAL HANDLING:
+                        # Call Queues typically throw "InvalidParameter" if you try to set 
+                        # advancedEmailAddresses for InboundTexts, MissedCalls, or Faxes.
+                        # We must SKIP adding specific lists for these categories on Queues,
+                        # forcing them to use the Main Email List (populated above).
+                        
+                        allow_advanced_list = True
+                        if is_queue and cat in ['inboundTexts', 'missedCalls', 'inboundFaxes']:
+                            allow_advanced_list = False
+
+                        if allow_advanced_list:
+                            if notify_email:
+                                settings[cat]["advancedEmailAddresses"] = email_list
+                            if cat == 'missedCalls' and notify_sms:
+                                settings[cat]["advancedSmsEmailAddresses"] = email_list
+                        else:
+                            # If we are skipping the advanced list, ensure we don't send 
+                            # an old/stale one if it somehow exists (though rare for queues).
+                            # We let the API use the default inherited list.
+                            if "advancedEmailAddresses" in settings[cat]:
+                                del settings[cat]["advancedEmailAddresses"]
 
                 # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
                 attempt = 0
