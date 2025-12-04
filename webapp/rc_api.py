@@ -13,28 +13,32 @@ class RCWrapper:
     """
     Wraps the functional rc_api_call into an object structure 
     to satisfy imports expecting 'rc' (like in __init__.py).
+    
+    NOTE: We pass return_response=True to ensure legacy code gets a 
+    Response object (with .status_code) rather than a JSON dict.
     """
     def get(self, endpoint, **kwargs):
         # Late binding ensures rc_api_call is found even if defined below
-        return rc_api_call(endpoint, method='GET', **kwargs)
+        return rc_api_call(endpoint, method='GET', return_response=True, **kwargs)
 
     def post(self, endpoint, **kwargs):
-        return rc_api_call(endpoint, method='POST', **kwargs)
+        return rc_api_call(endpoint, method='POST', return_response=True, **kwargs)
 
     def put(self, endpoint, **kwargs):
-        return rc_api_call(endpoint, method='PUT', **kwargs)
+        return rc_api_call(endpoint, method='PUT', return_response=True, **kwargs)
 
     def delete(self, endpoint, **kwargs):
-        return rc_api_call(endpoint, method='DELETE', **kwargs)
+        return rc_api_call(endpoint, method='DELETE', return_response=True, **kwargs)
 
 # Initialize the 'rc' instance immediately so it is available for imports
 rc = RCWrapper()
 
-def rc_api_call(endpoint, params=None, method='GET', raise_error=False, **kwargs):
+def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_response=False, **kwargs):
     """
     Generic RingCentral API handler.
     - raise_error=True: Raises exception on failure (useful for debugging specific errors).
     - raise_error=False: Returns None on failure (safer for general UI loading).
+    - return_response=True: Returns the raw requests.Response object instead of JSON.
     """
     access_token = session.get('rc_access_token')
     if not access_token:
@@ -65,6 +69,10 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, **kwargs
             **kwargs 
         )
         
+        # If caller wants the raw response (e.g. to check status_code manually)
+        if return_response:
+            return response
+        
         # Handle 204 No Content (Success)
         if response.status_code == 204:
             return {"success": True}
@@ -86,5 +94,8 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, **kwargs
             
         print(f"RC API Error [{method} {endpoint}]: {e}")
         if 'response' in locals() and response is not None:
-            print(f"Details: {response.text}")
+            # For debug prints only
+            # print(f"Details: {response.text}")
+            pass
+            
         return None
