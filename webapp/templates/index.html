@@ -83,7 +83,8 @@
                         ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
                         ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
                         ('live_events', 'Live Events', 'Real-time subscription listener'),
-                        ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV')
+                        ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
+                        ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences')
                     ] %}
                     
                     {% for tab_id, tab_name, tab_desc in tabs %}
@@ -117,6 +118,8 @@
                     {% include 'includes/live_events_tab.html' %}
                 {% elif current_tab == 'custom_rules' %}
                     {% include 'includes/custom_rules_tab.html' %}
+                {% elif current_tab == 'notifications' %}
+                    {% include 'includes/notifications_tab.html' %}
                 {% else %}
                     <p class="text-gray-500">Select a tool from the tabs above to begin.</p>
                 {% endif %}
