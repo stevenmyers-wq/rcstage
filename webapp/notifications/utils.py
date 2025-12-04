@@ -1,6 +1,7 @@
 import io
 import concurrent.futures
 import pandas as pd
+import json
 
 class NotificationManager:
     def __init__(self):
@@ -36,19 +37,34 @@ class NotificationManager:
                     'perPage': 1000, 
                     'page': page
                 })
+                
+                # CRITICAL FIX: If the first page fails (e.g. 401 Unauthorized), 
+                # raise an error immediately instead of returning an empty map.
                 if resp.status_code != 200:
-                    break
+                    if page == 1:
+                        raise Exception(f"API Error fetching extensions: {resp.status_code}")
+                    else:
+                        break
                 
                 data = resp.json()
-                for record in data.get('records', []):
+                records = data.get('records', [])
+                
+                for record in records:
                     if 'extensionNumber' in record:
                         ext_map[str(record['extensionNumber'])] = str(record['id'])
                 
+                # Navigation check
                 if not data.get('navigation') or not data['navigation'].get('nextPage'):
                     break
+                
                 page += 1
-            except Exception:
+                
+            except Exception as e:
+                # Re-raise explicit exceptions
+                if page == 1:
+                    raise e
                 break
+                
         return ext_map
 
     def _fetch_single_setting(self, ext, token=None):
@@ -199,18 +215,20 @@ class NotificationManager:
         try:
             # Pass token for mapping
             ext_map = self._get_extension_map(token=token)
+            logs.append(f"ℹ️ Debug: Successfully mapped {len(ext_map)} extensions.")
+            
+            if not ext_map:
+                 logs.append("⚠️ Warning: No extensions found. Check your permissions or connection.")
         except Exception as e:
-            return [f"❌ Failed to fetch extension list for mapping: {str(e)}"]
+            return [f"❌ Failed to fetch extension list: {str(e)}"]
 
         try:
             df = pd.read_excel(file_storage)
-            # Removed blanket fillna to allow detection of missing/empty cells
-            # df.fillna('', inplace=True) 
         except Exception as e:
             return ["❌ Error reading Excel file."]
 
-        # Validate Headers (Check for core columns only, allowing optional columns to be missing)
-        core_columns = ['ExtensionNumber'] # Reduced core requirement to allow very minimal updates
+        # Validate Headers
+        core_columns = ['ExtensionNumber']
         if not set(core_columns).issubset(df.columns):
             missing = list(set(core_columns) - set(df.columns))
             return [f"❌ Invalid Template. Missing core columns: {missing}"]
@@ -242,41 +260,30 @@ class NotificationManager:
 
                 # 2. Prepare Helper Functions
                 def get_bool_or_none(col_name):
-                    # If column doesn't exist in Excel, return None (skip update)
                     if col_name not in row: return None
-                    
                     val = row[col_name]
-                    # Check for Pandas NaN/None or empty string
                     if pd.isna(val) or str(val).strip() == '': return None
-                    
                     s = str(val).lower().strip()
                     if s in ['true', '1', '1.0', 'yes', 't', 'on']: return True
                     if s in ['false', '0', '0.0', 'no', 'f', 'off']: return False
-                    return None # ambiguous
+                    return None
 
                 # 3. Modify the settings object
-                
-                # Parse Email List (Clean & Split)
-                # Only update if the column is present and not null.
                 if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
                      email_raw = str(row['EmailAddresses'])
                      email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
                      settings["emailAddresses"] = email_list
                 else:
-                     # Keep existing if not provided
                      email_list = settings.get("emailAddresses", [])
 
-                # Top Level Switches
                 val = get_bool_or_none('AdvancedMode')
                 if val is not None: settings["advancedMode"] = val
                 
                 val = get_bool_or_none('IncludeSms')
                 if val is not None: settings["includeSmsRecipients"] = val
                 
-                # Re-evaluate is_advanced based on LATEST state (fetched + updated)
                 is_advanced = settings.get("advancedMode", False)
 
-                # Category Map: Key -> (Email_Col, SMS_Col, Mark_Col)
                 categories = {
                     'voicemails': ('Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead'),
                     'missedCalls': ('MissedCalls_Email', 'MissedCalls_SMS', None),
@@ -288,43 +295,54 @@ class NotificationManager:
                 for cat, cols in categories.items():
                     if cat not in settings: settings[cat] = {}
                     
-                    # Update Flags if provided
                     val_email = get_bool_or_none(cols[0])
                     if val_email is not None: settings[cat]["notifyByEmail"] = val_email
                     
                     val_sms = get_bool_or_none(cols[1])
                     if val_sms is not None: settings[cat]["notifyBySms"] = val_sms
                     
-                    # Safe MarkAsRead update: Only if supported AND provided
                     if cols[2]:
                         val_mark = get_bool_or_none(cols[2])
-                        # IMPORTANT: Check if key exists in original settings to ensure support
-                        # If the API didn't give us 'markAsRead', we shouldn't send it back.
+                        # Check existence before setting
                         if val_mark is not None and 'markAsRead' in settings[cat]:
                             settings[cat]["markAsRead"] = val_mark
                     
-                    # --- ADVANCED MODE FIX ---
-                    # Logic: If notifying by email, ensure advanced list is populated.
-                    # We use the current email list (either newly updated or existing)
+                    # Advanced Mode Population
                     notify_email = settings[cat].get("notifyByEmail", False)
                     notify_sms = settings[cat].get("notifyBySms", False)
 
                     if is_advanced:
                         if notify_email:
                             settings[cat]["advancedEmailAddresses"] = email_list
-                        
-                        # Missed Calls specific: API complains if 'advancedSmsEmailAddresses' is empty 
-                        # when SMS is enabled in Advanced Mode. We populate it to be safe.
                         if cat == 'missedCalls' and notify_sms:
                             settings[cat]["advancedSmsEmailAddresses"] = email_list
 
-                # 4. PUT the updated object back
-                resp = rc.put(url, json=settings, token=token)
-
-                if resp.status_code == 200:
-                    logs.append(f"✅ Ext {ext_num}: Updated")
-                else:
+                # 4. PUT with Retry Logic (Handle MarkAsRead Validation Errors)
+                attempt = 0
+                max_attempts = 2
+                
+                while attempt < max_attempts:
+                    resp = rc.put(url, json=settings, token=token)
+                    
+                    if resp.status_code == 200:
+                        logs.append(f"✅ Ext {ext_num}: Updated")
+                        break
+                    
+                    # If failed with 400 and markAsRead issue, strip it and retry
+                    is_mark_as_read_error = resp.status_code == 400 and "markAsRead" in resp.text
+                    
+                    if is_mark_as_read_error and attempt == 0:
+                        logs.append(f"⚠️ Ext {ext_num}: Retrying without 'markAsRead' (API Rejected Value)...")
+                        # Strip markAsRead from all categories
+                        for cat in categories:
+                            if cat in settings and 'markAsRead' in settings[cat]:
+                                del settings[cat]['markAsRead']
+                        attempt += 1
+                        continue # Restart loop with modified settings
+                    
+                    # Real failure
                     logs.append(f"❌ Ext {ext_num}: Error {resp.status_code} - {resp.text}")
+                    break
 
             except Exception as e:
                 logs.append(f"❌ Ext {ext_num}: {str(e)}")
