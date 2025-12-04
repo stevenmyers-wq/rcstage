@@ -9,6 +9,19 @@ logger = logging.getLogger(__name__)
 # Defined at the top to prevent circular import issues where 'rc' 
 # is needed before the module fully initializes.
 
+class MockResponse:
+    """
+    Minimal mock of requests.Response to prevent 'NoneType' errors
+    in legacy code when API calls fail early (e.g. no token).
+    """
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+        self.ok = 200 <= status_code < 300
+    
+    def json(self):
+        return {"error": self.text}
+
 class RCWrapper:
     """
     Wraps the functional rc_api_call into an object structure 
@@ -52,9 +65,15 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
             logger.debug("No request context. Skipping session token check.")
 
     if not access_token:
-        print("Error: No access token found (session missing or empty).")
+        error_msg = "Error: No access token found (session missing or empty)."
+        print(error_msg)
         if raise_error:
             raise Exception("No access token found. Please login again or pass token explicitly.")
+        
+        # If legacy code expects a Response object, return a 401 MockResponse instead of None
+        if return_response:
+            return MockResponse(401, error_msg)
+            
         return None
 
     # Get Base URL from config
@@ -110,5 +129,9 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
             # For debug prints only
             # print(f"Details: {response.text}")
             pass
+        
+        # If legacy code expects a Response object, return a 500 MockResponse instead of None
+        if return_response:
+            return MockResponse(500, str(e))
             
         return None
