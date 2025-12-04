@@ -237,7 +237,6 @@ class NotificationManager:
 
         # --- AUTO-CLEAN QUEUES START ---
         # Detect Call Queues
-        is_queue_row = False # Track status per row later, but check globally for logs
         if 'ExtensionName' in df.columns:
              queue_mask = df['ExtensionName'].str.contains('Queue', case=False, na=False)
              if queue_mask.any():
@@ -245,11 +244,11 @@ class NotificationManager:
                  logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Will strictly enforce compatible settings.")
                  
                  # ONLY clean OutboundFaxes as strictly invalid.
-                 # We keep InboundTexts/MissedCalls active but will handle them carefully in the loop.
+                 # Set to False to FORCE disable it.
                  cols_to_clean = ['OutboundFaxes_Email', 'OutboundFaxes_SMS']
                  for col in cols_to_clean:
                      if col in df.columns:
-                         df.loc[queue_mask, col] = None
+                         df.loc[queue_mask, col] = False
         # --- AUTO-CLEAN QUEUES END ---
 
         # Validate Headers
@@ -308,9 +307,16 @@ class NotificationManager:
                       email_list = settings.get("emailAddresses", [])
 
                 val = get_bool_or_none('AdvancedMode')
-                # Explicitly capture user intent
-                user_wants_advanced = val
-                if val is not None: settings["advancedMode"] = val
+                
+                # QUEUE OVERRIDE: Call Queues do not support Advanced Mode.
+                # We strictly force it to FALSE.
+                if is_queue:
+                    settings["advancedMode"] = False
+                    user_wants_advanced = False
+                else:
+                    # Explicitly capture user intent
+                    user_wants_advanced = val
+                    if val is not None: settings["advancedMode"] = val
                 
                 val = get_bool_or_none('IncludeSms')
                 if val is not None: settings["includeSmsRecipients"] = val
@@ -348,27 +354,10 @@ class NotificationManager:
                     notify_sms = settings[cat].get("notifyBySms", False)
 
                     if is_advanced:
-                        # QUEUE SPECIAL HANDLING:
-                        # Call Queues typically throw "InvalidParameter" if you try to set 
-                        # advancedEmailAddresses for InboundTexts, MissedCalls, or Faxes.
-                        # We must SKIP adding specific lists for these categories on Queues,
-                        # forcing them to use the Main Email List (populated above).
-                        
-                        allow_advanced_list = True
-                        if is_queue and cat in ['inboundTexts', 'missedCalls', 'inboundFaxes']:
-                            allow_advanced_list = False
-
-                        if allow_advanced_list:
-                            if notify_email:
-                                settings[cat]["advancedEmailAddresses"] = email_list
-                            if cat == 'missedCalls' and notify_sms:
-                                settings[cat]["advancedSmsEmailAddresses"] = email_list
-                        else:
-                            # If we are skipping the advanced list, ensure we don't send 
-                            # an old/stale one if it somehow exists (though rare for queues).
-                            # We let the API use the default inherited list.
-                            if "advancedEmailAddresses" in settings[cat]:
-                                del settings[cat]["advancedEmailAddresses"]
+                         if notify_email:
+                             settings[cat]["advancedEmailAddresses"] = email_list
+                         if cat == 'missedCalls' and notify_sms:
+                             settings[cat]["advancedSmsEmailAddresses"] = email_list
 
                 # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
                 attempt = 0
