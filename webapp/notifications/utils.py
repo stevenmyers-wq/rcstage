@@ -17,7 +17,7 @@ class NotificationManager:
             'OutboundFaxes_Email', 'OutboundFaxes_SMS'
         ]
 
-    def _get_extension_map(self):
+    def _get_extension_map(self, token=None):
         """
         Fetches all extensions and returns a dictionary:
         { '101': '12345678', '102': '87654321' }
@@ -28,7 +28,8 @@ class NotificationManager:
         page = 1
         while True:
             try:
-                resp = rc.get('/restapi/v1.0/account/~/extension', params={
+                # Pass token explicitly
+                resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
                     'status': ['Enabled', 'Disabled', 'NotActivated'], 
                     'type': 'User', 
                     'perPage': 1000, 
@@ -49,12 +50,14 @@ class NotificationManager:
                 break
         return ext_map
 
-    def _fetch_single_setting(self, ext):
+    def _fetch_single_setting(self, ext, token=None):
         """Fetch settings for a single user (helper for threading)."""
         from webapp.rc_api import rc
         
         try:
-            resp = rc.get(f"/restapi/v1.0/account/~/extension/{ext['id']}/notification-settings")
+            # Pass token explicitly to the API call running in the thread
+            resp = rc.get(f"/restapi/v1.0/account/~/extension/{ext['id']}/notification-settings", token=token)
+            
             if resp.status_code != 200:
                 return {
                     'ExtensionNumber': ext.get('extensionNumber', ''),
@@ -103,7 +106,7 @@ class NotificationManager:
                 'ExtensionName': f"Error: {str(e)}"
             }
 
-    def generate_audit_report(self):
+    def generate_audit_report(self, token=None):
         """Scans all users and builds an Excel file."""
         import pandas as pd
         from webapp.rc_api import rc
@@ -111,7 +114,8 @@ class NotificationManager:
         extensions = []
         page = 1
         while True:
-            resp = rc.get('/restapi/v1.0/account/~/extension', params={
+            # Pass token explicitly
+            resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
                 'status': 'Enabled', 'type': 'User', 'perPage': 1000, 'page': page
             })
             if resp.status_code != 200: break
@@ -122,7 +126,8 @@ class NotificationManager:
 
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_ext = {executor.submit(self._fetch_single_setting, ext): ext for ext in extensions}
+            # Pass the token into the threaded function
+            future_to_ext = {executor.submit(self._fetch_single_setting, ext, token=token): ext for ext in extensions}
             for future in concurrent.futures.as_completed(future_to_ext):
                 results.append(future.result())
 
@@ -183,7 +188,7 @@ class NotificationManager:
 
         return output
 
-    def process_update_file(self, file_storage):
+    def process_update_file(self, file_storage, token=None):
         """Reads Excel, maps Ext Number to ID, and updates settings."""
         import pandas as pd
         from webapp.rc_api import rc
@@ -191,7 +196,8 @@ class NotificationManager:
         logs = []
         
         try:
-            ext_map = self._get_extension_map()
+            # Pass token for mapping
+            ext_map = self._get_extension_map(token=token)
         except Exception as e:
             return [f"❌ Failed to fetch extension list for mapping: {str(e)}"]
 
@@ -261,7 +267,8 @@ class NotificationManager:
 
                 url = f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings"
                 
-                resp = rc.put(url, json=payload)
+                # Pass token explicitly
+                resp = rc.put(url, json=payload, token=token)
 
                 if resp.status_code == 200:
                     logs.append(f"✅ Ext {ext_num}: Updated")
