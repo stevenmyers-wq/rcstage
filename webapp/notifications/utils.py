@@ -296,6 +296,18 @@ class NotificationManager:
                       email_raw = str(row['EmailAddresses'])
                       email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
                       settings["emailAddresses"] = email_list
+                      
+                      # CRITICAL FIX: Explicitly disable manager notifications if custom emails are provided.
+                      # The API sees "includeManagers=True" and "emailAddresses=[...]" as a conflict for some queue settings.
+                      check_cats = ['voicemails', 'inboundFaxes', 'missedCalls', 'inboundTexts']
+                      for cat in check_cats:
+                          if cat in settings and isinstance(settings[cat], dict):
+                              # Explicitly disable "Notify Manager"
+                              settings[cat]["includeManagers"] = False
+                              
+                              # Remove "emailRecipients" array if present (it contains the manager list)
+                              if "emailRecipients" in settings[cat]:
+                                  del settings[cat]["emailRecipients"]
                 else:
                       email_list = settings.get("emailAddresses", [])
 
@@ -346,32 +358,30 @@ class NotificationManager:
                              settings[cat]["advancedSmsEmailAddresses"] = email_list
 
                 # --- QUEUE SAFETY OVERRIDE START ---
-                # Call Queues are extremely strict. We must perform a destructive cleanup.
+                # Call Queues are strict. We need to prevent Advanced Mode conflicts.
                 if is_queue:
                     # 1. Force Advanced Mode OFF
                     settings["advancedMode"] = False
                     user_wants_advanced = False 
                     
-                    # 2. DELETE KEYS ENTIRELY
-                    # Attempting to even send "notifyByEmail: false" for unsupported keys on a Queue
-                    # can trigger "InvalidParameter" because it conflicts with the "Notify Manager" state.
-                    # We just REMOVE them so the API ignores them.
-                    keys_to_remove = [
-                        'outboundFaxes', 
-                        'inboundTexts', 
-                        'missedCalls', 
-                        'includeSmsRecipients'
-                    ]
-                    for k in keys_to_remove:
-                        if k in settings:
-                            del settings[k]
-                
+                    # 2. DELETE OutboundFaxes (Does not exist for queues)
+                    if 'outboundFaxes' in settings:
+                        del settings['outboundFaxes']
+                        
+                    # 3. Remove includeSmsRecipients globally
+                    if 'includeSmsRecipients' in settings:
+                        del settings['includeSmsRecipients']
+                    
+                    # 4. Scrub advanced keys immediately from ALL categories
+                    # We do this now so we don't accidentally send them even if AdvancedMode is False
+                    for key in list(settings.keys()):
+                        if isinstance(settings[key], dict):
+                            settings[key].pop('advancedEmailAddresses', None)
+                            settings[key].pop('advancedSmsEmailAddresses', None)
+
                 # 5. GLOBAL SCRUB: If Advanced Mode is False (either by user or forced by queue),
-                # we MUST remove lingering "advancedEmailAddresses" keys from ALL categories (including Voicemail).
-                # If we don't, API sees "advancedMode: false" but finds advanced keys and throws Error 400.
+                # ensure no advanced keys linger.
                 if not settings.get("advancedMode", False):
-                    # Iterate through ALL keys in settings, not just known categories
-                    # Use list(settings.keys()) to allow modification during iteration
                     for key in list(settings.keys()):
                         if isinstance(settings[key], dict):
                             settings[key].pop('advancedEmailAddresses', None)
