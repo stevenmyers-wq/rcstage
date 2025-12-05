@@ -352,25 +352,19 @@ class NotificationManager:
                     settings["advancedMode"] = False
                     user_wants_advanced = False 
                     
-                    # 2. DELETE OutboundFaxes (Does not exist for queues, presence triggers error)
-                    if 'outboundFaxes' in settings:
-                        del settings['outboundFaxes']
-                    
-                    # 3. FORCE DISABLE unsupported features.
-                    # DO NOT just delete the key, as that leaves the "Notify Manager" setting active.
-                    # We must explicitly tell API to turn OFF email/sms for these features.
-                    unsupported_features = ['inboundTexts', 'missedCalls']
-                    for feat in unsupported_features:
-                        if feat not in settings: settings[feat] = {}
-                        settings[feat]['notifyByEmail'] = False
-                        settings[feat]['notifyBySms'] = False
-                        # CRITICAL: Scrub advanced keys from these specifically
-                        if 'advancedEmailAddresses' in settings[feat]: del settings[feat]['advancedEmailAddresses']
-                        if 'advancedSmsEmailAddresses' in settings[feat]: del settings[feat]['advancedSmsEmailAddresses']
-
-                    # 4. Remove includeSmsRecipients globally
-                    if 'includeSmsRecipients' in settings:
-                        del settings['includeSmsRecipients']
+                    # 2. DELETE KEYS ENTIRELY
+                    # Attempting to even send "notifyByEmail: false" for unsupported keys on a Queue
+                    # can trigger "InvalidParameter" because it conflicts with the "Notify Manager" state.
+                    # We just REMOVE them so the API ignores them.
+                    keys_to_remove = [
+                        'outboundFaxes', 
+                        'inboundTexts', 
+                        'missedCalls', 
+                        'includeSmsRecipients'
+                    ]
+                    for k in keys_to_remove:
+                        if k in settings:
+                            del settings[k]
                 
                 # 5. GLOBAL SCRUB: If Advanced Mode is False (either by user or forced by queue),
                 # we MUST remove lingering "advancedEmailAddresses" keys from ALL categories (including Voicemail).
