@@ -500,8 +500,10 @@ class NotificationManager:
                     
                     # For queues: Include the forbidden categories but disable them
                     if is_queue:
-                        # CRITICAL: Explicitly disable manager notifications
-                        payload['includeManagers'] = False
+                        # For queues, manager notifications are controlled differently:
+                        # Just provide emailAddresses and DON'T send includeManagers at all
+                        payload.pop('includeManagers', None)
+                        payload.pop('emailRecipients', None)
                         
                         # Set forbidden categories to disabled state (not removed)
                         if 'outboundFaxes' not in payload:
@@ -515,12 +517,13 @@ class NotificationManager:
                         payload['inboundTexts']['notifyBySms'] = False
                         
                         # For supported categories, set forbidden sub-fields to False
-                        for cat in ['voicemails', 'inboundFaxes']:
+                        for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
                             if cat in payload and isinstance(payload[cat], dict):
                                 payload[cat]['markAsRead'] = False
                                 payload[cat]['includeAttachment'] = False
-                                # Also disable manager notifications at category level
-                                payload[cat]['includeManagers'] = False
+                                # Remove category-level manager fields
+                                payload[cat].pop('includeManagers', None)
+                                payload[cat].pop('emailRecipients', None)
                     
                     resp = rc.put(url, json=payload, token=token)
                     
