@@ -445,9 +445,9 @@ class NotificationManager:
                     except:
                         pass
                     
-                    fixed_something = False
+                    fields_removed = []
                     
-                    # Parse all errors from the response
+                    # Parse all errors from the response and collect them
                     if err_json and 'errors' in err_json:
                         for error in err_json.get('errors', []):
                             param = error.get('parameterName', '')
@@ -456,46 +456,46 @@ class NotificationManager:
                             if '.' in param:
                                 cat_name, field_name = param.split('.', 1)
                                 if cat_name in settings and isinstance(settings[cat_name], dict):
-                                    logs.append(f"⚠️ Ext {ext_num}: Removing {cat_name}.{field_name}...")
-                                    settings[cat_name].pop(field_name, None)
-                                    fixed_something = True
+                                    if field_name in settings[cat_name]:
+                                        settings[cat_name].pop(field_name, None)
+                                        fields_removed.append(f"{cat_name}.{field_name}")
                             
                             # Handle top-level invalid categories
                             elif param in settings:
-                                logs.append(f"⚠️ Ext {ext_num}: Removing entire category {param}...")
                                 settings.pop(param, None)
-                                fixed_something = True
+                                fields_removed.append(param)
                             
                             # Handle specific known issues
                             elif 'includeManagers' in param:
-                                logs.append(f"⚠️ Ext {ext_num}: Removing includeManagers from all categories...")
                                 for cat in list(settings.keys()):
-                                    if isinstance(settings[cat], dict):
+                                    if isinstance(settings[cat], dict) and 'includeManagers' in settings[cat]:
                                         settings[cat].pop('includeManagers', None)
-                                fixed_something = True
+                                        fields_removed.append(f"{cat}.includeManagers")
                             
                             elif 'emailRecipients' in param:
-                                logs.append(f"⚠️ Ext {ext_num}: Removing emailRecipients (root + categories)...")
-                                settings.pop('emailRecipients', None)
+                                if 'emailRecipients' in settings:
+                                    settings.pop('emailRecipients', None)
+                                    fields_removed.append('emailRecipients')
                                 for cat in list(settings.keys()):
-                                    if isinstance(settings[cat], dict):
+                                    if isinstance(settings[cat], dict) and 'emailRecipients' in settings[cat]:
                                         settings[cat].pop('emailRecipients', None)
-                                fixed_something = True
+                                        fields_removed.append(f"{cat}.emailRecipients")
                         
-                        # If we fixed something, break out to retry
-                        if fixed_something:
+                        # If we removed any fields, log once and retry
+                        if fields_removed:
+                            logs.append(f"⚠️ Ext {ext_num}: Removed {len(fields_removed)} invalid fields: {', '.join(fields_removed[:3])}{'...' if len(fields_removed) > 3 else ''}")
                             attempt += 1
                             if attempt >= max_attempts:
                                 logs.append(f"❌ Ext {ext_num}: Max retry attempts reached - {resp.text}")
+                                break
                             continue
                     
                     # Fallback: old logic for text-based errors
-                    if not fixed_something:
-                        if resp.status_code == 400 and "includeSmsRecipients" in err_text:
-                            logs.append(f"⚠️ Ext {ext_num}: Removing 'includeSmsRecipients'...")
-                            settings.pop('includeSmsRecipients', None)
-                            attempt += 1
-                            continue
+                    if resp.status_code == 400 and "includeSmsRecipients" in err_text:
+                        logs.append(f"⚠️ Ext {ext_num}: Removing 'includeSmsRecipients'...")
+                        settings.pop('includeSmsRecipients', None)
+                        attempt += 1
+                        continue
                     
                     # Real failure - no fix possible
                     logs.append(f"❌ Ext {ext_num}: Error {resp.status_code} - {resp.text}")
