@@ -344,6 +344,24 @@ class NotificationManager:
                         if isinstance(settings[key], dict):
                             settings[key].pop('advancedEmailAddresses', None)
                             settings[key].pop('advancedSmsEmailAddresses', None)
+                
+                # IMMEDIATE QUEUE CLEANUP: Remove unsupported categories and root fields BEFORE processing
+                if is_queue:
+                    # Remove entire unsupported categories from fetched settings
+                    settings.pop('outboundFaxes', None)
+                    settings.pop('inboundTexts', None)
+                    settings.pop('emailRecipients', None)
+                    settings.pop('includeSmsRecipients', None)
+                    
+                    # Remove forbidden fields from all existing categories
+                    for cat in list(settings.keys()):
+                        if isinstance(settings[cat], dict):
+                            settings[cat].pop('markAsRead', None)
+                            settings[cat].pop('includeAttachment', None)
+                            settings[cat].pop('includeManagers', None)
+                            settings[cat].pop('emailRecipients', None)
+                            settings[cat].pop('advancedEmailAddresses', None)
+                            settings[cat].pop('advancedSmsEmailAddresses', None)
 
                 # 5. Process Category-Specific Settings
                 categories = {
