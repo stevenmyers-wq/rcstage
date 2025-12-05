@@ -346,29 +346,42 @@ class NotificationManager:
                              settings[cat]["advancedSmsEmailAddresses"] = email_list
 
                 # --- QUEUE SAFETY OVERRIDE START ---
-                # Call Queues throw "400 InvalidParameter: emailRecipients" if you try to set 
-                # custom emails for features that are locked to Manager (Texts/MissedCalls), 
-                # or features that don't exist (OutboundFax).
-                # To fix this, we strictly CLEAN the payload for Queues.
+                # Call Queues are extremely strict. We must perform a destructive cleanup.
                 if is_queue:
                     # 1. Force Advanced Mode OFF
                     settings["advancedMode"] = False
                     user_wants_advanced = False 
                     
-                    # 2. DELETE potentially conflicting keys entirely.
-                    # We do NOT send updates for texts/missed calls for queues to avoid validation errors.
-                    keys_to_remove = ['outboundFaxes', 'inboundTexts', 'missedCalls', 'includeSmsRecipients']
-                    for k in keys_to_remove:
-                        if k in settings:
-                            del settings[k]
+                    # 2. DELETE OutboundFaxes (Does not exist for queues, presence triggers error)
+                    if 'outboundFaxes' in settings:
+                        del settings['outboundFaxes']
+                    
+                    # 3. FORCE DISABLE unsupported features.
+                    # DO NOT just delete the key, as that leaves the "Notify Manager" setting active.
+                    # We must explicitly tell API to turn OFF email/sms for these features.
+                    unsupported_features = ['inboundTexts', 'missedCalls']
+                    for feat in unsupported_features:
+                        if feat not in settings: settings[feat] = {}
+                        settings[feat]['notifyByEmail'] = False
+                        settings[feat]['notifyBySms'] = False
+                        # CRITICAL: Scrub advanced keys from these specifically
+                        if 'advancedEmailAddresses' in settings[feat]: del settings[feat]['advancedEmailAddresses']
+                        if 'advancedSmsEmailAddresses' in settings[feat]: del settings[feat]['advancedSmsEmailAddresses']
+
+                    # 4. Remove includeSmsRecipients globally
+                    if 'includeSmsRecipients' in settings:
+                        del settings['includeSmsRecipients']
                 
-                # Global cleanup: If Advanced Mode is FALSE (either naturally or forced by queue),
-                # we MUST remove lingering "advancedEmailAddresses" keys from all categories.
+                # 5. GLOBAL SCRUB: If Advanced Mode is False (either by user or forced by queue),
+                # we MUST remove lingering "advancedEmailAddresses" keys from ALL categories (including Voicemail).
+                # If we don't, API sees "advancedMode: false" but finds advanced keys and throws Error 400.
                 if not settings.get("advancedMode", False):
-                    for cat in categories:
-                        if cat in settings:
-                            settings[cat].pop('advancedEmailAddresses', None)
-                            settings[cat].pop('advancedSmsEmailAddresses', None)
+                    # Iterate through ALL keys in settings, not just known categories
+                    # Use list(settings.keys()) to allow modification during iteration
+                    for key in list(settings.keys()):
+                        if isinstance(settings[key], dict):
+                            settings[key].pop('advancedEmailAddresses', None)
+                            settings[key].pop('advancedSmsEmailAddresses', None)
                 # --- QUEUE SAFETY OVERRIDE END ---
 
                 # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
