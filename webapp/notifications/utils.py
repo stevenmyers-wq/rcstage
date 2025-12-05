@@ -349,26 +349,18 @@ class NotificationManager:
                 # Call Queues throw "400 InvalidParameter: emailRecipients" if you try to set 
                 # custom emails for features that are locked to Manager (Texts/MissedCalls), 
                 # or features that don't exist (OutboundFax).
-                # We HARD FORCE these to False immediately before the PUT to ensure the payload is clean.
+                # To fix this, we strictly CLEAN the payload for Queues.
                 if is_queue:
-                    # 1. No Advanced Mode for Queues
+                    # 1. Force Advanced Mode OFF
                     settings["advancedMode"] = False
                     user_wants_advanced = False 
                     
-                    # 2. DELETE OutboundFaxes entirely (Presence of key can trigger error)
-                    if 'outboundFaxes' in settings:
-                        del settings['outboundFaxes']
-                    
-                    # 3. Force Disable Unsupported/Conflicting Features and SCRUB advanced keys
-                    conflicting_cats = ['inboundTexts', 'missedCalls']
-                    for conflict in conflicting_cats:
-                        if conflict in settings:
-                            settings[conflict]['notifyByEmail'] = False
-                            settings[conflict]['notifyBySms'] = False
-                            
-                    # 4. Remove includeSmsRecipients globally
-                    if 'includeSmsRecipients' in settings:
-                        del settings['includeSmsRecipients']
+                    # 2. DELETE potentially conflicting keys entirely.
+                    # We do NOT send updates for texts/missed calls for queues to avoid validation errors.
+                    keys_to_remove = ['outboundFaxes', 'inboundTexts', 'missedCalls', 'includeSmsRecipients']
+                    for k in keys_to_remove:
+                        if k in settings:
+                            del settings[k]
                 
                 # Global cleanup: If Advanced Mode is FALSE (either naturally or forced by queue),
                 # we MUST remove lingering "advancedEmailAddresses" keys from all categories.
