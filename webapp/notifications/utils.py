@@ -353,6 +353,9 @@ class NotificationManager:
                     settings.pop('emailRecipients', None)
                     settings.pop('includeSmsRecipients', None)
                     
+                    # CRITICAL: Remove root-level includeManagers (this is the manager notification toggle!)
+                    settings.pop('includeManagers', None)
+                    
                     # Remove forbidden fields from all existing categories
                     for cat in list(settings.keys()):
                         if isinstance(settings[cat], dict):
@@ -362,6 +365,7 @@ class NotificationManager:
                             settings[cat].pop('emailRecipients', None)
                             settings[cat].pop('advancedEmailAddresses', None)
                             settings[cat].pop('advancedSmsEmailAddresses', None)
+                            settings[cat].pop('includeTranscription', None)  # Also forbidden for queues
 
                 # 5. Process Category-Specific Settings
                 categories = {
@@ -462,18 +466,19 @@ class NotificationManager:
                 
                 # FINAL AGGRESSIVE CLEANUP RIGHT BEFORE PUT (for queues)
                 if is_queue:
-                    # Remove unsupported categories one more time
-                    settings.pop('outboundFaxes', None)
-                    settings.pop('inboundTexts', None)
-                    settings.pop('emailRecipients', None)
-                    settings.pop('includeSmsRecipients', None)
+                    # Remove unsupported root-level fields
+                    root_forbidden = ['outboundFaxes', 'inboundTexts', 'emailRecipients', 
+                                     'includeSmsRecipients', 'includeManagers']
+                    for field in root_forbidden:
+                        settings.pop(field, None)
                     
                     # Aggressively clean all dict values
-                    forbidden = ['markAsRead', 'includeAttachment', 'includeManagers', 'emailRecipients', 
-                                'advancedEmailAddresses', 'advancedSmsEmailAddresses']
+                    category_forbidden = ['markAsRead', 'includeAttachment', 'includeManagers', 
+                                         'emailRecipients', 'advancedEmailAddresses', 
+                                         'advancedSmsEmailAddresses', 'includeTranscription']
                     for key, value in list(settings.items()):
                         if isinstance(value, dict):
-                            for field in forbidden:
+                            for field in category_forbidden:
                                 value.pop(field, None)
                 
                 # Debug: Show what we're about to send for queues
