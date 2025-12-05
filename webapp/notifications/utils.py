@@ -494,24 +494,28 @@ class NotificationManager:
                     logs.append(f"📤 Ext {ext_num}: Full payload ({len(payload_str)} chars): {payload_str}")
                 
                 while attempt < max_attempts:
-                    # Create a deep copy for the API call to prevent any modifications
+                    # Create a deep copy for the API call
                     import copy
                     payload = copy.deepcopy(settings)
                     
-                    # One final sanity check - remove forbidden fields from the copy
+                    # For queues: Include the forbidden categories but disable them
                     if is_queue:
-                        root_forbidden = ['outboundFaxes', 'inboundTexts', 'emailRecipients', 
-                                         'includeSmsRecipients', 'includeManagers']
-                        for field in root_forbidden:
-                            payload.pop(field, None)
+                        # Set forbidden categories to disabled state (not removed)
+                        if 'outboundFaxes' not in payload:
+                            payload['outboundFaxes'] = {}
+                        payload['outboundFaxes']['notifyByEmail'] = False
+                        payload['outboundFaxes']['notifyBySms'] = False
                         
-                        category_forbidden = ['markAsRead', 'includeAttachment', 'includeManagers', 
-                                             'emailRecipients', 'advancedEmailAddresses', 
-                                             'advancedSmsEmailAddresses', 'includeTranscription']
-                        for key, value in list(payload.items()):
-                            if isinstance(value, dict):
-                                for field in category_forbidden:
-                                    value.pop(field, None)
+                        if 'inboundTexts' not in payload:
+                            payload['inboundTexts'] = {}
+                        payload['inboundTexts']['notifyByEmail'] = False
+                        payload['inboundTexts']['notifyBySms'] = False
+                        
+                        # For supported categories, set forbidden sub-fields to False
+                        for cat in ['voicemails', 'inboundFaxes']:
+                            if cat in payload and isinstance(payload[cat], dict):
+                                payload[cat]['markAsRead'] = False
+                                payload[cat]['includeAttachment'] = False
                     
                     resp = rc.put(url, json=payload, token=token)
                     
