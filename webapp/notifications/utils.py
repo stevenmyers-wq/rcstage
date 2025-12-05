@@ -357,6 +357,8 @@ class NotificationManager:
                 for cat, cols in categories.items():
                     # Skip categories that queues don't support
                     if is_queue and cat in ['outboundFaxes', 'inboundTexts']:
+                        # Remove these categories entirely from settings
+                        settings.pop(cat, None)
                         continue
                     
                     if cat not in settings: 
@@ -370,13 +372,18 @@ class NotificationManager:
                     if val_sms is not None: 
                         settings[cat]["notifyBySms"] = val_sms
                     
-                    # Only process markAsRead for non-queues
-                    if cols[2] and not is_queue:
+                    # Handle markAsRead and includeAttachment
+                    if is_queue:
+                        # For queues: REMOVE these fields entirely (they don't support them)
+                        settings[cat].pop('markAsRead', None)
+                        settings[cat].pop('includeAttachment', None)
+                    elif cols[2]:
+                        # For non-queues: Only set if user provided a value
                         val_mark = get_bool_or_none(cols[2])
                         if val_mark is not None:
                             settings[cat]["markAsRead"] = val_mark
                             
-                            if val_mark is True and 'includeAttachment' in settings[cat]:
+                            if val_mark is True:
                                 settings[cat]["includeAttachment"] = True
                     
                     # Advanced Mode Population (only if advanced is enabled and not a queue)
@@ -388,6 +395,10 @@ class NotificationManager:
                             settings[cat]["advancedEmailAddresses"] = email_list
                         if cat == 'missedCalls' and notify_sms:
                             settings[cat]["advancedSmsEmailAddresses"] = email_list
+                    elif is_queue:
+                        # Remove advanced fields for queues
+                        settings[cat].pop('advancedEmailAddresses', None)
+                        settings[cat].pop('advancedSmsEmailAddresses', None)
 
                 # 6. FINAL QUEUE SAFETY CLEANUP (runs AFTER all processing)
                 if is_queue:
@@ -418,11 +429,32 @@ class NotificationManager:
                     for cat in list(settings.keys()):
                         if isinstance(settings[cat], dict):
                             for field in queue_forbidden_fields:
-                                settings[cat].pop(field, None)
+                                if field in settings[cat]:
+                                    settings[cat].pop(field, None)
+                    
+                    # Debug: Log what categories remain
+                    remaining_cats = [k for k in settings.keys() if isinstance(settings[k], dict)]
+                    logs.append(f"ℹ️ Ext {ext_num}: Queue payload contains categories: {', '.join(remaining_cats)}")
 
                 # 7. PUT with Retry Logic
                 attempt = 0
                 max_attempts = 4
+                
+                # Debug: Show what we're about to send for queues
+                if is_queue and attempt == 0:
+                    problem_fields = []
+                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
+                        if cat in settings and isinstance(settings[cat], dict):
+                            for field in ['markAsRead', 'includeAttachment']:
+                                if field in settings[cat]:
+                                    problem_fields.append(f"{cat}.{field}")
+                    if 'outboundFaxes' in settings:
+                        problem_fields.append('outboundFaxes')
+                    if 'inboundTexts' in settings:
+                        problem_fields.append('inboundTexts')
+                    
+                    if problem_fields:
+                        logs.append(f"⚠️ Ext {ext_num}: WARNING - Queue payload still contains forbidden fields: {', '.join(problem_fields)}")
                 
                 while attempt < max_attempts:
                     resp = rc.put(url, json=settings, token=token)
