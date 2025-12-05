@@ -355,6 +355,10 @@ class NotificationManager:
                 }
 
                 for cat, cols in categories.items():
+                    # Skip categories that queues don't support
+                    if is_queue and cat in ['outboundFaxes', 'inboundTexts']:
+                        continue
+                    
                     if cat not in settings: 
                         settings[cat] = {}
                     
@@ -366,7 +370,8 @@ class NotificationManager:
                     if val_sms is not None: 
                         settings[cat]["notifyBySms"] = val_sms
                     
-                    if cols[2]:
+                    # Only process markAsRead for non-queues
+                    if cols[2] and not is_queue:
                         val_mark = get_bool_or_none(cols[2])
                         if val_mark is not None:
                             settings[cat]["markAsRead"] = val_mark
@@ -374,8 +379,8 @@ class NotificationManager:
                             if val_mark is True and 'includeAttachment' in settings[cat]:
                                 settings[cat]["includeAttachment"] = True
                     
-                    # Advanced Mode Population (only if advanced is enabled)
-                    if is_advanced:
+                    # Advanced Mode Population (only if advanced is enabled and not a queue)
+                    if is_advanced and not is_queue:
                         notify_email = settings[cat].get("notifyByEmail", False)
                         notify_sms = settings[cat].get("notifyBySms", False)
 
@@ -384,37 +389,36 @@ class NotificationManager:
                         if cat == 'missedCalls' and notify_sms:
                             settings[cat]["advancedSmsEmailAddresses"] = email_list
 
-                # 6. QUEUE SAFETY OVERRIDE
+                # 6. FINAL QUEUE SAFETY CLEANUP (runs AFTER all processing)
                 if is_queue:
-                    logs.append(f"ℹ️ Ext {ext_num}: Detected Call Queue - applying strict compatibility mode...")
+                    logs.append(f"ℹ️ Ext {ext_num}: Detected Call Queue - applying final cleanup...")
                     
                     # Force Advanced Mode OFF for queues
                     settings["advancedMode"] = False
                     user_wants_advanced = False
                     
-                    # Remove ROOT level emailRecipients (manager mode field)
+                    # Remove ROOT level fields
                     settings.pop('emailRecipients', None)
+                    settings.pop('includeSmsRecipients', None)
                     
-                    # Remove categories that queues don't support
-                    keys_to_remove = ['outboundFaxes', 'inboundTexts', 'includeSmsRecipients']
+                    # Remove entire categories that queues don't support
+                    settings.pop('outboundFaxes', None)
+                    settings.pop('inboundTexts', None)
                     
-                    for k in keys_to_remove:
-                        if k in settings:
-                            del settings[k]
+                    # Remove ALL queue-incompatible fields from remaining categories
+                    queue_forbidden_fields = [
+                        'markAsRead', 
+                        'includeAttachment', 
+                        'emailRecipients', 
+                        'includeManagers',
+                        'advancedEmailAddresses',
+                        'advancedSmsEmailAddresses'
+                    ]
                     
-                    # Remove ALL queue-incompatible fields from categories
-                    queue_forbidden_fields = ['markAsRead', 'includeAttachment', 'emailRecipients', 'includeManagers']
-                    
-                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
-                        if cat in settings and isinstance(settings[cat], dict):
+                    for cat in list(settings.keys()):
+                        if isinstance(settings[cat], dict):
                             for field in queue_forbidden_fields:
                                 settings[cat].pop(field, None)
-                    
-                    # Clean up advanced keys again (in case they were added above)
-                    for key in list(settings.keys()):
-                        if isinstance(settings[key], dict):
-                            settings[key].pop('advancedEmailAddresses', None)
-                            settings[key].pop('advancedSmsEmailAddresses', None)
 
                 # 7. PUT with Retry Logic
                 attempt = 0
