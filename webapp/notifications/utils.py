@@ -425,40 +425,26 @@ class NotificationManager:
                         settings[cat].pop('advancedSmsEmailAddresses', None)
 
                 # 6. FINAL QUEUE SAFETY CLEANUP (runs AFTER all processing)
+                # NOTE: This is now redundant but kept as a safety net
                 if is_queue:
-                    logs.append(f"ℹ️ Ext {ext_num}: Detected Call Queue - applying final cleanup...")
+                    # Remove unsupported root-level fields one last time
+                    root_forbidden = ['outboundFaxes', 'inboundTexts', 'emailRecipients', 
+                                     'includeSmsRecipients', 'includeManagers']
+                    for field in root_forbidden:
+                        settings.pop(field, None)
                     
-                    # Force Advanced Mode OFF for queues
-                    settings["advancedMode"] = False
-                    user_wants_advanced = False
-                    
-                    # Remove ROOT level fields
-                    settings.pop('emailRecipients', None)
-                    settings.pop('includeSmsRecipients', None)
-                    
-                    # Remove entire categories that queues don't support
-                    settings.pop('outboundFaxes', None)
-                    settings.pop('inboundTexts', None)
-                    
-                    # Remove ALL queue-incompatible fields from remaining categories
-                    queue_forbidden_fields = [
-                        'markAsRead', 
-                        'includeAttachment', 
-                        'emailRecipients', 
-                        'includeManagers',
-                        'advancedEmailAddresses',
-                        'advancedSmsEmailAddresses'
-                    ]
-                    
-                    for cat in list(settings.keys()):
-                        if isinstance(settings[cat], dict):
-                            for field in queue_forbidden_fields:
-                                if field in settings[cat]:
-                                    settings[cat].pop(field, None)
+                    # Clean all categories one last time
+                    category_forbidden = ['markAsRead', 'includeAttachment', 'includeManagers', 
+                                         'emailRecipients', 'advancedEmailAddresses', 
+                                         'advancedSmsEmailAddresses', 'includeTranscription']
+                    for key, value in list(settings.items()):
+                        if isinstance(value, dict):
+                            for field in category_forbidden:
+                                value.pop(field, None)
                     
                     # Debug: Log what categories remain
                     remaining_cats = [k for k in settings.keys() if isinstance(settings[k], dict)]
-                    logs.append(f"ℹ️ Ext {ext_num}: Queue payload contains categories: {', '.join(remaining_cats)}")
+                    logs.append(f"ℹ️ Ext {ext_num}: After final cleanup, categories: {', '.join(remaining_cats)}")
 
                 # 7. PUT with Retry Logic
                 attempt = 0
