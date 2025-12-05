@@ -447,72 +447,57 @@ class NotificationManager:
                     
                     fixed_something = False
                     
-                    # Fix 1: MarkAsRead (remove entirely, don't set to False)
-                    if resp.status_code == 400 and "markAsRead" in err_text:
-                         logs.append(f"⚠️ Ext {ext_num}: Removing 'markAsRead' (not supported)...")
-                         for cat in categories:
-                           if cat in settings and isinstance(settings[cat], dict):
-                               settings[cat].pop('markAsRead', None)
-                               settings[cat].pop('includeAttachment', None)
-                         fixed_something = True
-
-                    # Fix 2: IncludeSmsRecipients
-                    elif resp.status_code == 400 and "includeSmsRecipients" in err_text:
-                         logs.append(f"⚠️ Ext {ext_num}: Removing 'includeSmsRecipients'...")
-                         settings.pop('includeSmsRecipients', None)
-                         fixed_something = True
-                    
-                    # Fix 3: Manager notification conflict - check specific error details
-                    elif resp.status_code == 400:
-                        # Check for specific parameter errors in the response
-                        if err_json and 'errors' in err_json:
-                            for error in err_json.get('errors', []):
-                                param = error.get('parameterName', '')
-                                
-                                # Manager-related errors
-                                if 'manager' in param.lower() or 'includeManagers' in param:
-                                    logs.append(f"⚠️ Ext {ext_num}: Removing includeManagers from all categories...")
-                                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
-                                        if cat in settings and isinstance(settings[cat], dict):
-                                            settings[cat].pop('includeManagers', None)
+                    # Parse all errors from the response
+                    if err_json and 'errors' in err_json:
+                        for error in err_json.get('errors', []):
+                            param = error.get('parameterName', '')
+                            
+                            # Handle nested parameters like "voicemails.markAsRead"
+                            if '.' in param:
+                                cat_name, field_name = param.split('.', 1)
+                                if cat_name in settings and isinstance(settings[cat_name], dict):
+                                    logs.append(f"⚠️ Ext {ext_num}: Removing {cat_name}.{field_name}...")
+                                    settings[cat_name].pop(field_name, None)
                                     fixed_something = True
-                                
-                                # Email recipients conflict
-                                elif 'emailRecipients' in param:
-                                    logs.append(f"⚠️ Ext {ext_num}: Removing emailRecipients (root + categories)...")
-                                    # Remove from root level
-                                    settings.pop('emailRecipients', None)
-                                    # Remove from all categories
-                                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
-                                        if cat in settings and isinstance(settings[cat], dict):
-                                            settings[cat].pop('emailRecipients', None)
-                                    fixed_something = True
-                                
-                                # Advanced mode conflicts
-                                elif 'advanced' in param.lower():
-                                    logs.append(f"⚠️ Ext {ext_num}: Removing advanced settings...")
-                                    for key in list(settings.keys()):
-                                        if isinstance(settings[key], dict):
-                                            settings[key].pop('advancedEmailAddresses', None)
-                                            settings[key].pop('advancedSmsEmailAddresses', None)
-                                    fixed_something = True
+                            
+                            # Handle top-level invalid categories
+                            elif param in settings:
+                                logs.append(f"⚠️ Ext {ext_num}: Removing entire category {param}...")
+                                settings.pop(param, None)
+                                fixed_something = True
+                            
+                            # Handle specific known issues
+                            elif 'includeManagers' in param:
+                                logs.append(f"⚠️ Ext {ext_num}: Removing includeManagers from all categories...")
+                                for cat in list(settings.keys()):
+                                    if isinstance(settings[cat], dict):
+                                        settings[cat].pop('includeManagers', None)
+                                fixed_something = True
+                            
+                            elif 'emailRecipients' in param:
+                                logs.append(f"⚠️ Ext {ext_num}: Removing emailRecipients (root + categories)...")
+                                settings.pop('emailRecipients', None)
+                                for cat in list(settings.keys()):
+                                    if isinstance(settings[cat], dict):
+                                        settings[cat].pop('emailRecipients', None)
+                                fixed_something = True
                         
-                        # Fallback: generic search in error text
-                        if not fixed_something and ("manager" in err_text.lower() or "recipient" in err_text.lower()):
-                            logs.append(f"⚠️ Ext {ext_num}: Generic manager/recipient error, cleaning all...")
-                            for cat in ['voicemails', 'inboundFaxes']:
-                                if cat in settings:
-                                    settings[cat]["includeManagers"] = False
-                                    settings[cat].pop('emailRecipients', None)
-                            fixed_something = True
-
-                    if fixed_something:
-                        attempt += 1
-                        if attempt >= max_attempts:
-                            logs.append(f"❌ Ext {ext_num}: Max retry attempts reached - {resp.text}")
-                        continue
+                        # If we fixed something, break out to retry
+                        if fixed_something:
+                            attempt += 1
+                            if attempt >= max_attempts:
+                                logs.append(f"❌ Ext {ext_num}: Max retry attempts reached - {resp.text}")
+                            continue
                     
-                    # Real failure - no fix attempted
+                    # Fallback: old logic for text-based errors
+                    if not fixed_something:
+                        if resp.status_code == 400 and "includeSmsRecipients" in err_text:
+                            logs.append(f"⚠️ Ext {ext_num}: Removing 'includeSmsRecipients'...")
+                            settings.pop('includeSmsRecipients', None)
+                            attempt += 1
+                            continue
+                    
+                    # Real failure - no fix possible
                     logs.append(f"❌ Ext {ext_num}: Error {resp.status_code} - {resp.text}")
                     break
 
