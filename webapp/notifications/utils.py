@@ -489,12 +489,31 @@ class NotificationManager:
                     if problem_fields:
                         logs.append(f"🚨 Ext {ext_num}: CRITICAL - Payload STILL has forbidden fields after cleanup: {', '.join(problem_fields)}")
                     
-                    # Log the actual JSON payload (first 500 chars)
+                    # Log the FULL JSON payload so we can see everything
                     payload_str = json_lib.dumps(settings, indent=2)
-                    logs.append(f"📤 Ext {ext_num}: Sending payload preview: {payload_str[:500]}...")
+                    logs.append(f"📤 Ext {ext_num}: Full payload ({len(payload_str)} chars): {payload_str}")
                 
                 while attempt < max_attempts:
-                    resp = rc.put(url, json=settings, token=token)
+                    # Create a deep copy for the API call to prevent any modifications
+                    import copy
+                    payload = copy.deepcopy(settings)
+                    
+                    # One final sanity check - remove forbidden fields from the copy
+                    if is_queue:
+                        root_forbidden = ['outboundFaxes', 'inboundTexts', 'emailRecipients', 
+                                         'includeSmsRecipients', 'includeManagers']
+                        for field in root_forbidden:
+                            payload.pop(field, None)
+                        
+                        category_forbidden = ['markAsRead', 'includeAttachment', 'includeManagers', 
+                                             'emailRecipients', 'advancedEmailAddresses', 
+                                             'advancedSmsEmailAddresses', 'includeTranscription']
+                        for key, value in list(payload.items()):
+                            if isinstance(value, dict):
+                                for field in category_forbidden:
+                                    value.pop(field, None)
+                    
+                    resp = rc.put(url, json=payload, token=token)
                     
                     if resp.status_code == 200:
                         # VERIFY: Did the setting actually stick?
