@@ -458,21 +458,44 @@ class NotificationManager:
                 attempt = 0
                 max_attempts = 4
                 
+                # FINAL AGGRESSIVE CLEANUP RIGHT BEFORE PUT (for queues)
+                if is_queue:
+                    # Remove unsupported categories one more time
+                    settings.pop('outboundFaxes', None)
+                    settings.pop('inboundTexts', None)
+                    settings.pop('emailRecipients', None)
+                    settings.pop('includeSmsRecipients', None)
+                    
+                    # Aggressively clean all dict values
+                    forbidden = ['markAsRead', 'includeAttachment', 'includeManagers', 'emailRecipients', 
+                                'advancedEmailAddresses', 'advancedSmsEmailAddresses']
+                    for key, value in list(settings.items()):
+                        if isinstance(value, dict):
+                            for field in forbidden:
+                                value.pop(field, None)
+                
                 # Debug: Show what we're about to send for queues
                 if is_queue and attempt == 0:
                     problem_fields = []
-                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
-                        if cat in settings and isinstance(settings[cat], dict):
-                            for field in ['markAsRead', 'includeAttachment']:
-                                if field in settings[cat]:
-                                    problem_fields.append(f"{cat}.{field}")
+                    
+                    # Check root level
                     if 'outboundFaxes' in settings:
                         problem_fields.append('outboundFaxes')
                     if 'inboundTexts' in settings:
                         problem_fields.append('inboundTexts')
                     
+                    # Check all categories
+                    for cat_key, cat_value in settings.items():
+                        if isinstance(cat_value, dict):
+                            for field in ['markAsRead', 'includeAttachment']:
+                                if field in cat_value:
+                                    problem_fields.append(f"{cat_key}.{field}")
+                    
                     if problem_fields:
-                        logs.append(f"⚠️ Ext {ext_num}: WARNING - Queue payload still contains forbidden fields: {', '.join(problem_fields)}")
+                        logs.append(f"🚨 Ext {ext_num}: CRITICAL - Payload STILL has forbidden fields after cleanup: {', '.join(problem_fields)}")
+                        # Log the actual keys in settings
+                        all_keys = list(settings.keys())
+                        logs.append(f"🔍 Ext {ext_num}: All root keys in payload: {', '.join(all_keys)}")
                 
                 while attempt < max_attempts:
                     resp = rc.put(url, json=settings, token=token)
