@@ -304,13 +304,18 @@ class NotificationManager:
                         # Remove emailRecipients at ROOT level (this is key!)
                         settings.pop('emailRecipients', None)
                         
-                        # Disable manager notifications for all relevant categories
+                        # For queues: REMOVE includeManagers entirely (they don't support it)
+                        # For users: Set to False
                         for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
                             if cat not in settings:
                                 settings[cat] = {}
                             
-                            # Explicitly disable manager mode
-                            settings[cat]["includeManagers"] = False
+                            if is_queue:
+                                # Queues: DELETE the field entirely
+                                settings[cat].pop('includeManagers', None)
+                            else:
+                                # Users: Set to False
+                                settings[cat]["includeManagers"] = False
                             
                             # Remove manager-specific email recipients from category
                             settings[cat].pop('emailRecipients', None)
@@ -397,12 +402,13 @@ class NotificationManager:
                         if k in settings:
                             del settings[k]
                     
-                    # Remove markAsRead from all categories (queues don't support this)
+                    # Remove ALL queue-incompatible fields from categories
+                    queue_forbidden_fields = ['markAsRead', 'includeAttachment', 'emailRecipients', 'includeManagers']
+                    
                     for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
                         if cat in settings and isinstance(settings[cat], dict):
-                            settings[cat].pop('markAsRead', None)
-                            settings[cat].pop('includeAttachment', None)
-                            settings[cat].pop('emailRecipients', None)  # Also remove from categories
+                            for field in queue_forbidden_fields:
+                                settings[cat].pop(field, None)
                     
                     # Clean up advanced keys again (in case they were added above)
                     for key in list(settings.keys()):
@@ -461,10 +467,10 @@ class NotificationManager:
                                 
                                 # Manager-related errors
                                 if 'manager' in param.lower() or 'includeManagers' in param:
-                                    logs.append(f"⚠️ Ext {ext_num}: Forcing includeManagers=False...")
-                                    for cat in ['voicemails', 'inboundFaxes']:
-                                        if cat in settings:
-                                            settings[cat]["includeManagers"] = False
+                                    logs.append(f"⚠️ Ext {ext_num}: Removing includeManagers from all categories...")
+                                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
+                                        if cat in settings and isinstance(settings[cat], dict):
+                                            settings[cat].pop('includeManagers', None)
                                     fixed_something = True
                                 
                                 # Email recipients conflict
