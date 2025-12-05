@@ -500,6 +500,9 @@ class NotificationManager:
                     
                     # For queues: Include the forbidden categories but disable them
                     if is_queue:
+                        # CRITICAL: Explicitly disable manager notifications
+                        payload['includeManagers'] = False
+                        
                         # Set forbidden categories to disabled state (not removed)
                         if 'outboundFaxes' not in payload:
                             payload['outboundFaxes'] = {}
@@ -516,6 +519,8 @@ class NotificationManager:
                             if cat in payload and isinstance(payload[cat], dict):
                                 payload[cat]['markAsRead'] = False
                                 payload[cat]['includeAttachment'] = False
+                                # Also disable manager notifications at category level
+                                payload[cat]['includeManagers'] = False
                     
                     resp = rc.put(url, json=payload, token=token)
                     
