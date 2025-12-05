@@ -301,17 +301,19 @@ class NotificationManager:
                     if disable_manager is True or (is_queue and email_list):
                         logs.append(f"ℹ️ Ext {ext_num}: Disabling manager notifications, switching to specified emails...")
                         
+                        # Remove emailRecipients at ROOT level (this is key!)
+                        settings.pop('emailRecipients', None)
+                        
                         # Disable manager notifications for all relevant categories
-                        for cat in ['voicemails', 'inboundFaxes']:
+                        for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
                             if cat not in settings:
                                 settings[cat] = {}
                             
                             # Explicitly disable manager mode
                             settings[cat]["includeManagers"] = False
                             
-                            # Remove manager-specific email recipients
-                            if "emailRecipients" in settings[cat]:
-                                del settings[cat]["emailRecipients"]
+                            # Remove manager-specific email recipients from category
+                            settings[cat].pop('emailRecipients', None)
                             
                             # Ensure notifyByEmail is enabled if we're providing emails
                             if email_list and get_bool_or_none(f'{cat.capitalize()}_Email') is None:
@@ -385,6 +387,9 @@ class NotificationManager:
                     settings["advancedMode"] = False
                     user_wants_advanced = False
                     
+                    # Remove ROOT level emailRecipients (manager mode field)
+                    settings.pop('emailRecipients', None)
+                    
                     # Remove categories that queues don't support
                     keys_to_remove = ['outboundFaxes', 'inboundTexts', 'includeSmsRecipients']
                     
@@ -397,6 +402,7 @@ class NotificationManager:
                         if cat in settings and isinstance(settings[cat], dict):
                             settings[cat].pop('markAsRead', None)
                             settings[cat].pop('includeAttachment', None)
+                            settings[cat].pop('emailRecipients', None)  # Also remove from categories
                     
                     # Clean up advanced keys again (in case they were added above)
                     for key in list(settings.keys()):
@@ -463,10 +469,13 @@ class NotificationManager:
                                 
                                 # Email recipients conflict
                                 elif 'emailRecipients' in param:
-                                    logs.append(f"⚠️ Ext {ext_num}: Removing emailRecipients...")
-                                    for cat in ['voicemails', 'inboundFaxes']:
-                                        if cat in settings and 'emailRecipients' in settings[cat]:
-                                            del settings[cat]['emailRecipients']
+                                    logs.append(f"⚠️ Ext {ext_num}: Removing emailRecipients (root + categories)...")
+                                    # Remove from root level
+                                    settings.pop('emailRecipients', None)
+                                    # Remove from all categories
+                                    for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
+                                        if cat in settings and isinstance(settings[cat], dict):
+                                            settings[cat].pop('emailRecipients', None)
                                     fixed_something = True
                                 
                                 # Advanced mode conflicts
