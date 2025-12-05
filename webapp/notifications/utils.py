@@ -12,6 +12,7 @@ class NotificationManager:
             'EmailAddresses',       # Comma separated
             'IncludeSms',           # TRUE/FALSE
             'AdvancedMode',         # TRUE/FALSE
+            'DisableManagerNotifications',  # NEW: TRUE/FALSE - explicitly disable manager mode
             'Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead',
             'MissedCalls_Email', 'MissedCalls_SMS',
             'InboundTexts_Email', 'InboundTexts_SMS',
@@ -78,8 +79,6 @@ class NotificationManager:
             
             if resp.status_code != 200:
                 # Some extensions (like limited ones) might not have notification settings.
-                # Return a basic error row or just skip? 
-                # Better to return error row so user knows it was skipped.
                 return {
                     'ExtensionNumber': ext.get('extensionNumber', ''),
                     'ExtensionName': f"{ext.get('name', 'Unknown')} (No Settings Found - {resp.status_code})"
@@ -96,6 +95,12 @@ class NotificationManager:
             inbound_texts = settings.get('inboundTexts', {})
             inbound_faxes = settings.get('inboundFaxes', {})
             outbound_faxes = settings.get('outboundFaxes', {})
+            
+            # Check if manager notifications are enabled
+            has_manager_notify = (
+                voicemails.get('includeManagers', False) or 
+                inbound_faxes.get('includeManagers', False)
+            )
 
             return {
                 'ExtensionNumber': ext.get('extensionNumber', ''),
@@ -103,6 +108,7 @@ class NotificationManager:
                 'EmailAddresses': emails,
                 'IncludeSms': settings.get('includeSmsRecipients', False),
                 'AdvancedMode': settings.get('advancedMode', False),
+                'DisableManagerNotifications': not has_manager_notify,  # Show current state
                 
                 'Voicemails_Email': voicemails.get('notifyByEmail', False),
                 'Voicemails_SMS': voicemails.get('notifyBySms', False),
@@ -175,6 +181,7 @@ class NotificationManager:
             'EmailAddresses': ['john@company.com', ''],
             'IncludeSms': [True, ''],
             'AdvancedMode': [True, ''],
+            'DisableManagerNotifications': [True, ''],
             
             'Voicemails_Email': [True, ''],
             'Voicemails_SMS': [False, ''],
@@ -201,10 +208,11 @@ class NotificationManager:
             df.to_excel(writer, index=False, sheet_name='Update_Template')
             
             instruction_df = pd.DataFrame({
-                'Field': ['ExtensionNumber', 'EmailAddresses', 'Flags', 'MarkAsRead'],
+                'Field': ['ExtensionNumber', 'EmailAddresses', 'DisableManagerNotifications', 'Flags', 'MarkAsRead'],
                 'Instruction': [
                     'The Extension Number (e.g. 101). Logic will look up the ID automatically.',
                     'Comma separated list of emails. Overwrites existing list.',
+                    'Set TRUE to switch from "Notify Manager" mode to specified emails. Required for Call Queues.',
                     'Use TRUE or FALSE.',
                     'Optional. Set TRUE to mark message as read upon notification.'
                 ]
@@ -234,15 +242,6 @@ class NotificationManager:
             df = pd.read_excel(file_storage)
         except Exception as e:
             return ["❌ Error reading Excel file."]
-
-        # --- AUTO-CLEAN QUEUES START ---
-        # Detect Call Queues - Log only, we will enforce in loop for safety.
-        if 'ExtensionName' in df.columns:
-             queue_mask = df['ExtensionName'].str.contains('Queue', case=False, na=False)
-             if queue_mask.any():
-                 count = queue_mask.sum()
-                 logs.append(f"ℹ️ Auto-Fix: Detected {count} Call Queues. Enforcing strict compatibility in payload.")
-        # --- AUTO-CLEAN QUEUES END ---
 
         # Validate Headers
         core_columns = ['ExtensionNumber']
@@ -289,38 +288,57 @@ class NotificationManager:
                     if s in ['false', '0', '0.0', 'no', 'f', 'off']: return False
                     return None
 
-                # 3. Modify the settings object
-                # IMPORTANT: Always populate the main email list. 
-                # This overrides "Notify Manager" logic for simple settings.
+                # 3. Handle Email Addresses and Manager Notification Override
                 if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
-                      email_raw = str(row['EmailAddresses'])
-                      email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
-                      settings["emailAddresses"] = email_list
-                      
-                      # CRITICAL FIX: Explicitly disable manager notifications if custom emails are provided.
-                      # The API sees "includeManagers=True" and "emailAddresses=[...]" as a conflict for some queue settings.
-                      check_cats = ['voicemails', 'inboundFaxes', 'missedCalls', 'inboundTexts']
-                      for cat in check_cats:
-                          if cat in settings and isinstance(settings[cat], dict):
-                              # Explicitly disable "Notify Manager"
-                              settings[cat]["includeManagers"] = False
-                              
-                              # Remove "emailRecipients" array if present (it contains the manager list)
-                              if "emailRecipients" in settings[cat]:
-                                  del settings[cat]["emailRecipients"]
+                    email_raw = str(row['EmailAddresses'])
+                    email_list = [e.strip() for e in email_raw.split(',') if e.strip()]
+                    settings["emailAddresses"] = email_list
+                    
+                    # CRITICAL FIX: Check if user wants to disable manager notifications
+                    disable_manager = get_bool_or_none('DisableManagerNotifications')
+                    
+                    # If explicitly set to TRUE, or if emails are provided for a Queue, disable manager mode
+                    if disable_manager is True or (is_queue and email_list):
+                        logs.append(f"ℹ️ Ext {ext_num}: Disabling manager notifications, switching to specified emails...")
+                        
+                        # Disable manager notifications for all relevant categories
+                        for cat in ['voicemails', 'inboundFaxes']:
+                            if cat not in settings:
+                                settings[cat] = {}
+                            
+                            # Explicitly disable manager mode
+                            settings[cat]["includeManagers"] = False
+                            
+                            # Remove manager-specific email recipients
+                            if "emailRecipients" in settings[cat]:
+                                del settings[cat]["emailRecipients"]
+                            
+                            # Ensure notifyByEmail is enabled if we're providing emails
+                            if email_list and get_bool_or_none(f'{cat.capitalize()}_Email') is None:
+                                settings[cat]["notifyByEmail"] = True
                 else:
-                      email_list = settings.get("emailAddresses", [])
+                    email_list = settings.get("emailAddresses", [])
 
+                # 4. Handle Advanced Mode
                 val = get_bool_or_none('AdvancedMode')
-                # Explicitly capture user intent
                 user_wants_advanced = val
-                if val is not None: settings["advancedMode"] = val
+                if val is not None: 
+                    settings["advancedMode"] = val
                 
                 val = get_bool_or_none('IncludeSms')
-                if val is not None: settings["includeSmsRecipients"] = val
+                if val is not None: 
+                    settings["includeSmsRecipients"] = val
                 
                 is_advanced = settings.get("advancedMode", False)
+                
+                # IMMEDIATE CLEANUP: If Advanced Mode is False, remove advanced keys now
+                if not is_advanced:
+                    for key in list(settings.keys()):
+                        if isinstance(settings[key], dict):
+                            settings[key].pop('advancedEmailAddresses', None)
+                            settings[key].pop('advancedSmsEmailAddresses', None)
 
+                # 5. Process Category-Specific Settings
                 categories = {
                     'voicemails': ('Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead'),
                     'missedCalls': ('MissedCalls_Email', 'MissedCalls_SMS', None),
@@ -330,67 +348,59 @@ class NotificationManager:
                 }
 
                 for cat, cols in categories.items():
-                    if cat not in settings: settings[cat] = {}
+                    if cat not in settings: 
+                        settings[cat] = {}
                     
                     val_email = get_bool_or_none(cols[0])
-                    if val_email is not None: settings[cat]["notifyByEmail"] = val_email
+                    if val_email is not None: 
+                        settings[cat]["notifyByEmail"] = val_email
                     
                     val_sms = get_bool_or_none(cols[1])
-                    if val_sms is not None: settings[cat]["notifyBySms"] = val_sms
+                    if val_sms is not None: 
+                        settings[cat]["notifyBySms"] = val_sms
                     
                     if cols[2]:
                         val_mark = get_bool_or_none(cols[2])
-                        # Check existence before setting
-                        if val_mark is not None and 'markAsRead' in settings[cat]:
+                        if val_mark is not None:
                             settings[cat]["markAsRead"] = val_mark
                             
                             if val_mark is True and 'includeAttachment' in settings[cat]:
                                 settings[cat]["includeAttachment"] = True
                     
-                    # Advanced Mode Population
-                    notify_email = settings[cat].get("notifyByEmail", False)
-                    notify_sms = settings[cat].get("notifyBySms", False)
-
+                    # Advanced Mode Population (only if advanced is enabled)
                     if is_advanced:
-                         if notify_email:
-                             settings[cat]["advancedEmailAddresses"] = email_list
-                         if cat == 'missedCalls' and notify_sms:
-                             settings[cat]["advancedSmsEmailAddresses"] = email_list
+                        notify_email = settings[cat].get("notifyByEmail", False)
+                        notify_sms = settings[cat].get("notifyBySms", False)
 
-                # --- QUEUE SAFETY OVERRIDE START ---
-                # Call Queues are strict. We need to prevent Advanced Mode conflicts.
+                        if notify_email:
+                            settings[cat]["advancedEmailAddresses"] = email_list
+                        if cat == 'missedCalls' and notify_sms:
+                            settings[cat]["advancedSmsEmailAddresses"] = email_list
+
+                # 6. QUEUE SAFETY OVERRIDE
                 if is_queue:
-                    # 1. Force Advanced Mode OFF
+                    logs.append(f"ℹ️ Ext {ext_num}: Detected Call Queue - applying strict compatibility mode...")
+                    
+                    # Force Advanced Mode OFF for queues
                     settings["advancedMode"] = False
-                    user_wants_advanced = False 
+                    user_wants_advanced = False
                     
-                    # 2. DELETE OutboundFaxes (Does not exist for queues)
-                    if 'outboundFaxes' in settings:
-                        del settings['outboundFaxes']
-                        
-                    # 3. Remove includeSmsRecipients globally
-                    if 'includeSmsRecipients' in settings:
-                        del settings['includeSmsRecipients']
+                    # Remove categories that queues don't support
+                    keys_to_remove = ['outboundFaxes', 'inboundTexts', 'includeSmsRecipients']
                     
-                    # 4. Scrub advanced keys immediately from ALL categories
-                    # We do this now so we don't accidentally send them even if AdvancedMode is False
+                    for k in keys_to_remove:
+                        if k in settings:
+                            del settings[k]
+                    
+                    # Clean up advanced keys again (in case they were added above)
                     for key in list(settings.keys()):
                         if isinstance(settings[key], dict):
                             settings[key].pop('advancedEmailAddresses', None)
                             settings[key].pop('advancedSmsEmailAddresses', None)
 
-                # 5. GLOBAL SCRUB: If Advanced Mode is False (either by user or forced by queue),
-                # ensure no advanced keys linger.
-                if not settings.get("advancedMode", False):
-                    for key in list(settings.keys()):
-                        if isinstance(settings[key], dict):
-                            settings[key].pop('advancedEmailAddresses', None)
-                            settings[key].pop('advancedSmsEmailAddresses', None)
-                # --- QUEUE SAFETY OVERRIDE END ---
-
-                # 4. PUT with Retry Logic (Handle MarkAsRead & SMS Validation Errors)
+                # 7. PUT with Retry Logic
                 attempt = 0
-                max_attempts = 4 # Increased to handle potential multiple failures sequentially
+                max_attempts = 4
                 
                 while attempt < max_attempts:
                     resp = rc.put(url, json=settings, token=token)
@@ -403,7 +413,7 @@ class NotificationManager:
                         if user_wants_advanced is True and final_adv is False:
                             logs.append(f"⚠️ Ext {ext_num}: Update success, BUT API ignored 'AdvancedMode' (reverted to False).")
                         else:
-                            logs.append(f"✅ Ext {ext_num}: Updated")
+                            logs.append(f"✅ Ext {ext_num}: Updated successfully")
                         break
                     
                     err_text = resp.text
@@ -417,17 +427,26 @@ class NotificationManager:
                                settings[cat]['markAsRead'] = False
                          fixed_something = True
 
-                    # Fix 2: IncludeSmsRecipients (CMN-451)
+                    # Fix 2: IncludeSmsRecipients
                     if resp.status_code == 400 and "includeSmsRecipients" in err_text:
                          logs.append(f"⚠️ Ext {ext_num}: Retrying without 'includeSmsRecipients' (API Forbidden Update)...")
-                         # Remove the key entirely
                          if 'includeSmsRecipients' in settings:
                              del settings['includeSmsRecipients']
                          fixed_something = True
+                    
+                    # Fix 3: Manager notification conflict
+                    if resp.status_code == 400 and ("manager" in err_text.lower() or "recipient" in err_text.lower()):
+                        logs.append(f"⚠️ Ext {ext_num}: Detected manager notification conflict, forcing disable...")
+                        for cat in ['voicemails', 'inboundFaxes']:
+                            if cat in settings:
+                                settings[cat]["includeManagers"] = False
+                                if "emailRecipients" in settings[cat]:
+                                    del settings[cat]["emailRecipients"]
+                        fixed_something = True
 
                     if fixed_something:
                         attempt += 1
-                        continue # Restart loop with modified settings
+                        continue
                     
                     # Real failure
                     logs.append(f"❌ Ext {ext_num}: Error {resp.status_code} - {resp.text}")
