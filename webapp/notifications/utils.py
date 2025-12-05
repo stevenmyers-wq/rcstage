@@ -516,14 +516,15 @@ class NotificationManager:
                         payload['inboundTexts']['notifyByEmail'] = False
                         payload['inboundTexts']['notifyBySms'] = False
                         
-                        # For supported categories, set forbidden sub-fields to False
+                        # For supported categories, REMOVE forbidden sub-fields entirely
+                        # (Queues don't support these fields at all, not even as false)
                         for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
                             if cat in payload and isinstance(payload[cat], dict):
-                                payload[cat]['markAsRead'] = False
-                                payload[cat]['includeAttachment'] = False
-                                # Remove category-level manager fields
+                                payload[cat].pop('markAsRead', None)
+                                payload[cat].pop('includeAttachment', None)
                                 payload[cat].pop('includeManagers', None)
                                 payload[cat].pop('emailRecipients', None)
+                                payload[cat].pop('includeTranscription', None)
                     
                     resp = rc.put(url, json=payload, token=token)
                     
