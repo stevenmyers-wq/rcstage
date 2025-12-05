@@ -373,11 +373,9 @@ class NotificationManager:
                 }
 
                 for cat, cols in categories.items():
-                    # Skip categories that queues don't support
+                    # Skip categories that queues don't support - DON'T PROCESS THEM AT ALL
                     if is_queue and cat in ['outboundFaxes', 'inboundTexts']:
-                        # Remove these categories entirely from settings
-                        settings.pop(cat, None)
-                        continue
+                        continue  # Don't even look at these categories
                     
                     if cat not in settings: 
                         settings[cat] = {}
@@ -403,6 +401,10 @@ class NotificationManager:
                             
                             if val_mark is True:
                                 settings[cat]["includeAttachment"] = True
+                        else:
+                            # User didn't provide a value - keep whatever was fetched, unless it's false
+                            # Actually, let's be safe and remove markAsRead if not explicitly set
+                            pass
                     
                     # Advanced Mode Population (only if advanced is enabled and not a queue)
                     if is_advanced and not is_queue:
@@ -413,8 +415,8 @@ class NotificationManager:
                             settings[cat]["advancedEmailAddresses"] = email_list
                         if cat == 'missedCalls' and notify_sms:
                             settings[cat]["advancedSmsEmailAddresses"] = email_list
-                    elif is_queue:
-                        # Remove advanced fields for queues
+                    else:
+                        # Remove advanced fields if not in advanced mode or if queue
                         settings[cat].pop('advancedEmailAddresses', None)
                         settings[cat].pop('advancedSmsEmailAddresses', None)
 
@@ -476,6 +478,8 @@ class NotificationManager:
                 
                 # Debug: Show what we're about to send for queues
                 if is_queue and attempt == 0:
+                    import json as json_lib
+                    
                     problem_fields = []
                     
                     # Check root level
@@ -493,9 +497,10 @@ class NotificationManager:
                     
                     if problem_fields:
                         logs.append(f"🚨 Ext {ext_num}: CRITICAL - Payload STILL has forbidden fields after cleanup: {', '.join(problem_fields)}")
-                        # Log the actual keys in settings
-                        all_keys = list(settings.keys())
-                        logs.append(f"🔍 Ext {ext_num}: All root keys in payload: {', '.join(all_keys)}")
+                    
+                    # Log the actual JSON payload (first 500 chars)
+                    payload_str = json_lib.dumps(settings, indent=2)
+                    logs.append(f"📤 Ext {ext_num}: Sending payload preview: {payload_str[:500]}...")
                 
                 while attempt < max_attempts:
                     resp = rc.put(url, json=settings, token=token)
