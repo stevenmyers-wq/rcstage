@@ -13,10 +13,24 @@
         .rc-connected { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
         .rc-disconnected { background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
         .message-box { padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
-        .tab-button { transition: all 0.2s; }
-        .tab-active { border-bottom: 3px solid #ef4444; color: #ef4444; }
+        
+        /* Updated Tab Styles */
+        .tab-button { transition: color 0.2s, border-bottom-color 0.2s; white-space: nowrap; }
+        .tab-active { border-bottom: 3px solid #ef4444; color: #ef4444; font-weight: 600; }
         .tab-inactive { border-bottom: 3px solid transparent; color: #6b7280; }
+        .tab-inactive:hover { color: #374151; border-bottom: 3px solid #e5e7eb; }
+
         #app-container { max-width: 1280px; margin-left: auto; margin-right: auto; }
+
+        /* Hide Scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
     </style>
 </head>
 <body>
@@ -73,7 +87,7 @@
             </div>
 
             <div class="border-b border-gray-200">
-                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                <nav class="-mb-px flex gap-8 overflow-x-auto no-scrollbar" aria-label="Tabs">
                     {% set tabs = [
                         ('authenticator', 'PKCE Setup', 'Manages RingCentral Authorization'),
                         ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'),
@@ -89,8 +103,8 @@
                     
                     {% for tab_id, tab_name, tab_desc in tabs %}
                         <a href="{{ url_for('core.index', tab=tab_id) }}" 
-                           class="tab-button whitespace-nowrap py-3 px-1 text-sm font-medium relative 
-                           {% if current_tab == tab_id %}tab-active{% else %}tab-inactive hover:border-gray-300 hover:text-gray-900{% endif %}"
+                           class="tab-button py-4 px-1 text-sm font-medium
+                           {% if current_tab == tab_id %}tab-active{% else %}tab-inactive{% endif %}"
                            aria-current="{% if current_tab == tab_id %}page{% else %}false{% endif %}"
                            title="{{ tab_desc }}">
                             {{ tab_name }}
