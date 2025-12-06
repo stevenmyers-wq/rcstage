@@ -13,24 +13,7 @@
         .rc-connected { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
         .rc-disconnected { background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
         .message-box { padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
-        
-        /* Updated Tab Styles */
-        .tab-button { transition: color 0.2s, border-bottom-color 0.2s; white-space: nowrap; }
-        .tab-active { border-bottom: 3px solid #ef4444; color: #ef4444; font-weight: 600; }
-        .tab-inactive { border-bottom: 3px solid transparent; color: #6b7280; }
-        .tab-inactive:hover { color: #374151; border-bottom: 3px solid #e5e7eb; }
-
-        #app-container { max-width: 1280px; margin-left: auto; margin-right: auto; }
-
-        /* Hide Scrollbar for Chrome, Safari and Opera */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        /* Hide scrollbar for IE, Edge and Firefox */
-        .no-scrollbar {
-            -ms-overflow-style: none;  /* IE and Edge */
-            scrollbar-width: none;  /* Firefox */
-        }
+        #app-container { max-width: 1400px; margin-left: auto; margin-right: auto; } /* Increased width for sidebar layout */
     </style>
 </head>
 <body>
@@ -39,11 +22,13 @@
 
     <div id="app-container" class="w-full space-y-8">
         
-        <h1 class="text-4xl font-bold text-center text-gray-800">RingCentral RCAU API Tools</h1>
-        <p class="text-center text-gray-500">Cloud Run Service URL: {{ RC_REDIRECT_URI | default("http://localhost:8080/auth/callback") | replace("/auth/callback", "") }}</p>
+        <div>
+            <h1 class="text-4xl font-bold text-center text-gray-800">RingCentral RCAU API Tools</h1>
+            <p class="text-center text-gray-500">Cloud Run Service URL: {{ RC_REDIRECT_URI | default("http://localhost:8080/auth/callback") | replace("/auth/callback", "") }}</p>
+        </div>
 
         {% if not AUTHENTICATED %}
-        <div id="login-screen" class="card">
+        <div id="login-screen" class="card max-w-2xl mx-auto">
             <h2 class="text-2xl font-semibold mb-4 text-gray-700">Login to RCAU Tools</h2>
             <p class="text-gray-600 mb-6">Enter your organizational email and the shared passcode to unlock the dashboard.</p>
             
@@ -62,91 +47,103 @@
         </div>
 
         {% else %}
-        <div id="app-dashboard" class="space-y-8">
+        <div id="app-dashboard" class="space-y-6">
             
-            <div class="flex justify-between items-center p-3 bg-indigo-100 rounded-lg shadow-md">
-                <div class="text-lg font-medium text-gray-700">
-                    Welcome! Role: <span class="font-bold">{{ USER_ROLE }}</span>
-                </div>
-                <a href="{{ url_for('core.logout') }}"
-                   class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition duration-150 shadow-md">
-                    Logout
-                </a>
-            </div>
-
-            <div id="rc-connection-card" class="card rc-disconnected p-4 mb-6">
-                <div class="flex justify-between items-center">
-                    <div class="space-y-1">
-                        <h2 class="text-xl font-bold">RingCentral Connection (Layer 2)</h2>
-                        <div id="rc-status-display" class="font-semibold text-lg">Status: Disconnected</div>
+            <div class="space-y-4">
+                <div class="flex justify-between items-center p-3 bg-indigo-100 rounded-lg shadow-md">
+                    <div class="text-lg font-medium text-gray-700">
+                        Welcome! Role: <span class="font-bold">{{ USER_ROLE }}</span>
                     </div>
-                    <div class="text-right">
-                        <div id="current-rc-email" class="text-sm font-medium" style="display: none;"></div>
+                    <a href="{{ url_for('core.logout') }}"
+                       class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition duration-150 shadow-md">
+                        Logout
+                    </a>
+                </div>
+
+                <div id="rc-connection-card" class="card rc-disconnected p-4">
+                    <div class="flex justify-between items-center">
+                        <div class="space-y-1">
+                            <h2 class="text-xl font-bold">RingCentral Connection</h2>
+                            <div id="rc-status-display" class="font-semibold text-lg">Status: Disconnected</div>
                         </div>
+                        <div class="text-right">
+                            <div id="current-rc-email" class="text-sm font-medium" style="display: none;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="border-b border-gray-200">
-                <nav class="-mb-px flex gap-8 overflow-x-auto no-scrollbar" aria-label="Tabs">
-                    {% set tabs = [
-                        ('authenticator', 'PKCE Setup', 'Manages RingCentral Authorization'),
-                        ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'),
-                        ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'),
-                        ('renamer', 'Extension Renamer', 'Bulk edit extension names'),
-                        ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
-                        ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
-                        ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
-                        ('live_events', 'Live Events', 'Real-time subscription listener'),
-                        ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
-                        ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences')
-                    ] %}
-                    
-                    {% for tab_id, tab_name, tab_desc in tabs %}
-                        <a href="{{ url_for('core.index', tab=tab_id) }}" 
-                           class="tab-button py-4 px-1 text-sm font-medium
-                           {% if current_tab == tab_id %}tab-active{% else %}tab-inactive{% endif %}"
-                           aria-current="{% if current_tab == tab_id %}page{% else %}false{% endif %}"
-                           title="{{ tab_desc }}">
-                            {{ tab_name }}
-                        </a>
-                    {% endfor %}
-                </nav>
-            </div>
+            <div class="flex flex-col md:flex-row gap-6 items-start">
+                
+                <div class="w-full md:w-64 flex-shrink-0">
+                    <nav class="flex flex-col space-y-1" aria-label="Tabs">
+                        {% set tabs = [
+                            ('authenticator', 'PKCE Setup', 'Manages RingCentral Authorization'),
+                            ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'),
+                            ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'),
+                            ('renamer', 'Extension Renamer', 'Bulk edit extension names'),
+                            ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
+                            ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
+                            ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
+                            ('live_events', 'Live Events', 'Real-time subscription listener'),
+                            ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
+                            ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences')
+                        ] %}
+                        
+                        {% for tab_id, tab_name, tab_desc in tabs %}
+                            <a href="{{ url_for('core.index', tab=tab_id) }}" 
+                               class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200
+                               {% if current_tab == tab_id %}
+                                   bg-white border-blue-600 text-blue-700 shadow-sm
+                               {% else %}
+                                   border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900
+                               {% endif %}"
+                               aria-current="{% if current_tab == tab_id %}page{% else %}false{% endif %}"
+                               title="{{ tab_desc }}">
+                                {{ tab_name }}
+                            </a>
+                        {% endfor %}
+                    </nav>
 
-            <div class="py-6">
-                {% if current_tab == 'authenticator' %}
-                    {% include 'includes/authenticator_tab.html' %}
-                {% elif current_tab == 'sip_fetcher' %}
-                    {% include 'includes/sip_fetcher_tab.html' %}
-                {% elif current_tab == 'device_swap' %}
-                    {% include 'includes/device_swap_tab.html' %}
-                {% elif current_tab == 'renamer' %}
-                    {% include 'includes/extension_renamer_tab.html' %}
-                {% elif current_tab == 'bulk_opening' %}
-                    {% include 'includes/bulk_opening_tab.html' %}
-                {% elif current_tab == 'personal_address_book' %}
-                    {% include 'includes/personal_address_book_tab.html' %}
-                {% elif current_tab == 'call_flow' %}
-                    {% include 'includes/call_flow_tab.html' %}
-                {% elif current_tab == 'live_events' %}
-                    {% include 'includes/live_events_tab.html' %}
-                {% elif current_tab == 'custom_rules' %}
-                    {% include 'includes/custom_rules_tab.html' %}
-                {% elif current_tab == 'notifications' %}
-                    {% include 'includes/notifications_tab.html' %}
-                {% else %}
-                    <p class="text-gray-500">Select a tool from the tabs above to begin.</p>
-                {% endif %}
-            </div>
-            
-            {% if USER_ROLE == 'Admin' %}
-            <div id="admin-management-link" class="card p-4 bg-red-50 border-l-4 border-red-500 text-red-800 mt-8">
-                <h3 class="text-xl font-bold mb-2">Admin Management</h3>
-                <p>You have administrator privileges. Add/Manage whitelisted administrator emails here.</p>
-            </div>
-            {% endif %}
+                    {% if USER_ROLE == 'Admin' %}
+                    <div class="mt-8 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
+                        <h3 class="text-sm font-bold text-red-800 mb-1">Admin Mode</h3>
+                        <p class="text-xs text-red-700">Manage admins in settings.</p>
+                    </div>
+                    {% endif %}
+                </div>
 
-        </div>
+                <div class="flex-1 w-full min-w-0">
+                    <div class="bg-transparent"> {% if current_tab == 'authenticator' %}
+                            {% include 'includes/authenticator_tab.html' %}
+                        {% elif current_tab == 'sip_fetcher' %}
+                            {% include 'includes/sip_fetcher_tab.html' %}
+                        {% elif current_tab == 'device_swap' %}
+                            {% include 'includes/device_swap_tab.html' %}
+                        {% elif current_tab == 'renamer' %}
+                            {% include 'includes/extension_renamer_tab.html' %}
+                        {% elif current_tab == 'bulk_opening' %}
+                            {% include 'includes/bulk_opening_tab.html' %}
+                        {% elif current_tab == 'personal_address_book' %}
+                            {% include 'includes/personal_address_book_tab.html' %}
+                        {% elif current_tab == 'call_flow' %}
+                            {% include 'includes/call_flow_tab.html' %}
+                        {% elif current_tab == 'live_events' %}
+                            {% include 'includes/live_events_tab.html' %}
+                        {% elif current_tab == 'custom_rules' %}
+                            {% include 'includes/custom_rules_tab.html' %}
+                        {% elif current_tab == 'notifications' %}
+                            {% include 'includes/notifications_tab.html' %}
+                        {% else %}
+                            <div class="card text-center py-12">
+                                <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+            </div>
+            </div>
         {% endif %}
         
     </div>
