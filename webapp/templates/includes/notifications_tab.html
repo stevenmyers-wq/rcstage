@@ -3,7 +3,7 @@
     <div class="text-center space-y-2">
         <h2 class="text-3xl font-bold text-gray-800">Notifications Manager</h2>
         <p class="text-gray-600 max-w-2xl mx-auto">
-            Audit, Configure, or Bulk Update User Notification Preferences (Emails, SMS, Voicemail flags). Update users or call queues (Note: CQ managers notification tick cannot be changed via API, but email address can be activated or changed.)
+            Audit, Configure, or Bulk Update User Notification Preferences.
         </p>
     </div>
 
@@ -11,35 +11,33 @@
 
         <div class="card flex flex-col items-center text-center p-8 hover:shadow-xl transition-shadow duration-300 border border-gray-100">
             <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-6">
-                <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
-                </svg>
+                <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-3">Audit Settings</h3>
             <p class="text-gray-500 text-sm mb-8 flex-grow leading-relaxed">
-                Generate a comprehensive Excel report of ALL current Notification settings on the account. Useful for backups or auditing logic before making changes.
+                Generate a comprehensive Excel report of ALL current Notification settings.
             </p>
-            <button id="btn-audit-notifications" class="w-full py-3 px-4 border-2 border-blue-600 text-blue-600 font-bold rounded-lg hover:bg-blue-600 hover:text-white transition-all duration-200 focus:ring-4 focus:ring-blue-100">
+            <button id="btn-audit-notifications" class="w-full py-3 px-4 border-2 border-blue-600 text-blue-600 font-bold rounded-lg hover:bg-blue-600 hover:text-white transition-all duration-200">
                 Generate Report
             </button>
         </div>
 
         <div class="card flex flex-col items-center text-center p-8 hover:shadow-xl transition-shadow duration-300 border border-gray-100">
             <div class="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mb-6">
-                <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4"></path>
-                </svg>
+                <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4"></path></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-3">Create Rules</h3>
             <p class="text-gray-500 text-sm mb-8 flex-grow leading-relaxed">
-                Download a blank template to define new notification logic. This file is formatted specifically for the Upload tool.
+                Download a blank template to define new routing logic.
             </p>
             
             <div class="w-full space-y-3">
-                <button id="btn-download-template" class="w-full py-2 px-4 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition duration-150">
+                <button id="btn-download-notification-template" class="w-full py-2 px-4 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition duration-150">
                     1. Download Blank Template
                 </button>
-                <button id="btn-create-notifications" class="w-full py-3 px-4 border-2 border-green-600 text-green-600 font-bold rounded-lg hover:bg-green-600 hover:text-white transition-all duration-200 focus:ring-4 focus:ring-green-100">
+                
+                <input type="file" id="input-create-notifications" style="display: none;" accept=".xlsx, .csv">
+                <button id="btn-create-notifications" class="w-full py-3 px-4 border-2 border-green-600 text-green-600 font-bold rounded-lg hover:bg-green-600 hover:text-white transition-all duration-200">
                     2. Upload & Create
                 </button>
             </div>
@@ -47,15 +45,15 @@
 
         <div class="card flex flex-col items-center text-center p-8 hover:shadow-xl transition-shadow duration-300 border border-gray-100">
             <div class="w-20 h-20 bg-purple-50 rounded-full flex items-center justify-center mb-6">
-                <svg class="w-10 h-10 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-                </svg>
+                <svg class="w-10 h-10 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-3">Edit Rules</h3>
             <p class="text-gray-500 text-sm mb-8 flex-grow leading-relaxed">
-                Use the "Audit" report to see current settings. Modify the Excel file and upload here to update existing notification preferences.
+                Use the "Audit" report to get IDs, modify the file, and upload here to update.
             </p>
-            <button id="btn-update-notifications" class="w-full py-3 px-4 border-2 border-purple-600 text-purple-600 font-bold rounded-lg hover:bg-purple-600 hover:text-white transition-all duration-200 focus:ring-4 focus:ring-purple-100">
+            
+            <input type="file" id="input-update-notifications" style="display: none;" accept=".xlsx, .csv">
+            <button id="btn-update-notifications" class="w-full py-3 px-4 border-2 border-purple-600 text-purple-600 font-bold rounded-lg hover:bg-purple-600 hover:text-white transition-all duration-200">
                 Upload to Update
             </button>
         </div>
@@ -74,3 +72,121 @@
     </div>
 
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const logBox = document.getElementById('notification-logs');
+    
+    function log(msg) {
+        if (logBox) {
+            const time = new Date().toLocaleTimeString();
+            logBox.innerHTML += `\n[${time}] ${msg}`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+    }
+
+    // --- 1. AUDIT (Blue) ---
+    const btnAudit = document.getElementById('btn-audit-notifications');
+    if (btnAudit) {
+        btnAudit.addEventListener('click', async () => {
+            log('Starting Audit... please wait.');
+            try {
+                // IMPORTANT: Ensure this route matches your Python/Flask route
+                const resp = await fetch('/notifications/audit', { method: 'POST' });
+                const data = await resp.json();
+                
+                if (resp.ok) {
+                    log('Audit Complete. ' + data.message);
+                    if(data.download_url) {
+                        log('Downloading file...');
+                        window.location.href = data.download_url;
+                    }
+                } else {
+                    log(`Error: ${data.error || 'Unknown error occurred'}`);
+                }
+            } catch (e) {
+                log(`System Error: ${e.message}`);
+            }
+        });
+    }
+
+    // --- 2. TEMPLATE (Gray) ---
+    const btnTemplate = document.getElementById('btn-download-notification-template');
+    if (btnTemplate) {
+        btnTemplate.addEventListener('click', () => {
+            log('Downloading blank template...');
+            // IMPORTANT: Ensure this route matches your Python/Flask route
+            window.location.href = '/notifications/download_template';
+        });
+    }
+
+    // --- 3. CREATE (Green) ---
+    const btnCreate = document.getElementById('btn-create-notifications');
+    const inputCreate = document.getElementById('input-create-notifications');
+    
+    if (btnCreate && inputCreate) {
+        // Trigger hidden file input
+        btnCreate.addEventListener('click', () => inputCreate.click());
+
+        // Handle file selection
+        inputCreate.addEventListener('change', async () => {
+            if (inputCreate.files.length === 0) return;
+            const file = inputCreate.files[0];
+            log(`Uploading file for creation: ${file.name}...`);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                // IMPORTANT: Ensure this route matches your Python/Flask route
+                const resp = await fetch('/notifications/create', { method: 'POST', body: formData });
+                const data = await resp.json();
+                
+                if (resp.ok) {
+                    log(`Success: ${data.message}`);
+                } else {
+                    log(`Error: ${data.error}`);
+                }
+            } catch (e) {
+                log(`Upload failed: ${e.message}`);
+            }
+            inputCreate.value = ''; // Reset
+        });
+    }
+
+    // --- 4. UPDATE (Purple) ---
+    const btnUpdate = document.getElementById('btn-update-notifications');
+    const inputUpdate = document.getElementById('input-update-notifications');
+    
+    if (btnUpdate && inputUpdate) {
+        // Trigger hidden file input
+        btnUpdate.addEventListener('click', () => inputUpdate.click());
+
+        // Handle file selection
+        inputUpdate.addEventListener('change', async () => {
+            if (inputUpdate.files.length === 0) return;
+            const file = inputUpdate.files[0];
+            log(`Uploading file for update: ${file.name}...`);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                // IMPORTANT: Ensure this route matches your Python/Flask route
+                const resp = await fetch('/notifications/update', { method: 'POST', body: formData });
+                const data = await resp.json();
+                
+                if (resp.ok) {
+                    log(`Success: ${data.message}`);
+                } else {
+                    log(`Error: ${data.error}`);
+                }
+            } catch (e) {
+                log(`Upload failed: ${e.message}`);
+            }
+            inputUpdate.value = ''; // Reset
+        });
+    }
+});
+</script>
