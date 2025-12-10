@@ -49,7 +49,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-3">Edit Rules</h3>
             <p class="text-gray-500 text-sm mb-8 flex-grow leading-relaxed">
-                Use the "Audit" report to get IDs, modify the file, and upload here to update.
+                Upload a modified report to update existing settings.
             </p>
             
             <input type="file" id="input-update-notifications" style="display: none;" accept=".xlsx, .csv">
@@ -86,24 +86,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 1. AUDIT (Blue) ---
+    // ==========================================
+    // 1. AUDIT (Blue Button)
+    // Route: /notifications/audit (GET)
+    // Returns: Direct File Stream (Binary)
+    // ==========================================
     const btnAudit = document.getElementById('btn-audit-notifications');
     if (btnAudit) {
         btnAudit.addEventListener('click', async () => {
-            log('Starting Audit... please wait.');
+            log('Starting Audit... fetching Excel file...');
             try {
-                // IMPORTANT: Ensure this route matches your Python/Flask route
-                const resp = await fetch('/notifications/audit', { method: 'POST' });
-                const data = await resp.json();
-                
+                // CHANGED: method is now GET to match your Python @notifications_bp.route(..., methods=['GET'])
+                const resp = await fetch('/notifications/audit', { method: 'GET' });
+
                 if (resp.ok) {
-                    log('Audit Complete. ' + data.message);
-                    if(data.download_url) {
-                        log('Downloading file...');
-                        window.location.href = data.download_url;
-                    }
+                    // Logic to handle direct file download from fetch
+                    const blob = await resp.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    // Try to get filename from headers, or default
+                    a.download = 'Notification_Audit.xlsx'; 
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    log('Success: Audit file downloaded.');
                 } else {
-                    log(`Error: ${data.error || 'Unknown error occurred'}`);
+                    // Try to read the error text if it's not a file
+                    const errText = await resp.text();
+                    log(`Error: ${resp.status} - ${errText}`);
                 }
             } catch (e) {
                 log(`System Error: ${e.message}`);
@@ -111,82 +123,79 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 2. TEMPLATE (Gray) ---
+    // ==========================================
+    // 2. TEMPLATE (Gray Button)
+    // Route: /notifications/template (GET)
+    // Returns: Direct File Stream
+    // ==========================================
     const btnTemplate = document.getElementById('btn-download-notification-template');
     if (btnTemplate) {
         btnTemplate.addEventListener('click', () => {
             log('Downloading blank template...');
-            // IMPORTANT: Ensure this route matches your Python/Flask route
-            window.location.href = '/notifications/download_template';
+            // CHANGED: URL updated to match your python route '/notifications/template'
+            window.location.href = '/notifications/template';
         });
     }
 
-    // --- 3. CREATE (Green) ---
+    // ==========================================
+    // 3 & 4. CREATE & UPDATE (Green & Purple)
+    // Route: /notifications/update (POST)
+    // Returns: JSON logs
+    // Note: Your backend handles both create/update via the 'update' route
+    // ==========================================
+    
+    // Function to handle the file upload for both buttons
+    async function handleFileUpload(file, actionType) {
+        log(`Uploading file for ${actionType}: ${file.name}...`);
+        
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            // CHANGED: Both buttons point to '/notifications/update' because your 
+            // process_update_file function handles the logic for both.
+            const resp = await fetch('/notifications/update', { method: 'POST', body: formData });
+            const data = await resp.json();
+            
+            if (resp.ok) {
+                if(data.logs && Array.isArray(data.logs)) {
+                    log(`Processing Complete. Logs:\n` + data.logs.join('\n'));
+                } else {
+                    log('Success: Update processed.');
+                }
+            } else {
+                log(`Error: ${data.error || 'Unknown server error'}`);
+            }
+        } catch (e) {
+            log(`Upload failed: ${e.message}`);
+        }
+    }
+
+    // --- Wire up Create Button ---
     const btnCreate = document.getElementById('btn-create-notifications');
     const inputCreate = document.getElementById('input-create-notifications');
-    
     if (btnCreate && inputCreate) {
-        // Trigger hidden file input
         btnCreate.addEventListener('click', () => inputCreate.click());
-
-        // Handle file selection
-        inputCreate.addEventListener('change', async () => {
-            if (inputCreate.files.length === 0) return;
-            const file = inputCreate.files[0];
-            log(`Uploading file for creation: ${file.name}...`);
-            
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                // IMPORTANT: Ensure this route matches your Python/Flask route
-                const resp = await fetch('/notifications/create', { method: 'POST', body: formData });
-                const data = await resp.json();
-                
-                if (resp.ok) {
-                    log(`Success: ${data.message}`);
-                } else {
-                    log(`Error: ${data.error}`);
-                }
-            } catch (e) {
-                log(`Upload failed: ${e.message}`);
+        inputCreate.addEventListener('change', () => {
+            if (inputCreate.files.length > 0) {
+                handleFileUpload(inputCreate.files[0], "Creation");
+                inputCreate.value = ''; // Reset
             }
-            inputCreate.value = ''; // Reset
         });
     }
 
-    // --- 4. UPDATE (Purple) ---
+    // --- Wire up Update Button ---
     const btnUpdate = document.getElementById('btn-update-notifications');
     const inputUpdate = document.getElementById('input-update-notifications');
-    
     if (btnUpdate && inputUpdate) {
-        // Trigger hidden file input
         btnUpdate.addEventListener('click', () => inputUpdate.click());
-
-        // Handle file selection
-        inputUpdate.addEventListener('change', async () => {
-            if (inputUpdate.files.length === 0) return;
-            const file = inputUpdate.files[0];
-            log(`Uploading file for update: ${file.name}...`);
-            
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                // IMPORTANT: Ensure this route matches your Python/Flask route
-                const resp = await fetch('/notifications/update', { method: 'POST', body: formData });
-                const data = await resp.json();
-                
-                if (resp.ok) {
-                    log(`Success: ${data.message}`);
-                } else {
-                    log(`Error: ${data.error}`);
-                }
-            } catch (e) {
-                log(`Upload failed: ${e.message}`);
+        inputUpdate.addEventListener('change', () => {
+            if (inputUpdate.files.length > 0) {
+                handleFileUpload(inputUpdate.files[0], "Update");
+                inputUpdate.value = ''; // Reset
             }
-            inputUpdate.value = ''; // Reset
         });
     }
+
 });
 </script>
