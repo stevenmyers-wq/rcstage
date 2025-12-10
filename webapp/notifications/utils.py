@@ -2,6 +2,8 @@ import io
 import concurrent.futures
 import pandas as pd
 import json
+import time
+import random
 
 class NotificationManager:
     def __init__(self):
@@ -70,68 +72,96 @@ class NotificationManager:
         return ext_map
 
     def _fetch_single_setting(self, ext, token=None):
-        """Fetch settings for a single user (helper for threading)."""
+        """Fetch settings for a single user with 429 RETRY LOGIC."""
         from webapp.rc_api import rc
         
-        try:
-            # Pass token explicitly to the API call running in the thread
-            resp = rc.get(f"/restapi/v1.0/account/~/extension/{ext['id']}/notification-settings", token=token)
-            
-            if resp.status_code != 200:
-                # Some extensions (like limited ones) might not have notification settings.
+        # Retry settings to handle rate limits
+        max_retries = 5
+        attempt = 0
+        
+        while attempt < max_retries:
+            try:
+                # Pass token explicitly to the API call running in the thread
+                url = f"/restapi/v1.0/account/~/extension/{ext['id']}/notification-settings"
+                resp = rc.get(url, token=token)
+                
+                # --- SUCCESS (200) ---
+                if resp.status_code == 200:
+                    settings = resp.json()
+                    
+                    # Extract basic lists
+                    emails = ", ".join(settings.get('emailAddresses', []))
+                    
+                    # Extract Settings
+                    voicemails = settings.get('voicemails', {})
+                    missed_calls = settings.get('missedCalls', {})
+                    inbound_texts = settings.get('inboundTexts', {})
+                    inbound_faxes = settings.get('inboundFaxes', {})
+                    outbound_faxes = settings.get('outboundFaxes', {})
+                    
+                    # Check if manager notifications are enabled
+                    has_manager_notify = (
+                        voicemails.get('includeManagers', False) or 
+                        inbound_faxes.get('includeManagers', False)
+                    )
+
+                    return {
+                        'ExtensionNumber': ext.get('extensionNumber', ''),
+                        'ExtensionName': ext.get('name', 'Unknown'),
+                        'EmailAddresses': emails,
+                        'IncludeSms': settings.get('includeSmsRecipients', False),
+                        'AdvancedMode': settings.get('advancedMode', False),
+                        'DisableManagerNotifications': not has_manager_notify, # Show current state
+                        
+                        'Voicemails_Email': voicemails.get('notifyByEmail', False),
+                        'Voicemails_SMS': voicemails.get('notifyBySms', False),
+                        'Voicemails_MarkAsRead': voicemails.get('markAsRead', False),
+                        
+                        'MissedCalls_Email': missed_calls.get('notifyByEmail', False),
+                        'MissedCalls_SMS': missed_calls.get('notifyBySms', False),
+                        
+                        'InboundTexts_Email': inbound_texts.get('notifyByEmail', False),
+                        'InboundTexts_SMS': inbound_texts.get('notifyBySms', False),
+                        
+                        'InboundFaxes_Email': inbound_faxes.get('notifyByEmail', False),
+                        'InboundFaxes_SMS': inbound_faxes.get('notifyBySms', False),
+                        'InboundFaxes_MarkAsRead': inbound_faxes.get('markAsRead', False),
+                        
+                        'OutboundFaxes_Email': outbound_faxes.get('notifyByEmail', False),
+                        'OutboundFaxes_SMS': outbound_faxes.get('notifyBySms', False)
+                    }
+
+                # --- RATE LIMIT HIT (429) ---
+                elif resp.status_code == 429:
+                    attempt += 1
+                    # Read the header to see how long RC wants us to wait (default to 5s)
+                    retry_after = int(resp.headers.get('Retry-After', 5))
+                    # Add jitter to prevent threads waking up at exact same time
+                    wait_time = retry_after + random.uniform(0.5, 2.0)
+                    
+                    print(f"⚠️ 429 on Ext {ext.get('extensionNumber')}. Waiting {wait_time:.1f}s... (Attempt {attempt}/{max_retries})")
+                    
+                    time.sleep(wait_time)
+                    continue # Try loop again
+
+                # --- OTHER ERRORS (e.g. 404, 403) ---
+                else:
+                    return {
+                        'ExtensionNumber': ext.get('extensionNumber', ''),
+                        'ExtensionName': f"{ext.get('name', 'Unknown')} (Error: {resp.status_code})"
+                    }
+
+            except Exception as e:
                 return {
                     'ExtensionNumber': ext.get('extensionNumber', ''),
-                    'ExtensionName': f"{ext.get('name', 'Unknown')} (No Settings Found - {resp.status_code})"
+                    'ExtensionName': f"Error: {str(e)}"
                 }
-
-            settings = resp.json()
-            
-            # Extract basic lists
-            emails = ", ".join(settings.get('emailAddresses', []))
-            
-            # Extract Settings
-            voicemails = settings.get('voicemails', {})
-            missed_calls = settings.get('missedCalls', {})
-            inbound_texts = settings.get('inboundTexts', {})
-            inbound_faxes = settings.get('inboundFaxes', {})
-            outbound_faxes = settings.get('outboundFaxes', {})
-            
-            # Check if manager notifications are enabled
-            has_manager_notify = (
-                voicemails.get('includeManagers', False) or 
-                inbound_faxes.get('includeManagers', False)
-            )
-
-            return {
-                'ExtensionNumber': ext.get('extensionNumber', ''),
-                'ExtensionName': ext.get('name', 'Unknown'),
-                'EmailAddresses': emails,
-                'IncludeSms': settings.get('includeSmsRecipients', False),
-                'AdvancedMode': settings.get('advancedMode', False),
-                'DisableManagerNotifications': not has_manager_notify,  # Show current state
-                
-                'Voicemails_Email': voicemails.get('notifyByEmail', False),
-                'Voicemails_SMS': voicemails.get('notifyBySms', False),
-                'Voicemails_MarkAsRead': voicemails.get('markAsRead', False),
-                
-                'MissedCalls_Email': missed_calls.get('notifyByEmail', False),
-                'MissedCalls_SMS': missed_calls.get('notifyBySms', False),
-                
-                'InboundTexts_Email': inbound_texts.get('notifyByEmail', False),
-                'InboundTexts_SMS': inbound_texts.get('notifyBySms', False),
-                
-                'InboundFaxes_Email': inbound_faxes.get('notifyByEmail', False),
-                'InboundFaxes_SMS': inbound_faxes.get('notifyBySms', False),
-                'InboundFaxes_MarkAsRead': inbound_faxes.get('markAsRead', False),
-                
-                'OutboundFaxes_Email': outbound_faxes.get('notifyByEmail', False),
-                'OutboundFaxes_SMS': outbound_faxes.get('notifyBySms', False)
-            }
-        except Exception as e:
-            return {
-                'ExtensionNumber': ext.get('extensionNumber', ''),
-                'ExtensionName': f"Error: {str(e)}"
-            }
+        
+        # If we exit loop, we ran out of retries
+        return {
+            'ExtensionNumber': ext.get('extensionNumber', ''),
+            'ExtensionName': f"{ext.get('name', 'Unknown')} (Failed: 429 Rate Limit)"
+        }
 
     def generate_audit_report(self, token=None):
         """Scans all users and builds an Excel file."""
@@ -156,7 +186,8 @@ class NotificationManager:
             page += 1
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # UPDATED: Reduced max_workers to 3 to prevent hitting Rate Limits (429)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             # Pass the token into the threaded function
             future_to_ext = {executor.submit(self._fetch_single_setting, ext, token=token): ext for ext in extensions}
             for future in concurrent.futures.as_completed(future_to_ext):
