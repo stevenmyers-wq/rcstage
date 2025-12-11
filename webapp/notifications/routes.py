@@ -1,50 +1,39 @@
-from flask import Blueprint, request, jsonify, send_file, session, Response, stream_with_context
-from webapp.notifications.utils import NotificationManager
+from flask import Blueprint, request, jsonify, send_file, session, send_from_directory
+import os
+from webapp.notifications.utils import NotificationManager, REPORT_DIR
 
 notifications_bp = Blueprint('notifications', __name__)
 manager = NotificationManager()
 
-@notifications_bp.route('/notifications/audit', methods=['GET'])
-def audit_notifications():
+# 1. Start the Job
+@notifications_bp.route('/notifications/audit/start', methods=['POST'])
+def start_audit():
     try:
         token = session.get('rc_access_token')
-        
-        # Use stream_with_context to keep connection open
-        return Response(
-            stream_with_context(manager.generate_audit_csv_stream(token=token)),
-            mimetype='text/csv',
-            headers={'Content-Disposition': 'attachment; filename=Notification_Audit.csv'}
+        job_id = manager.start_audit_job(token)
+        return jsonify({"job_id": job_id, "status": "started"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 2. Check Status
+@notifications_bp.route('/notifications/audit/status/<job_id>', methods=['GET'])
+def check_audit_status(job_id):
+    try:
+        status = manager.get_job_status(job_id)
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 3. Download Result
+@notifications_bp.route('/notifications/audit/download/<filename>', methods=['GET'])
+def download_audit_result(filename):
+    try:
+        return send_from_directory(
+            os.path.abspath(REPORT_DIR), 
+            filename, 
+            as_attachment=True
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 404
 
-@notifications_bp.route('/notifications/template', methods=['GET'])
-def get_template():
-    try:
-        output = manager.generate_blank_template()
-        output.seek(0)
-        return send_file(
-            output, 
-            as_attachment=True, 
-            download_name='Notification_Update_Template.xlsx',
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@notifications_bp.route('/notifications/update', methods=['POST'])
-def update_notifications():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
-
-    try:
-        token = session.get('rc_access_token')
-        # Note: Ensure you pasted the full process_update_file logic into utils.py
-        logs = manager.process_update_file(file, token=token)
-        return jsonify({"logs": logs})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# ... (Keep template and update routes same as before) ...
