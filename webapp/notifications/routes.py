@@ -1,79 +1,50 @@
-from flask import Blueprint, request, jsonify, send_file, session, send_from_directory
-import os
-import io
-import pandas as pd
-from webapp.notifications.utils import NotificationManager, REPORT_DIR
+from flask import Blueprint, jsonify, request
+from webapp.auth_utils import require_rc_token
+from webapp.rc_api import rc_api_call
 
-notifications_bp = Blueprint('notifications', __name__)
-manager = NotificationManager()
+notifications_bp = Blueprint('notifications_bp', __name__)
 
-# --- AUDIT ROUTES ---
-
-@notifications_bp.route('/notifications/audit/start', methods=['POST'])
-def start_audit():
-    try:
-        token = session.get('rc_access_token')
-        job_id = manager.start_audit_job(token)
-        return jsonify({"job_id": job_id, "status": "started"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@notifications_bp.route('/notifications/audit/status/<job_id>', methods=['GET'])
-def check_job_status(job_id):
-    """Generic status checker for both Audit and Update jobs."""
-    try:
-        status = manager.get_job_status(job_id)
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@notifications_bp.route('/notifications/audit/download/<filename>', methods=['GET'])
-def download_audit_result(filename):
-    try:
-        return send_from_directory(os.path.abspath(REPORT_DIR), filename, as_attachment=True)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 404
-
-# --- UPDATE ROUTES ---
-
-@notifications_bp.route('/notifications/update', methods=['POST'])
-def update_notifications():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+# --- STEP 1: Get the list of all extensions (Fast) ---
+@notifications_bp.route('/api/notifications/get-targets')
+@require_rc_token
+def get_targets():
+    # Fetch all enabled User extensions
+    params = {'status': 'Enabled', 'type': 'User', 'perPage': 1000}
+    resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
+    if not resp or 'records' not in resp:
+        return jsonify({"error": "Failed to fetch extensions"}), 500
 
-    try:
-        # Read file into DataFrame immediately (Synchronous)
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        else:
-            df = pd.read_excel(file)
-            
-        token = session.get('rc_access_token')
-        
-        # Start Background Job
-        job_id = manager.start_update_job(df, token)
-        
-        return jsonify({"job_id": job_id, "status": "started"})
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    targets = []
+    for record in resp['records']:
+        targets.append({
+            "id": record['id'],
+            "name": record.get('name', 'Unknown'),
+            "ext": record.get('extensionNumber', 'N/A')
+        })
+    
+    return jsonify({"targets": targets})
 
-# --- TEMPLATE ROUTE ---
-
-@notifications_bp.route('/notifications/template', methods=['GET'])
-def get_template():
-    try:
-        output = manager.generate_blank_template()
-        output.seek(0)
-        return send_file(
-            output, 
-            as_attachment=True, 
-            download_name='Notification_Update_Template.xlsx',
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# --- STEP 2: Check one single extension (The "Heavy" work) ---
+@notifications_bp.route('/api/notifications/check-single', methods=['POST'])
+@require_rc_token
+def check_single_extension():
+    data = request.get_json()
+    ext_id = data.get('id')
+    
+    # Call RingCentral to get notification settings for this specific user
+    endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
+    settings = rc_api_call(endpoint)
+    
+    # Basic logic: Check if email notifications are set
+    status_msg = "OK"
+    if settings:
+        emails = settings.get('emailAddresses', [])
+        if not emails:
+            status_msg = "MISSING_EMAIL"
+    
+    return jsonify({
+        "status": "success", 
+        "ext_id": ext_id,
+        "result": status_msg
+    })
