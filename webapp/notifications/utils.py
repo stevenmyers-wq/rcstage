@@ -29,65 +29,57 @@ class NotificationManager:
             'OutboundFaxes_Email', 'OutboundFaxes_SMS'
         ]
         
-        # GLOBAL RATE LIMITER STATE
         self._pause_until = 0
         self._lock = threading.Lock()
 
-    # --- JOB MANAGEMENT HELPERS ---
+    # --- JOB MANAGEMENT ---
     
     def start_audit_job(self, token):
-        """Starts the Audit background thread."""
         job_id = str(uuid.uuid4())
         self._update_job_status(job_id, "running", 0, "Initializing Audit...")
-        
         thread = threading.Thread(target=self._run_audit_background, args=(job_id, token))
         thread.daemon = True
         thread.start()
         return job_id
 
     def start_update_job(self, df, token):
-        """Starts the Update background thread."""
         job_id = str(uuid.uuid4())
         self._update_job_status(job_id, "running", 0, "Initializing Update...")
-        
-        # Pass the DataFrame to the thread
         thread = threading.Thread(target=self._run_update_background, args=(job_id, df, token))
         thread.daemon = True
         thread.start()
         return job_id
 
     def get_job_status(self, job_id):
-        """Reads the status JSON file."""
         status_file = os.path.join(JOB_DIR, f"{job_id}.json")
         if not os.path.exists(status_file):
             return {"status": "error", "message": "Job not found"}
-        
         with open(status_file, 'r') as f:
             return json.load(f)
 
     def _update_job_status(self, job_id, status, percent, message, filename=None, logs=None):
-        """Writes status to disk."""
         data = {
             "status": status,
             "percent": percent,
             "message": message,
             "filename": filename,
-            "logs": logs, # Optional list of strings
+            "logs": logs,
             "updated_at": datetime.now().isoformat()
         }
         with open(os.path.join(JOB_DIR, f"{job_id}.json"), 'w') as f:
             json.dump(data, f)
 
-    # --- BACKGROUND WORKERS ---
+    # --- WORKERS ---
 
     def _run_audit_background(self, job_id, token):
         try:
             from webapp.rc_api import rc
             
-            # 1. Fetch Extensions
+            # 1. Fetch Extensions with DEBUGGING
             self._update_job_status(job_id, "running", 5, "Fetching extension list...")
             extensions = []
             page = 1
+            
             while True:
                 try:
                     resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
@@ -96,22 +88,32 @@ class NotificationManager:
                         'perPage': 1000, 
                         'page': page
                     })
-                    if resp.status_code != 200: break
+                    
+                    # DEBUG: Log if API fails
+                    if resp.status_code != 200:
+                        self._update_job_status(job_id, "error", 100, f"API Error {resp.status_code}: {resp.text}")
+                        return
+
                     data = resp.json()
-                    extensions.extend(data.get('records', []))
+                    records = data.get('records', [])
+                    extensions.extend(records)
+                    
                     if not data.get('navigation', {}).get('nextPage'): break
                     page += 1
-                except: break
+                except Exception as e:
+                    self._update_job_status(job_id, "error", 100, f"Fetch Exception: {str(e)}")
+                    return
 
             total_ext = len(extensions)
             if total_ext == 0:
-                self._update_job_status(job_id, "error", 100, "No extensions found.")
+                # DEBUG: Explicitly state 0 records found
+                self._update_job_status(job_id, "error", 100, f"Success (200 OK) but 0 extensions found. Check Account ID/Permissions.")
                 return
 
             # 2. Fetch Settings
             results = []
             completed_count = 0
-            self._pause_until = 0 # Reset limiter
+            self._pause_until = 0
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 future_to_ext = {executor.submit(self._fetch_single_setting, ext, token=token): ext for ext in extensions}
@@ -122,10 +124,10 @@ class NotificationManager:
                     
                     if completed_count % 10 == 0:
                         percent = 10 + int((completed_count / total_ext) * 80)
-                        self._update_job_status(job_id, "running", percent, f"Processed {completed_count}/{total_ext}...")
+                        self._update_job_status(job_id, "running", percent, f"Processed {completed_count}/{total_ext} extensions...")
 
-            # 3. Save Excel
-            self._update_job_status(job_id, "running", 95, "Saving Excel file...")
+            # 3. Save
+            self._update_job_status(job_id, "running", 95, "Saving Excel...")
             df = pd.DataFrame(results, columns=self.columns)
             filename = f"Notification_Audit_{job_id}.xlsx"
             filepath = os.path.join(REPORT_DIR, filename)
@@ -147,22 +149,37 @@ class NotificationManager:
             
             # 1. Map Extensions
             self._update_job_status(job_id, "running", 5, "Mapping extensions...")
-            try:
-                ext_map = self._get_extension_map(token=token)
-            except Exception as e:
-                self._update_job_status(job_id, "error", 100, f"Failed to map extensions: {str(e)}")
+            ext_map = {}
+            page = 1
+            while True:
+                resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
+                    'status': ['Enabled', 'Disabled', 'NotActivated'], 
+                    'type': ['User', 'Department', 'Voicemail'], 
+                    'perPage': 1000, 'page': page
+                })
+                if resp.status_code != 200:
+                    self._update_job_status(job_id, "error", 100, f"API Error during mapping: {resp.status_code}")
+                    return
+                
+                data = resp.json()
+                for r in data.get('records', []):
+                    if 'extensionNumber' in r: ext_map[str(r['extensionNumber'])] = str(r['id'])
+                
+                if not data.get('navigation', {}).get('nextPage'): break
+                page += 1
+
+            if not ext_map:
+                self._update_job_status(job_id, "error", 100, "No extensions found in account to map against.")
                 return
 
             logs = []
             total_rows = len(df)
             processed_rows = 0
-            self._pause_until = 0 # Reset limiter
+            self._pause_until = 0
 
             # 2. Process Rows
             for index, row in df.iterrows():
                 processed_rows += 1
-                
-                # Update Status every 5 rows
                 if processed_rows % 5 == 0 or processed_rows == 1:
                     percent = 10 + int((processed_rows / total_rows) * 85)
                     self._update_job_status(job_id, "running", percent, f"Updating row {processed_rows}/{total_rows}...")
@@ -176,19 +193,17 @@ class NotificationManager:
                     logs.append(f"⚠️ Ext {ext_num}: Not found. Skipping.")
                     continue
 
-                # --- RATE LIMIT CHECK ---
+                # Rate Limit Wait
                 wait_needed = self._pause_until - time.time()
                 if wait_needed > 0: time.sleep(wait_needed)
-                time.sleep(random.uniform(0.01, 0.05)) # Micro-delay
+                time.sleep(random.uniform(0.01, 0.05))
 
                 try:
-                    # Fetch Current
+                    # Fetch
                     get_resp = rc.get(f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings", token=token)
-                    
-                    # Handle 429 on GET
                     if get_resp.status_code == 429:
                         self._handle_429(get_resp)
-                        logs.append(f"⚠️ Ext {ext_num}: Rate Limit Hit (GET). Skipping row.")
+                        logs.append(f"⚠️ Ext {ext_num}: Rate Limit (GET). Skipping.")
                         continue
                     if get_resp.status_code != 200:
                         logs.append(f"❌ Ext {ext_num}: API Error {get_resp.status_code}")
@@ -196,27 +211,23 @@ class NotificationManager:
                     
                     settings = get_resp.json()
                     
-                    # --- APPLY CHANGES ---
-                    # 1. Emails
+                    # Updates
                     if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
                         raw = str(row['EmailAddresses'])
                         settings['emailAddresses'] = [e.strip() for e in raw.split(',') if e.strip()]
                         settings.pop('emailRecipients', None)
 
-                    # 2. Manager Mode
                     if 'DisableManagerNotifications' in row:
                         val = str(row['DisableManagerNotifications']).lower()
                         if val in ['true', '1', 'yes']:
                             for cat in ['voicemails', 'inboundFaxes', 'missedCalls']:
                                 if cat in settings: settings[cat]['includeManagers'] = False
 
-                    # 3. Simple Toggles
                     if 'IncludeSms' in row and not pd.isna(row['IncludeSms']):
                         settings['includeSmsRecipients'] = bool(row['IncludeSms'])
                     if 'AdvancedMode' in row and not pd.isna(row['AdvancedMode']):
                         settings['advancedMode'] = bool(row['AdvancedMode'])
 
-                    # 4. Categories
                     cats = {
                         'voicemails': ('Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead'),
                         'missedCalls': ('MissedCalls_Email', 'MissedCalls_SMS', None),
@@ -230,28 +241,25 @@ class NotificationManager:
                         if cols[1] in row and not pd.isna(row[cols[1]]): settings[cat]['notifyBySms'] = bool(row[cols[1]])
                         if cols[2] and cols[2] in row and not pd.isna(row[cols[2]]): settings[cat]['markAsRead'] = bool(row[cols[2]])
 
-                    # 5. PUSH UPDATE
+                    # Push
                     put_resp = rc.put(f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings", json=settings, token=token)
-                    
                     if put_resp.status_code == 200:
                         logs.append(f"✅ Ext {ext_num}: Updated")
                     elif put_resp.status_code == 429:
                         self._handle_429(put_resp)
-                        logs.append(f"⚠️ Ext {ext_num}: Rate Limit Hit (PUT). Not updated.")
+                        logs.append(f"⚠️ Ext {ext_num}: Rate Limit (PUT).")
                     else:
                         logs.append(f"❌ Ext {ext_num}: Failed {put_resp.text}")
 
                 except Exception as e:
                     logs.append(f"❌ Ext {ext_num}: {str(e)}")
 
-            # 3. Finish
             self._update_job_status(job_id, "complete", 100, "Update Completed", logs=logs)
 
         except Exception as e:
             self._update_job_status(job_id, "error", 100, f"System Error: {str(e)}")
 
     def _handle_429(self, resp):
-        """Updates global pause timer."""
         try:
             retry_after = int(resp.headers.get('Retry-After', 5))
         except:
@@ -263,27 +271,7 @@ class NotificationManager:
             if new_pause > self._pause_until:
                 self._pause_until = new_pause
 
-    def _get_extension_map(self, token=None):
-        """Helper to get ext map."""
-        from webapp.rc_api import rc
-        ext_map = {}
-        page = 1
-        while True:
-            resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
-                'status': ['Enabled', 'Disabled', 'NotActivated'], 
-                'type': ['User', 'Department', 'Voicemail'], 
-                'perPage': 1000, 'page': page
-            })
-            if resp.status_code != 200: break
-            data = resp.json()
-            for r in data.get('records', []):
-                if 'extensionNumber' in r: ext_map[str(r['extensionNumber'])] = str(r['id'])
-            if not data.get('navigation', {}).get('nextPage'): break
-            page += 1
-        return ext_map
-
     def _fetch_single_setting(self, ext, token=None):
-        """Thread worker for Audit."""
         from webapp.rc_api import rc
         max_retries = 10
         attempt = 0
@@ -332,7 +320,6 @@ class NotificationManager:
         return {'ExtensionNumber': ext.get('extensionNumber'), 'ExtensionName': "Failed: Rate Limit Exceeded"}
 
     def generate_blank_template(self):
-        """Creates template."""
         import pandas as pd
         df = pd.DataFrame(columns=self.columns)
         output = io.BytesIO()
