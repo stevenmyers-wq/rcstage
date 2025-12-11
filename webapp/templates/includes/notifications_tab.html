@@ -20,6 +20,11 @@
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .tool-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
     }
 
     /* --- ICON CIRCLES --- */
@@ -31,11 +36,14 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.75rem;
     }
-    .icon-blue { background-color: #e8f0fe; color: #1a73e8; }
-    .icon-green { background-color: #e6f4ea; color: #137333; }
-    .icon-purple { background-color: #f3e8fd; color: #9334e6; }
+    .icon-wrapper svg {
+        width: 32px;
+        height: 32px;
+    }
+    .icon-blue { background-color: #e8f0fe; color: #1a73e8; fill: #1a73e8; }
+    .icon-green { background-color: #e6f4ea; color: #137333; fill: #137333; }
+    .icon-purple { background-color: #f3e8fd; color: #9334e6; fill: #9334e6; }
 
     /* --- BUTTONS --- */
     .btn-custom {
@@ -45,6 +53,7 @@
         border-radius: 6px;
         text-transform: none;
         letter-spacing: 0.3px;
+        transition: all 0.2s;
     }
     .btn-outline-blue { border: 1px solid #1a73e8; color: #1a73e8; background: transparent; }
     .btn-outline-blue:hover { background: #1a73e8; color: #fff; }
@@ -74,6 +83,7 @@
         color: #fff;
         display: flex;
         justify-content: space-between;
+        align-items: center;
     }
     .terminal-content {
         width: 100%;
@@ -84,10 +94,11 @@
         padding: 15px;
         font-size: 0.9rem;
         height: 300px;
+        display: block;
     }
     .terminal-content:focus { outline: none; }
 
-    /* Responsive fallback for very small screens */
+    /* Responsive fallback */
     @media (max-width: 992px) {
         .cards-grid-container { grid-template-columns: 1fr; }
     }
@@ -95,12 +106,22 @@
 
 <div style="padding: 20px;">
     
+    <div class="row mb-5 text-center">
+        <div class="col-12">
+            <h3 style="font-weight: 700; color: #333;">Notification Manager</h3>
+            <p class="text-muted">Audit current settings, download templates, and bulk update user notifications.</p>
+        </div>
+    </div>
+
     <div class="cards-grid-container">
         
         <div class="tool-card">
             <div>
                 <div class="icon-wrapper icon-blue">
-                    <i class="bi bi-clipboard-data"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                        <path d="M10 .5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5.5.5 0 0 1-.5.5.5.5 0 0 0-.5.5V2a.5.5 0 0 0 .5.5h5A.5.5 0 0 0 11 2v-.5a.5.5 0 0 0-.5-.5.5.5 0 0 1-.5-.5z"/>
+                        <path d="M4.085 1H3.5A1.5 1.5 0 0 0 2 2.5v12A1.5 1.5 0 0 0 3.5 16h9a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 12.5 1h-.585c.055.156.085.325.085.5V2a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 4 2v-.5c0-.175.03-.344.085-.5zm1 4a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5z"/>
+                    </svg>
                 </div>
                 <h5 class="fw-bold mb-3">Audit Notifications</h5>
                 <p class="text-muted small">
@@ -117,7 +138,10 @@
         <div class="tool-card">
             <div>
                 <div class="icon-wrapper icon-green">
-                    <i class="bi bi-plus-lg"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                    </svg>
                 </div>
                 <h5 class="fw-bold mb-3">Get Template</h5>
                 <p class="text-muted small">
@@ -134,7 +158,10 @@
         <div class="tool-card">
             <div>
                 <div class="icon-wrapper icon-purple">
-                    <i class="bi bi-pencil-square"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                        <path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/>
+                        <path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/>
+                    </svg>
                 </div>
                 <h5 class="fw-bold mb-3">Update Notifications</h5>
                 <p class="text-muted small">
