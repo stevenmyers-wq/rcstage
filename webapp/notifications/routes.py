@@ -1,28 +1,19 @@
-from flask import Blueprint, request, jsonify, send_file, session
-# Absolute import to navigate project structure without __init__.py in subfolder
+from flask import Blueprint, request, jsonify, send_file, session, Response, stream_with_context
 from webapp.notifications.utils import NotificationManager
 
-# Define Blueprint
 notifications_bp = Blueprint('notifications', __name__)
-
-# Initialize logic class
 manager = NotificationManager()
 
 @notifications_bp.route('/notifications/audit', methods=['GET'])
 def audit_notifications():
     try:
-        # Get the token from the current session
         token = session.get('rc_access_token')
         
-        # Pass the token to the utility so it can use it in background/threads
-        output = manager.generate_audit_report(token=token)
-        output.seek(0)
-        
-        return send_file(
-            output, 
-            as_attachment=True, 
-            download_name='Notification_Audit.xlsx',
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        # Use stream_with_context to keep connection open
+        return Response(
+            stream_with_context(manager.generate_audit_csv_stream(token=token)),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=Notification_Audit.csv'}
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -51,10 +42,8 @@ def update_notifications():
         return jsonify({"error": "No file selected"}), 400
 
     try:
-        # Get the token for the update process as well
         token = session.get('rc_access_token')
-
-        # Pass file stream and token to the utility
+        # Note: Ensure you pasted the full process_update_file logic into utils.py
         logs = manager.process_update_file(file, token=token)
         return jsonify({"logs": logs})
     except Exception as e:
