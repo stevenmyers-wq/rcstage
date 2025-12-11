@@ -8,7 +8,8 @@ notifications_bp = Blueprint('notifications_bp', __name__)
 @notifications_bp.route('/api/notifications/get-targets')
 @require_rc_token
 def get_targets():
-    params = {'status': 'Enabled', 'type': 'User', 'perPage': 1000}
+    # UPDATED: Now fetches both 'Enabled' and 'NotActivated' users
+    params = {'status': 'Enabled,NotActivated', 'type': 'User', 'perPage': 1000}
     resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
     
     targets = []
