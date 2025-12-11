@@ -1,42 +1,72 @@
-<div class="p-3"> <div class="row mb-4">
-        <div class="col-12">
-            <h3 class="mb-2">Notification Auditor</h3>
-            <p class="text-muted">Checks all user extensions for valid notification settings.</p>
-            
-            <div class="d-flex gap-2">
-                <button id="btn-notifications-run" class="btn btn-primary">
-                    <i class="bi bi-play-fill"></i> Start Audit
-                </button>
-                <button id="btn-notifications-stop" class="btn btn-danger" style="display:none;">
-                    <i class="bi bi-stop-fill"></i> Stop
-                </button>
-            </div>
-        </div>
-    </div>
+from flask import Blueprint, jsonify, request
+from webapp.auth_utils import require_rc_token
+from webapp.rc_api import rc_api_call
 
-    <div id="notifications-status-box" class="card bg-light mb-4" style="display:none;">
-        <div class="card-body py-3">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong id="notifications-current-action" class="text-primary">Ready</strong>
-                <span id="notifications-progress-text" class="badge bg-secondary">0%</span>
-            </div>
-            <div class="progress" style="height: 20px;">
-                <div id="notifications-progress-bar" 
-                     class="progress-bar progress-bar-striped progress-bar-animated" 
-                     role="progressbar" 
-                     style="width: 0%">
-                </div>
-            </div>
-        </div>
-    </div>
+notifications_bp = Blueprint('notifications_bp', __name__)
 
-    <div class="row">
-        <div class="col-12">
-            <label class="form-label fw-bold">Activity Log</label>
-            <textarea id="notifications-log" 
-                      class="form-control font-monospace w-100 bg-white" 
-                      style="height: 400px; resize: vertical;" 
-                      readonly></textarea>
-        </div>
-    </div>
-</div>
+# --- 1. GET LIST (For starting the Audit) ---
+@notifications_bp.route('/api/notifications/get-targets')
+@require_rc_token
+def get_targets():
+    params = {'status': 'Enabled', 'type': 'User', 'perPage': 1000}
+    resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
+    
+    targets = []
+    if resp and 'records' in resp:
+        for record in resp['records']:
+            targets.append({
+                "id": record['id'],
+                "name": record.get('name', 'Unknown'),
+                "ext": record.get('extensionNumber', 'N/A'),
+                "email": record.get('contact', {}).get('email', '')
+            })
+    return jsonify({"targets": targets})
+
+# --- 2. AUDIT SINGLE EXTENSION (Read) ---
+@notifications_bp.route('/api/notifications/audit-single', methods=['POST'])
+@require_rc_token
+def audit_single_extension():
+    data = request.get_json()
+    ext_id = data.get('id')
+    
+    # Fetch notification settings
+    endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
+    settings = rc_api_call(endpoint)
+    
+    if not settings:
+        return jsonify({"status": "error", "message": "API call failed"})
+
+    # Extract useful fields for the CSV
+    email_addresses = settings.get('emailAddresses', [])
+    sms_addresses = settings.get('smsEmailAddresses', [])
+    
+    return jsonify({
+        "status": "success",
+        "data": {
+            "Extension ID": ext_id,
+            "Emails": "; ".join(email_addresses) if email_addresses else "",
+            "SMS Emails": "; ".join(sms_addresses) if sms_addresses else "",
+            "Advanced Mode": str(settings.get('advancedMode', False))
+        }
+    })
+
+# --- 3. UPDATE SINGLE EXTENSION (Write) ---
+@notifications_bp.route('/api/notifications/update-single', methods=['POST'])
+@require_rc_token
+def update_single_extension():
+    data = request.get_json()
+    ext_id = data.get('id')
+    new_emails = data.get('emails', []) # Expecting list of strings
+    
+    # payload structure for RingCentral
+    payload = {
+        "emailAddresses": new_emails
+    }
+    
+    endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
+    resp = rc_api_call(endpoint, method='PUT', payload=payload)
+    
+    if resp and 'uri' in resp:
+        return jsonify({"status": "success"})
+    else:
+        return jsonify({"status": "error", "message": "Update failed"})
