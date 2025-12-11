@@ -1,152 +1,173 @@
 <style>
-    /* Force the design to match the reference image exactly */
+    /* --- FORCE LAYOUT --- */
+    /* Use CSS Grid to guarantee side-by-side layout regardless of Bootstrap quirks */
+    .cards-grid-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr; /* Exactly 3 equal columns */
+        gap: 24px;
+        margin-bottom: 2rem;
+    }
+
+    /* --- CARD STYLING --- */
     .tool-card {
-        background: #fff;
+        background: #ffffff;
         border-radius: 12px;
-        border: 1px solid #eaeaea;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); /* Soft shadow */
-        transition: transform 0.2s;
-        height: 100%;
-        padding: 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); /* Soft, modern shadow */
+        padding: 2.5rem 1.5rem;
         text-align: center;
+        border: 1px solid #f0f0f0;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
-    .tool-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Icon Circles */
-    .icon-circle {
+
+    /* --- ICON CIRCLES --- */
+    .icon-wrapper {
         width: 70px;
         height: 70px;
         border-radius: 50%;
+        margin: 0 auto 1.5rem auto;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin: 0 auto 1.5rem auto;
-        font-size: 1.8rem;
+        font-size: 1.75rem;
     }
-    .icon-blue { background-color: #e6f0ff; color: #0d6efd; }
-    .icon-green { background-color: #e6fffa; color: #198754; }
-    .icon-purple { background-color: #f3e6ff; color: #6f42c1; }
+    .icon-blue { background-color: #e8f0fe; color: #1a73e8; }
+    .icon-green { background-color: #e6f4ea; color: #137333; }
+    .icon-purple { background-color: #f3e8fd; color: #9334e6; }
 
-    /* Buttons */
-    .btn-custom-blue { color: #0d6efd; border-color: #0d6efd; font-weight: 600; }
-    .btn-custom-blue:hover { background-color: #0d6efd; color: white; }
-    
-    .btn-custom-green { color: #198754; border-color: #198754; font-weight: 600; }
-    .btn-custom-green:hover { background-color: #198754; color: white; }
-    
-    .btn-custom-purple { color: #6f42c1; border-color: #6f42c1; font-weight: 600; }
-    .btn-custom-purple:hover { background-color: #6f42c1; color: white; }
+    /* --- BUTTONS --- */
+    .btn-custom {
+        width: 100%;
+        font-weight: 600;
+        padding: 10px 0;
+        border-radius: 6px;
+        text-transform: none;
+        letter-spacing: 0.3px;
+    }
+    .btn-outline-blue { border: 1px solid #1a73e8; color: #1a73e8; background: transparent; }
+    .btn-outline-blue:hover { background: #1a73e8; color: #fff; }
 
-    /* Dark Terminal Log */
-    .terminal-container {
-        background-color: #1e2125; /* Dark background */
+    .btn-outline-green { border: 1px solid #137333; color: #137333; background: transparent; }
+    .btn-outline-green:hover { background: #137333; color: #fff; }
+
+    .btn-outline-purple { border: 1px solid #9334e6; color: #9334e6; background: transparent; }
+    .btn-outline-purple:hover { background: #9334e6; color: #fff; }
+
+    /* --- SYSTEM LOGS TERMINAL --- */
+    .terminal-box {
+        background-color: #0f111a; /* Deep dark blue/black */
         border-radius: 8px;
         overflow: hidden;
-        margin-top: 2rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        color: #fff;
+        font-family: 'Consolas', 'Monaco', monospace;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
     .terminal-header {
-        background-color: #2c3036;
-        padding: 8px 15px;
-        border-bottom: 1px solid #444;
-        color: #fff;
-        font-size: 0.85rem;
-        font-weight: bold;
+        background-color: #1a1d2b;
+        padding: 10px 15px;
+        font-size: 0.75rem;
+        font-weight: 700;
         letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #fff;
         display: flex;
         justify-content: space-between;
     }
-    .terminal-body {
-        background-color: #1e2125;
-        color: #e0e0e0;
-        font-family: 'Courier New', Courier, monospace;
-        border: none;
+    .terminal-content {
         width: 100%;
+        background-color: #0f111a;
+        color: #e0e6ed;
+        border: none;
         resize: none;
         padding: 15px;
         font-size: 0.9rem;
-        outline: none;
+        height: 300px;
+    }
+    .terminal-content:focus { outline: none; }
+
+    /* Responsive fallback for very small screens */
+    @media (max-width: 992px) {
+        .cards-grid-container { grid-template-columns: 1fr; }
     }
 </style>
 
-<div class="p-4">
-    <div class="row mb-5 text-center">
-        <div class="col-12">
-            <h3 style="font-weight: 700; color: #333;">Notification Manager</h3>
-            <p class="text-muted">Audit current settings, download templates, and bulk update user notifications.</p>
-        </div>
-    </div>
-
-    <div class="row g-4">
+<div style="padding: 20px;">
+    
+    <div class="cards-grid-container">
         
-        <div class="col-md-4">
-            <div class="tool-card">
-                <div class="icon-circle icon-blue">
+        <div class="tool-card">
+            <div>
+                <div class="icon-wrapper icon-blue">
                     <i class="bi bi-clipboard-data"></i>
                 </div>
-                <h5 class="fw-bold">Audit Notifications</h5>
-                <p class="text-muted small mb-4">
+                <h5 class="fw-bold mb-3">Audit Notifications</h5>
+                <p class="text-muted small">
                     Generate a comprehensive CSV report of ALL user notification settings. Useful for backups or auditing compliance.
                 </p>
-                <button id="btn-audit-start" class="btn btn-custom-blue w-100 py-2">
+            </div>
+            <div class="mt-4">
+                <button id="btn-audit-start" class="btn btn-custom btn-outline-blue">
                     Generate Report
                 </button>
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="tool-card">
-                <div class="icon-circle icon-green">
+        <div class="tool-card">
+            <div>
+                <div class="icon-wrapper icon-green">
                     <i class="bi bi-plus-lg"></i>
                 </div>
-                <h5 class="fw-bold">Get Template</h5>
-                <p class="text-muted small mb-4">
+                <h5 class="fw-bold mb-3">Get Template</h5>
+                <p class="text-muted small">
                     Download a blank CSV template to define new notification settings. Use this to prepare your data for bulk updates.
                 </p>
-                <button id="btn-download-template" class="btn btn-custom-green w-100 py-2">
+            </div>
+            <div class="mt-4">
+                <button id="btn-download-template" class="btn btn-custom btn-outline-green">
                     Download Blank Template
                 </button>
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="tool-card">
-                <div class="icon-circle icon-purple">
+        <div class="tool-card">
+            <div>
+                <div class="icon-wrapper icon-purple">
                     <i class="bi bi-pencil-square"></i>
                 </div>
-                <h5 class="fw-bold">Update Notifications</h5>
-                <p class="text-muted small mb-4">
+                <h5 class="fw-bold mb-3">Update Notifications</h5>
+                <p class="text-muted small">
                     Upload your completed CSV file here to bulk update notification email settings for all listed users.
                 </p>
-                
-                <input type="file" id="file-upload" class="form-control mb-2 form-control-sm" accept=".csv">
-                <button id="btn-update-start" class="btn btn-custom-purple w-100 py-2" disabled>
+            </div>
+            <div class="mt-4">
+                <input type="file" id="file-upload" class="form-control mb-2" style="font-size: 0.8rem;" accept=".csv">
+                <button id="btn-update-start" class="btn btn-custom btn-outline-purple" disabled>
                     Upload to Update
                 </button>
             </div>
         </div>
     </div>
 
-    <div id="status-container" class="mt-4" style="display:none;">
+    <div id="status-container" style="display:none; margin-bottom: 20px;">
         <div class="d-flex justify-content-between align-items-center mb-1">
-            <strong id="status-text" class="text-dark">Processing...</strong>
-            <button id="btn-stop" class="btn btn-sm btn-link text-danger text-decoration-none">Stop</button>
+            <strong id="status-text" style="color: #333;">Processing...</strong>
+            <button id="btn-stop" class="btn btn-sm btn-link text-danger text-decoration-none">Stop Process</button>
         </div>
-        <div class="progress" style="height: 8px;">
+        <div class="progress" style="height: 6px;">
             <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 0%"></div>
         </div>
     </div>
 
-    <div class="terminal-container">
+    <div class="terminal-box">
         <div class="terminal-header">
-            <span>SYSTEM LOGS</span>
+            <span>System Logs</span>
             <span style="cursor:pointer; opacity: 0.7;" onclick="document.getElementById('notifications-log').value = 'Ready for action...'">Clear</span>
         </div>
-        <textarea id="notifications-log" class="terminal-body" rows="10" readonly>Ready for action...</textarea>
+        <textarea id="notifications-log" class="terminal-content" readonly>Ready for action...</textarea>
     </div>
+
 </div>
 
 <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
