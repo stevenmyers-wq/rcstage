@@ -1,31 +1,57 @@
-<div class="p-3"> <div class="row mb-4">
+<div class="p-3">
+    <div class="row mb-4">
         <div class="col-12">
-            <h3 class="mb-2">Notification Auditor</h3>
-            <p class="text-muted">Checks all user extensions for valid notification settings.</p>
-            
-            <div class="d-flex gap-2">
-                <button id="btn-notifications-run" class="btn btn-primary">
-                    <i class="bi bi-play-fill"></i> Start Audit
-                </button>
-                <button id="btn-notifications-stop" class="btn btn-danger" style="display:none;">
-                    <i class="bi bi-stop-fill"></i> Stop
-                </button>
+            <h3>Notification Manager</h3>
+            <p class="text-muted">Audit current settings or bulk update notification emails.</p>
+        </div>
+    </div>
+
+    <div class="row mb-4 g-3">
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header fw-bold bg-light">1. Audit & Export</div>
+                <div class="card-body">
+                    <p class="small text-muted">Scans all users and downloads a CSV of current settings.</p>
+                    <button id="btn-audit-start" class="btn btn-primary w-100">
+                        <i class="bi bi-search"></i> Run Audit & Download
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header fw-bold bg-light">2. Tools</div>
+                <div class="card-body d-grid gap-2">
+                    <button id="btn-download-template" class="btn btn-outline-secondary">
+                        <i class="bi bi-file-earmark-arrow-down"></i> Get Blank Template
+                    </button>
+                    <small class="text-muted fst-italic text-center">Use this template for uploads.</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header fw-bold bg-light">3. Bulk Update</div>
+                <div class="card-body">
+                    <input type="file" id="file-upload" class="form-control mb-2" accept=".csv">
+                    <button id="btn-update-start" class="btn btn-danger w-100" disabled>
+                        <i class="bi bi-upload"></i> Process Update
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="notifications-status-box" class="card bg-light mb-4" style="display:none;">
-        <div class="card-body py-3">
+    <div id="status-container" class="card bg-light mb-3" style="display:none;">
+        <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong id="notifications-current-action" class="text-primary">Ready</strong>
-                <span id="notifications-progress-text" class="badge bg-secondary">0%</span>
+                <strong id="status-text">Processing...</strong>
+                <button id="btn-stop" class="btn btn-sm btn-outline-danger">Stop</button>
             </div>
             <div class="progress" style="height: 20px;">
-                <div id="notifications-progress-bar" 
-                     class="progress-bar progress-bar-striped progress-bar-animated" 
-                     role="progressbar" 
-                     style="width: 0%">
-                </div>
+                <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
             </div>
         </div>
     </div>
@@ -34,9 +60,11 @@
         <div class="col-12">
             <label class="form-label fw-bold">Activity Log</label>
             <textarea id="notifications-log" 
-                      class="form-control font-monospace w-100 bg-white" 
-                      style="height: 400px; resize: vertical;" 
+                      class="form-control font-monospace bg-white" 
+                      style="height: 300px;" 
                       readonly></textarea>
         </div>
     </div>
 </div>
+
+<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
