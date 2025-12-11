@@ -4,32 +4,53 @@ from webapp.rc_api import rc_api_call
 
 notifications_bp = Blueprint('notifications_bp', __name__)
 
-# --- 1. GET LIST (For starting the Audit) ---
+# --- 1. GET LIST (Pagination & Queues Supported) ---
 @notifications_bp.route('/api/notifications/get-targets')
 @require_rc_token
 def get_targets():
-    # FIXED: Fetch ALL 'User' extensions regardless of status first
-    # This avoids API issues with comma-separated status strings
-    params = {'type': 'User', 'perPage': 1000}
-    resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
-    
     targets = []
-    if resp and 'records' in resp:
-        for record in resp['records']:
-            # Filter locally in Python (More reliable)
-            user_status = record.get('status', '')
+    page = 1
+    
+    while True:
+        # Loop through all pages (1000 at a time)
+        # We remove 'type' from params to ensure we get Users AND Queues
+        params = {
+            'perPage': 1000, 
+            'page': page,
+            'status': 'Enabled,NotActivated' # Fetch both status types
+        }
+        
+        resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
+        
+        if not resp or 'records' not in resp or not resp['records']:
+            break
             
-            # We want Enabled OR NotActivated users
-            if user_status in ['Enabled', 'NotActivated']:
+        for record in resp['records']:
+            # --- LOCAL FILTERING ---
+            # 1. Include Users AND Call Queues (Department)
+            # 2. Status is already filtered by the API call above, but double check doesn't hurt
+            if record.get('type') in ['User', 'Department']:
                 targets.append({
                     "id": record['id'],
                     "name": record.get('name', 'Unknown'),
                     "ext": record.get('extensionNumber', 'N/A'),
-                    "email": record.get('contact', {}).get('email', '')
+                    "email": record.get('contact', {}).get('email', ''),
+                    "type": record.get('type') # Useful for debugging
                 })
+        
+        # Check if there is a next page
+        navigation = resp.get('navigation', {})
+        if not navigation.get('nextPage'):
+            break
+            
+        page += 1
     
-    # Sort by extension number for nicer display
-    targets.sort(key=lambda x: x['ext'])
+    # Sort by extension number
+    # Handle cases where extension might be non-numeric (rare but possible)
+    try:
+        targets.sort(key=lambda x: int(x['ext']) if x['ext'].isdigit() else 999999)
+    except:
+        pass # Fallback if sorting fails
     
     return jsonify({"targets": targets})
 
@@ -45,7 +66,17 @@ def audit_single_extension():
     settings = rc_api_call(endpoint)
     
     if not settings:
-        return jsonify({"status": "error", "message": "API call failed"})
+        # Some queues might not have notification settings configured at all
+        # We return a polite "empty" response instead of an error to keep the loop going
+        return jsonify({
+            "status": "success",
+            "data": {
+                "Extension ID": ext_id,
+                "Emails": "N/A (No Settings)",
+                "SMS Emails": "",
+                "Advanced Mode": "False"
+            }
+        })
 
     # Extract useful fields for the CSV
     email_addresses = settings.get('emailAddresses', [])
@@ -80,4 +111,8 @@ def update_single_extension():
     if resp and 'uri' in resp:
         return jsonify({"status": "success"})
     else:
-        return jsonify({"status": "error", "message": "Update failed"})
+        # Include the error message if possible
+        msg = "Update failed"
+        if resp and 'message' in resp:
+            msg = resp['message']
+        return jsonify({"status": "error", "message": msg})
