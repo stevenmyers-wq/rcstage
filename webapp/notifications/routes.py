@@ -4,7 +4,7 @@ from webapp.rc_api import rc_api_call
 
 notifications_bp = Blueprint('notifications_bp', __name__)
 
-# --- 1. GET LIST (Pagination + Robust Filtering) ---
+# --- 1. GET LIST (Standard) ---
 @notifications_bp.route('/api/notifications/get-targets')
 @require_rc_token
 def get_targets():
@@ -12,31 +12,21 @@ def get_targets():
     page = 1
     
     while True:
-        # Fetch EVERYTHING. We will filter in Python to avoid API parameter errors.
-        params = {
-            'perPage': 1000, 
-            'page': page
-        }
-        
+        params = {'perPage': 1000, 'page': page}
         resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
         
-        # Safety check: If API fails or returns empty, stop looping
         if not resp or 'records' not in resp or not resp['records']:
             break
             
         for record in resp['records']:
-            # --- FILTER LOGIC ---
-            # 1. Check Status: We want 'Enabled' AND 'NotActivated'
+            # Local Filter: Enabled/NotActivated AND User/Department
             status = record.get('status', '')
             if status not in ['Enabled', 'NotActivated']:
                 continue
-                
-            # 2. Check Type: We want 'User' (people) AND 'Department' (Call Queues)
             r_type = record.get('type', '')
             if r_type not in ['User', 'Department']:
                 continue
 
-            # If we pass both checks, add to list
             targets.append({
                 "id": record['id'],
                 "name": record.get('name', 'Unknown'),
@@ -45,14 +35,10 @@ def get_targets():
                 "type": r_type
             })
         
-        # Check if there is a next page
-        navigation = resp.get('navigation', {})
-        if not navigation.get('nextPage'):
+        if not resp.get('navigation', {}).get('nextPage'):
             break
-            
         page += 1
     
-    # Sort by extension number (handle non-numeric gracefully)
     try:
         targets.sort(key=lambda x: int(x['ext']) if x['ext'].isdigit() else 999999)
     except:
@@ -60,62 +46,117 @@ def get_targets():
     
     return jsonify({"targets": targets})
 
-# --- 2. AUDIT SINGLE EXTENSION (Read) ---
+# --- 2. AUDIT SINGLE (Includes True/False Toggles) ---
 @notifications_bp.route('/api/notifications/audit-single', methods=['POST'])
 @require_rc_token
 def audit_single_extension():
     data = request.get_json()
     ext_id = data.get('id')
     
-    # Fetch notification settings
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
     settings = rc_api_call(endpoint)
     
-    # Handle queues/extensions that have NO notification settings (return empty safe data)
     if not settings:
-        return jsonify({
-            "status": "success",
-            "data": {
-                "Extension ID": ext_id,
-                "Emails": "",
-                "SMS Emails": "",
-                "Advanced Mode": "False"
-            }
-        })
+        return jsonify({"status": "success", "data": {}})
 
-    # Extract useful fields for the CSV
-    email_addresses = settings.get('emailAddresses', [])
-    sms_addresses = settings.get('smsEmailAddresses', [])
+    # Helper for extracting Email Lists
+    def get_emails(obj, key):
+        if not obj or key not in obj: return ""
+        return "; ".join(obj[key].get('emailAddresses', []))
+
+    # Helper for extracting True/False Toggles (notifyByEmail)
+    def get_flag(obj, key):
+        if not obj or key not in obj: return "FALSE"
+        return str(obj[key].get('notifyByEmail', False)).upper()
+
+    # Common Settings
+    basic_emails = "; ".join(settings.get('emailAddresses', []))
+    is_advanced = settings.get('advancedMode', False)
     
+    # We capture both the EMAILS and the TOGGLES
     return jsonify({
         "status": "success",
         "data": {
             "Extension ID": ext_id,
-            "Emails": "; ".join(email_addresses) if email_addresses else "",
-            "SMS Emails": "; ".join(sms_addresses) if sms_addresses else "",
-            "Advanced Mode": str(settings.get('advancedMode', False))
+            "Advanced Mode": str(is_advanced).upper(),
+            # The Main "Specified Emails" list (used for Queues & Basic Users)
+            "Global Emails": basic_emails,
+            
+            # Voicemail
+            "Enable Voicemail": get_flag(settings, 'voicemails'),
+            "Voicemail Emails": get_emails(settings, 'voicemails') if is_advanced else "",
+            
+            # Missed Calls
+            "Enable MissedCalls": get_flag(settings, 'missedCalls'),
+            "MissedCall Emails": get_emails(settings, 'missedCalls') if is_advanced else "",
+            
+            # Faxes
+            "Enable Faxes": get_flag(settings, 'inboundFaxes'),
+            "Fax Emails": get_emails(settings, 'inboundFaxes') if is_advanced else "",
+            
+            # SMS
+            "Enable SMS": get_flag(settings, 'inboundTexts'),
+            "SMS Emails": get_emails(settings, 'inboundTexts') if is_advanced else ""
         }
     })
 
-# --- 3. UPDATE SINGLE EXTENSION (Write) ---
+# --- 3. UPDATE SINGLE (Handles Toggles & Emails) ---
 @notifications_bp.route('/api/notifications/update-single', methods=['POST'])
 @require_rc_token
 def update_single_extension():
     data = request.get_json()
     ext_id = data.get('id')
-    new_emails = data.get('emails', []) # Expecting list of strings
     
-    # payload structure for RingCentral
+    # 1. Determine Mode
+    # Queues are always considered "Basic" (Advanced Mode = False)
+    advanced_mode = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
+    
+    # 2. Helper to parse booleans from CSV strings like "TRUE"/"FALSE"
+    def parse_bool(val):
+        return str(val).upper() == 'TRUE'
+    
+    # 3. Helper to parse email lists
+    def parse_list(val):
+        if not val: return []
+        return [e.strip() for e in val.split(';') if e.strip()]
+
+    # 4. Construct Payload
     payload = {
-        "emailAddresses": new_emails
+        "advancedMode": advanced_mode,
+        
+        # Determine toggles (These apply to both Basic and Advanced)
+        "voicemails": {
+            "notifyByEmail": parse_bool(data.get('enable_vm'))
+        },
+        "missedCalls": {
+            "notifyByEmail": parse_bool(data.get('enable_missed'))
+        },
+        "inboundFaxes": {
+            "notifyByEmail": parse_bool(data.get('enable_fax'))
+        },
+        "inboundTexts": {
+            "notifyByEmail": parse_bool(data.get('enable_sms'))
+        }
     }
-    
+
+    # 5. Handle Email Addresses based on Mode
+    if not advanced_mode:
+        # BASIC / QUEUE: One global list applies to all enabled types
+        payload["emailAddresses"] = parse_list(data.get('global_emails'))
+    else:
+        # ADVANCED USER: Specific lists for each type
+        # Note: We also set the email list inside the specific objects
+        payload["voicemails"]["emailAddresses"] = parse_list(data.get('vm_emails'))
+        payload["missedCalls"]["emailAddresses"] = parse_list(data.get('missed_emails'))
+        payload["inboundFaxes"]["emailAddresses"] = parse_list(data.get('fax_emails'))
+        payload["inboundTexts"]["emailAddresses"] = parse_list(data.get('sms_emails'))
+
+    # 6. Send Update
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
     resp = rc_api_call(endpoint, method='PUT', payload=payload)
     
     if resp and 'uri' in resp:
         return jsonify({"status": "success"})
     else:
-        # Include error message for debugging
         msg = resp.get('message', 'Update failed') if resp else 'Unknown error'
         return jsonify({"status": "error", "message": msg})
