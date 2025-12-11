@@ -1,50 +1,42 @@
-from flask import Blueprint, jsonify, request
-from webapp.auth_utils import require_rc_token
-from webapp.rc_api import rc_api_call
+<div class="p-3"> <div class="row mb-4">
+        <div class="col-12">
+            <h3 class="mb-2">Notification Auditor</h3>
+            <p class="text-muted">Checks all user extensions for valid notification settings.</p>
+            
+            <div class="d-flex gap-2">
+                <button id="btn-notifications-run" class="btn btn-primary">
+                    <i class="bi bi-play-fill"></i> Start Audit
+                </button>
+                <button id="btn-notifications-stop" class="btn btn-danger" style="display:none;">
+                    <i class="bi bi-stop-fill"></i> Stop
+                </button>
+            </div>
+        </div>
+    </div>
 
-notifications_bp = Blueprint('notifications_bp', __name__)
+    <div id="notifications-status-box" class="card bg-light mb-4" style="display:none;">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong id="notifications-current-action" class="text-primary">Ready</strong>
+                <span id="notifications-progress-text" class="badge bg-secondary">0%</span>
+            </div>
+            <div class="progress" style="height: 20px;">
+                <div id="notifications-progress-bar" 
+                     class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: 0%">
+                </div>
+            </div>
+        </div>
+    </div>
 
-# --- STEP 1: Get the list of all extensions (Fast) ---
-@notifications_bp.route('/api/notifications/get-targets')
-@require_rc_token
-def get_targets():
-    # Fetch all enabled User extensions
-    params = {'status': 'Enabled', 'type': 'User', 'perPage': 1000}
-    resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
-    
-    if not resp or 'records' not in resp:
-        return jsonify({"error": "Failed to fetch extensions"}), 500
-
-    targets = []
-    for record in resp['records']:
-        targets.append({
-            "id": record['id'],
-            "name": record.get('name', 'Unknown'),
-            "ext": record.get('extensionNumber', 'N/A')
-        })
-    
-    return jsonify({"targets": targets})
-
-# --- STEP 2: Check one single extension (The "Heavy" work) ---
-@notifications_bp.route('/api/notifications/check-single', methods=['POST'])
-@require_rc_token
-def check_single_extension():
-    data = request.get_json()
-    ext_id = data.get('id')
-    
-    # Call RingCentral to get notification settings for this specific user
-    endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
-    settings = rc_api_call(endpoint)
-    
-    # Basic logic: Check if email notifications are set
-    status_msg = "OK"
-    if settings:
-        emails = settings.get('emailAddresses', [])
-        if not emails:
-            status_msg = "MISSING_EMAIL"
-    
-    return jsonify({
-        "status": "success", 
-        "ext_id": ext_id,
-        "result": status_msg
-    })
+    <div class="row">
+        <div class="col-12">
+            <label class="form-label fw-bold">Activity Log</label>
+            <textarea id="notifications-log" 
+                      class="form-control font-monospace w-100 bg-white" 
+                      style="height: 400px; resize: vertical;" 
+                      readonly></textarea>
+        </div>
+    </div>
+</div>
