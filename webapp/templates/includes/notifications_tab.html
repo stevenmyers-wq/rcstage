@@ -15,7 +15,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit Notifications</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive CSV report including enabled/disabled toggles and specified emails.
+                Generate a comprehensive CSV report. Separates global queue emails from specific user setting emails.
             </p>
             <button id="btn-audit-start" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                 Generate Report
@@ -30,7 +30,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Get Template</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Download a blank CSV template with columns for Global Emails and specific Type Toggles.
+                Download a blank CSV template. Includes clear examples for both Basic Queues and Advanced Users.
             </p>
             <button id="btn-download-template" class="w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors">
                 Download Blank Template
@@ -45,7 +45,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Update Notifications</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Upload your CSV to update settings. Supports Basic Queues and Advanced Users.
+                Upload your CSV. System automatically applies global emails for Basic mode and specific emails for Advanced mode.
             </p>
             <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">
                 Upload to Update
@@ -107,7 +107,7 @@
         const csvRows = [headers.join(',')];
         for (const row of data) {
             const values = headers.map(header => {
-                const val = data[row] ? data[row][header] : row[header]; // Handle both access styles
+                const val = data[row] ? data[row][header] : row[header];
                 const escaped = ('' + (val || '')).replace(/"/g, '\\"');
                 return `"${escaped}"`;
             });
@@ -175,13 +175,13 @@
         }
     });
 
-    // --- 2. TEMPLATE ---
+    // --- 2. TEMPLATE (Clarified Structure) ---
     document.getElementById('btn-download-template').addEventListener('click', () => {
         const template = [
             { 
-                "Extension ID": "1234", 
+                "Extension ID": "1001", 
                 "Advanced Mode": "FALSE", 
-                "Global Emails": "queue_managers@email.com",
+                "Global Emails": "queue_manager@email.com",
                 "Enable Voicemail": "TRUE",
                 "Enable MissedCalls": "TRUE",
                 "Enable Faxes": "FALSE",
@@ -192,21 +192,21 @@
                 "MissedCall Emails": ""
             },
             { 
-                "Extension ID": "5678", 
+                "Extension ID": "1002", 
                 "Advanced Mode": "TRUE", 
                 "Global Emails": "",
                 "Enable Voicemail": "TRUE",
                 "Enable MissedCalls": "FALSE",
                 "Enable Faxes": "TRUE",
                 "Enable SMS": "FALSE",
-                "Voicemail Emails": "user_vm@email.com", 
-                "Fax Emails": "user_fax@email.com", 
+                "Voicemail Emails": "my_vm@email.com", 
+                "Fax Emails": "my_fax@email.com", 
                 "SMS Emails": "",
                 "MissedCall Emails": ""
             }
         ];
         downloadCSV(template, 'notification_template.csv');
-        log("Template downloaded.", "success");
+        log("Template downloaded. See examples for Basic vs Advanced.", "success");
     });
 
     // --- 3. UPDATE ---
@@ -263,7 +263,7 @@
                     enable_fax: task['Enable Faxes'],
                     enable_sms: task['Enable SMS'],
                     
-                    // Specific Emails (Advanced only)
+                    // Specific Emails
                     vm_emails: task['Voicemail Emails'],
                     fax_emails: task['Fax Emails'],
                     sms_emails: task['SMS Emails'],
