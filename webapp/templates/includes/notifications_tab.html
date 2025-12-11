@@ -2,7 +2,7 @@
     
     <div class="text-center mb-8">
         <h2 class="text-3xl font-bold text-gray-800">Notification Manager</h2>
-        <p class="text-gray-600 mt-2">Audit current settings, download templates, and bulk update user notifications. Tool will ignore extension objects in a 'Disabled' state.</p>
+        <p class="text-gray-600 mt-2">Audit, template, and bulk update advanced notification settings for Users and Queues.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -15,7 +15,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit Notifications</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive CSV report of ALL user notification settings. Useful for backups or auditing compliance.
+                Generate a comprehensive CSV report including enabled/disabled toggles and specified emails.
             </p>
             <button id="btn-audit-start" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                 Generate Report
@@ -30,7 +30,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Get Template</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Download a blank CSV template to define new notification settings. Use this to prepare your data for bulk updates.
+                Download a blank CSV template with columns for Global Emails and specific Type Toggles.
             </p>
             <button id="btn-download-template" class="w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors">
                 Download Blank Template
@@ -45,7 +45,7 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Update Notifications</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Upload your completed CSV file here to bulk update notification email settings for all listed users.
+                Upload your CSV to update settings. Supports Basic Queues and Advanced Users.
             </p>
             <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">
                 Upload to Update
@@ -78,7 +78,6 @@
 </div>
 
 <script>
-    // --- 1. UTILITIES ---
     let isRunning = false;
     const logBox = document.getElementById('notifications-log');
     const statusContainer = document.getElementById('status-container');
@@ -108,7 +107,8 @@
         const csvRows = [headers.join(',')];
         for (const row of data) {
             const values = headers.map(header => {
-                const escaped = ('' + row[header]).replace(/"/g, '\\"');
+                const val = data[row] ? data[row][header] : row[header]; // Handle both access styles
+                const escaped = ('' + (val || '')).replace(/"/g, '\\"');
                 return `"${escaped}"`;
             });
             csvRows.push(values.join(','));
@@ -121,26 +121,24 @@
         a.click();
     }
 
-    // --- 2. AUDIT LOGIC (Client-Side Loop to prevent timeouts) ---
+    // --- 1. AUDIT ---
     document.getElementById('btn-audit-start').addEventListener('click', async function() {
         isRunning = true;
         updateStatus(true, "Fetching extension list...", 0);
         log("Starting Audit...", "info");
         
         try {
-            // Step A: Get List
             const listResp = await fetch('/api/notifications/get-targets');
             const listData = await listResp.json();
             
-            if (!listData.targets) throw new Error("Failed to get extension list");
+            if (!listData.targets) throw new Error("Failed to get list");
             
             const targets = listData.targets;
             const total = targets.length;
             let results = [];
             
-            log(`Found ${total} users to audit.`);
+            log(`Found ${total} extensions. Auditing...`);
 
-            // Step B: Loop
             for (let i = 0; i < total; i++) {
                 if (!isRunning) break;
                 
@@ -158,7 +156,7 @@
                     results.push({
                         "Name": t.name,
                         "Extension": t.ext,
-                        "Email": t.email,
+                        "Type": t.type,
                         ...json.data
                     });
                 }
@@ -167,8 +165,6 @@
             if (isRunning && results.length > 0) {
                 downloadCSV(results, `Notification_Audit_${Date.now()}.csv`);
                 log("Audit Complete! File downloaded.", "success");
-            } else if (!isRunning) {
-                log("Process stopped by user.", "error");
             }
             
         } catch (e) {
@@ -179,17 +175,41 @@
         }
     });
 
-    // --- 3. TEMPLATE LOGIC ---
+    // --- 2. TEMPLATE ---
     document.getElementById('btn-download-template').addEventListener('click', () => {
         const template = [
-            { "Extension ID": "12345678", "Emails": "user@email.com; manager@email.com" },
-            { "Extension ID": "87654321", "Emails": "audit_output_file_has_ids.com" }
+            { 
+                "Extension ID": "1234", 
+                "Advanced Mode": "FALSE", 
+                "Global Emails": "queue_managers@email.com",
+                "Enable Voicemail": "TRUE",
+                "Enable MissedCalls": "TRUE",
+                "Enable Faxes": "FALSE",
+                "Enable SMS": "TRUE",
+                "Voicemail Emails": "", 
+                "Fax Emails": "", 
+                "SMS Emails": "",
+                "MissedCall Emails": ""
+            },
+            { 
+                "Extension ID": "5678", 
+                "Advanced Mode": "TRUE", 
+                "Global Emails": "",
+                "Enable Voicemail": "TRUE",
+                "Enable MissedCalls": "FALSE",
+                "Enable Faxes": "TRUE",
+                "Enable SMS": "FALSE",
+                "Voicemail Emails": "user_vm@email.com", 
+                "Fax Emails": "user_fax@email.com", 
+                "SMS Emails": "",
+                "MissedCall Emails": ""
+            }
         ];
-        downloadCSV(template, 'notification_update_template.csv');
+        downloadCSV(template, 'notification_template.csv');
         log("Template downloaded.", "success");
     });
 
-    // --- 4. UPDATE LOGIC ---
+    // --- 3. UPDATE ---
     document.getElementById('file-upload').addEventListener('change', function() {
         const file = this.files[0];
         if (!file) return;
@@ -197,7 +217,6 @@
         const reader = new FileReader();
         reader.onload = async function(e) {
             const text = e.target.result;
-            // Parse CSV (Simplified)
             const rows = text.split('\n').map(r => r.trim()).filter(r => r);
             const headers = rows[0].split(',').map(h => h.replace(/"/g, '').trim());
             
@@ -212,11 +231,9 @@
             
             if (tasks.length === 0) return log("No valid rows found.", "error");
             
-            if (confirm(`Ready to update ${tasks.length} users?`)) {
+            if (confirm(`Ready to update ${tasks.length} records?`)) {
                 startUpdateLoop(tasks);
             }
-            
-            // Clear input
             document.getElementById('file-upload').value = '';
         };
         reader.readAsText(file);
@@ -224,44 +241,58 @@
 
     async function startUpdateLoop(tasks) {
         isRunning = true;
-        log(`Starting bulk update for ${tasks.length} users...`);
+        log(`Starting bulk update...`);
         
         for (let i = 0; i < tasks.length; i++) {
             if (!isRunning) break;
             
             const task = tasks[i];
             const extId = task['Extension ID'];
-            const emailsRaw = task['Emails'] || "";
-            // Clean emails
-            const emailList = emailsRaw.split(';').map(e => e.trim()).filter(e => e);
-            
             updateStatus(true, `Updating (${i+1}/${tasks.length}): ID ${extId}`, Math.round(((i+1)/tasks.length)*100));
             
             try {
+                // Map CSV to Payload
+                const payload = { 
+                    id: extId,
+                    advanced_mode: task['Advanced Mode'],
+                    global_emails: task['Global Emails'],
+                    
+                    // Toggles
+                    enable_vm: task['Enable Voicemail'],
+                    enable_missed: task['Enable MissedCalls'],
+                    enable_fax: task['Enable Faxes'],
+                    enable_sms: task['Enable SMS'],
+                    
+                    // Specific Emails (Advanced only)
+                    vm_emails: task['Voicemail Emails'],
+                    fax_emails: task['Fax Emails'],
+                    sms_emails: task['SMS Emails'],
+                    missed_emails: task['MissedCall Emails']
+                };
+
                 const resp = await fetch('/api/notifications/update-single', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ id: extId, emails: emailList })
+                    body: JSON.stringify(payload)
                 });
                 const resJson = await resp.json();
                 
                 if (resJson.status === 'success') {
                     log(`✅ Updated ID ${extId}`, "success");
                 } else {
-                    log(`❌ Failed ID ${extId}: ${resJson.message || 'Unknown'}`, "error");
+                    log(`❌ Failed ID ${extId}: ${resJson.message}`, "error");
                 }
             } catch (err) {
                 log(`❌ Error ID ${extId}: ${err.message}`, "error");
             }
         }
-        
         isRunning = false;
         updateStatus(false);
-        log("Bulk update process finished.");
+        log("Process finished.");
     }
 
     document.getElementById('btn-stop').addEventListener('click', () => {
         isRunning = false;
-        log("Stopping process...", "error");
+        log("Stopping...", "error");
     });
 </script>
