@@ -8,19 +8,29 @@ notifications_bp = Blueprint('notifications_bp', __name__)
 @notifications_bp.route('/api/notifications/get-targets')
 @require_rc_token
 def get_targets():
-    # UPDATED: Now fetches both 'Enabled' and 'NotActivated' users
-    params = {'status': 'Enabled,NotActivated', 'type': 'User', 'perPage': 1000}
+    # FIXED: Fetch ALL 'User' extensions regardless of status first
+    # This avoids API issues with comma-separated status strings
+    params = {'type': 'User', 'perPage': 1000}
     resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
     
     targets = []
     if resp and 'records' in resp:
         for record in resp['records']:
-            targets.append({
-                "id": record['id'],
-                "name": record.get('name', 'Unknown'),
-                "ext": record.get('extensionNumber', 'N/A'),
-                "email": record.get('contact', {}).get('email', '')
-            })
+            # Filter locally in Python (More reliable)
+            user_status = record.get('status', '')
+            
+            # We want Enabled OR NotActivated users
+            if user_status in ['Enabled', 'NotActivated']:
+                targets.append({
+                    "id": record['id'],
+                    "name": record.get('name', 'Unknown'),
+                    "ext": record.get('extensionNumber', 'N/A'),
+                    "email": record.get('contact', {}).get('email', '')
+                })
+    
+    # Sort by extension number for nicer display
+    targets.sort(key=lambda x: x['ext'])
+    
     return jsonify({"targets": targets})
 
 # --- 2. AUDIT SINGLE EXTENSION (Read) ---
