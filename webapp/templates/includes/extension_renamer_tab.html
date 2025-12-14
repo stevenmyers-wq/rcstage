@@ -114,11 +114,9 @@
 
     // --- Initialization ---
     document.addEventListener('DOMContentLoaded', () => {
-        // Fetch data immediately on load
         fetchExtensionsData();
     });
 
-    // Also trigger if this is loaded dynamically in a tab system
     if (document.readyState === 'complete') {
         fetchExtensionsData();
     }
@@ -160,29 +158,35 @@
         }
     }
 
-    // --- Filtering Logic ---
+    // --- Filtering Logic (UPDATED) ---
+
+    function resolveSiteName(ext) {
+        // If the extension IS a Site, its site name is its own name.
+        if (ext.type === 'Site') {
+            return ext.name;
+        }
+        // Otherwise, look for the 'site' property
+        if (ext.site && ext.site.name) {
+            return ext.site.name;
+        }
+        // Fallback
+        return "Main Site";
+    }
 
     function populateFilters(data) {
         const siteSelect = document.getElementById('filter-site');
         const typeSelect = document.getElementById('filter-type');
         
-        // 1. Extract Unique Sites
-        // RC Site object: { id: "...", name: "..." } or undefined
-        const sites = new Map(); // Use Map to store ID -> Name to ensure uniqueness
-        
-        // 2. Extract Unique Types
+        const sites = new Map();
         const types = new Set();
 
         data.forEach(ext => {
-            // Types
+            // 1. Collect Types
             if (ext.type) types.add(ext.type);
 
-            // Sites
-            if (ext.site && ext.site.name) {
-                sites.set(ext.site.name, ext.site.name);
-            } else {
-                sites.set("Main Site", "Main Site"); // Handle extensions with no specific site
-            }
+            // 2. Collect Sites
+            const siteName = resolveSiteName(ext);
+            sites.set(siteName, siteName);
         });
 
         // Sort and Render Sites
@@ -209,7 +213,7 @@
 
         return ALL_EXTENSIONS.filter(ext => {
             // 1. Site Check
-            let extSiteName = (ext.site && ext.site.name) ? ext.site.name : "Main Site";
+            const extSiteName = resolveSiteName(ext);
             const siteMatch = selectedSites.length === 0 || selectedSites.includes(extSiteName);
 
             // 2. Type Check
@@ -219,7 +223,7 @@
         });
     }
 
-    // --- Template Generation ---
+    // --- Template Generation (UPDATED) ---
 
     function renamerDownloadTemplate() {
         const filteredData = getFilteredData();
@@ -233,13 +237,10 @@
 
         // Map data to Excel Rows
         const rows = filteredData.map(ext => {
-            // Resolve Site Name safely
-            const siteName = (ext.site && ext.site.name) ? ext.site.name : "Main Site";
-
             return {
                 "ID (DO NOT EDIT)": ext.id,
                 "Type (DO NOT EDIT)": ext.type,
-                "Site": siteName, // New Field Added
+                "Site": resolveSiteName(ext), 
                 "Extension Number": ext.extensionNumber,
                 "Current Name": ext.name,
                 "New Name": ext.name 
@@ -254,7 +255,7 @@
         renamerLog("Template downloaded successfully.", "success");
     }
 
-    // --- Processing Logic (Unchanged but included for completeness) ---
+    // --- Processing Logic ---
 
     function renamerLog(msg, type="info") {
         const box = document.getElementById('renamer-logs');
@@ -298,6 +299,7 @@
 
                 if (newName && newName !== currentName) {
                     await renamerUpdateSingle(id, type, extNum, newName);
+                    // Rate Limit Delay
                     await new Promise(r => setTimeout(r, 3000)); 
                 }
             }
