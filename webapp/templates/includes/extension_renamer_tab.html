@@ -8,11 +8,42 @@
     <div class="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg shadow-sm">
         <h3 class="font-semibold text-blue-800 mb-2">Instructions</h3>
         <ol class="list-decimal list-inside text-gray-700 space-y-1 text-sm">
-            <li>Click <span class="font-semibold">Fetch & Download Template</span> to get the current list of extensions.</li>
-            <li>Open the Excel file and edit the <span class="font-semibold text-blue-600">New Name</span> column.</li>
-            <li>Save the file and upload it in the section below.</li>
-            <li>Click <span class="font-semibold text-green-600">Start Updating</span> to process changes one by one.</li>
+            <li>Wait for the data to load below.</li>
+            <li>Use the <strong>Filters</strong> to select specific Sites or Extension Types (optional).</li>
+            <li>Click <span class="font-semibold">Download Filtered Template</span>.</li>
+            <li>Edit the <span class="font-semibold text-blue-600">New Name</span> column in Excel and save.</li>
+            <li>Upload the file and click <span class="font-semibold text-green-600">Start Updating</span>.</li>
         </ol>
+    </div>
+
+    <div class="card p-6 shadow-sm border border-gray-200">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-800">1. Data & Filters</h3>
+            <span id="record-count-badge" class="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-xs font-bold">
+                Loading...
+            </span>
+        </div>
+
+        <div id="loading-indicator" class="flex items-center text-blue-600 text-sm mb-4">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            Fetching Extension List...
+        </div>
+
+        <div id="filter-controls" class="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-50 pointer-events-none transition-opacity duration-300">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Filter by Site (Hold Ctrl/Cmd to select multiple)</label>
+                <select id="filter-site" multiple class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 h-32 p-2">
+                    </select>
+                <div class="text-xs text-right text-gray-400 mt-1 cursor-pointer hover:text-blue-600" onclick="clearSelect('filter-site')">Clear Selection</div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Filter by Type (Hold Ctrl/Cmd to select multiple)</label>
+                <select id="filter-type" multiple class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 h-32 p-2">
+                    </select>
+                <div class="text-xs text-right text-gray-400 mt-1 cursor-pointer hover:text-blue-600" onclick="clearSelect('filter-type')">Clear Selection</div>
+            </div>
+        </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -20,25 +51,25 @@
         <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
             <div>
                 <div class="flex items-center gap-2 mb-3">
-                    <div class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">1</div>
+                    <div class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">2</div>
                     <h3 class="text-lg font-bold text-gray-800">Download Template</h3>
                 </div>
-                <p class="text-gray-600 text-sm mb-6">Generates an Excel file containing all active extensions and their current names.</p>
+                <p class="text-gray-600 text-sm mb-6">Generates an Excel file based on the filters selected above.</p>
             </div>
             
-            <button id="renamer-download-btn" onclick="renamerDownloadTemplate()" 
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm">
+            <button id="renamer-download-btn" onclick="renamerDownloadTemplate()" disabled
+                    class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2 shadow-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Fetch & Download Template
+                Download Filtered Template
             </button>
         </div>
 
         <div class="card p-6 h-full flex flex-col justify-between hover:shadow-lg transition-shadow duration-200">
             <div>
                 <div class="flex items-center gap-2 mb-3">
-                    <div class="bg-green-100 text-green-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">2</div>
+                    <div class="bg-green-100 text-green-600 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm">3</div>
                     <h3 class="text-lg font-bold text-gray-800">Upload & Process</h3>
                 </div>
                 <p class="text-gray-600 text-sm mb-4">Upload your modified Excel file to apply changes sequentially.</p>
@@ -68,7 +99,7 @@
             <span class="text-gray-500">Real-time updates</span>
         </div>
         <div id="renamer-logs" class="bg-gray-900 text-green-400 p-4 font-mono text-sm h-64 overflow-y-auto leading-relaxed">
-            <div class="text-gray-500 italic opacity-50">Waiting for user action...</div>
+            <div class="text-gray-500 italic opacity-50">Initializing...</div>
         </div>
     </div>
 
@@ -77,61 +108,167 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 
 <script>
-    function renamerLog(msg, type="info") {
-        const box = document.getElementById('renamer-logs');
-        
-        // Clear "Waiting..." text if it's the first log
-        if (box.children.length === 1 && box.children[0].classList.contains('text-gray-500')) {
-            box.innerHTML = '';
-        }
+    // Global storage for extensions
+    let ALL_EXTENSIONS = [];
+    let IS_LOADING = false;
 
-        const entry = document.createElement('div');
-        const timestamp = new Date().toLocaleTimeString();
-        entry.innerHTML = `<span class="text-gray-500 select-none">[${timestamp}]</span> ${msg}`;
-        
-        if (type === 'success') entry.classList.add('text-green-400');
-        else if (type === 'error') entry.classList.add('text-red-400');
-        else entry.classList.add('text-blue-300');
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+        // Fetch data immediately on load
+        fetchExtensionsData();
+    });
 
-        box.appendChild(entry);
-        box.scrollTop = box.scrollHeight;
+    // Also trigger if this is loaded dynamically in a tab system
+    if (document.readyState === 'complete') {
+        fetchExtensionsData();
     }
 
-    async function renamerDownloadTemplate() {
-        const btn = document.getElementById('renamer-download-btn');
-        const originalText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Fetching...`;
+    async function fetchExtensionsData() {
+        if (IS_LOADING) return;
+        IS_LOADING = true;
         
-        renamerLog("Fetching extensions list...", "info");
+        renamerLog("Fetching full extension list from RingCentral...", "info");
+        const loader = document.getElementById('loading-indicator');
+        const filters = document.getElementById('filter-controls');
+        const badge = document.getElementById('record-count-badge');
+        const downBtn = document.getElementById('renamer-download-btn');
 
         try {
             const res = await fetch('/api/renamer/list-extensions');
-            if (!res.ok) throw new Error("Failed to fetch extensions");
+            if (!res.ok) throw new Error("API Error");
             
-            const extensions = await res.json();
-            renamerLog(`Fetched ${extensions.length} extensions. Generating Excel...`, "info");
+            ALL_EXTENSIONS = await res.json();
+            
+            // Populate Filters
+            populateFilters(ALL_EXTENSIONS);
+            
+            // UI Updates
+            loader.classList.add('hidden');
+            filters.classList.remove('opacity-50', 'pointer-events-none');
+            badge.innerText = `${ALL_EXTENSIONS.length} Records Loaded`;
+            downBtn.disabled = false;
+            
+            renamerLog(`Successfully loaded ${ALL_EXTENSIONS.length} extensions.`, "success");
 
-            const rows = extensions.map(ext => ({
+        } catch (err) {
+            renamerLog("Failed to fetch extensions: " + err.message, "error");
+            badge.innerText = "Error Loading Data";
+            badge.classList.replace('bg-gray-200', 'bg-red-100');
+            badge.classList.replace('text-gray-700', 'text-red-700');
+        } finally {
+            IS_LOADING = false;
+        }
+    }
+
+    // --- Filtering Logic ---
+
+    function populateFilters(data) {
+        const siteSelect = document.getElementById('filter-site');
+        const typeSelect = document.getElementById('filter-type');
+        
+        // 1. Extract Unique Sites
+        // RC Site object: { id: "...", name: "..." } or undefined
+        const sites = new Map(); // Use Map to store ID -> Name to ensure uniqueness
+        
+        // 2. Extract Unique Types
+        const types = new Set();
+
+        data.forEach(ext => {
+            // Types
+            if (ext.type) types.add(ext.type);
+
+            // Sites
+            if (ext.site && ext.site.name) {
+                sites.set(ext.site.name, ext.site.name);
+            } else {
+                sites.set("Main Site", "Main Site"); // Handle extensions with no specific site
+            }
+        });
+
+        // Sort and Render Sites
+        const sortedSites = Array.from(sites.keys()).sort();
+        siteSelect.innerHTML = sortedSites.map(s => `<option value="${s}">${s}</option>`).join('');
+
+        // Sort and Render Types
+        const sortedTypes = Array.from(types).sort();
+        typeSelect.innerHTML = sortedTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    }
+
+    function getSelectedValues(selectId) {
+        const select = document.getElementById(selectId);
+        return Array.from(select.selectedOptions).map(option => option.value);
+    }
+
+    function clearSelect(selectId) {
+        document.getElementById(selectId).selectedIndex = -1;
+    }
+
+    function getFilteredData() {
+        const selectedSites = getSelectedValues('filter-site');
+        const selectedTypes = getSelectedValues('filter-type');
+
+        return ALL_EXTENSIONS.filter(ext => {
+            // 1. Site Check
+            let extSiteName = (ext.site && ext.site.name) ? ext.site.name : "Main Site";
+            const siteMatch = selectedSites.length === 0 || selectedSites.includes(extSiteName);
+
+            // 2. Type Check
+            const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(ext.type);
+
+            return siteMatch && typeMatch;
+        });
+    }
+
+    // --- Template Generation ---
+
+    function renamerDownloadTemplate() {
+        const filteredData = getFilteredData();
+        
+        if (filteredData.length === 0) {
+            alert("No extensions match your current filters.");
+            return;
+        }
+
+        renamerLog(`Generating template for ${filteredData.length} extensions...`, "info");
+
+        // Map data to Excel Rows
+        const rows = filteredData.map(ext => {
+            // Resolve Site Name safely
+            const siteName = (ext.site && ext.site.name) ? ext.site.name : "Main Site";
+
+            return {
                 "ID (DO NOT EDIT)": ext.id,
                 "Type (DO NOT EDIT)": ext.type,
+                "Site": siteName, // New Field Added
                 "Extension Number": ext.extensionNumber,
                 "Current Name": ext.name,
                 "New Name": ext.name 
-            }));
+            };
+        });
 
-            const ws = XLSX.utils.json_to_sheet(rows);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Extensions");
-            XLSX.writeFile(wb, "RC_Extensions_Template.xlsx");
-            
-            renamerLog("Download complete.", "success");
-        } catch (err) {
-            renamerLog("Error: " + err.message, "error");
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = originalText;
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Extensions");
+        XLSX.writeFile(wb, "RC_Renamer_Template.xlsx");
+        
+        renamerLog("Template downloaded successfully.", "success");
+    }
+
+    // --- Processing Logic (Unchanged but included for completeness) ---
+
+    function renamerLog(msg, type="info") {
+        const box = document.getElementById('renamer-logs');
+        if (box.children.length === 1 && box.children[0].classList.contains('text-gray-500')) {
+            box.innerHTML = '';
         }
+        const entry = document.createElement('div');
+        const timestamp = new Date().toLocaleTimeString();
+        entry.innerHTML = `<span class="text-gray-500 select-none">[${timestamp}]</span> ${msg}`;
+        if (type === 'success') entry.classList.add('text-green-400');
+        else if (type === 'error') entry.classList.add('text-red-400');
+        else entry.classList.add('text-blue-300');
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
     }
 
     function renamerProcessFile() {
@@ -150,9 +287,6 @@
             
             renamerLog(`Found ${jsonData.length} rows. Starting update process...`, "info");
             
-            let successCount = 0;
-            let errorCount = 0;
-
             for (const row of jsonData) {
                 const id = row["ID (DO NOT EDIT)"];
                 const type = row["Type (DO NOT EDIT)"];
@@ -164,7 +298,6 @@
 
                 if (newName && newName !== currentName) {
                     await renamerUpdateSingle(id, type, extNum, newName);
-                    // Rate Limit Delay
                     await new Promise(r => setTimeout(r, 3000)); 
                 }
             }
