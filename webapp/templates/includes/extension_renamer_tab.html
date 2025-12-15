@@ -11,7 +11,7 @@
             <li>Wait for the data to load below.</li>
             <li>Use the <strong>Filters</strong> to select specific Sites or Extension Types (optional).</li>
             <li>Click <span class="font-semibold">Download Filtered Template</span>.</li>
-            <li>Edit the <span class="font-semibold text-blue-600">New Name</span> column in Excel and save.</li>
+            <li>Edit the <span class="font-semibold text-blue-600">New First Name</span> and <span class="font-semibold text-blue-600">New Last Name</span> columns.</li>
             <li>Upload the file and click <span class="font-semibold text-green-600">Start Updating</span>.</li>
         </ol>
     </div>
@@ -158,7 +158,7 @@
         }
     }
 
-    // --- Filtering Logic (UPDATED) ---
+    // --- Filtering Logic ---
 
     function resolveSiteName(ext) {
         // If the extension IS a Site, its site name is its own name.
@@ -223,7 +223,7 @@
         });
     }
 
-    // --- Template Generation (UPDATED) ---
+    // --- Template Generation ---
 
     function renamerDownloadTemplate() {
         const filteredData = getFilteredData();
@@ -237,13 +237,19 @@
 
         // Map data to Excel Rows
         const rows = filteredData.map(ext => {
+            // Safely get contact info or default to empty strings
+            const contact = ext.contact || {};
+            const currentFirst = contact.firstName || "";
+            const currentLast = contact.lastName || "";
+
             return {
                 "ID (DO NOT EDIT)": ext.id,
                 "Type (DO NOT EDIT)": ext.type,
                 "Site": resolveSiteName(ext), 
                 "Extension Number": ext.extensionNumber,
-                "Current Name": ext.name,
-                "New Name": ext.name 
+                "Current Name": ext.name, 
+                "New First Name": currentFirst,
+                "New Last Name": currentLast
             };
         });
 
@@ -292,16 +298,18 @@
                 const id = row["ID (DO NOT EDIT)"];
                 const type = row["Type (DO NOT EDIT)"];
                 const extNum = row["Extension Number"];
-                const newName = row["New Name"];
-                const currentName = row["Current Name"];
+                
+                // Read separate columns
+                const newFirst = row["New First Name"] || "";
+                const newLast = row["New Last Name"] || "";
 
                 if (!id) continue; 
 
-                if (newName && newName !== currentName) {
-                    await renamerUpdateSingle(id, type, extNum, newName);
-                    // Rate Limit Delay
-                    await new Promise(r => setTimeout(r, 3000)); 
-                }
+                // We send the data (allowing for updates even if logic is tricky on frontend to detect 'change')
+                await renamerUpdateSingle(id, type, extNum, newFirst, newLast);
+                
+                // Rate Limit Delay
+                await new Promise(r => setTimeout(r, 2000)); 
             }
             renamerLog("--- Batch Process Complete ---", "success");
             btn.disabled = false;
@@ -310,18 +318,19 @@
         reader.readAsArrayBuffer(fileInput.files[0]);
     }
 
-    async function renamerUpdateSingle(id, type, extNum, newName) {
+    async function renamerUpdateSingle(id, type, extNum, newFirst, newLast) {
         try {
             const res = await fetch('/api/renamer/update-extension', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ id, type, newName })
+                // Send separate fields
+                body: JSON.stringify({ id, type, firstName: newFirst, lastName: newLast })
             });
             
             const data = await res.json();
             
             if (res.ok) {
-                renamerLog(`Updated Ext ${extNum}: ${newName}`, "success");
+                renamerLog(`Updated Ext ${extNum}: ${newFirst} ${newLast}`, "success");
             } else {
                 renamerLog(`Failed Ext ${extNum}: ${data.error}`, "error");
             }
