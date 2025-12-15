@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
-# Import the helper function we just wrote
+# Import the helper function
 from webapp.extension_renamer.utils import prepare_extension_for_update
 
 renamer_bp = Blueprint('renamer_bp', __name__)
@@ -15,7 +15,7 @@ def list_extensions():
     
     try:
         while page <= total_pages:
-            # We fetch 'account' level extensions to see everything (Users, IVRs, Queues)
+            # Fetch 'account' level extensions to see Users, IVRs, Queues, Sites, etc.
             response = rc_api_call(f"/restapi/v1.0/account/~/extension?page={page}&perPage=1000")
             
             if not response:
@@ -36,10 +36,13 @@ def update_extension():
     data = request.get_json()
     ext_id = data.get('id')
     ext_type = data.get('type')
-    new_name = data.get('newName')
+    
+    # Get separate fields (default to empty string if missing)
+    first_name = data.get('firstName', '')
+    last_name = data.get('lastName', '')
 
-    if not ext_id or not new_name:
-        return jsonify({"error": "Missing ID or New Name"}), 400
+    if not ext_id:
+        return jsonify({"error": "Missing ID"}), 400
 
     try:
         # 1. Fetch current data
@@ -49,7 +52,7 @@ def update_extension():
             return jsonify({"error": "Extension not found"}), 404
 
         # 2. Use our UTILS function to prepare the data
-        final_data = prepare_extension_for_update(current_data, new_name, ext_type)
+        final_data = prepare_extension_for_update(current_data, first_name, last_name, ext_type)
 
         # 3. Perform Update via PUT
         update_response = rc_api_call(
