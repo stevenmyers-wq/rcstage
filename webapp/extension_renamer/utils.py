@@ -1,16 +1,15 @@
-def prepare_extension_for_update(current_data, new_name, ext_type):
+def prepare_extension_for_update(current_data, first_name, last_name, ext_type):
     """
-    Cleans the extension object and applies the new name 
-    according to RingCentral rules.
+    Cleans the extension object and applies the new First/Last names.
     """
-    # 1. Cleanup: Remove read-only fields that cause errors if sent back in a PUT request
+    # 1. Cleanup: Remove read-only fields
     forbidden_fields = [
         'id', 'uri', 'extensionNumber', 'lastModifiedTime', 'creationTime', 
         'account', 'permissions', 'profileImage', 'serviceFeatures', 
         'site', 'status', 'type'
     ]
     
-    # Create a copy to avoid modifying the original dictionary reference (good practice)
+    # Create a copy to avoid modifying the original dictionary reference
     data_to_update = current_data.copy()
     
     for field in forbidden_fields:
@@ -26,19 +25,24 @@ def prepare_extension_for_update(current_data, new_name, ext_type):
         del data_to_update['contact']['pronouncedName']
 
     # 3. Apply New Name Logic
-    if ext_type == 'User':
-        # Split name into First/Last for Users
-        # Example: "John Smith" -> First: "John", Last: "Smith"
-        parts = new_name.strip().split(' ')
-        last_name = parts.pop() if len(parts) > 1 else ''
-        first_name = ' '.join(parts)
-        
-        data_to_update['contact']['firstName'] = first_name
-        data_to_update['contact']['lastName'] = last_name
+    
+    # Strip whitespace to prevent " " errors
+    clean_first = str(first_name).strip()
+    clean_last = str(last_name).strip()
+
+    # Broad check for any "User" type (User, DigitalUser, VirtualUser, etc.)
+    if 'User' in ext_type:
+        # For Users, we strictly enforce separated fields.
+        # RingCentral requires a non-empty lastName for Users.
+        data_to_update['contact']['firstName'] = clean_first
+        data_to_update['contact']['lastName'] = clean_last
     else:
-        # For IVR, Call Queue, Site, etc. -> Use firstName as the display name
-        data_to_update['contact']['firstName'] = new_name
-        # Ensure lastName is empty so it doesn't look like "Support Queue Null"
+        # For IVR, Call Queue, Site, etc. -> The concept of "Last Name" doesn't strictly exist 
+        # in the display. We combine them so the Excel user can use both columns if they want, 
+        # or just the First Name column.
+        full_display_name = f"{clean_first} {clean_last}".strip()
+        
+        data_to_update['contact']['firstName'] = full_display_name
         data_to_update['contact']['lastName'] = ""
         
     return data_to_update
