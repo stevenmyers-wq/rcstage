@@ -305,7 +305,7 @@
 
                 if (!id) continue; 
 
-                // We send the data (allowing for updates even if logic is tricky on frontend to detect 'change')
+                // Process every valid ID row
                 await renamerUpdateSingle(id, type, extNum, newFirst, newLast);
                 
                 // Rate Limit Delay
@@ -332,10 +332,17 @@
             if (res.ok) {
                 renamerLog(`Updated Ext ${extNum}: ${newFirst} ${newLast}`, "success");
             } else {
-                renamerLog(`Failed Ext ${extNum}: ${data.error}`, "error");
+                // Parse RingCentral error structure if available
+                let errorMsg = data.error;
+
+                if (typeof errorMsg === 'object' && errorMsg !== null) {
+                    errorMsg = JSON.stringify(errorMsg);
+                } 
+                
+                renamerLog(`Failed Ext ${extNum}: ${errorMsg}`, "error");
             }
         } catch (err) {
-            renamerLog(`Network Error on Ext ${extNum}`, "error");
+            renamerLog(`Network Error on Ext ${extNum}: ${err.message}`, "error");
         }
     }
 </script>
