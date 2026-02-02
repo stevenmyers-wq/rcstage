@@ -127,10 +127,10 @@ function subscribeToEvents() {
     let eventFilters = [];
 
     switch (subType) {
-        case 'accountTelephony': eventFilters.push('/restapi/v1.0/account/~/telephony/sessions'); break;
+        case 'accountTelephony': eventFilters.push('/restapi/v1.0/account/~/telephony/sessions?sipData=true'); break;
         case 'extensionTelephony':
             if (!extId) { alert('Extension ID is required.'); return; }
-            eventFilters.push(`/restapi/v1.0/account/~/extension/${extId}/telephony/sessions`); break;
+            eventFilters.push(`/restapi/v1.0/account/~/extension/${extId}/telephony/sessions?sipData=true`); break;
         case 'accountPresence': eventFilters.push('/restapi/v1.0/account/~/presence?detailedTelephonyState=true'); break;
         case 'extensionPresence':
             if (!extId) { alert('Extension ID is required.'); return; }
