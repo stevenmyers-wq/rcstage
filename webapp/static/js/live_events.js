@@ -64,17 +64,8 @@ async function startWebSocketConnection() {
         socket = new WebSocket(fullWssUrl);
 
         socket.onopen = () => {
-            //logMessage("--- WebSocket Connection Opened ---");
-            //subscribeToEvents();
-            logMessage("--- TESTING FORCED SIPDATA ---");
-            const testMsg = [
-                { "type": "ClientRequest", "messageId": "test-123", "method": "POST", "path": "/restapi/v1.0/subscription" },
-                { 
-                  "deliveryMode": { "transportType": "WebSocket" }, 
-                  "eventFilters": ["/restapi/v1.0/account/~/telephony/sessions?sipData=true"] 
-                }
-            ];
-            socket.send(JSON.stringify(testMsg));
+            logMessage("--- WebSocket Connection Opened ---");
+            subscribeToEvents();
         };
 
         socket.onmessage = (event) => {
