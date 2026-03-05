@@ -1,0 +1,118 @@
+<div id="greetings-uploader-tab" class="tab-pane hidden">
+    <h2>Greetings Uploader</h2>
+    <p>Upload custom greetings directly to Message-Only and Announcement extensions.</p>
+    
+    <div class="uploader-container">
+        <form id="greetings-form">
+            <div class="form-group">
+                <label for="extension-select">Select Target Extension:</label>
+                <select id="extension-select" name="extension_id" required>
+                    <option value="">Loading extensions...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="audio-file">Upload Audio File (MP3/WAV):</label>
+                <input type="file" id="audio-file" name="audio_file" accept=".mp3, .wav" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="upload-btn">Upload Greeting</button>
+        </form>
+        <div id="upload-status" class="status-message"></div>
+    </div>
+</div>
+
+<style>
+    /* Scoped CSS for the greetings uploader */
+    #greetings-uploader-tab .uploader-container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; margin-top: 20px; }
+    #greetings-uploader-tab .form-group { margin-bottom: 15px; }
+    #greetings-uploader-tab .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+    #greetings-uploader-tab .form-group select,
+    #greetings-uploader-tab .form-group input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    #greetings-uploader-tab .status-message { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
+    #greetings-uploader-tab .status-message.loading { background-color: #e9ecef; color: #495057; display: block; }
+    #greetings-uploader-tab .status-message.success { background-color: #d4edda; color: #155724; display: block; }
+    #greetings-uploader-tab .status-message.error { background-color: #f8d7da; color: #721c24; display: block; }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const extensionSelect = document.getElementById('extension-select');
+        const greetingsForm = document.getElementById('greetings-form');
+        const statusMessage = document.getElementById('upload-status');
+        const uploadBtn = document.getElementById('upload-btn');
+        let dataLoaded = false;
+
+        // Listen for when the tab is clicked to load data (prevents loading on page load)
+        const tabButton = document.querySelector('[data-tab="greetings-uploader-tab"]');
+        if (tabButton) {
+            tabButton.addEventListener('click', async () => {
+                if (!dataLoaded) {
+                    await loadExtensions();
+                    dataLoaded = true;
+                }
+            });
+        }
+
+        async function loadExtensions() {
+            try {
+                const response = await fetch('/api/greetings_uploader/extensions');
+                if (response.status === 401) return; 
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    extensionSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                    return;
+                }
+
+                if (data.extensions && data.extensions.length > 0) {
+                    extensionSelect.innerHTML = '<option value="">-- Select an Extension --</option>';
+                    data.extensions.forEach(ext => {
+                        const option = document.createElement('option');
+                        option.value = ext.id;
+                        option.textContent = `${ext.name} (Ext. ${ext.extensionNumber}) - ${ext.type}`;
+                        extensionSelect.appendChild(option);
+                    });
+                } else {
+                    extensionSelect.innerHTML = '<option value="">No valid extensions found.</option>';
+                }
+            } catch (error) {
+                extensionSelect.innerHTML = '<option value="">Failed to load extensions.</option>';
+            }
+        }
+
+        greetingsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            statusMessage.textContent = 'Uploading... Please wait.';
+            statusMessage.className = 'status-message loading';
+            uploadBtn.disabled = true;
+
+            const formData = new FormData(greetingsForm);
+
+            try {
+                const response = await fetch('/api/greetings_uploader/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    statusMessage.textContent = 'Greeting uploaded successfully!';
+                    statusMessage.className = 'status-message success';
+                    greetingsForm.reset();
+                } else {
+                    statusMessage.textContent = `Error: ${result.error || 'Upload failed'}`;
+                    statusMessage.className = 'status-message error';
+                }
+            } catch (error) {
+                statusMessage.textContent = 'A network error occurred during upload.';
+                statusMessage.className = 'status-message error';
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+    });
+</script>
