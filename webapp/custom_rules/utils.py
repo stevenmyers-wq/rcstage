@@ -145,14 +145,19 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     }
     
     # --- 1. Conditions (Interaction) ---
-    interaction_cond = {"type": "Interaction"}
+    # CRITICAL FIX: The V2 API demands the 'from' parameter exist inside the 
+    # Interaction block, even if it is completely empty.
+    interaction_cond = {
+        "type": "Interaction",
+        "from": []
+    }
+    
     if "calledNumbers" in v1_payload and v1_payload["calledNumbers"]:
         interaction_cond["to"] = [{"phoneNumber": item['phoneNumber']} for item in v1_payload['calledNumbers']]
+        
     if "callers" in v1_payload and v1_payload["callers"]:
         interaction_cond["from"] = [{"phoneNumber": item['callerId']} for item in v1_payload['callers']]
         
-    # CRITICAL FIX (CMN-424): V2 Interaction Rules MUST contain an Interaction condition, 
-    # even if there are no specific callers/called numbers attached to it.
     v2["conditions"].append(interaction_cond)
 
     # --- 2. Conditions (Schedule) ---
