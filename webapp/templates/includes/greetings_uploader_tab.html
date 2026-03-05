@@ -5,10 +5,13 @@
     <div class="uploader-container">
         <form id="greetings-form">
             <div class="form-group">
-                <label for="extension-select">Select Target Extension:</label>
-                <select id="extension-select" name="extension_id" required>
-                    <option value="">Loading extensions...</option>
-                </select>
+                <label>Select Target Extensions:</label>
+                <input type="text" id="extension-search" placeholder="Search by name, extension, or type..." 
+                       class="w-full p-2 mb-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                
+                <div id="extension-list" class="border border-gray-300 rounded-lg max-h-64 overflow-y-auto bg-gray-50 p-2">
+                    <div class="text-gray-500 text-sm p-2">Loading extensions...</div>
+                </div>
             </div>
 
             <div class="form-group">
@@ -17,7 +20,7 @@
             </div>
 
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150" id="upload-btn">
-                Upload Greeting
+                Upload to Selected
             </button>
         </form>
         <div id="upload-status" class="status-message"></div>
@@ -29,7 +32,6 @@
     #greetings-uploader-tab .uploader-container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; }
     #greetings-uploader-tab .form-group { margin-bottom: 15px; }
     #greetings-uploader-tab .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #374151; }
-    #greetings-uploader-tab .form-group select,
     #greetings-uploader-tab .form-group input[type="file"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 0.5rem; box-sizing: border-box; background-color: #f9fafb;}
     #greetings-uploader-tab .status-message { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
     #greetings-uploader-tab .status-message.loading { background-color: #e9ecef; color: #495057; display: block; }
@@ -39,10 +41,13 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        const extensionSelect = document.getElementById('extension-select');
+        const extensionList = document.getElementById('extension-list');
+        const searchInput = document.getElementById('extension-search');
         const greetingsForm = document.getElementById('greetings-form');
         const statusMessage = document.getElementById('upload-status');
         const uploadBtn = document.getElementById('upload-btn');
+        
+        let allExtensions = []; // Store original data for filtering
 
         async function loadExtensions() {
             try {
@@ -52,30 +57,81 @@
                 const data = await response.json();
                 
                 if (data.error) {
-                    extensionSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                    extensionList.innerHTML = `<div class="text-red-500 p-2">Error: ${data.error}</div>`;
                     return;
                 }
 
                 if (data.extensions && data.extensions.length > 0) {
-                    extensionSelect.innerHTML = '<option value="">-- Select an Extension --</option>';
-                    data.extensions.forEach(ext => {
-                        const option = document.createElement('option');
-                        option.value = ext.id;
-                        option.textContent = `${ext.name} (Ext. ${ext.extensionNumber}) - ${ext.type}`;
-                        extensionSelect.appendChild(option);
-                    });
+                    allExtensions = data.extensions;
+                    renderExtensions(allExtensions);
                 } else {
-                    extensionSelect.innerHTML = '<option value="">No valid extensions found.</option>';
+                    extensionList.innerHTML = '<div class="text-gray-500 p-2">No valid extensions found.</div>';
                 }
             } catch (error) {
-                extensionSelect.innerHTML = '<option value="">Failed to load extensions.</option>';
+                extensionList.innerHTML = '<div class="text-red-500 p-2">Failed to load extensions.</div>';
             }
         }
+
+        function renderExtensions(extensions) {
+            extensionList.innerHTML = '';
+            if (extensions.length === 0) {
+                extensionList.innerHTML = '<div class="text-gray-500 p-2 text-sm">No extensions match your search.</div>';
+                return;
+            }
+            
+            extensions.forEach(ext => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center p-2 hover:bg-gray-200 cursor-pointer border-b border-gray-200 last:border-b-0 transition-colors';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.name = 'extension_ids'; // FormData will group all checked inputs with this name into an array
+                checkbox.value = ext.id;
+                checkbox.className = 'mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer';
+
+                const textDiv = document.createElement('div');
+                textDiv.className = 'flex flex-col';
+                
+                const mainText = document.createElement('span');
+                mainText.className = 'text-sm font-medium text-gray-800';
+                mainText.textContent = `${ext.name} (Ext. ${ext.extensionNumber})`;
+                
+                const subText = document.createElement('span');
+                subText.className = 'text-xs text-gray-500';
+                subText.textContent = `Type: ${ext.type}`;
+
+                textDiv.appendChild(mainText);
+                textDiv.appendChild(subText);
+                
+                label.appendChild(checkbox);
+                label.appendChild(textDiv);
+                extensionList.appendChild(label);
+            });
+        }
+
+        // Live Search Filter
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filtered = allExtensions.filter(ext => 
+                (ext.name && ext.name.toLowerCase().includes(searchTerm)) || 
+                (ext.extensionNumber && String(ext.extensionNumber).includes(searchTerm)) ||
+                (ext.type && ext.type.toLowerCase().includes(searchTerm))
+            );
+            renderExtensions(filtered);
+        });
 
         greetingsForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            statusMessage.textContent = 'Uploading... Please wait.';
+            // Verify at least one checkbox is checked
+            const checkedBoxes = document.querySelectorAll('input[name="extension_ids"]:checked');
+            if (checkedBoxes.length === 0) {
+                statusMessage.textContent = 'Please select at least one extension.';
+                statusMessage.className = 'status-message error';
+                return;
+            }
+
+            statusMessage.textContent = `Uploading to ${checkedBoxes.length} extension(s)... Please wait.`;
             statusMessage.className = 'status-message loading';
             uploadBtn.disabled = true;
 
@@ -90,9 +146,12 @@
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    statusMessage.textContent = 'Greeting uploaded successfully!';
+                    statusMessage.textContent = result.message;
                     statusMessage.className = 'status-message success';
-                    greetingsForm.reset();
+                    greetingsForm.reset(); // This clears the file and unchecks boxes
+                    // Re-render to ensure visual reset matches state
+                    renderExtensions(allExtensions); 
+                    searchInput.value = '';
                 } else {
                     statusMessage.textContent = `Error: ${result.error || 'Upload failed'}`;
                     statusMessage.className = 'status-message error';
@@ -105,7 +164,7 @@
             }
         });
 
-        // Load extensions immediately since this template only renders when the tab is active
+        // Load extensions immediately
         loadExtensions();
     });
 </script>
