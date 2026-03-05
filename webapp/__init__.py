@@ -58,4 +58,8 @@ def create_app():
         from .notifications import routes as notifications_routes
         app.register_blueprint(notifications_routes.notifications_bp)
 
+        # Greetings Uploader routes
+        from .greetings_uploader import routes as greetings_uploader_routes
+        app.register_blueprint(greetings_uploader_routes.greetings_uploader_bp)
+
     return app
