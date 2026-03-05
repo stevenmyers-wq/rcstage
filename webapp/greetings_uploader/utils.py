@@ -1,3 +1,4 @@
+import json
 from webapp.rc_api import rc_api_call
 
 def get_message_extensions():
@@ -19,21 +20,51 @@ def get_message_extensions():
     return filtered_exts
 
 def upload_greeting_to_extension(extension_id, file):
-    """Uploads an audio file as a Voicemail greeting to the specified extension."""
-    answering_rule_id = 'business-hours-rule'
+    """Uploads an audio file as a custom greeting to the specified extension."""
     
-    # RingCentral expects a multipart/form-data request with two parts:
-    # 1. 'json': The metadata detailing what kind of greeting this is.
-    # 2. 'attachment': The actual audio file.
+    # 1. Fetch extension info to determine if it needs a Voicemail or Announcement greeting
+    ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{extension_id}', method='GET', raise_error=True)
+    ext_type = ext_info.get('type')
+    
+    if ext_type == 'MessageOnly':
+        greeting_type = 'Voicemail'
+    elif ext_type == 'Announcement':
+        greeting_type = 'Announcement'
+    else:
+        raise Exception(f"Unsupported extension type for this tool: {ext_type}")
+
+    # 2. Fetch the answering rules for this extension to find the active rule ID
+    rules = rc_api_call(f'/restapi/v1.0/account/~/extension/{extension_id}/answering-rule', method='GET', raise_error=True)
+    
+    rule_id = None
+    if rules and 'records' in rules and len(rules['records']) > 0:
+        # MessageOnly and Announcement extensions generally only have one default rule
+        rule_id = rules['records'][0]['id']
+
+    # 3. Build the correctly nested JSON metadata payload
+    metadata = {
+        "type": greeting_type
+    }
+    
+    # Only attach the answering rule if one exists (RingCentral requires this object structure)
+    if rule_id:
+        metadata["answeringRule"] = {"id": rule_id}
+
+    # 4. Prepare the multipart/form-data files payload
     files = {
         'json': (
             'request.json', 
-            '{"type":"Voicemail", "answeringRuleId":"' + answering_rule_id + '"}', 
+            json.dumps(metadata), 
             'application/json'
         ),
-        'attachment': (file.filename, file.read(), file.content_type or 'audio/mpeg')
+        'attachment': (
+            file.filename, 
+            file.read(), 
+            file.content_type or 'audio/mpeg'
+        )
     }
 
+    # 5. Execute the upload
     return rc_api_call(
         f'/restapi/v1.0/account/~/extension/{extension_id}/greeting',
         method='POST',
