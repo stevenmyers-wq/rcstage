@@ -39,12 +39,18 @@ def parse_specific_dates(date_str):
         return None
 
 def format_phone(phone_val):
-    """Ensures phone numbers are in E.164 format (starts with +)."""
+    """Ensures phone numbers are in E.164 format."""
     if pd.isna(phone_val): return None
     raw_str = str(phone_val).split('.')[0].strip()
     clean_num = re.sub(r'[^\d+]', '', raw_str)
     if not clean_num: return None
-    if len(clean_num) > 9 and not clean_num.startswith('+'): return f"+{clean_num}"
+    
+    # Check for local Australian number formats (e.g., 0412 123 123 or 02 9999 0000)
+    if clean_num.startswith('0') and len(clean_num) == 10:
+        return f"+61{clean_num[1:]}"
+        
+    if len(clean_num) > 9 and not clean_num.startswith('+'): 
+        return f"+{clean_num}"
     return clean_num
 
 def format_time_display(ranges):
@@ -133,7 +139,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     if user_devices is None: user_devices = []
     v2 = {
         "displayName": v1_payload.get("name"), 
-        "enabled": v1_payload.get("enabled"),
+        "enabled": v1_payload.get("enabled", True),
         "conditions": [],
         "dispatching": {"type": "Terminate", "actions": []}
     }
@@ -145,7 +151,6 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     if "callers" in v1_payload and v1_payload["callers"]:
         interaction_cond["from"] = [{"phoneNumber": item['callerId']} for item in v1_payload['callers']]
         
-    # Only append if we actually have to/from conditions (prevents empty array 400 errors)
     if "to" in interaction_cond or "from" in interaction_cond:
         v2["conditions"].append(interaction_cond)
 
@@ -156,40 +161,73 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
             "schedule": v1_payload["schedule"]
         })
 
-    # --- 3. Actions - Real Logic ---
+    # --- 3. Actions - Strict Schema ---
     v1_act = v1_payload.get("callHandlingAction")
     vm_prompt = {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}
-    fallback_vm_target = {"type": "VoiceMailTerminatingTarget", "mailbox": {"id": owner_ext_id}, "prompt": vm_prompt}
 
     if v1_act == "ForwardCalls":
         v2["dispatching"]["type"] = "RingAndTerminate"
-        v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 20})
-        v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 20})
+        actions = []
+        actions.append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 20})
+        actions.append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 20})
         for dev in user_devices:
-            v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "DeviceRingTarget", "device": {"id": dev['id']}}], "duration": 20})
+            actions.append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "DeviceRingTarget", "device": {"id": dev['id']}}], "duration": 20})
         
-        action = {"type": "TerminatingAction", "terminatingTargetType": "VoiceMailTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target]}
-        v2["dispatching"]["actions"].append(action)
+        actions.append({
+            "type": "TerminatingAction",
+            "targets": [{
+                "type": "VoiceMailTerminatingTarget",
+                "mailbox": {"id": owner_ext_id},
+                "dispatchingType": "Terminating",
+                "prompt": vm_prompt
+            }]
+        })
+        v2["dispatching"]["actions"] = actions
 
     elif v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
         formatted_dest = format_phone(dest_num)
-        action = {"type": "TerminatingAction", "terminatingTargetType": "PhoneNumberTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target, {"type": "PhoneNumberTerminatingTarget", "destination": {"phoneNumber": formatted_dest}, "dispatchingType": "Terminating"}]}
-        v2["dispatching"]["actions"].append(action)
+        v2["dispatching"]["actions"].append({
+            "type": "TerminatingAction",
+            "targets": [{
+                "type": "PhoneNumberTerminatingTarget",
+                "destination": {"phoneNumber": formatted_dest},
+                "dispatchingType": "Terminating"
+            }]
+        })
 
     elif v1_act == "TransferToExtension":
         target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
-        action = {"type": "TerminatingAction", "terminatingTargetType": "ExtensionTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target, {"type": "ExtensionTerminatingTarget", "extension": {"id": target_ext_id}, "dispatchingType": "Terminating"}]}
-        v2["dispatching"]["actions"].append(action)
+        v2["dispatching"]["actions"].append({
+            "type": "TerminatingAction",
+            "targets": [{
+                "type": "ExtensionTerminatingTarget",
+                "extension": {"id": target_ext_id},
+                "dispatchingType": "Terminating"
+            }]
+        })
 
     elif v1_act == "TakeMessagesOnly":
         vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
-        action = {"type": "TerminatingAction", "terminatingTargetType": "VoiceMailTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [{"type": "VoiceMailTerminatingTarget", "mailbox": {"id": vm_recipient_id}, "dispatchingType": "Terminating", "prompt": vm_prompt}]}
-        v2["dispatching"]["actions"].append(action)
+        v2["dispatching"]["actions"].append({
+            "type": "TerminatingAction",
+            "targets": [{
+                "type": "VoiceMailTerminatingTarget",
+                "mailbox": {"id": vm_recipient_id},
+                "prompt": vm_prompt,
+                "dispatchingType": "Terminating"
+            }]
+        })
 
     elif v1_act == "PlayAnnouncementOnly":
-         action = {"type": "TerminatingAction", "terminatingTargetType": "PlayAnnouncementTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target, {"type": "PlayAnnouncementTerminatingTarget", "dispatchingType": "Terminating", "prompt": vm_prompt}]}
-         v2["dispatching"]["actions"].append(action)
+         v2["dispatching"]["actions"].append({
+             "type": "TerminatingAction",
+             "targets": [{
+                 "type": "PlayAnnouncementTerminatingTarget",
+                 "prompt": vm_prompt,
+                 "dispatchingType": "Terminating"
+             }]
+         })
 
     return v2
 
@@ -212,7 +250,6 @@ def parse_rule_to_row(ext, rule, is_v2=False):
 
     schedule_data = None
 
-    # --- 1. PARSE CONDITIONS ---
     if is_v2:
         for cond in rule.get('conditions', []):
             if cond.get('type') == 'Interaction':
@@ -221,10 +258,8 @@ def parse_rule_to_row(ext, rule, is_v2=False):
                 if 'to' in cond:
                     row['Called Number'] = ', '.join([str(t.get('phoneNumber', t)) for t in cond['to']])
             elif cond.get('type') == 'Schedule':
-                # V2 Schedule Condition
                 schedule_data = cond.get('schedule', {})
     else:
-        # V1 Conditions
         if 'callers' in rule:
             row['Caller ID'] = ', '.join([c.get('callerId') for c in rule['callers']])
         if 'calledNumbers' in rule:
@@ -232,20 +267,16 @@ def parse_rule_to_row(ext, rule, is_v2=False):
         if 'schedule' in rule:
             schedule_data = rule['schedule']
 
-    # --- 2. FORMAT SCHEDULE ---
     if schedule_data:
-        # Weekly Ranges
         weekly = schedule_data.get('weeklyRanges', {})
         for day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']:
             if day in weekly:
                 row[day.capitalize()] = format_time_display(weekly[day])
         
-        # Specific Dates
         ranges = schedule_data.get('ranges', [])
         if ranges:
             date_strs = []
             for r in ranges:
-                # Convert "2023-12-25T09:00:00" to readable format
                 try:
                     dt_from = datetime.fromisoformat(r['from'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
                     dt_to = datetime.fromisoformat(r['to'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
@@ -254,7 +285,6 @@ def parse_rule_to_row(ext, rule, is_v2=False):
                     date_strs.append(f"{r['from']} to {r['to']}")
             row['Specific Dates'] = "\n".join(date_strs)
 
-    # --- 3. PARSE ACTIONS ---
     if is_v2:
         actions = rule.get('dispatching', {}).get('actions', [])
         term_action = next((a for a in actions if a.get('type') == 'TerminatingAction'), None)
