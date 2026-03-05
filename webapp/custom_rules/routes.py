@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
+from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
 from .utils import build_v1_payload, format_phone, parse_rule_to_row, transform_v1_to_v2
@@ -190,14 +191,13 @@ def download_template():
         {"Field": "Rule ID", "Required": "No", "Format": "123456", "Notes": "Leave BLANK to create a NEW rule. Fill to UPDATE an existing rule."},
         {"Field": "Caller ID", "Required": "No", "Format": "+61400123456", "Notes": "Incoming numbers to match. Comma-separated."},
         {"Field": "Called Number", "Required": "No", "Format": "+61299990000", "Notes": "The DID the caller dialed. Comma-separated."},
-        {"Field": "Days (Mon-Sun)", "Required": "No", "Format": "9:00 AM - 5:00 PM", "Notes": "12-hour format with AM/PM. Example: '9:00 AM - 12:00 PM, 1:00 PM - 5:00 PM'"},
-        {"Field": "Specific Dates", "Required": "No", "Format": "2024-12-25 00:00 to 2024-12-26 23:59", "Notes": "ISO Format (YYYY-MM-DD HH:MM). Must use keyword 'to'."},
-        {"Field": "Action", "Required": "Yes", "Format": "Select One", "Notes": "Transfer to External, Transfer to Extension, Send to Voicemail, Play Message"},
+        {"Field": "Days (Mon-Sun)", "Required": "No", "Format": "9:00 AM - 5:00 PM", "Notes": "12-hour format with AM/PM. Separate multiple ranges with commas: '9:00 AM - 12:00 PM, 1:00 PM - 5:00 PM'"},
+        {"Field": "Specific Dates", "Required": "No", "Format": "YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM", "Notes": "Example: '2024-12-25 00:00 to 2024-12-26 23:59'. Separate multiple date ranges with commas."},
+        {"Field": "Action", "Required": "Yes", "Format": "Select from Dropdown", "Notes": "Use the dropdown box provided in the Template sheet."},
         {"Field": "External Number", "Required": "If Action=Transfer", "Format": "+614...", "Notes": "E.164 format preferred."},
-        {"Field": "Enabled", "Required": "No", "Format": "Yes / No", "Notes": "Defaults to Yes."}
+        {"Field": "Enabled", "Required": "No", "Format": "Select from Dropdown", "Notes": "Defaults to Yes."}
     ]
 
-    # 3. Create DataFrames
     df_template = pd.DataFrame([], columns=columns)
     df_instructions = pd.DataFrame(instructions_data)
 
@@ -206,6 +206,20 @@ def download_template():
         # Sheet 1: Template
         df_template.to_excel(writer, index=False, sheet_name='Template')
         ws1 = writer.sheets['Template']
+        
+        # --- Add Dropdown Validations ---
+        # Column E is Enabled, Column P is Action
+        dv_enabled = DataValidation(type="list", formula1='"Yes,No"', allow_blank=True)
+        dv_action = DataValidation(type="list", formula1='"Transfer to External,Transfer to Extension,Send to Voicemail,Play Message,Play Message and Disconnect,Fwd Direct To Main"', allow_blank=True)
+        
+        ws1.add_data_validation(dv_enabled)
+        ws1.add_data_validation(dv_action)
+        
+        # Apply to a generous range of rows (Row 2 to 1000)
+        dv_enabled.add("E2:E1000")
+        dv_action.add("P2:P1000")
+
+        # Auto-adjust column widths
         for column in ws1.columns:
             length = max(len(str(cell.value) or "") for cell in column)
             ws1.column_dimensions[column[0].column_letter].width = length + 5
