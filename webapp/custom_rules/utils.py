@@ -138,7 +138,7 @@ def build_v1_payload(row, ext_id):
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     if user_devices is None: user_devices = []
     v2 = {
-        "displayName": v1_payload.get("name"), 
+        "displayName": str(v1_payload.get("name", f"Custom Rule {datetime.now()}")), 
         "enabled": v1_payload.get("enabled", True),
         "conditions": [],
         "dispatching": {"type": "Terminate", "actions": []}
@@ -151,8 +151,9 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     if "callers" in v1_payload and v1_payload["callers"]:
         interaction_cond["from"] = [{"phoneNumber": item['callerId']} for item in v1_payload['callers']]
         
-    if "to" in interaction_cond or "from" in interaction_cond:
-        v2["conditions"].append(interaction_cond)
+    # CRITICAL FIX (CMN-424): V2 Interaction Rules MUST contain an Interaction condition, 
+    # even if there are no specific callers/called numbers attached to it.
+    v2["conditions"].append(interaction_cond)
 
     # --- 2. Conditions (Schedule) ---
     if "schedule" in v1_payload:
