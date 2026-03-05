@@ -163,12 +163,11 @@ def update_rules():
                 if "NewCallHandlingAndForwarding" in http_err.response.text:
                     try:
                         v2_payload = transform_v1_to_v2(payload, ext_id, user_devices)
-                        # V2 requires PATCH for updating existing rules
-                        v2_method = "PATCH" if is_update else "POST"
+                        # V2 requires PUT for updating existing rules, or POST for new
+                        v2_method = "PUT" if is_update else "POST"
                         rc_api_call(v2_url, method=v2_method, json=v2_payload, raise_error=True)
                         results.append(f"✅ {v2_method} Rule Ext {raw_ext_num} (V2)")
                     except Exception as v2_err:
-                        # Extract the detailed message from RingCentral
                         error_msg = str(v2_err)
                         if hasattr(v2_err, 'response') and v2_err.response is not None:
                             error_msg += f" | Details: {v2_err.response.text}"
