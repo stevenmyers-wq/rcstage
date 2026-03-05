@@ -88,9 +88,13 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
 
     headers = {
         'Authorization': f'Bearer {access_token}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
+        'Accept': 'application/json'
+        # Content-Type is now set conditionally below
     }
+
+    # Only force application/json if we are NOT sending files in the request
+    if 'files' not in kwargs:
+        headers['Content-Type'] = 'application/json'
 
     try:
         response = requests.request(
