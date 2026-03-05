@@ -145,11 +145,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     }
     
     # --- 1. Conditions (Interaction) ---
-    # CRITICAL FIX: The V2 API demands the 'from' parameter exist inside the 
-    # Interaction block, even if it is completely empty.
+    # CRITICAL FIX: The V2 API demands both 'from' and 'to' parameters exist 
+    # inside the Interaction block, even if they are empty.
     interaction_cond = {
         "type": "Interaction",
-        "from": []
+        "from": [],
+        "to": []
     }
     
     if "calledNumbers" in v1_payload and v1_payload["calledNumbers"]:
