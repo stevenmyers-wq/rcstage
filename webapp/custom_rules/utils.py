@@ -138,45 +138,55 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
         "dispatching": {"type": "Terminate", "actions": []}
     }
     
-    # Conditions (Interaction)
-    interaction_cond = {"type": "Interaction", "to": [], "from": []}
-    if "calledNumbers" in v1_payload:
-        interaction_cond["to"] = [item['phoneNumber'] for item in v1_payload['calledNumbers']]
-    if "callers" in v1_payload:
-        interaction_cond["from"] = [item['callerId'] for item in v1_payload['callers']]
-    v2["conditions"].append(interaction_cond)
+    # --- 1. Conditions (Interaction) ---
+    interaction_cond = {"type": "Interaction"}
+    if "calledNumbers" in v1_payload and v1_payload["calledNumbers"]:
+        interaction_cond["to"] = [{"phoneNumber": item['phoneNumber']} for item in v1_payload['calledNumbers']]
+    if "callers" in v1_payload and v1_payload["callers"]:
+        interaction_cond["from"] = [{"phoneNumber": item['callerId']} for item in v1_payload['callers']]
+        
+    # Only append if we actually have to/from conditions (prevents empty array 400 errors)
+    if "to" in interaction_cond or "from" in interaction_cond:
+        v2["conditions"].append(interaction_cond)
 
-    # Conditions (Schedule) - MAP V1 SCHEDULE TO V2
+    # --- 2. Conditions (Schedule) ---
     if "schedule" in v1_payload:
         v2["conditions"].append({
             "type": "Schedule",
             "schedule": v1_payload["schedule"]
         })
 
-    # Actions - Inject Dummies
-    v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 20})
-    v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 20})
-    for dev in user_devices:
-        v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "DeviceRingTarget", "device": {"id": dev['id']}}], "duration": 20})
-
-    # Actions - Real Logic
+    # --- 3. Actions - Real Logic ---
     v1_act = v1_payload.get("callHandlingAction")
     vm_prompt = {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}
     fallback_vm_target = {"type": "VoiceMailTerminatingTarget", "mailbox": {"id": owner_ext_id}, "prompt": vm_prompt}
 
-    if v1_act == "UnconditionalForwarding":
+    if v1_act == "ForwardCalls":
+        v2["dispatching"]["type"] = "RingAndTerminate"
+        v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 20})
+        v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 20})
+        for dev in user_devices:
+            v2["dispatching"]["actions"].append({"type": "RingGroupAction", "enabled": False, "targets": [{"type": "DeviceRingTarget", "device": {"id": dev['id']}}], "duration": 20})
+        
+        action = {"type": "TerminatingAction", "terminatingTargetType": "VoiceMailTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target]}
+        v2["dispatching"]["actions"].append(action)
+
+    elif v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
         formatted_dest = format_phone(dest_num)
         action = {"type": "TerminatingAction", "terminatingTargetType": "PhoneNumberTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target, {"type": "PhoneNumberTerminatingTarget", "destination": {"phoneNumber": formatted_dest}, "dispatchingType": "Terminating"}]}
         v2["dispatching"]["actions"].append(action)
+
     elif v1_act == "TransferToExtension":
         target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
         action = {"type": "TerminatingAction", "terminatingTargetType": "ExtensionTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target, {"type": "ExtensionTerminatingTarget", "extension": {"id": target_ext_id}, "dispatchingType": "Terminating"}]}
         v2["dispatching"]["actions"].append(action)
+
     elif v1_act == "TakeMessagesOnly":
         vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
         action = {"type": "TerminatingAction", "terminatingTargetType": "VoiceMailTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [{"type": "VoiceMailTerminatingTarget", "mailbox": {"id": vm_recipient_id}, "dispatchingType": "Terminating", "prompt": vm_prompt}]}
         v2["dispatching"]["actions"].append(action)
+
     elif v1_act == "PlayAnnouncementOnly":
          action = {"type": "TerminatingAction", "terminatingTargetType": "PlayAnnouncementTerminatingTarget", "ringingTargetType": "VoiceMailTerminatingTarget", "targets": [fallback_vm_target, {"type": "PlayAnnouncementTerminatingTarget", "dispatchingType": "Terminating", "prompt": vm_prompt}]}
          v2["dispatching"]["actions"].append(action)
@@ -209,7 +219,7 @@ def parse_rule_to_row(ext, rule, is_v2=False):
                 if 'from' in cond:
                     row['Caller ID'] = ', '.join([str(c.get('phoneNumber', c)) for c in cond['from']])
                 if 'to' in cond:
-                    row['Called Number'] = ', '.join([str(t) for t in cond['to']])
+                    row['Called Number'] = ', '.join([str(t.get('phoneNumber', t)) for t in cond['to']])
             elif cond.get('type') == 'Schedule':
                 # V2 Schedule Condition
                 schedule_data = cond.get('schedule', {})
