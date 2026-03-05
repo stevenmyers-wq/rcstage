@@ -1,6 +1,6 @@
-<div id="greetings-uploader-tab" class="tab-pane hidden">
-    <h2>Greetings Uploader</h2>
-    <p>Upload custom greetings directly to Message-Only and Announcement extensions.</p>
+<div id="greetings-uploader-tab">
+    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Greetings Uploader</h2>
+    <p class="text-gray-600 mb-6">Upload custom greetings directly to Message-Only and Announcement extensions.</p>
     
     <div class="uploader-container">
         <form id="greetings-form">
@@ -16,7 +16,9 @@
                 <input type="file" id="audio-file" name="audio_file" accept=".mp3, .wav" required>
             </div>
 
-            <button type="submit" class="btn btn-primary" id="upload-btn">Upload Greeting</button>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150" id="upload-btn">
+                Upload Greeting
+            </button>
         </form>
         <div id="upload-status" class="status-message"></div>
     </div>
@@ -24,15 +26,15 @@
 
 <style>
     /* Scoped CSS for the greetings uploader */
-    #greetings-uploader-tab .uploader-container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; margin-top: 20px; }
+    #greetings-uploader-tab .uploader-container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; }
     #greetings-uploader-tab .form-group { margin-bottom: 15px; }
-    #greetings-uploader-tab .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+    #greetings-uploader-tab .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #374151; }
     #greetings-uploader-tab .form-group select,
-    #greetings-uploader-tab .form-group input[type="file"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    #greetings-uploader-tab .form-group input[type="file"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 0.5rem; box-sizing: border-box; background-color: #f9fafb;}
     #greetings-uploader-tab .status-message { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
     #greetings-uploader-tab .status-message.loading { background-color: #e9ecef; color: #495057; display: block; }
-    #greetings-uploader-tab .status-message.success { background-color: #d4edda; color: #155724; display: block; }
-    #greetings-uploader-tab .status-message.error { background-color: #f8d7da; color: #721c24; display: block; }
+    #greetings-uploader-tab .status-message.success { background-color: #d1e7dd; color: #0f5132; display: block; border: 1px solid #badbcc; }
+    #greetings-uploader-tab .status-message.error { background-color: #f8d7da; color: #842029; display: block; border: 1px solid #f5c2c7; }
 </style>
 
 <script>
@@ -41,18 +43,6 @@
         const greetingsForm = document.getElementById('greetings-form');
         const statusMessage = document.getElementById('upload-status');
         const uploadBtn = document.getElementById('upload-btn');
-        let dataLoaded = false;
-
-        // Listen for when the tab is clicked to load data (prevents loading on page load)
-        const tabButton = document.querySelector('[data-tab="greetings-uploader-tab"]');
-        if (tabButton) {
-            tabButton.addEventListener('click', async () => {
-                if (!dataLoaded) {
-                    await loadExtensions();
-                    dataLoaded = true;
-                }
-            });
-        }
 
         async function loadExtensions() {
             try {
@@ -114,5 +104,8 @@
                 uploadBtn.disabled = false;
             }
         });
+
+        // Load extensions immediately since this template only renders when the tab is active
+        loadExtensions();
     });
 </script>
