@@ -87,7 +87,8 @@
                             ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
                             ('live_events', 'Live Events', 'Real-time subscription listener'),
                             ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
-                            ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences')
+                            ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
+                            ('greetings_uploader', 'Greetings Uploader', 'Upload custom greetings to Message-Only and Announcement extensions')
                         ] %}
                         
                         {% for tab_id, tab_name, tab_desc in tabs %}
@@ -114,7 +115,8 @@
                 </div>
 
                 <div class="flex-1 w-full min-w-0">
-                    <div class="bg-transparent"> {% if current_tab == 'authenticator' %}
+                    <div class="bg-transparent"> 
+                        {% if current_tab == 'authenticator' %}
                             {% include 'includes/authenticator_tab.html' %}
                         {% elif current_tab == 'sip_fetcher' %}
                             {% include 'includes/sip_fetcher_tab.html' %}
@@ -134,6 +136,8 @@
                             {% include 'includes/custom_rules_tab.html' %}
                         {% elif current_tab == 'notifications' %}
                             {% include 'includes/notifications_tab.html' %}
+                        {% elif current_tab == 'greetings_uploader' %}
+                            {% include 'includes/greetings_uploader_tab.html' %}
                         {% else %}
                             <div class="card text-center py-12">
                                 <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
