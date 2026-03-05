@@ -5,14 +5,38 @@ from datetime import datetime
 # --- 1. BASIC FORMATTERS ---
 
 def parse_time_range(range_str):
-    """Parses '8:00 AM - 5:00 PM' into API format."""
-    if not isinstance(range_str, str) or '-' not in range_str: return None
+    """Parses '8:00 AM - 5:00 PM' or multiple '8:00 AM - 12:00 PM, 1:00 PM - 5:00 PM' into API format."""
+    if pd.isna(range_str) or not str(range_str).strip(): return None
     try:
-        start, end = range_str.split('-')
-        fmt_in, fmt_out = "%I:%M %p", "%H:%M"
-        return [{"from": datetime.strptime(start.strip(), fmt_in).strftime(fmt_out),
-                 "to": datetime.strptime(end.strip(), fmt_in).strftime(fmt_out)}]
-    except: return None
+        ranges = []
+        for part in str(range_str).split(','):
+            if '-' not in part: continue
+            start, end = part.split('-')
+            fmt_in, fmt_out = "%I:%M %p", "%H:%M"
+            ranges.append({
+                "from": datetime.strptime(start.strip(), fmt_in).strftime(fmt_out),
+                "to": datetime.strptime(end.strip(), fmt_in).strftime(fmt_out)
+            })
+        return ranges if ranges else None
+    except: 
+        return None
+
+def parse_specific_dates(date_str):
+    """Parses '2024-12-25 00:00 to 2024-12-26 23:59' into API format."""
+    if pd.isna(date_str) or not str(date_str).strip(): return None
+    try:
+        ranges = []
+        for part in str(date_str).split(','):
+            if ' to ' not in part: continue
+            start, end = part.split(' to ')
+            fmt_in, fmt_out = "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S.000Z"
+            ranges.append({
+                "from": datetime.strptime(start.strip(), fmt_in).strftime(fmt_out),
+                "to": datetime.strptime(end.strip(), fmt_in).strftime(fmt_out)
+            })
+        return ranges if ranges else None
+    except:
+        return None
 
 def format_phone(phone_val):
     """Ensures phone numbers are in E.164 format (starts with +)."""
@@ -36,8 +60,8 @@ def format_time_display(ranges):
             display_strs.append(f"{r['from']} - {r['to']}")
     return ", ".join(display_strs)
 
-# --- 2. V1 PAYLOAD BUILDER (Unchanged) ---
-# ... (Keep existing build_v1_payload logic) ...
+# --- 2. V1 PAYLOAD BUILDER ---
+
 def build_v1_payload(row, ext_id):
     rule_name = row.get('Rule Name', f'Custom Rule {datetime.now()}')
     enabled_val = str(row.get('Enabled', 'Yes')).lower()
@@ -61,20 +85,34 @@ def build_v1_payload(row, ext_id):
             if fmt: called.append({'phoneNumber': fmt})
         if called: payload['calledNumbers'] = called
 
-    schedule = {'weeklyRanges': {}}
+    schedule = {}
+    weekly_ranges = {}
+    has_schedule = False
     days_map = {
         'Monday': 'monday', 'Tuesday': 'tuesday', 'Wednesday': 'wednesday',
         'Thursday': 'thursday', 'Friday': 'friday', 'Saturday': 'saturday', 'Sunday': 'sunday'
     }
-    has_schedule = False
+    
+    # Process Weekly Ranges
     for col, api_key in days_map.items():
         if col in row and pd.notna(row[col]):
             ranges = parse_time_range(row[col])
             if ranges:
-                schedule['weeklyRanges'][api_key] = ranges
+                weekly_ranges[api_key] = ranges
                 has_schedule = True
+                
+    if weekly_ranges:
+        schedule['weeklyRanges'] = weekly_ranges
+
+    # Process Specific Dates
+    if 'Specific Dates' in row and pd.notna(row['Specific Dates']):
+        date_ranges = parse_specific_dates(row['Specific Dates'])
+        if date_ranges:
+            schedule['ranges'] = date_ranges
+            has_schedule = True
     
-    if has_schedule: payload['schedule'] = schedule
+    if has_schedule: 
+        payload['schedule'] = schedule
 
     action_map = {
         'Transfer to External': 'UnconditionalForwarding',
@@ -89,8 +127,8 @@ def build_v1_payload(row, ext_id):
     payload['callHandlingAction'] = api_action
     return payload, api_action
 
-# --- 3. V2 TRANSFORMER (Unchanged) ---
-# ... (Keep existing transform_v1_to_v2 logic) ...
+# --- 3. V2 TRANSFORMER ---
+
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
     if user_devices is None: user_devices = []
     v2 = {
@@ -108,7 +146,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
         interaction_cond["from"] = [item['callerId'] for item in v1_payload['callers']]
     v2["conditions"].append(interaction_cond)
 
-    # Conditions (Schedule) - NEW: MAP V1 SCHEDULE TO V2
+    # Conditions (Schedule) - MAP V1 SCHEDULE TO V2
     if "schedule" in v1_payload:
         v2["conditions"].append({
             "type": "Schedule",
@@ -145,7 +183,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
 
     return v2
 
-# --- 4. AUDIT PARSER (UPDATED) ---
+# --- 4. AUDIT PARSER ---
 
 def parse_rule_to_row(ext, rule, is_v2=False):
     """Converts a RingCentral Rule (V1 or V2) into a flat Excel row."""
