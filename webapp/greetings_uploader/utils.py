@@ -2,12 +2,13 @@ import json
 from webapp.rc_api import rc_api_call
 
 def get_message_extensions():
-    """Fetches Message-Only and Announcement extensions."""
+    """Fetches Message-Only (Voicemail) and Announcement extensions."""
     response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
     if not response or 'records' not in response:
         raise Exception("Failed to fetch extensions from RingCentral.")
 
-    valid_types = ['MessageOnly', 'Announcement']
+    # RingCentral API uses 'Voicemail' for Message-Only extensions
+    valid_types = ['Voicemail', 'Announcement']
     filtered_exts = [
         {
             "id": ext['id'],
@@ -26,7 +27,8 @@ def upload_greeting_to_extension(extension_id, file):
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{extension_id}', method='GET', raise_error=True)
     ext_type = ext_info.get('type')
     
-    if ext_type == 'MessageOnly':
+    # Match against the API's internal 'Voicemail' type
+    if ext_type == 'Voicemail':
         greeting_type = 'Voicemail'
     elif ext_type == 'Announcement':
         greeting_type = 'Announcement'
@@ -38,7 +40,6 @@ def upload_greeting_to_extension(extension_id, file):
     
     rule_id = None
     if rules and 'records' in rules and len(rules['records']) > 0:
-        # MessageOnly and Announcement extensions generally only have one default rule
         rule_id = rules['records'][0]['id']
 
     # 3. Build the correctly nested JSON metadata payload
@@ -46,7 +47,6 @@ def upload_greeting_to_extension(extension_id, file):
         "type": greeting_type
     }
     
-    # Only attach the answering rule if one exists (RingCentral requires this object structure)
     if rule_id:
         metadata["answeringRule"] = {"id": rule_id}
 
