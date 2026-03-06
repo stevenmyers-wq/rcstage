@@ -6,17 +6,33 @@
         <form id="greetings-form">
             <div class="form-group">
                 <label>Select Target Extensions:</label>
-                <input type="text" id="extension-search" placeholder="Search by name, extension, or type..." 
-                       class="w-full p-2 mb-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
                 
-                <div id="extension-list" class="border border-gray-300 rounded-lg max-h-64 overflow-y-auto bg-gray-50 p-2">
-                    <div class="text-gray-500 text-sm p-2">Loading extensions...</div>
+                <div class="flex flex-col sm:flex-row gap-2 mb-3">
+                    <input type="text" id="extension-search" placeholder="Search by name, extension, or type..." 
+                           class="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <button type="button" id="toggle-select-btn" class="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200 transition text-sm font-medium whitespace-nowrap">
+                        Select All Filtered
+                    </button>
+                </div>
+                
+                <div id="extension-list" class="max-h-80 overflow-y-auto p-1 bg-gray-50 border border-gray-200 rounded-lg shadow-inner">
+                    <div class="text-gray-500 text-sm p-4 text-center">Loading extensions...</div>
                 </div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group mt-4">
                 <label for="audio-file">Upload Audio File (MP3/WAV):</label>
                 <input type="file" id="audio-file" name="audio_file" accept=".mp3, .wav" required>
+            </div>
+
+            <div id="progress-container" class="hidden mt-4 mb-4">
+                <div class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+                    <span id="progress-status-text">Starting upload...</span>
+                    <span id="progress-text">0/0</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-3 shadow-inner">
+                    <div id="progress-bar-fill" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
             </div>
 
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150" id="upload-btn">
@@ -28,12 +44,10 @@
 </div>
 
 <style>
-    /* Scoped CSS for the greetings uploader */
-    #greetings-uploader-tab .uploader-container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; }
-    #greetings-uploader-tab .form-group { margin-bottom: 15px; }
+    #greetings-uploader-tab .uploader-container { background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 650px; }
     #greetings-uploader-tab .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #374151; }
-    #greetings-uploader-tab .form-group input[type="file"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 0.5rem; box-sizing: border-box; background-color: #f9fafb;}
-    #greetings-uploader-tab .status-message { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
+    #greetings-uploader-tab input[type="file"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 0.5rem; background-color: #f9fafb;}
+    #greetings-uploader-tab .status-message { margin-top: 15px; padding: 12px; border-radius: 6px; display: none; font-weight: 500; }
     #greetings-uploader-tab .status-message.loading { background-color: #e9ecef; color: #495057; display: block; }
     #greetings-uploader-tab .status-message.success { background-color: #d1e7dd; color: #0f5132; display: block; border: 1px solid #badbcc; }
     #greetings-uploader-tab .status-message.error { background-color: #f8d7da; color: #842029; display: block; border: 1px solid #f5c2c7; }
@@ -43,11 +57,19 @@
     document.addEventListener('DOMContentLoaded', () => {
         const extensionList = document.getElementById('extension-list');
         const searchInput = document.getElementById('extension-search');
+        const toggleSelectBtn = document.getElementById('toggle-select-btn');
         const greetingsForm = document.getElementById('greetings-form');
         const statusMessage = document.getElementById('upload-status');
         const uploadBtn = document.getElementById('upload-btn');
         
-        let allExtensions = []; // Store original data for filtering
+        // Progress elements
+        const progressContainer = document.getElementById('progress-container');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+        const progressText = document.getElementById('progress-text');
+        const progressStatusText = document.getElementById('progress-status-text');
+
+        let allExtensions = []; 
+        let currentFiltered = [];
 
         async function loadExtensions() {
             try {
@@ -57,48 +79,62 @@
                 const data = await response.json();
                 
                 if (data.error) {
-                    extensionList.innerHTML = `<div class="text-red-500 p-2">Error: ${data.error}</div>`;
+                    extensionList.innerHTML = `<div class="text-red-500 p-4 text-center font-medium">Error: ${data.error}</div>`;
                     return;
                 }
 
                 if (data.extensions && data.extensions.length > 0) {
                     allExtensions = data.extensions;
+                    currentFiltered = data.extensions;
                     renderExtensions(allExtensions);
                 } else {
-                    extensionList.innerHTML = '<div class="text-gray-500 p-2">No valid extensions found.</div>';
+                    extensionList.innerHTML = '<div class="text-gray-500 p-4 text-center">No valid extensions found.</div>';
                 }
             } catch (error) {
-                extensionList.innerHTML = '<div class="text-red-500 p-2">Failed to load extensions.</div>';
+                extensionList.innerHTML = '<div class="text-red-500 p-4 text-center">Failed to load extensions. Check network.</div>';
             }
         }
 
         function renderExtensions(extensions) {
             extensionList.innerHTML = '';
             if (extensions.length === 0) {
-                extensionList.innerHTML = '<div class="text-gray-500 p-2 text-sm">No extensions match your search.</div>';
+                extensionList.innerHTML = '<div class="text-gray-500 p-4 text-center text-sm">No extensions match your search.</div>';
                 return;
             }
             
             extensions.forEach(ext => {
                 const label = document.createElement('label');
-                label.className = 'flex items-center p-2 hover:bg-gray-200 cursor-pointer border-b border-gray-200 last:border-b-0 transition-colors';
+                // Creating a larger, card-like hit area
+                label.className = 'flex items-center p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all shadow-sm';
                 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
-                checkbox.name = 'extension_ids'; // FormData will group all checked inputs with this name into an array
+                checkbox.name = 'extension_ids';
                 checkbox.value = ext.id;
-                checkbox.className = 'mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer';
+                checkbox.dataset.name = ext.name; // Store name for the progress bar text
+                checkbox.className = 'mr-4 h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer';
+
+                // Visual feedback when checkbox is toggled
+                checkbox.addEventListener('change', (e) => {
+                    if(e.target.checked) {
+                        label.classList.add('border-blue-500', 'bg-blue-50', 'ring-1', 'ring-blue-500');
+                        label.classList.remove('border-gray-200', 'bg-white');
+                    } else {
+                        label.classList.remove('border-blue-500', 'bg-blue-50', 'ring-1', 'ring-blue-500');
+                        label.classList.add('border-gray-200', 'bg-white');
+                    }
+                });
 
                 const textDiv = document.createElement('div');
                 textDiv.className = 'flex flex-col';
                 
                 const mainText = document.createElement('span');
-                mainText.className = 'text-sm font-medium text-gray-800';
+                mainText.className = 'text-base font-semibold text-gray-800';
                 mainText.textContent = `${ext.name} (Ext. ${ext.extensionNumber})`;
                 
                 const subText = document.createElement('span');
-                subText.className = 'text-xs text-gray-500';
-                subText.textContent = `Type: ${ext.type}`;
+                subText.className = 'text-xs text-gray-500 mt-0.5 uppercase tracking-wide';
+                subText.textContent = ext.type;
 
                 textDiv.appendChild(mainText);
                 textDiv.appendChild(subText);
@@ -112,59 +148,136 @@
         // Live Search Filter
         searchInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            const filtered = allExtensions.filter(ext => 
+            currentFiltered = allExtensions.filter(ext => 
                 (ext.name && ext.name.toLowerCase().includes(searchTerm)) || 
                 (ext.extensionNumber && String(ext.extensionNumber).includes(searchTerm)) ||
                 (ext.type && ext.type.toLowerCase().includes(searchTerm))
             );
-            renderExtensions(filtered);
+            renderExtensions(currentFiltered);
+            toggleSelectBtn.textContent = 'Select All Filtered';
+        });
+
+        // Select All / Deselect All Button Logic
+        toggleSelectBtn.addEventListener('click', () => {
+            const checkboxes = extensionList.querySelectorAll('input[type="checkbox"]');
+            if (checkboxes.length === 0) return;
+
+            // Check if all currently visible are selected
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+                // Dispatch change event to trigger the visual styling updates
+                cb.dispatchEvent(new Event('change'));
+            });
+
+            toggleSelectBtn.textContent = allChecked ? 'Select All Filtered' : 'Deselect All Filtered';
         });
 
         greetingsForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            // Verify at least one checkbox is checked
-            const checkedBoxes = document.querySelectorAll('input[name="extension_ids"]:checked');
+            const checkedBoxes = extensionList.querySelectorAll('input[name="extension_ids"]:checked');
             if (checkedBoxes.length === 0) {
                 statusMessage.textContent = 'Please select at least one extension.';
                 statusMessage.className = 'status-message error';
                 return;
             }
 
-            statusMessage.textContent = `Uploading to ${checkedBoxes.length} extension(s)... Please wait.`;
-            statusMessage.className = 'status-message loading';
+            const audioFileInput = document.getElementById('audio-file');
+            const audioFile = audioFileInput.files[0];
+
+            // Lock UI and show Progress Bar
             uploadBtn.disabled = true;
+            statusMessage.style.display = 'none';
+            progressContainer.classList.remove('hidden');
+            
+            const total = checkedBoxes.length;
+            let successCount = 0;
+            let failCount = 0;
 
-            const formData = new FormData(greetingsForm);
+            // Loop sequentially to track progress and handle rate limits
+            for (let i = 0; i < total; i++) {
+                const cb = checkedBoxes[i];
+                const extId = cb.value;
+                const extName = cb.dataset.name;
 
-            try {
-                const response = await fetch('/api/greetings_uploader/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                // Update Progress UI
+                progressStatusText.textContent = `Uploading to ${extName}...`;
+                progressText.textContent = `${i}/${total}`;
+                progressBarFill.style.width = `${(i / total) * 100}%`;
 
-                const result = await response.json();
+                let success = false;
+                let attempts = 0;
+                const maxAttempts = 3;
 
-                if (response.ok && result.success) {
-                    statusMessage.textContent = result.message;
-                    statusMessage.className = 'status-message success';
-                    greetingsForm.reset(); // This clears the file and unchecks boxes
-                    // Re-render to ensure visual reset matches state
-                    renderExtensions(allExtensions); 
-                    searchInput.value = '';
-                } else {
-                    statusMessage.textContent = `Error: ${result.error || 'Upload failed'}`;
-                    statusMessage.className = 'status-message error';
+                // Retry loop for rate limiting
+                while (!success && attempts < maxAttempts) {
+                    attempts++;
+                    const formData = new FormData();
+                    formData.append('extension_id', extId);
+                    formData.append('audio_file', audioFile);
+
+                    try {
+                        const response = await fetch('/api/greetings_uploader/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (response.status === 429) {
+                            const data = await response.json();
+                            const waitSeconds = data.retry_after || 60;
+                            progressStatusText.textContent = `Rate limited! Pausing for ${waitSeconds} seconds...`;
+                            progressBarFill.classList.add('bg-yellow-500'); // Visual indicator of pause
+                            
+                            // Sleep JS thread
+                            await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+                            
+                            progressBarFill.classList.remove('bg-yellow-500');
+                            continue; // Loop again to retry
+                        }
+
+                        const result = await response.json();
+                        if (response.ok && result.success) {
+                            successCount++;
+                            success = true;
+                            // Visually uncheck successful items
+                            cb.checked = false;
+                            cb.dispatchEvent(new Event('change'));
+                        } else {
+                            console.error(`Failed ${extName}:`, result.error);
+                            break; // Break the retry loop on normal errors (like bad file)
+                        }
+                    } catch (error) {
+                        console.error(`Network error on ${extName}:`, error);
+                        break;
+                    }
                 }
-            } catch (error) {
-                statusMessage.textContent = 'A network error occurred during upload.';
-                statusMessage.className = 'status-message error';
-            } finally {
-                uploadBtn.disabled = false;
+                
+                if (!success) failCount++;
             }
+
+            // Finish Progress Bar
+            progressBarFill.style.width = '100%';
+            progressText.textContent = `${total}/${total}`;
+            progressStatusText.textContent = 'Upload sequence complete!';
+            
+            // Show final status message
+            statusMessage.style.display = 'block';
+            if (failCount === 0) {
+                statusMessage.textContent = `Success: Uploaded to all ${successCount} extensions!`;
+                statusMessage.className = 'status-message success';
+                greetingsForm.reset();
+                setTimeout(() => { progressContainer.classList.add('hidden'); }, 3000);
+            } else {
+                statusMessage.textContent = `Finished with errors: ${successCount} succeeded, ${failCount} failed. Check console.`;
+                statusMessage.className = 'status-message error';
+            }
+            
+            uploadBtn.disabled = false;
         });
 
-        // Load extensions immediately
+        // Load data on start
         loadExtensions();
     });
 </script>
