@@ -2,6 +2,7 @@
     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Live Events Listener</h2>
     <p class="text-gray-600 mb-6">Real-time WebSocket subscription listener for tracking RingCentral events.</p>
 
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script src="{{ url_for('static', filename='js/live_events.js') }}" defer></script>
     
     <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 mb-6">
@@ -39,21 +40,44 @@
         </div>
     </div>
 
-    <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col flex-grow">
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-            <h3 class="text-lg font-bold text-gray-800 flex items-center">
-                Real-Time Event Log
-            </h3>
-            <div class="flex items-center gap-2">
-                <button id="saveLogBtn" title="Save log to file" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-4 rounded transition shadow-sm border border-gray-300 text-sm">
-                    Download Log
-                </button>
-                <button id="clearLogBtn" title="Clear log" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-4 rounded transition shadow-sm border border-gray-300 text-sm">
-                    Clear Log
-                </button>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
+        
+        <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col h-full min-h-[500px]">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    Raw Event Log
+                </h3>
+                <div class="flex items-center gap-2">
+                    <button id="saveLogBtn" title="Save log to file" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-3 rounded transition shadow-sm border border-gray-300 text-sm">
+                        Download
+                    </button>
+                    <button id="clearLogBtn" title="Clear log" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-3 rounded transition shadow-sm border border-gray-300 text-sm">
+                        Clear
+                    </button>
+                </div>
+            </div>
+            <pre id="eventLog" class="flex-grow p-4 bg-gray-900 text-green-400 rounded-lg overflow-y-auto text-xs font-mono shadow-inner whitespace-pre-wrap h-[500px]"></pre>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col h-full min-h-[500px]">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    Visual SIP Ladder
+                </h3>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <label for="callSelector" class="text-sm font-medium text-gray-600 whitespace-nowrap">Active Call:</label>
+                    <select id="callSelector" class="w-full sm:w-48 p-1.5 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 bg-gray-50 text-sm">
+                        <option value="">-- No active calls --</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex-grow p-4 bg-gray-50 border border-gray-200 rounded-lg overflow-auto flex items-center justify-center">
+                <div id="mermaidDiagram" class="w-full text-center text-gray-500 text-sm">
+                    Waiting for call events...
+                </div>
             </div>
         </div>
-        
-        <pre id="eventLog" class="flex-grow p-4 bg-gray-900 text-green-400 rounded-lg overflow-y-auto text-sm font-mono shadow-inner whitespace-pre-wrap h-[600px]"></pre>
+
     </div>
 </div>
