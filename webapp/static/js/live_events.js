@@ -13,43 +13,36 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // SIP Visualizer Elements
     const callSelector = document.getElementById('callSelector');
+    const ladderSearchInput = document.getElementById('ladderSearchInput');
     const mermaidContainer = document.getElementById('mermaidDiagram');
+    
+    // SIP Modal Elements
+    const sipModal = document.getElementById('sipModal');
+    const closeSipModalBtn = document.getElementById('closeSipModalBtn');
+    const sipModalTitle = document.getElementById('sipModalTitle');
+    const sipModalContent = document.getElementById('sipModalContent');
 
     let webSocket = null;
-    
-    // State Tracker for concurrent calls
-    // Format: { "sessionId1": { caller: "...", callee: "...", events: [{from, to, msg}] } }
     const activeCalls = {};
 
-    // Initialize Mermaid
     mermaid.initialize({ startOnLoad: false, theme: 'base', themeVariables: { primaryColor: '#f0f9ff', primaryTextColor: '#1f2937', primaryBorderColor: '#bae6fd', lineColor: '#94a3b8' }});
 
-    // Toggle Extension Input
     subTypeSelect.addEventListener('change', (e) => {
-        if (e.target.value.includes('extension')) {
-            extInputContainer.style.display = 'block';
-        } else {
-            extInputContainer.style.display = 'none';
-            extInput.value = ''; 
-        }
+        if (e.target.value.includes('extension')) extInputContainer.style.display = 'block';
+        else { extInputContainer.style.display = 'none'; extInput.value = ''; }
     });
 
-    // Logging helper
     function logEvent(message, type = 'info') {
         const time = new Date().toLocaleTimeString();
         let colorClass = 'text-green-400'; 
         if (type === 'error') colorClass = 'text-red-400';
         if (type === 'system') colorClass = 'text-blue-300';
-        
-        const logLine = `<span class="text-gray-500">[${time}]</span> <span class="${colorClass}">${message}</span>\n`;
-        eventLog.innerHTML += logLine;
+        eventLog.innerHTML += `<span class="text-gray-500">[${time}]</span> <span class="${colorClass}">${message}</span>\n`;
         eventLog.scrollTop = eventLog.scrollHeight; 
     }
 
-    // Save/Clear Log Buttons
     saveLogBtn.addEventListener('click', () => {
-        const textToSave = eventLog.innerText;
-        const blob = new Blob([textToSave], { type: 'text/plain' });
+        const blob = new Blob([eventLog.innerText], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -61,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     clearLogBtn.addEventListener('click', () => { eventLog.innerHTML = ''; });
+    closeSipModalBtn.addEventListener('click', () => { sipModal.classList.add('hidden'); });
 
     function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -71,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SIP PARSER & RENDERER LOGIC ---
 
-    // Translate RC Status into a SIP Equivalent
     function mapStatusToSip(status) {
         switch(status) {
             case 'Setup': return 'INVITE';
@@ -83,42 +76,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Dynamically updates the dropdown based on the search box
+    function updateCallSelector() {
+        const searchTerm = ladderSearchInput.value.toLowerCase();
+        const currentValue = callSelector.value;
+        
+        callSelector.innerHTML = '<option value="">-- Select a call --</option>';
+        let matchCount = 0;
+
+        Object.values(activeCalls).forEach(call => {
+            const searchString = `${call.id} ${call.caller} ${call.callee}`.toLowerCase();
+            if (searchString.includes(searchTerm)) {
+                const option = document.createElement('option');
+                option.value = call.id;
+                option.text = `${call.caller} -> ${call.callee}`;
+                
+                // Preserve selection if it still matches the search
+                if (call.id === currentValue) {
+                    option.selected = true;
+                }
+                callSelector.appendChild(option);
+                matchCount++;
+            }
+        });
+
+        if (Object.keys(activeCalls).length === 0) {
+            callSelector.options[0].text = '-- No active calls --';
+        } else if (matchCount === 0) {
+            callSelector.options[0].text = '-- No matches found --';
+        }
+
+        // Auto-select if there is exactly 1 match and nothing was selected
+        if (matchCount === 1 && !callSelector.value) {
+            callSelector.value = callSelector.options[1].value;
+            renderMermaidDiagram(callSelector.value);
+        }
+    }
+
     function processTelephonyEvent(payload) {
         const body = payload.body;
         if (!body || !body.telephonySessionId || !body.parties) return;
 
         const sessionId = body.telephonySessionId;
         
-        // Initialize call bucket if new
         if (!activeCalls[sessionId]) {
-            activeCalls[sessionId] = {
-                id: sessionId,
-                events: [],
-                caller: 'Unknown',
-                callee: 'Unknown',
-                lastUpdate: new Date()
-            };
-            
-            // Add to UI dropdown
-            const option = document.createElement('option');
-            option.value = sessionId;
-            option.text = `Session: ${sessionId.substring(0,8)}...`;
-            callSelector.appendChild(option);
-            
-            // Auto-select if it's the first call
-            if (callSelector.options.length === 2 && callSelector.value === "") {
-                callSelector.value = sessionId;
-            }
+            activeCalls[sessionId] = { id: sessionId, events: [], caller: 'Unknown', callee: 'Unknown' };
         }
 
         const callData = activeCalls[sessionId];
-        callData.lastUpdate = new Date();
 
-        // Parse parties to find direction and status
         body.parties.forEach(party => {
             let participantName = party.extensionId ? `Ext ${party.extensionId}` : (party.from?.phoneNumber || party.to?.phoneNumber || 'External');
             
-            // Basic heuristic to assign caller/callee names on first pass
             if (party.direction === 'Inbound' && callData.caller === 'Unknown') {
                 callData.caller = party.from?.phoneNumber || 'Caller';
                 callData.callee = party.to?.phoneNumber || party.extensionId || 'System';
@@ -127,47 +136,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 callData.callee = party.to?.phoneNumber || 'Callee';
             }
 
-            // Record the state change as an event
             if (party.status && party.status.code) {
                 const sipMsg = mapStatusToSip(party.status.code);
+                const sipDataExtracted = party.sipData || {}; 
                 
-                // Avoid logging duplicates (e.g. repeated Proceeding events)
                 const lastEvent = callData.events[callData.events.length - 1];
                 if (!lastEvent || lastEvent.msg !== sipMsg || lastEvent.participant !== participantName) {
                     callData.events.push({
                         participant: participantName,
                         direction: party.direction,
                         msg: sipMsg,
-                        rawStatus: party.status.code
+                        rawStatus: party.status.code,
+                        sipData: sipDataExtracted
                     });
                 }
             }
         });
 
-        // Update dropdown text with actual caller/callee now that we know it
-        const optionToUpdate = Array.from(callSelector.options).find(opt => opt.value === sessionId);
-        if (optionToUpdate) {
-            optionToUpdate.text = `${callData.caller} -> ${callData.callee}`;
+        // Update the dropdown menu respecting current search filters
+        updateCallSelector();
+
+        if (callSelector.value === sessionId) renderMermaidDiagram(sessionId);
+    }
+
+    function openSipModal(eventData, caller, callee) {
+        sipModalTitle.textContent = `[${eventData.msg}] Details`;
+        
+        let content = `<span class="text-pink-400 font-bold">${eventData.msg}</span> <span class="text-orange-400">sip:${callee}@ringcentral.com</span> SIP/2.0\n`;
+        content += `<span class="text-blue-300">Session-ID:</span> ${activeCalls[callSelector.value].id}\n`;
+        
+        if (eventData.sipData) {
+            if (eventData.sipData.callId) content += `<span class="text-blue-300">Call-ID:</span> ${eventData.sipData.callId}\n`;
+            if (eventData.sipData.fromTag) content += `<span class="text-blue-300">From:</span> &lt;sip:${caller}&gt;;tag=${eventData.sipData.fromTag}\n`;
+            if (eventData.sipData.toTag) content += `<span class="text-blue-300">To:</span> &lt;sip:${callee}&gt;;tag=${eventData.sipData.toTag}\n`;
+            
+            content += `\n<span class="text-gray-400">--- RC Raw SIP Object ---</span>\n`;
+            content += `<span class="text-green-200">${JSON.stringify(eventData.sipData, null, 2)}</span>`;
+        } else {
+            content += `\n<span class="text-gray-500">No additional SIP headers provided by RingCentral for this leg.</span>`;
         }
 
-        // If this is the currently viewed call, re-render the diagram
-        if (callSelector.value === sessionId) {
-            renderMermaidDiagram(sessionId);
-        }
+        sipModalContent.innerHTML = content;
+        sipModal.classList.remove('hidden');
     }
 
     async function renderMermaidDiagram(sessionId) {
         const callData = activeCalls[sessionId];
         if (!callData || callData.events.length === 0) {
-            mermaidContainer.innerHTML = '<div class="text-gray-500">No event data parsed yet.</div>';
-            return;
+             mermaidContainer.innerHTML = '<div class="text-gray-500">Select a call to view flow.</div>';
+             return;
         }
 
-        // Build Mermaid syntax
         let mermaidCode = `sequenceDiagram\n    autonumber\n    participant Caller as ${callData.caller}\n    participant RC as RingCentral\n    participant Callee as ${callData.callee}\n\n`;
 
         callData.events.forEach(ev => {
-            // Logic to draw arrows based on direction and status
             if (ev.direction === 'Inbound') {
                 if (ev.rawStatus === 'Setup') mermaidCode += `    Caller->>RC: ${ev.msg}\n`;
                 if (ev.rawStatus === 'Proceeding') mermaidCode += `    RC-->>Caller: ${ev.msg}\n`;
@@ -182,34 +204,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         try {
-            // Render the diagram
             const { svg } = await mermaid.render(`mermaid-${Date.now()}`, mermaidCode);
             mermaidContainer.innerHTML = svg;
+
+            setTimeout(() => {
+                const messageLabels = mermaidContainer.querySelectorAll('.messageText');
+                messageLabels.forEach((label, index) => {
+                    if (callData.events[index]) {
+                        label.style.cursor = 'pointer';
+                        label.style.fill = '#2563eb'; 
+                        label.style.textDecoration = 'underline';
+                        label.innerHTML += `<title>Click to view SIP details</title>`;
+                        
+                        label.addEventListener('click', () => {
+                            openSipModal(callData.events[index], callData.caller, callData.callee);
+                        });
+                    }
+                });
+            }, 50); 
+
         } catch (error) {
             console.error("Mermaid parsing error:", error);
             mermaidContainer.innerHTML = '<div class="text-red-500">Error rendering diagram. See console.</div>';
         }
     }
 
-    // Allow user to switch between concurrent calls
     callSelector.addEventListener('change', (e) => {
-        if (e.target.value) {
-            renderMermaidDiagram(e.target.value);
-        } else {
+        if (e.target.value) renderMermaidDiagram(e.target.value);
+        else mermaidContainer.innerHTML = '<div class="text-gray-500">Select a call to view flow.</div>';
+    });
+
+    // Re-filter the dropdown when user searches for a specific call/number
+    ladderSearchInput.addEventListener('input', () => {
+        updateCallSelector();
+        
+        // If the currently selected call was filtered out, clear the diagram
+        if (!callSelector.value) {
             mermaidContainer.innerHTML = '<div class="text-gray-500">Select a call to view flow.</div>';
         }
     });
 
     // --- WEBSOCKET CONNECTION ---
-
     createSubBtn.addEventListener('click', async () => {
         const subType = subTypeSelect.value;
         const extId = extInput.value.trim();
 
-        if (subType.includes('extension') && !extId) {
-            logEvent('Error: Extension ID is required.', 'error');
-            return;
-        }
+        if (subType.includes('extension') && !extId) return logEvent('Error: Extension ID is required.', 'error');
 
         logEvent('Fetching WSS credentials...', 'system');
         
@@ -251,7 +291,6 @@ document.addEventListener('DOMContentLoaded', () => {
             webSocket.onmessage = (event) => {
                 try {
                     const payload = JSON.parse(event.data);
-                    
                     if (Array.isArray(payload) && payload[0] && payload[0].type === 'Heartbeat') return;
                     
                     if (Array.isArray(payload) && payload[0] && payload[0].type === 'ClientResponse') {
@@ -260,10 +299,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     
-                    // Log raw JSON
                     logEvent(JSON.stringify(payload, null, 2), 'info');
 
-                    // If it's a telephony event, parse it for the SIP Ladder
                     if (Array.isArray(payload) && payload[1] && payload[1].event && payload[1].event.includes('telephony/sessions')) {
                         processTelephonyEvent(payload[1]);
                     }
@@ -273,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
-            webSocket.onerror = (error) => { logEvent('WebSocket error.', 'error'); };
+            webSocket.onerror = () => { logEvent('WebSocket error.', 'error'); };
             webSocket.onclose = () => {
                 connectionStatus.innerHTML = '<span class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-full text-xs font-bold uppercase tracking-wider">Status: Idle</span>';
                 logEvent('WebSocket closed.', 'system');
