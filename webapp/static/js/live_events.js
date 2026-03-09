@@ -101,15 +101,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 disconnectBtn.disabled = false;
 
                 // 3. Determine the correct Event Filter based on UI selection
+                // We append the required query parameters to explicitly request the SIP payload from RingCentral
                 let eventFilter = '';
                 if (subType === 'accountTelephony') {
-                    eventFilter = '/restapi/v1.0/account/~/telephony/sessions';
+                    eventFilter = '/restapi/v1.0/account/~/telephony/sessions?sipData=true';
                 } else if (subType === 'extensionTelephony') {
-                    eventFilter = `/restapi/v1.0/account/~/extension/${extId}/telephony/sessions`;
+                    eventFilter = `/restapi/v1.0/account/~/extension/${extId}/telephony/sessions?sipData=true`;
                 } else if (subType === 'accountPresence') {
-                    eventFilter = '/restapi/v1.0/account/~/presence';
+                    eventFilter = '/restapi/v1.0/account/~/presence?detailedTelephonyState=true&sipData=true';
                 } else if (subType === 'extensionPresence') {
-                    eventFilter = `/restapi/v1.0/account/~/extension/${extId}/presence`;
+                    eventFilter = `/restapi/v1.0/account/~/extension/${extId}/presence?detailedTelephonyState=true&sipData=true`;
                 }
 
                 logEvent(`Creating subscription for: ${eventFilter}`, 'system');
