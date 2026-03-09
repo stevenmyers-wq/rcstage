@@ -88,7 +88,8 @@
                             ('live_events', 'Live Events', 'Real-time subscription listener'),
                             ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
                             ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
-                            ('greetings_uploader', 'Greetings Uploader', 'Upload custom greetings to Message-Only and Announcement extensions')
+                            ('greetings_uploader', 'Greetings Uploader', 'Upload custom greetings to Message-Only and Announcement extensions'),
+                            ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules')
                         ] %}
                         
                         {% for tab_id, tab_name, tab_desc in tabs %}
@@ -138,6 +139,8 @@
                             {% include 'includes/notifications_tab.html' %}
                         {% elif current_tab == 'greetings_uploader' %}
                             {% include 'includes/greetings_uploader_tab.html' %}
+                        {% elif current_tab == 'ringex_uat' %}
+                            {% include 'includes/ringex_uat_tab.html' %}
                         {% else %}
                             <div class="card text-center py-12">
                                 <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
