@@ -14,7 +14,6 @@ def get_testable_extensions():
     return sorted(entities, key=lambda x: x['name'])
 
 def build_extension_map():
-    """Builds a directory containing name, extension, and TYPE for recursive tracing."""
     response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 2000}, raise_error=False)
     ext_map = {}
     if response and 'records' in response:
@@ -27,8 +26,14 @@ def build_extension_map():
     return ext_map
 
 def get_direct_numbers(ext_id):
+    """STRICTLY extracts only the DIDs specifically assigned to this exact extension ID."""
     response = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/phone-number', method='GET', raise_error=False)
-    numbers = [r.get('phoneNumber') for r in response.get('records', []) if r.get('usageType') == 'DirectNumber']
+    numbers = []
+    if response and 'records' in response:
+        for record in response['records']:
+            # Prevent pulling unrelated site/company numbers by validating the extension ID binding
+            if record.get('usageType') == 'DirectNumber' and str(record.get('extension', {}).get('id', '')) == str(ext_id):
+                numbers.append(record.get('phoneNumber'))
     return ", ".join(numbers) if numbers else None
 
 def get_business_hours_string(ext_id):
@@ -45,58 +50,62 @@ def get_business_hours_string(ext_id):
             if times:
                 days.append(f"{day[:3]} {times[0].get('from', '')}-{times[0].get('to', '')}")
         return ", ".join(days) if days else "Custom Schedule"
-    return "Custom/Specific Schedule"
+    return "24/7 (Always Open)"
 
-def resolve_and_queue(action_obj, ext_map, current_name, reason_context, queue_list):
-    """Resolves a target's name AND adds it to the crawler queue if it's a testable flow."""
+def parse_custom_conditions(rule):
+    """Reads the exact triggers for a custom rule so the tester knows HOW to trigger it."""
+    conditions = []
+    if 'callers' in rule and rule['callers']:
+        c_ids = [c.get('callerId', '') for c in rule['callers']]
+        conditions.append(f"Caller ID is {', '.join(c_ids)}")
+    if 'calledNumbers' in rule and rule['calledNumbers']:
+        nums = [n.get('phoneNumber', '') for n in rule['calledNumbers']]
+        conditions.append(f"Dialed Number is {', '.join(nums)}")
+    if 'schedule' in rule:
+        conditions.append("Specific Time/Date")
+    return " AND ".join(conditions) if conditions else "Unknown Condition"
+
+def resolve_target(action_obj, ext_map):
+    """Forensically resolves actions to human-readable targets and returns the ID for recursive tracing."""
     if not action_obj: 
-        return "Unknown Configuration"
+        return "Disconnect / Default Configuration", None
     
-    target_id = None
-    target_name = "Unknown Target"
-    prefix = ""
-
-    if 'extension' in action_obj:
-        target_id = str(action_obj['extension'].get('id', ''))
-    elif 'recipient' in action_obj:
-        target_id = str(action_obj['recipient'].get('id', ''))
-        prefix = "Voicemail of "
-    elif 'phoneNumber' in action_obj:
-        return f"External Number ({action_obj['phoneNumber']})"
-
+    target_id = str(action_obj.get('extension', {}).get('id', ''))
     if target_id and target_id in ext_map:
-        target_name = ext_map[target_id]['name']
-        target_type = ext_map[target_id]['type']
+        return f"{ext_map[target_id]['name']} (Ext {ext_map[target_id]['ext']})", target_id
         
-        # If the target is a Queue or IVR, add it to the crawler to trace the journey
-        if target_type in ['Department', 'IvrMenu', 'SharedLinesGroup']:
-            queue_list.append({
-                "id": target_id,
-                "name": target_name,
-                "ext": ext_map[target_id]['ext'],
-                "type": target_type,
-                "context": f"Overflow/Path from {current_name} ({reason_context})"
-            })
-            
-        return f"{prefix}{target_name} (Ext {ext_map[target_id]['ext']})"
+    target_id = str(action_obj.get('recipient', {}).get('id', ''))
+    if target_id and target_id in ext_map:
+        return f"Voicemail of {ext_map[target_id]['name']} (Ext {ext_map[target_id]['ext']})", target_id
+        
+    num = action_obj.get('phoneNumber')
+    if num: return f"External Number: {num}", None
     
-    return "Configured Destination"
+    return "Default Configuration", None
+
+def get_zero_out_target(ext_id, ext_map):
+    """Attempts to find the Voicemail/Operator recipient which acts as the '0' option."""
+    rules = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', method='GET', raise_error=False)
+    if rules and 'records' in rules:
+        for r in rules['records']:
+            if r.get('type') == 'BusinessHours' and r.get('callHandlingAction') == 'TakeMessagesReturnToGreeting':
+                vm_recipient_id = str(r.get('voicemail', {}).get('recipient', {}).get('id', ''))
+                if vm_recipient_id in ext_map:
+                    return f"{ext_map[vm_recipient_id]['name']} (Ext {ext_map[vm_recipient_id]['ext']})"
+    return "None Configured"
 
 def generate_uat_cases(extension_id, extension_name, extension_number, extension_type):
     uat_cases = []
     case_counter = 1
     ext_map = build_extension_map()
     
-    # The Master Crawler Queue
     nodes_to_process = [{
         "id": str(extension_id),
         "name": extension_name,
         "ext": extension_number,
         "type": extension_type,
-        "context": "Primary Entry Point"
+        "context": "Primary Flow"
     }]
-    
-    # Keep track of where we've been to prevent infinite routing loops
     processed_ids = set()
 
     def add_case(category, scenario, step, expected):
@@ -110,9 +119,6 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
         })
         case_counter += 1
 
-    # ==========================================
-    # RECURSIVE CRAWLER LOOP START
-    # ==========================================
     while nodes_to_process:
         current = nodes_to_process.pop(0)
         c_id = current['id']
@@ -121,49 +127,59 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
         c_type = current['type']
         c_context = current['context']
         
-        if c_id in processed_ids:
-            continue
+        if c_id in processed_ids: continue
         processed_ids.add(c_id)
 
-        # Formatting prefixes to show the tester where they are in the tree
         cat_prefix = f"[{c_name}] "
-        step_prefix = f"[Path: {c_context}] " if c_context != "Primary Entry Point" else ""
+        step_prefix = f"[Path: {c_context}] " if c_context != "Primary Flow" else ""
         
         did_numbers = get_direct_numbers(c_id)
         bh_string = get_business_hours_string(c_id)
+        answering_rules = rc_api_call(f'/restapi/v1.0/account/~/extension/{c_id}/answering-rule', method='GET', raise_error=False) or {'records': []}
 
-        # --- 1. CONNECTIVITY (Only for Primary or DIDs) ---
-        if c_context == "Primary Entry Point":
-            add_case(f"{cat_prefix}Integration", "Internal Routing", 
-                     f"Dial extension {c_ext} from an internal device.", 
-                     f"Call connects successfully to {c_name} without SIP errors.")
+        # --- 1. CONNECTIVITY ---
+        if c_context == "Primary Flow":
             if did_numbers:
                 add_case(f"{cat_prefix}Integration", "External Routing (DID)", 
-                         f"Dial the DID assigned to {c_name} ({did_numbers}) from an external mobile.", 
-                         "Call connects via the PSTN with high-quality, two-way audio.")
+                         f"Dial the strictly assigned DID: {did_numbers}.", 
+                         f"Call successfully connects to {c_name} via PSTN.")
+            else:
+                add_case(f"{cat_prefix}Integration", "Internal/Auto-Receptionist Routing", 
+                         f"Dial {c_ext} from an internal device or via the Main Number.", 
+                         f"Call successfully connects to {c_name}.")
 
-        # --- 2. ANSWERING RULES & SCHEDULES ---
-        add_case(f"{cat_prefix}Routing", "Business Hours Validation", 
-                 f"{step_prefix}Initiate a test call into {c_name} during Open Hours: [{bh_string}].", 
-                 "Call follows the primary active 'Open' routing path.")
-                 
-        if bh_string != "24/7 (Always Open)":
-            add_case(f"{cat_prefix}Routing", "Out-of-Hours Validation", 
-                     f"{step_prefix}Initiate a test call into {c_name} OUTSIDE of Open Hours: [{bh_string}].", 
-                     "Call intercepts and executes After Hours routing.")
+        # --- 2. ANSWERING RULES (Deep Parse) ---
+        for rule in answering_rules.get('records', []):
+            if not rule.get('enabled', False): continue
+            
+            r_type = rule.get('type')
+            if r_type == 'BusinessHours':
+                add_case(f"{cat_prefix}Routing", "Business Hours (In-Hours)", 
+                         f"{step_prefix}Initiate call during Open Hours: [{bh_string}].", 
+                         f"Call follows standard Active routing for {c_name}.")
+                         
+            elif r_type == 'AfterHours':
+                ah_action = rule.get('callHandlingAction', 'Unknown')
+                ah_target, ah_id = resolve_target(rule.get('transfer') or rule.get('voicemail') or rule.get('unconditionalForwarding'), ext_map)
+                
+                add_case(f"{cat_prefix}Routing", "After Hours (Out-of-Hours)", 
+                         f"{step_prefix}Initiate call OUTSIDE of Open Hours: [{bh_string}].", 
+                         f"Call executes After Hours Action [{ah_action}] -> Routes exactly to {ah_target}.")
+                
+                if ah_id and ah_id not in processed_ids and ext_map.get(ah_id, {}).get('type') in ['Department', 'IvrMenu']:
+                    nodes_to_process.append({"id": ah_id, "name": ext_map[ah_id]['name'], "ext": ext_map[ah_id]['ext'], "type": ext_map[ah_id]['type'], "context": f"After Hours from {c_name}"})
+            
+            elif r_type == 'Custom':
+                c_name_rule = rule.get('name', 'Custom Rule')
+                c_cond = parse_custom_conditions(rule)
+                c_action = rule.get('callHandlingAction', 'Unknown')
+                c_target, c_id = resolve_target(rule.get('transfer') or rule.get('voicemail') or rule.get('unconditionalForwarding'), ext_map)
+                
+                add_case(f"{cat_prefix}Routing", f"Custom Rule: {c_name_rule}", 
+                         f"{step_prefix}Initiate a call where: {c_cond}.", 
+                         f"Rule '{c_name_rule}' intercepts call. Executes [{c_action}] -> Routes exactly to {c_target}.")
 
-        answering_rules = rc_api_call(f'/restapi/v1.0/account/~/extension/{c_id}/answering-rule', method='GET', raise_error=False)
-        if answering_rules and 'records' in answering_rules:
-            for rule in answering_rules['records']:
-                if not rule.get('enabled', False): continue
-                if rule.get('type') == 'Custom':
-                    rule_name = rule.get('name', 'Custom Rule')
-                    target = resolve_and_queue(rule.get('transfer') or rule.get('voicemail'), ext_map, c_name, f"Custom Rule: {rule_name}", nodes_to_process)
-                    add_case(f"{cat_prefix}Routing", f"Custom Rule: {rule_name}", 
-                             f"{step_prefix}Trigger the parameters for custom rule '{rule_name}'.", 
-                             f"Call executes Custom routing -> {target}.")
-
-        # --- 3. CALL QUEUE (DEPARTMENT) ---
+        # --- 3. QUEUE SPECIFIC TESTS ---
         if c_type == 'Department':
             q_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{c_id}/call-queue-info', method='GET', raise_error=False) or {}
             
@@ -172,83 +188,78 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
             hold_time = q_info.get('holdTime', 0)
             max_callers = q_info.get('maxCallers', 0)
             
-            hold_dest = resolve_and_queue(q_info.get('transfer') or q_info.get('voicemail'), ext_map, c_name, "Max Wait Time", nodes_to_process)
-            max_dest = resolve_and_queue(q_info.get('transfer') or q_info.get('voicemail'), ext_map, c_name, "Max Callers", nodes_to_process)
+            hold_dest_name, hold_id = resolve_target(q_info.get('transfer') or q_info.get('voicemail') or q_info.get('unconditionalForwarding'), ext_map)
+            max_dest_name, max_id = resolve_target(q_info.get('transfer') or q_info.get('voicemail') or q_info.get('unconditionalForwarding'), ext_map)
+            zero_out_target = get_zero_out_target(c_id, ext_map)
 
-            # Agent Exhaustive
-            add_case(f"{cat_prefix}Agent Tests", "Queue Opt-In", 
-                     f"{step_prefix}Agent logs into RC App and toggles 'Accept Queue Calls' ON for {c_name}. Place test call.", 
-                     f"Agent's device rings. Queue Name '{c_name}' prepends Caller ID.")
-            add_case(f"{cat_prefix}Agent Tests", "Queue Opt-Out / DND", 
-                     f"{step_prefix}Agent toggles 'Accept Queue Calls' OFF. Place test call.", 
-                     "Agent's device does NOT ring. Call smoothly hunts to next available agent.")
-            add_case(f"{cat_prefix}Agent Tests", "Active Call Decline", 
-                     f"{step_prefix}While queue call is ringing agent, agent clicks 'Decline'.", 
-                     "Ringing stops for that agent immediately. Call hunts to next available agent without dropping caller.")
+            # Routing Logic
+            add_case(f"{cat_prefix}Distribution", f"Distribution Method: {transfer_mode}", 
+                     f"{step_prefix}Ensure multiple agents available. Place call into {c_name}.", 
+                     f"Call distributes to agents based purely on {transfer_mode} logic.")
 
-            # Distribution Exhaustive
-            if transfer_mode == 'Simultaneous':
-                add_case(f"{cat_prefix}Distribution", "Simultaneous Ringing", 
-                         f"{step_prefix}Ensure multiple agents available. Place call into {c_name}.", 
-                         "Call rings ALL available queue members at the exact same time.")
-            else:
-                add_case(f"{cat_prefix}Distribution", f"Sequential ({transfer_mode})", 
-                         f"{step_prefix}Ensure multiple agents available. Place call into {c_name}.", 
-                         f"Call cascades to agents based on {transfer_mode} logic.")
+            if transfer_mode != 'Simultaneous':
                 add_case(f"{cat_prefix}Distribution", f"Agent Ring Timeout ({agent_timeout}s)", 
-                         f"{step_prefix}Targeted agent lets call ring without answering for {agent_timeout}s.", 
-                         f"{agent_timeout}s timer expires. Call drops from Agent 1 and rings Agent 2.")
+                         f"{step_prefix}Targeted agent does not answer for exactly {agent_timeout} seconds.", 
+                         f"Timer expires. Call immediately drops from Agent 1 and rings next available.")
 
-            # Boundaries Exhaustive
+            # Hard Boundaries & Overflows
             add_case(f"{cat_prefix}Overflows", "Zero Agents Logged In", 
-                     f"{step_prefix}Ensure ALL assigned agents are Logged Out or on DND. Initiate call.", 
-                     "Call bypasses queue hold music and triggers 'No Members Available' routing.")
-            
+                     f"{step_prefix}Log ALL assigned agents completely out or set to DND. Initiate call.", 
+                     f"Call bypasses queue ringing and immediately executes Max Wait Time Overflow -> {hold_dest_name}.")
+
             if hold_time > 0:
-                add_case(f"{cat_prefix}Overflows", f"Max Wait Time ({hold_time}s)", 
-                         f"{step_prefix}Remain on hold in {c_name} until {hold_time}s limit reached.", 
-                         f"{hold_time}s timer expires. Call removed from queue and executes -> {hold_dest}.")
+                add_case(f"{cat_prefix}Overflows", f"Max Wait Time Reached ({hold_time}s)", 
+                         f"{step_prefix}Remain on hold in {c_name} until {hold_time} seconds elapse.", 
+                         f"Call executes Overflow -> {hold_dest_name}.")
+                if hold_id and hold_id not in processed_ids and ext_map.get(hold_id, {}).get('type') in ['Department', 'IvrMenu']:
+                    nodes_to_process.append({"id": hold_id, "name": ext_map[hold_id]['name'], "ext": ext_map[hold_id]['ext'], "type": ext_map[hold_id]['type'], "context": f"Wait Time Overflow from {c_name}"})
+            else:
+                add_case(f"{cat_prefix}Overflows", "Unlimited Wait Time Configured", 
+                         f"{step_prefix}Remain on hold in {c_name} for 5+ minutes.", 
+                         "Call does NOT drop or overflow. Remains in queue indefinitely as configured.")
             
             if max_callers > 0:
                 add_case(f"{cat_prefix}Overflows", f"Max Callers Limit ({max_callers})", 
-                         f"{step_prefix}Simultaneously flood {c_name} with {max_callers + 1} concurrent calls.", 
-                         f"Final call breaches {max_callers} capacity limit. Instantly executes -> {max_dest}.")
+                         f"{step_prefix}Simultaneously hold {max_callers} active calls in {c_name}. Dial the {max_callers + 1} call.", 
+                         f"The {max_callers + 1} call instantly executes Overflow -> {max_dest_name}.")
+            else:
+                add_case(f"{cat_prefix}Overflows", "Unlimited Queue Capacity", 
+                         f"{step_prefix}Place multiple concurrent calls into {c_name}.", 
+                         "No calls are rejected or overflowed due to capacity limits.")
 
-            add_case(f"{cat_prefix}Overflows", "Zero-Out Exception", 
-                     f"{step_prefix}While listening to {c_name} hold music, press '0'.", 
-                     "If zero-out operator configured, call escapes queue. If not, DTMF gracefully ignored.")
+            if zero_out_target != "None Configured":
+                add_case(f"{cat_prefix}Overflows", "Zero-Out (DTMF Escape)", 
+                         f"{step_prefix}While listening to {c_name} hold music, press '0'.", 
+                         f"Call immediately escapes queue and routes to -> {zero_out_target}.")
+            else:
+                add_case(f"{cat_prefix}Overflows", "Zero-Out Disabled", 
+                         f"{step_prefix}While listening to {c_name} hold music, press '0'.", 
+                         "Input is ignored. Call remains in queue because no operator/recipient is configured.")
 
         # --- 4. IVR MENU ---
         elif c_type == 'IvrMenu':
             ivr_info = rc_api_call(f'/restapi/v1.0/ivr-menus/{c_id}', method='GET', raise_error=False) or {}
             
-            add_case(f"{cat_prefix}IVR Prompts", "Barge-in (Interruptibility)", 
-                     f"{step_prefix}While {c_name} greeting is playing, press a valid menu key.", 
-                     "IVR registers DTMF tone immediately and routes call without forcing caller to listen to full greeting.")
-            
             if 'actions' in ivr_info:
                 for act in ivr_info['actions']:
                     key = act.get('input', '')
                     if not key: continue 
-                    target = resolve_and_queue(act, ext_map, c_name, f"Key Press '{key}'", nodes_to_process)
+                    
+                    target_name, target_id = resolve_target(act, ext_map)
                     
                     add_case(f"{cat_prefix}IVR Routing", f"Key Mapping: Press '{key}'", 
-                             f"{step_prefix}Listen to prompt and press '{key}' on dialpad.", 
-                             f"System processes input and routes call -> {target}.")
+                             f"{step_prefix}Listen to prompt and press '{key}'.", 
+                             f"System processes input and immediately routes -> {target_name}.")
+                    
+                    if target_id and target_id not in processed_ids and ext_map.get(target_id, {}).get('type') in ['Department', 'IvrMenu']:
+                        nodes_to_process.append({"id": target_id, "name": ext_map[target_id]['name'], "ext": ext_map[target_id]['ext'], "type": ext_map[target_id]['type'], "context": f"Key '{key}' from {c_name}"})
             
-            add_case(f"{cat_prefix}IVR Boundaries", "Dial-By-Extension Verification", 
-                     f"{step_prefix}While in {c_name}, enter a known internal user's 3/4-digit extension.", 
-                     "If general extension dialing enabled, IVR intercepts string and transfers call to user.")
             add_case(f"{cat_prefix}IVR Boundaries", "Invalid Key Press", 
-                     f"{step_prefix}Press an unassigned key (e.g., '9' or '#').", 
-                     "System plays 'Invalid entry' prompt and replays main menu.")
+                     f"{step_prefix}Press an unassigned key in {c_name} (e.g., '9' or '#').", 
+                     "System plays an 'Invalid entry' error prompt and replays the menu.")
+            
             add_case(f"{cat_prefix}IVR Boundaries", "Timeout (No Input)", 
-                     f"{step_prefix}Listen to entire IVR prompt and provide no DTMF input.", 
+                     f"{step_prefix}Listen to entire prompt in {c_name} and provide no input.", 
                      "System times out, replays menu, and eventually executes default timeout routing.")
-
-    # Wrap up with global administration
-    add_case("Global Administration", "Call Logs Generation", 
-             "Log into the Admin Portal and navigate to Analytics > Call Logs.", 
-             "All test calls are accurately reflected, showing correct originating Caller ID, target extensions, duration, and final result across the entire traced journey.")
 
     return uat_cases
