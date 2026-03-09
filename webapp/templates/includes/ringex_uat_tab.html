@@ -1,6 +1,6 @@
 <div id="ringex-uat-tab" class="flex flex-col h-full">
     <h2 class="text-2xl font-semibold mb-4 text-gray-700">RingEX UAT Generator</h2>
-    <p class="text-gray-600 mb-6">Automatically crawl routing rules to generate enterprise-grade User Acceptance Testing documents.</p>
+    <p class="text-gray-600 mb-6">Automatically generate User Acceptance Testing documents.</p>
 
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
@@ -41,13 +41,13 @@
                 <div class="overflow-x-auto flex-grow">
                     <table class="w-full text-left border-collapse min-w-[1000px]" id="uatExportTable">
                         <thead>
-                            <tr class="bg-gray-100 text-gray-700 text-sm border-b border-gray-200">
-                                <th class="p-3 font-bold w-24 border-r border-gray-200">Test ID</th>
-                                <th class="p-3 font-bold w-48 border-r border-gray-200">Category</th>
-                                <th class="p-3 font-bold w-48 border-r border-gray-200">Test Scenario</th>
-                                <th class="p-3 font-bold w-1/4 border-r border-gray-200">Action Required</th>
-                                <th class="p-3 font-bold w-1/3 border-r border-gray-200">Expected Result</th>
-                                <th class="p-3 font-bold w-24 text-center border-r border-gray-200">Pass / Fail</th>
+                            <tr class="bg-gray-800 text-white text-sm border-b border-gray-200">
+                                <th class="p-3 font-bold w-24 border-r border-gray-600">Test ID</th>
+                                <th class="p-3 font-bold w-48 border-r border-gray-600">Category</th>
+                                <th class="p-3 font-bold w-48 border-r border-gray-600">Test Scenario</th>
+                                <th class="p-3 font-bold w-1/4 border-r border-gray-600">Action Required</th>
+                                <th class="p-3 font-bold w-1/3 border-r border-gray-600">Expected Result</th>
+                                <th class="p-3 font-bold w-24 text-center border-r border-gray-600">Pass / Fail</th>
                                 <th class="p-3 font-bold w-48">Comments / Date</th>
                             </tr>
                         </thead>
@@ -118,8 +118,7 @@
             };
 
             generateBtn.disabled = true;
-            showStatus('Crawling routing rules & queue configurations...', 'text-blue-600');
-            tableBody.innerHTML = '<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium animate-pulse">Deep crawling Call Flow... please wait.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium animate-pulse">Generating Exhaustive UAT Script...</td></tr>';
             exportBtn.classList.add('hidden');
 
             try {
@@ -132,8 +131,7 @@
 
                 if (data.success) {
                     renderTable(data.cases, payload.extension_name);
-                    showStatus('Exhaustive script generated successfully!', 'text-green-600');
-                    setTimeout(() => statusMsg.classList.add('hidden'), 3000);
+                    statusMsg.classList.add('hidden');
                 } else {
                     showStatus(`Error: ${data.error}`, 'text-red-600');
                     tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500">Failed to generate: ${data.error}</td></tr>`;
@@ -153,14 +151,12 @@
                 const row = document.createElement('tr');
                 row.className = "hover:bg-blue-50 transition-colors";
                 row.innerHTML = `
-                    <td class="p-3 font-mono text-xs text-gray-500 border-r border-gray-100 whitespace-nowrap">${c.test_id}</td>
-                    <td class="p-3 font-semibold text-gray-800 border-r border-gray-100 bg-gray-50/50">${c.category}</td>
-                    <td class="p-3 font-medium text-gray-800 border-r border-gray-100">${c.scenario}</td>
-                    <td class="p-3 text-gray-600 border-r border-gray-100">${c.action}</td>
-                    <td class="p-3 text-blue-800 border-r border-gray-100">${c.expected}</td>
-                    <td class="p-3 text-center border-r border-gray-100">
-                        <div class="w-6 h-6 border-2 border-gray-300 rounded mx-auto bg-white shadow-inner"></div>
-                    </td>
+                    <td class="p-3 font-mono text-xs text-gray-500 border-r border-gray-200 whitespace-nowrap">${c.test_id}</td>
+                    <td class="p-3 font-semibold text-gray-800 border-r border-gray-200 bg-gray-50/50">${c.category}</td>
+                    <td class="p-3 font-medium text-gray-800 border-r border-gray-200">${c.scenario}</td>
+                    <td class="p-3 text-gray-700 border-r border-gray-200 leading-relaxed">${c.action}</td>
+                    <td class="p-3 text-blue-900 border-r border-gray-200 leading-relaxed">${c.expected}</td>
+                    <td class="p-3 text-center border-r border-gray-200"></td>
                     <td class="p-3 text-gray-400 text-xs italic"></td>
                 `;
                 tableBody.appendChild(row);
@@ -169,26 +165,15 @@
             exportBtn.classList.remove('hidden');
         }
 
-        // Professional Excel Export using SheetJS
         exportBtn.addEventListener('click', () => {
             const table = document.getElementById('uatExportTable');
-            
-            // Convert HTML table to an Excel workbook
             const wb = XLSX.utils.table_to_book(table, {sheet: "UAT Cases"});
             const ws = wb.Sheets["UAT Cases"];
             
-            // Customize the column widths for a professional look in Excel
             ws['!cols'] = [
-                {wch: 15}, // Test ID
-                {wch: 25}, // Category
-                {wch: 30}, // Scenario
-                {wch: 50}, // Action
-                {wch: 60}, // Expected Result
-                {wch: 12}, // Pass/Fail
-                {wch: 30}  // Comments
+                {wch: 15}, {wch: 25}, {wch: 30}, {wch: 45}, {wch: 55}, {wch: 12}, {wch: 30} 
             ];
 
-            // Trigger the download
             XLSX.writeFile(wb, `RingEX_UAT_${currentTargetName}.xlsx`);
         });
 
