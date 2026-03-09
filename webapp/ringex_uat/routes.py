@@ -1,4 +1,3 @@
-# webapp/ringex_uat/routes.py
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
 from . import utils
@@ -24,9 +23,10 @@ def api_generate_uat():
     ext_id = data['extension_id']
     ext_name = data.get('extension_name', 'Unknown')
     ext_number = data.get('extension_number', 'Unknown')
+    ext_type = data.get('extension_type', 'Unknown')
     
     try:
-        cases = utils.generate_uat_cases(ext_id, ext_name, ext_number)
+        cases = utils.generate_uat_cases(ext_id, ext_name, ext_number, ext_type)
         return jsonify({"success": True, "cases": cases})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
