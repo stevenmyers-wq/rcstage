@@ -1,91 +1,59 @@
-<div id="live-events-tab">
+<div id="live-events-tab" class="flex flex-col h-full">
     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Live Events Listener</h2>
     <p class="text-gray-600 mb-6">Real-time WebSocket subscription listener for tracking RingCentral events.</p>
 
     <script src="{{ url_for('static', filename='js/live_events.js') }}" defer></script>
     
-    <div class="flex flex-col md:flex-row gap-6 items-stretch">
-        
-        <div class="w-full md:w-5/12 flex flex-col gap-6">
+    <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 mb-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Connection Controls</h3>
+        <div class="flex flex-col md:flex-row md:items-end gap-4">
+            <div class="flex-grow max-w-md">
+                <label for="subscriptionType" class="block text-sm font-medium text-gray-700 mb-1">Subscription Type:</label>
+                <select class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50" id="subscriptionType">
+                    <option value="accountTelephony">Account Telephony Sessions</option>
+                    <option value="extensionTelephony">Specific Extension Telephony Sessions</option>
+                    <option value="accountPresence">Account Presence</option>
+                    <option value="extensionPresence">Specific Extension Presence</option>
+                </select>
+            </div>
             
-            <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col">
-                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                    Create New Subscription
-                </h3>
-                
-                <div class="mb-4">
-                    <label for="subscriptionType" class="block text-sm font-medium text-gray-700 mb-1">Subscription Type:</label>
-                    <select class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50" id="subscriptionType">
-                        <option value="accountTelephony">Account Telephony Sessions</option>
-                        <option value="extensionTelephony">Specific Extension Telephony Sessions</option>
-                        <option value="accountPresence">Account Presence</option>
-                        <option value="extensionPresence">Specific Extension Presence</option>
-                    </select>
-                </div>
-                
-                <div class="mb-4" id="extensionIdInputContainer" style="display: none;">
-                    <label for="extensionId" class="block text-sm font-medium text-gray-700 mb-1">Extension ID or Number:</label>
-                    <input type="text" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50" id="extensionId" placeholder="Enter Extension ID">
-                </div>
-                
-                <div class="flex items-center gap-3 mt-auto pt-4 border-t border-gray-100">
-                    <button id="createSubscriptionBtn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 shadow-sm text-sm">
-                        Start Listening
-                    </button>
-                    <button id="disconnectBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        Disconnect
-                    </button>
-                    <div id="connectionStatus" class="ml-auto">
-                        <span class="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-semibold">Status: Idle</span>
-                    </div>
-                </div>
+            <div class="flex-grow max-w-sm" id="extensionIdInputContainer" style="display: none;">
+                <label for="extensionId" class="block text-sm font-medium text-gray-700 mb-1">Extension ID or Number:</label>
+                <input type="text" class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50" id="extensionId" placeholder="Enter Extension ID">
             </div>
 
-            <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col flex-grow">
-                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                    Active Subscriptions
-                </h3>
-                <button id="refreshSubscriptionsBtn" class="bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-1.5 px-3 rounded-lg text-sm transition duration-150 shadow-sm w-max mb-3">
-                    Refresh List
+            <div class="flex items-center gap-3 mt-4 md:mt-0">
+                <button id="createSubscriptionBtn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 px-6 rounded-lg transition duration-150 shadow-sm text-sm whitespace-nowrap">
+                    Start Listening
                 </button>
-                
-                <div class="overflow-y-auto max-h-48 border border-gray-200 rounded-lg bg-gray-50">
-                    <table class="w-full text-left text-sm whitespace-nowrap">
-                        <thead class="bg-gray-100 sticky top-0 border-b border-gray-200">
-                            <tr>
-                                <th class="px-3 py-2 font-medium text-gray-600">ID</th>
-                                <th class="px-3 py-2 font-medium text-gray-600">Type</th>
-                                <th class="px-3 py-2 font-medium text-gray-600">Filters</th>
-                                <th class="px-3 py-2 font-medium text-gray-600">Status</th>
-                                <th class="px-3 py-2 font-medium text-gray-600">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="activeSubscriptionsTable" class="divide-y divide-gray-200 bg-white">
-                            </tbody>
-                    </table>
+                <button id="disconnectBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-6 rounded-lg transition duration-150 shadow-sm text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    Disconnect
+                </button>
+            </div>
+            
+            <div class="ml-auto mt-4 md:mt-0 flex items-center mb-2">
+                <div id="connectionStatus">
+                    <span class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-full text-xs font-bold uppercase tracking-wider">Status: Idle</span>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="w-full md:w-7/12 flex flex-col">
-            <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col flex-grow h-full min-h-[500px]">
-                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                    Real-Time Event Log
-                </h3>
-                
-                <div class="flex items-center gap-2 mb-3">
-                    <input type="text" id="logSearchInput" placeholder="Search log..." class="flex-grow p-1.5 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
-                    <button id="saveLogBtn" title="Save log to file" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium p-1.5 px-3 rounded transition shadow-sm border border-gray-300 text-sm">
-                        Download
-                    </button>
-                    <button id="clearLogBtn" title="Clear log" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium p-1.5 px-3 rounded transition shadow-sm border border-gray-300 text-sm">
-                        Clear
-                    </button>
-                </div>
-                
-                <pre id="eventLog" class="flex-grow p-3 bg-gray-900 text-green-400 rounded-lg overflow-y-auto text-xs font-mono shadow-inner whitespace-pre-wrap"></pre>
+    <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col flex-grow">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+            <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                Real-Time Event Log
+            </h3>
+            <div class="flex items-center gap-2">
+                <button id="saveLogBtn" title="Save log to file" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-4 rounded transition shadow-sm border border-gray-300 text-sm">
+                    Download Log
+                </button>
+                <button id="clearLogBtn" title="Clear log" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-4 rounded transition shadow-sm border border-gray-300 text-sm">
+                    Clear Log
+                </button>
             </div>
         </div>
         
+        <pre id="eventLog" class="flex-grow p-4 bg-gray-900 text-green-400 rounded-lg overflow-y-auto text-sm font-mono shadow-inner whitespace-pre-wrap h-[600px]"></pre>
     </div>
 </div>
