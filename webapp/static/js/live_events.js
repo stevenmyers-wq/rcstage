@@ -76,7 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Dynamically updates the dropdown based on the search box
     function updateCallSelector() {
         const searchTerm = ladderSearchInput.value.toLowerCase();
         const currentValue = callSelector.value;
@@ -91,7 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 option.value = call.id;
                 option.text = `${call.caller} -> ${call.callee}`;
                 
-                // Preserve selection if it still matches the search
                 if (call.id === currentValue) {
                     option.selected = true;
                 }
@@ -106,7 +104,6 @@ document.addEventListener('DOMContentLoaded', () => {
             callSelector.options[0].text = '-- No matches found --';
         }
 
-        // Auto-select if there is exactly 1 match and nothing was selected
         if (matchCount === 1 && !callSelector.value) {
             callSelector.value = callSelector.options[1].value;
             renderMermaidDiagram(callSelector.value);
@@ -120,7 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionId = body.telephonySessionId;
         
         if (!activeCalls[sessionId]) {
-            activeCalls[sessionId] = { id: sessionId, events: [], caller: 'Unknown', callee: 'Unknown' };
+            // Added masterSipData to correlate headers across the entire session lifecycle
+            activeCalls[sessionId] = { id: sessionId, events: [], caller: 'Unknown', callee: 'Unknown', masterSipData: {} };
         }
 
         const callData = activeCalls[sessionId];
@@ -136,9 +134,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 callData.callee = party.to?.phoneNumber || 'Callee';
             }
 
+            // CORRELATION LOGIC: Learn any SIP data provided in this leg
+            if (party.sipData && Object.keys(party.sipData).length > 0) {
+                Object.assign(callData.masterSipData, party.sipData);
+            }
+
             if (party.status && party.status.code) {
                 const sipMsg = mapStatusToSip(party.status.code);
-                const sipDataExtracted = party.sipData || {}; 
                 
                 const lastEvent = callData.events[callData.events.length - 1];
                 if (!lastEvent || lastEvent.msg !== sipMsg || lastEvent.participant !== participantName) {
@@ -147,13 +149,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         direction: party.direction,
                         msg: sipMsg,
                         rawStatus: party.status.code,
-                        sipData: sipDataExtracted
+                        rawSipData: party.sipData || {},
+                        // Take a snapshot of everything we know about this call's SIP headers so far
+                        correlatedSipData: { ...callData.masterSipData } 
                     });
                 }
             }
         });
 
-        // Update the dropdown menu respecting current search filters
         updateCallSelector();
 
         if (callSelector.value === sessionId) renderMermaidDiagram(sessionId);
@@ -165,16 +168,16 @@ document.addEventListener('DOMContentLoaded', () => {
         let content = `<span class="text-pink-400 font-bold">${eventData.msg}</span> <span class="text-orange-400">sip:${callee}@ringcentral.com</span> SIP/2.0\n`;
         content += `<span class="text-blue-300">Session-ID:</span> ${activeCalls[callSelector.value].id}\n`;
         
-        if (eventData.sipData) {
-            if (eventData.sipData.callId) content += `<span class="text-blue-300">Call-ID:</span> ${eventData.sipData.callId}\n`;
-            if (eventData.sipData.fromTag) content += `<span class="text-blue-300">From:</span> &lt;sip:${caller}&gt;;tag=${eventData.sipData.fromTag}\n`;
-            if (eventData.sipData.toTag) content += `<span class="text-blue-300">To:</span> &lt;sip:${callee}&gt;;tag=${eventData.sipData.toTag}\n`;
-            
-            content += `\n<span class="text-gray-400">--- RC Raw SIP Object ---</span>\n`;
-            content += `<span class="text-green-200">${JSON.stringify(eventData.sipData, null, 2)}</span>`;
-        } else {
-            content += `\n<span class="text-gray-500">No additional SIP headers provided by RingCentral for this leg.</span>`;
-        }
+        // Use the correlated SIP data (gathered across the whole session) for the primary display
+        const displaySip = Object.keys(eventData.correlatedSipData).length > 0 ? eventData.correlatedSipData : eventData.rawSipData;
+
+        if (displaySip.callId) content += `<span class="text-blue-300">Call-ID:</span> ${displaySip.callId}\n`;
+        if (displaySip.fromTag) content += `<span class="text-blue-300">From:</span> &lt;sip:${caller}&gt;;tag=${displaySip.fromTag}\n`;
+        if (displaySip.toTag) content += `<span class="text-blue-300">To:</span> &lt;sip:${callee}&gt;;tag=${displaySip.toTag}\n`;
+        
+        content += `\n<span class="text-gray-400">--- RC Raw SIP Object (This Specific Event) ---</span>\n`;
+        // Show exactly what RC sent for this specific packet, so you know if it was empty or not
+        content += `<span class="text-green-200">${JSON.stringify(eventData.rawSipData, null, 2)}</span>`;
 
         sipModalContent.innerHTML = content;
         sipModal.classList.remove('hidden');
@@ -234,11 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
         else mermaidContainer.innerHTML = '<div class="text-gray-500">Select a call to view flow.</div>';
     });
 
-    // Re-filter the dropdown when user searches for a specific call/number
     ladderSearchInput.addEventListener('input', () => {
         updateCallSelector();
-        
-        // If the currently selected call was filtered out, clear the diagram
         if (!callSelector.value) {
             mermaidContainer.innerHTML = '<div class="text-gray-500">Select a call to view flow.</div>';
         }
