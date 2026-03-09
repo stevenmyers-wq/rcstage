@@ -1,22 +1,24 @@
 <div id="ringex-uat-tab" class="flex flex-col h-full">
     <h2 class="text-2xl font-semibold mb-4 text-gray-700">RingEX UAT Generator</h2>
-    <p class="text-gray-600 mb-6">Automatically crawl an extension's routing rules and generate standard User Acceptance Testing scripts.</p>
+    <p class="text-gray-600 mb-6">Automatically crawl routing rules, IVR menus, and Call Queues to generate exhaustive UAT test scripts.</p>
+
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         <div class="lg:col-span-1 flex flex-col gap-4">
             <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Select Target</h3>
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Select Target Flow</h3>
                 
                 <div class="mb-4">
-                    <label for="uatTargetSelect" class="block text-sm font-medium text-gray-700 mb-1">Extension / Call Queue / IVR:</label>
+                    <label for="uatTargetSelect" class="block text-sm font-medium text-gray-700 mb-1">Call Queue, IVR, or Site:</label>
                     <select id="uatTargetSelect" class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
-                        <option value="">Loading options...</option>
+                        <option value="">Loading routing targets...</option>
                     </select>
                 </div>
 
                 <button id="generateUatBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition shadow-sm disabled:opacity-50">
-                    Generate UAT Script
+                    Generate Exhaustive UAT
                 </button>
                 
                 <div id="uatStatusMessage" class="mt-3 text-sm font-medium hidden"></div>
@@ -28,25 +30,33 @@
                 
                 <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <h3 class="text-lg font-bold text-gray-800" id="uatTableName">Test Script: <span class="font-normal text-gray-500">None selected</span></h3>
-                    <button id="copyUatBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-1.5 px-3 rounded transition shadow-sm hidden">
-                        Copy to Clipboard
-                    </button>
+                    <div class="flex gap-2">
+                        <button id="exportXlsxBtn" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-1.5 px-4 rounded transition shadow-sm hidden flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export .XLSX
+                        </button>
+                        <button id="copyUatBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-1.5 px-4 rounded transition shadow-sm hidden">
+                            Copy Table
+                        </button>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto flex-grow">
-                    <table class="w-full text-left border-collapse" id="uatTable">
+                    <table class="w-full text-left border-collapse min-w-[800px]" id="uatExportTable">
                         <thead>
                             <tr class="bg-gray-100 text-gray-600 text-sm border-b border-gray-200">
-                                <th class="p-3 font-semibold w-12 text-center">#</th>
-                                <th class="p-3 font-semibold w-1/4">Step</th>
-                                <th class="p-3 font-semibold w-1/4">Action</th>
-                                <th class="p-3 font-semibold w-1/2">Expected Result</th>
-                                <th class="p-3 font-semibold w-24 text-center border-l border-gray-200">Pass / Fail</th>
+                                <th class="p-3 font-semibold w-12 text-center border-r border-gray-200">#</th>
+                                <th class="p-3 font-semibold w-1/5 border-r border-gray-200">Scenario</th>
+                                <th class="p-3 font-semibold w-1/4 border-r border-gray-200">Test Step</th>
+                                <th class="p-3 font-semibold w-1/4 border-r border-gray-200">Action Required</th>
+                                <th class="p-3 font-semibold w-1/4 border-r border-gray-200">Expected Result</th>
+                                <th class="p-3 font-semibold w-24 text-center">Pass / Fail</th>
+                                <th class="p-3 font-semibold w-32 text-center">Notes / Date</th>
                             </tr>
                         </thead>
                         <tbody id="uatTableBody" class="divide-y divide-gray-200 text-sm text-gray-700">
                             <tr>
-                                <td colspan="5" class="p-8 text-center text-gray-400 italic">Select an extension and click Generate.</td>
+                                <td colspan="7" class="p-8 text-center text-gray-400 italic">Select a call flow target and click Generate.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -66,21 +76,24 @@
         const tableBody = document.getElementById('uatTableBody');
         const tableName = document.getElementById('uatTableName');
         const copyBtn = document.getElementById('copyUatBtn');
+        const exportBtn = document.getElementById('exportXlsxBtn');
+        
+        let currentTargetName = "UAT_Script";
 
-        // Load dropdown options on load
         async function loadTargets() {
             try {
                 const response = await fetch('/api/ringex_uat/entities');
-                if (response.status === 401) return; // Handled by global auth
+                if (response.status === 401) return; 
                 const data = await response.json();
                 
                 if (data.success) {
-                    targetSelect.innerHTML = '<option value="">-- Select a Target --</option>';
+                    targetSelect.innerHTML = '<option value="">-- Select Call Flow Target --</option>';
                     data.entities.forEach(ext => {
                         const opt = document.createElement('option');
                         opt.value = ext.id;
                         opt.dataset.name = ext.name;
                         opt.dataset.number = ext.extensionNumber;
+                        opt.dataset.type = ext.type; // Pass the type so the backend knows what to crawl
                         opt.textContent = `${ext.name} (Ext ${ext.extensionNumber}) - ${ext.type}`;
                         targetSelect.appendChild(opt);
                     });
@@ -92,7 +105,6 @@
             }
         }
 
-        // Generate Script
         generateBtn.addEventListener('click', async () => {
             if (!targetSelect.value) {
                 showStatus('Please select a target first.', 'text-red-600');
@@ -100,15 +112,20 @@
             }
 
             const selectedOpt = targetSelect.options[targetSelect.selectedIndex];
+            currentTargetName = selectedOpt.dataset.name.replace(/[^a-zA-Z0-9]/g, '_');
+            
             const payload = {
                 extension_id: selectedOpt.value,
                 extension_name: selectedOpt.dataset.name,
-                extension_number: selectedOpt.dataset.number
+                extension_number: selectedOpt.dataset.number,
+                extension_type: selectedOpt.dataset.type
             };
 
             generateBtn.disabled = true;
-            showStatus('Crawling routing rules...', 'text-blue-600');
-            tableBody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-500">Generating script...</td></tr>';
+            showStatus('Crawling routing rules & configurations...', 'text-blue-600');
+            tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-500 font-medium animate-pulse">Deep crawling Call Flow... please wait.</td></tr>';
+            copyBtn.classList.add('hidden');
+            exportBtn.classList.add('hidden');
 
             try {
                 const response = await fetch('/api/ringex_uat/generate', {
@@ -120,11 +137,11 @@
 
                 if (data.success) {
                     renderTable(data.cases, payload.extension_name);
-                    showStatus('Script generated successfully!', 'text-green-600');
+                    showStatus('Exhaustive script generated successfully!', 'text-green-600');
                     setTimeout(() => statusMsg.classList.add('hidden'), 3000);
                 } else {
                     showStatus(`Error: ${data.error}`, 'text-red-600');
-                    tableBody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-red-500">Failed to generate: ${data.error}</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500">Failed to generate: ${data.error}</td></tr>`;
                 }
             } catch (err) {
                 showStatus('Network error occurred.', 'text-red-600');
@@ -133,31 +150,57 @@
             }
         });
 
-        // Render the UI table
         function renderTable(cases, name) {
-            tableName.innerHTML = `Test Script: <span class="font-normal text-blue-600">${name}</span>`;
+            tableName.innerHTML = `Test Script: <span class="font-bold text-blue-600">${name}</span>`;
             tableBody.innerHTML = '';
-            copyBtn.classList.remove('hidden');
-
+            
             cases.forEach((c, index) => {
                 const row = document.createElement('tr');
                 row.className = "hover:bg-blue-50 transition-colors";
                 row.innerHTML = `
-                    <td class="p-3 text-center text-gray-500 font-medium">${index + 1}</td>
-                    <td class="p-3 font-medium">${c.step}</td>
-                    <td class="p-3">${c.action}</td>
-                    <td class="p-3 text-blue-800">${c.expected}</td>
-                    <td class="p-3 text-center border-l border-gray-200">
-                        <div class="w-6 h-6 border-2 border-gray-300 rounded mx-auto bg-white"></div>
-                    </td>
+                    <td class="p-3 text-center text-gray-500 font-medium border-r border-gray-100">${index + 1}</td>
+                    <td class="p-3 font-semibold text-gray-800 border-r border-gray-100 bg-gray-50">${c.scenario}</td>
+                    <td class="p-3 text-gray-700 border-r border-gray-100">${c.step}</td>
+                    <td class="p-3 text-gray-700 border-r border-gray-100">${c.action}</td>
+                    <td class="p-3 font-medium text-blue-800 border-r border-gray-100">${c.expected}</td>
+                    <td class="p-3 text-center border-r border-gray-100">
+                        </td>
+                    <td class="p-3"></td>
                 `;
                 tableBody.appendChild(row);
             });
+            
+            copyBtn.classList.remove('hidden');
+            exportBtn.classList.remove('hidden');
         }
 
-        // Copy Table to Clipboard (Formatted for Excel/Sheets)
+        // Export to XLSX using SheetJS
+        exportBtn.addEventListener('click', () => {
+            const table = document.getElementById('uatExportTable');
+            
+            // Convert HTML table to a workbook
+            const wb = XLSX.utils.table_to_book(table, {sheet: "UAT Script"});
+            
+            // Auto-size columns slightly better for the output
+            const ws = wb.Sheets["UAT Script"];
+            const wscols = [
+                {wch: 5},  // #
+                {wch: 25}, // Scenario
+                {wch: 40}, // Step
+                {wch: 30}, // Action
+                {wch: 50}, // Expected
+                {wch: 15}, // Pass/Fail
+                {wch: 25}  // Notes
+            ];
+            ws['!cols'] = wscols;
+
+            // Trigger download
+            XLSX.writeFile(wb, `RingEX_UAT_${currentTargetName}.xlsx`);
+        });
+
+        // Copy Table to Clipboard
         copyBtn.addEventListener('click', () => {
-            const table = document.getElementById('uatTable');
+            const table = document.getElementById('uatExportTable');
             const range = document.createRange();
             range.selectNode(table);
             window.getSelection().removeAllRanges();
