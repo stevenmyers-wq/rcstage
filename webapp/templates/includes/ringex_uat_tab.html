@@ -1,10 +1,10 @@
 <div id="ringex-uat-tab" class="flex flex-col h-full">
-    <h2 class="text-2xl font-semibold mb-4 text-gray-700">RingEX UAT Generator</h2>
-    <p class="text-gray-600 mb-6">Automatically crawl routing rules, IVR menus, and Call Queues to generate exhaustive UAT test scripts.</p>
+    <h2 class="text-2xl font-semibold mb-4 text-gray-700">RingEX Exhaustive UAT Generator</h2>
+    <p class="text-gray-600 mb-6">Automatically crawl routing rules to generate enterprise-grade User Acceptance Testing documents.</p>
 
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         <div class="lg:col-span-1 flex flex-col gap-4">
             <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
@@ -18,45 +18,42 @@
                 </div>
 
                 <button id="generateUatBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition shadow-sm disabled:opacity-50">
-                    Generate Exhaustive UAT
+                    Generate UAT Script
                 </button>
                 
                 <div id="uatStatusMessage" class="mt-3 text-sm font-medium hidden"></div>
             </div>
         </div>
 
-        <div class="lg:col-span-2 flex flex-col h-full">
-            <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-0 overflow-hidden flex flex-col h-full min-h-[500px]">
+        <div class="lg:col-span-3 flex flex-col h-full">
+            <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-0 overflow-hidden flex flex-col h-full min-h-[600px]">
                 
                 <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <h3 class="text-lg font-bold text-gray-800" id="uatTableName">Test Script: <span class="font-normal text-gray-500">None selected</span></h3>
                     <div class="flex gap-2">
-                        <button id="exportXlsxBtn" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-1.5 px-4 rounded transition shadow-sm hidden flex items-center gap-1">
+                        <button id="exportXlsxBtn" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-1.5 px-4 rounded transition shadow-sm hidden flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            Export .XLSX
-                        </button>
-                        <button id="copyUatBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-1.5 px-4 rounded transition shadow-sm hidden">
-                            Copy Table
+                            Export to .XLSX
                         </button>
                     </div>
                 </div>
 
                 <div class="overflow-x-auto flex-grow">
-                    <table class="w-full text-left border-collapse min-w-[800px]" id="uatExportTable">
+                    <table class="w-full text-left border-collapse min-w-[1000px]" id="uatExportTable">
                         <thead>
-                            <tr class="bg-gray-100 text-gray-600 text-sm border-b border-gray-200">
-                                <th class="p-3 font-semibold w-12 text-center border-r border-gray-200">#</th>
-                                <th class="p-3 font-semibold w-1/5 border-r border-gray-200">Scenario</th>
-                                <th class="p-3 font-semibold w-1/4 border-r border-gray-200">Test Step</th>
-                                <th class="p-3 font-semibold w-1/4 border-r border-gray-200">Action Required</th>
-                                <th class="p-3 font-semibold w-1/4 border-r border-gray-200">Expected Result</th>
-                                <th class="p-3 font-semibold w-24 text-center">Pass / Fail</th>
-                                <th class="p-3 font-semibold w-32 text-center">Notes / Date</th>
+                            <tr class="bg-gray-100 text-gray-700 text-sm border-b border-gray-200">
+                                <th class="p-3 font-bold w-24 border-r border-gray-200">Test ID</th>
+                                <th class="p-3 font-bold w-48 border-r border-gray-200">Category</th>
+                                <th class="p-3 font-bold w-48 border-r border-gray-200">Test Scenario</th>
+                                <th class="p-3 font-bold w-1/4 border-r border-gray-200">Action Required</th>
+                                <th class="p-3 font-bold w-1/3 border-r border-gray-200">Expected Result</th>
+                                <th class="p-3 font-bold w-24 text-center border-r border-gray-200">Pass / Fail</th>
+                                <th class="p-3 font-bold w-48">Comments / Date</th>
                             </tr>
                         </thead>
                         <tbody id="uatTableBody" class="divide-y divide-gray-200 text-sm text-gray-700">
                             <tr>
-                                <td colspan="7" class="p-8 text-center text-gray-400 italic">Select a call flow target and click Generate.</td>
+                                <td colspan="7" class="p-8 text-center text-gray-400 italic">Select a Call Queue or IVR to generate its exhaustive test parameters.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -75,7 +72,6 @@
         const statusMsg = document.getElementById('uatStatusMessage');
         const tableBody = document.getElementById('uatTableBody');
         const tableName = document.getElementById('uatTableName');
-        const copyBtn = document.getElementById('copyUatBtn');
         const exportBtn = document.getElementById('exportXlsxBtn');
         
         let currentTargetName = "UAT_Script";
@@ -93,7 +89,7 @@
                         opt.value = ext.id;
                         opt.dataset.name = ext.name;
                         opt.dataset.number = ext.extensionNumber;
-                        opt.dataset.type = ext.type; // Pass the type so the backend knows what to crawl
+                        opt.dataset.type = ext.type; 
                         opt.textContent = `${ext.name} (Ext ${ext.extensionNumber}) - ${ext.type}`;
                         targetSelect.appendChild(opt);
                     });
@@ -112,7 +108,7 @@
             }
 
             const selectedOpt = targetSelect.options[targetSelect.selectedIndex];
-            currentTargetName = selectedOpt.dataset.name.replace(/[^a-zA-Z0-9]/g, '_');
+            currentTargetName = selectedOpt.dataset.name.replace(/[^a-zA-Z0-9_-]/g, '_');
             
             const payload = {
                 extension_id: selectedOpt.value,
@@ -122,9 +118,8 @@
             };
 
             generateBtn.disabled = true;
-            showStatus('Crawling routing rules & configurations...', 'text-blue-600');
-            tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-500 font-medium animate-pulse">Deep crawling Call Flow... please wait.</td></tr>';
-            copyBtn.classList.add('hidden');
+            showStatus('Crawling routing rules & queue configurations...', 'text-blue-600');
+            tableBody.innerHTML = '<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium animate-pulse">Deep crawling Call Flow... please wait.</td></tr>';
             exportBtn.classList.add('hidden');
 
             try {
@@ -154,71 +149,47 @@
             tableName.innerHTML = `Test Script: <span class="font-bold text-blue-600">${name}</span>`;
             tableBody.innerHTML = '';
             
-            cases.forEach((c, index) => {
+            cases.forEach(c => {
                 const row = document.createElement('tr');
                 row.className = "hover:bg-blue-50 transition-colors";
                 row.innerHTML = `
-                    <td class="p-3 text-center text-gray-500 font-medium border-r border-gray-100">${index + 1}</td>
-                    <td class="p-3 font-semibold text-gray-800 border-r border-gray-100 bg-gray-50">${c.scenario}</td>
-                    <td class="p-3 text-gray-700 border-r border-gray-100">${c.step}</td>
-                    <td class="p-3 text-gray-700 border-r border-gray-100">${c.action}</td>
-                    <td class="p-3 font-medium text-blue-800 border-r border-gray-100">${c.expected}</td>
+                    <td class="p-3 font-mono text-xs text-gray-500 border-r border-gray-100 whitespace-nowrap">${c.test_id}</td>
+                    <td class="p-3 font-semibold text-gray-800 border-r border-gray-100 bg-gray-50/50">${c.category}</td>
+                    <td class="p-3 font-medium text-gray-800 border-r border-gray-100">${c.scenario}</td>
+                    <td class="p-3 text-gray-600 border-r border-gray-100">${c.action}</td>
+                    <td class="p-3 text-blue-800 border-r border-gray-100">${c.expected}</td>
                     <td class="p-3 text-center border-r border-gray-100">
-                        </td>
-                    <td class="p-3"></td>
+                        <div class="w-6 h-6 border-2 border-gray-300 rounded mx-auto bg-white shadow-inner"></div>
+                    </td>
+                    <td class="p-3 text-gray-400 text-xs italic"></td>
                 `;
                 tableBody.appendChild(row);
             });
             
-            copyBtn.classList.remove('hidden');
             exportBtn.classList.remove('hidden');
         }
 
-        // Export to XLSX using SheetJS
+        // Professional Excel Export using SheetJS
         exportBtn.addEventListener('click', () => {
             const table = document.getElementById('uatExportTable');
             
-            // Convert HTML table to a workbook
-            const wb = XLSX.utils.table_to_book(table, {sheet: "UAT Script"});
+            // Convert HTML table to an Excel workbook
+            const wb = XLSX.utils.table_to_book(table, {sheet: "UAT Cases"});
+            const ws = wb.Sheets["UAT Cases"];
             
-            // Auto-size columns slightly better for the output
-            const ws = wb.Sheets["UAT Script"];
-            const wscols = [
-                {wch: 5},  // #
-                {wch: 25}, // Scenario
-                {wch: 40}, // Step
-                {wch: 30}, // Action
-                {wch: 50}, // Expected
-                {wch: 15}, // Pass/Fail
-                {wch: 25}  // Notes
+            // Customize the column widths for a professional look in Excel
+            ws['!cols'] = [
+                {wch: 15}, // Test ID
+                {wch: 25}, // Category
+                {wch: 30}, // Scenario
+                {wch: 50}, // Action
+                {wch: 60}, // Expected Result
+                {wch: 12}, // Pass/Fail
+                {wch: 30}  // Comments
             ];
-            ws['!cols'] = wscols;
 
-            // Trigger download
+            // Trigger the download
             XLSX.writeFile(wb, `RingEX_UAT_${currentTargetName}.xlsx`);
-        });
-
-        // Copy Table to Clipboard
-        copyBtn.addEventListener('click', () => {
-            const table = document.getElementById('uatExportTable');
-            const range = document.createRange();
-            range.selectNode(table);
-            window.getSelection().removeAllRanges();
-            window.getSelection().addRange(range);
-            
-            try {
-                document.execCommand('copy');
-                const originalText = copyBtn.innerText;
-                copyBtn.innerText = 'Copied!';
-                copyBtn.classList.replace('bg-gray-200', 'bg-green-200');
-                setTimeout(() => {
-                    copyBtn.innerText = originalText;
-                    copyBtn.classList.replace('bg-green-200', 'bg-gray-200');
-                }, 2000);
-            } catch (err) {
-                console.error('Failed to copy table', err);
-            }
-            window.getSelection().removeAllRanges();
         });
 
         function showStatus(msg, colorClass) {
