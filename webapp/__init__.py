@@ -62,4 +62,8 @@ def create_app():
         from .greetings_uploader import routes as greetings_uploader_routes
         app.register_blueprint(greetings_uploader_routes.greetings_uploader_bp)
 
+        # RingEX UAT Generator routes
+        from .ringex_uat import routes as ringex_uat_routes
+        app.register_blueprint(ringex_uat_routes.ringex_uat_bp)
+
     return app
