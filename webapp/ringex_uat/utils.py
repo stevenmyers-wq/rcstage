@@ -2,12 +2,12 @@
 from webapp.rc_api import rc_api_call
 
 def get_testable_extensions():
-    """Fetches Call Queues, IVR Menus, Sites, and Shared Lines for testing. Excludes standard Users."""
+    """Fetches Call Queues, IVR Menus, Sites, and Shared Lines for testing."""
     response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
     if not response or 'records' not in response:
         return []
 
-    valid_types = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site', 'ParkLocation']
+    valid_types = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site']
     
     entities = [
         {
@@ -18,11 +18,10 @@ def get_testable_extensions():
         }
         for ext in response['records'] if ext.get('type') in valid_types
     ]
-    
     return sorted(entities, key=lambda x: x['name'])
 
 def build_extension_map():
-    """Builds a global directory to translate raw IDs into readable 'Name (Ext)' strings."""
+    """Builds a global directory to translate raw IDs into readable names."""
     response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 2000}, raise_error=False)
     ext_map = {}
     if response and 'records' in response:
@@ -30,23 +29,21 @@ def build_extension_map():
             ext_map[str(ext['id'])] = f"{ext.get('name', 'Unknown')} (Ext {ext.get('extensionNumber', 'N/A')})"
     return ext_map
 
-def get_direct_number(ext_id):
-    """Forensically extracts the primary DID assigned to the flow."""
+def get_direct_numbers(ext_id):
+    """Forensically extracts ONLY explicitly assigned Direct Inward Dialing (DID) numbers."""
     response = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/phone-number', method='GET', raise_error=False)
+    numbers = []
     if response and 'records' in response:
         for record in response['records']:
+            # Strict filter to prevent pulling shared company lines or hidden routing numbers
             if record.get('usageType') == 'DirectNumber':
-                return record.get('phoneNumber')
-    return None
+                numbers.append(record.get('phoneNumber'))
+    return ", ".join(numbers) if numbers else None
 
 def get_business_hours_string(ext_id):
-    """
-    Extracts explicit schedules. If an extension inherits account-level hours,
-    it gracefully falls back to query the Account Business Hours endpoint.
-    """
+    """Extracts explicit schedules, falling back to account level if set to 24/7."""
     response = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours', method='GET', raise_error=False)
     
-    # Fallback to Account level if the extension has no custom schedule defined
     if not response or 'schedule' not in response:
         response = rc_api_call('/restapi/v1.0/account/~/business-hours', method='GET', raise_error=False)
         if not response or 'schedule' not in response:
@@ -63,7 +60,7 @@ def get_business_hours_string(ext_id):
     return "Custom/Specific Schedule"
 
 def resolve_target(action_obj, ext_map):
-    """Resolves nested JSON targets into human-readable destinations."""
+    """Resolves nested JSON overflow targets into human-readable destinations."""
     if not action_obj: return "Unknown Destination"
     
     target_id = str(action_obj.get('extension', {}).get('id', ''))
@@ -74,19 +71,33 @@ def resolve_target(action_obj, ext_map):
     if target_id and target_id in ext_map:
         return ext_map[target_id]
         
-    return "External Number or Unknown Target"
+    num = action_obj.get('phoneNumber')
+    if num: return f"External Number: {num}"
+    
+    return "Unknown Target"
+
+def get_queue_greetings(ext_id):
+    """Fetches explicit greeting configurations for the queue."""
+    response = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET', raise_error=False)
+    greetings = {'intro': False, 'audio_while_connecting': False, 'voicemail': False}
+    if response and 'records' in response:
+        for g in response['records']:
+            if g.get('type') == 'Introductory' and g.get('preset') != 'Default':
+                greetings['intro'] = True
+            if g.get('type') == 'ConnectingAudio':
+                greetings['audio_while_connecting'] = True
+            if g.get('type') == 'Voicemail':
+                greetings['voicemail'] = True
+    return greetings
 
 def generate_uat_cases(extension_id, extension_name, extension_number, extension_type):
-    """Generates an exhaustive, holistic UAT matrix covering every configurable portal option."""
+    """Generates an exhaustive UAT matrix matching corporate standards."""
     uat_cases = []
     case_counter = 1
     
-    # Pre-fetch all forensic parameters
     ext_map = build_extension_map()
-    direct_number = get_direct_number(extension_id)
-    business_hours_str = get_business_hours_string(extension_id)
-    
-    requires_voicemail_test = False
+    direct_numbers = get_direct_numbers(extension_id)
+    bh_string = get_business_hours_string(extension_id)
 
     def add_case(category, test_name, step, expected):
         nonlocal case_counter
@@ -100,140 +111,131 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
         case_counter += 1
 
     # ==========================================
-    # 1. CONNECTIVITY & ROUTING
+    # CATEGORY: INTEGRATION
     # ==========================================
-    add_case("1. Base Connectivity", "Internal Net Dialing", 
-             f"From an internal RingCentral device, dial extension {extension_number}.", 
-             f"Call connects successfully to '{extension_name}' without SIP errors or dead air.")
+    add_case("Integration", "Internal Routing", 
+             f"Dial extension {extension_number} from an internal device.", 
+             f"Call connects successfully to {extension_name} without SIP 4xx/5xx errors.")
     
-    if direct_number:
-        add_case("1. Base Connectivity", "PSTN Inbound Routing (DID)", 
-                 f"From an external mobile device, dial the assigned DID: {direct_number}.", 
-                 f"Call successfully traverses the PSTN and hits '{extension_name}'. Audio is two-way and high fidelity.")
+    if direct_numbers:
+        add_case("Integration", "External Routing (DID)", 
+                 f"Dial the external Direct Inward Dialing (DID) number assigned to {extension_name} ({direct_numbers}) from a mobile phone.", 
+                 "Call connects via the PSTN with high-quality, two-way audio.")
     else:
-        add_case("1. Base Connectivity", "PSTN Inbound Routing (Auto-Receptionist)", 
-                 f"Dial the Main Company Number. When prompted by the greeting, enter extension {extension_number}.", 
-                 f"Call successfully routes from the auto-receptionist to '{extension_name}'.")
+        add_case("Integration", "External Routing (No DID)", 
+                 f"Dial the Main Company Number. When prompted, enter extension {extension_number}.", 
+                 f"Call successfully routes from the auto-receptionist to {extension_name}.")
+
+    add_case("Integration", "Business Hours Validation", 
+             f"Initiate a test call during the configured Open Hours: [{bh_string}].", 
+             "Call follows the primary 'Open' routing path.")
 
     # ==========================================
-    # 2. TIME OF DAY ROUTING
-    # ==========================================
-    add_case("2. Schedule Boundaries", "Business Hours Routing", 
-             f"Initiate a test call during the configured Open Hours: [{business_hours_str}].", 
-             "Call follows the primary 'Open' routing path (e.g., rings agents or plays open IVR).")
-    
-    if business_hours_str != "24/7 (Always Open)":
-        add_case("2. Schedule Boundaries", "After Hours Routing", 
-                 f"Initiate a test call OUTSIDE of the configured Open Hours: [{business_hours_str}].", 
-                 "Call intercepts and follows the 'Closed/After Hours' routing path (e.g., plays After Hours greeting, routes to Voicemail).")
-
-    # ==========================================
-    # 3. CALL QUEUE (DEPARTMENT) EXHAUSTIVE MATRIX
+    # CATEGORY: CALL QUEUE TESTS
     # ==========================================
     if extension_type == 'Department':
         q_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{extension_id}/call-queue-info', method='GET', raise_error=False)
+        greetings = get_queue_greetings(extension_id)
         
         if q_info:
             transfer_mode = q_info.get('transferMode', 'Simultaneous')
-            agent_timeout = q_info.get('agentTimeout', 15) 
+            agent_timeout = q_info.get('agentTimeout', 15)
             wrap_up_time = q_info.get('wrapUpTime', 0)
             hold_time = q_info.get('holdTime', 0)
             max_callers = q_info.get('maxCallers', 0)
             
+            interrupt_mode = q_info.get('holdAudioInterruptionMode', 'Never')
+            interrupt_period = q_info.get('holdAudioInterruptionPeriod', 0)
+            
             hold_action = q_info.get('holdTimeExpirationAction', 'Unknown')
             max_call_action = q_info.get('maxCallersAction', 'Unknown')
             
-            hold_dest_name = resolve_target(q_info.get('transfer') or q_info.get('voicemail'), ext_map)
-            max_dest_name = resolve_target(q_info.get('transfer') or q_info.get('voicemail'), ext_map)
-            
-            if hold_action == 'TakeMessagesReturnToGreeting' or max_call_action == 'TakeMessagesReturnToGreeting':
-                requires_voicemail_test = True
+            hold_dest = resolve_target(q_info.get('transfer') or q_info.get('voicemail') or q_info.get('unconditionalForwarding'), ext_map)
+            max_dest = resolve_target(q_info.get('transfer') or q_info.get('voicemail') or q_info.get('unconditionalForwarding'), ext_map)
 
-            # --- Caller Experience (Audio & Prompts) ---
-            add_case("3. Caller Experience", "Queue Greeting (Intro)", 
-                     "Place a call to the queue.", 
-                     "If configured, the Initial Queue Greeting plays fully before the call begins ringing agents or playing hold music.")
-            add_case("3. Caller Experience", "Call Recording Announcement", 
-                     "Place a call to the queue.", 
-                     "If Automatic Call Recording is enabled, the 'This call is being recorded' prompt plays before connection.")
-            add_case("3. Caller Experience", "Connecting Audio (Hold Music)", 
-                     "Remain in the queue while agents are ringing/busy.", 
-                     "The approved Hold Music or Custom Promotional Greeting plays cleanly without jitter.")
-            add_case("3. Caller Experience", "Interrupt Audio (Periodic Announcements)", 
-                     "Remain on hold in the queue for an extended period.", 
-                     "If configured, periodic announcements (e.g., 'Please continue to hold' or Estimated Wait Time/Position) interrupt the hold music at the correct intervals.")
-
-            # --- Agent State Management ---
-            add_case("4. Agent States", "Queue Opt-In (Accept Calls)", 
-                     f"Agent toggles 'Accept Queue Calls' to ON in the RC App. Place a test call.", 
-                     f"Agent's device rings. The Queue Name '{extension_name}' is prepended to the Caller ID display so the agent knows how to answer.")
-            add_case("4. Agent States", "Queue Opt-Out (DND/Offline)", 
-                     "Agent toggles 'Accept Queue Calls' to OFF. Place a test call.", 
-                     "Agent's device does NOT ring. Call seamlessly hunts to the next available agent.")
-            add_case("4. Agent States", "Agent Busy (On another call)", 
-                     "Agent answers a non-queue call. Place a call into the queue.", 
-                     "The system recognizes the agent is busy. Depending on user settings, the queue call either hunts to the next agent or provides call waiting.")
+            # --- Queue Experience ---
+            if greetings['intro']:
+                add_case("Call Queue Tests", "Introductory Greeting", 
+                         "Place a call to the queue.", 
+                         "The custom Intro Greeting plays completely before the call begins ringing agents or playing hold music.")
             
+            add_case("Call Queue Tests", "Hold Music Verification", 
+                     "Remain in the queue while agents are busy/ringing.", 
+                     "The configured connecting audio/hold music plays cleanly without jitter.")
+            
+            if interrupt_mode != 'Never' and interrupt_period > 0:
+                add_case("Call Queue Tests", f"Interrupt Audio ({interrupt_period}s)", 
+                         f"Remain on hold in the queue for at least {interrupt_period + 5} seconds.", 
+                         f"At exactly {interrupt_period} seconds, the hold music pauses, the interrupt audio prompt plays, and hold music resumes.")
+
+            # --- Agent Operations ---
+            add_case("Agent Tests", "Queue Opt-In", 
+                     f"Agent logs into the RC App and toggles 'Accept Queue Calls' to ON for {extension_name}. Place a test call.", 
+                     f"Agent's device rings. The Queue Name is prepended to the Caller ID display.")
+            
+            add_case("Agent Tests", "Active Call Decline", 
+                     "While the queue call is ringing an agent, the agent clicks 'Decline'.", 
+                     "Ringing stops for that agent immediately. Call hunts to the next available agent without dropping the caller.")
+
             if wrap_up_time > 0:
-                add_case("4. Agent States", f"Wrap-Up / ACW Timer ({wrap_up_time}s)", 
-                         f"Agent answers a queue call, connects, and hangs up. Place a second call immediately into the queue.", 
-                         f"Agent enters 'Wrap-Up' status and does NOT receive the second call until their {wrap_up_time}s ACW timer expires.")
+                add_case("Agent Tests", f"Wrap-Up / ACW Timer ({wrap_up_time}s)", 
+                         f"Agent answers a queue call and hangs up. Immediately place a second call into the queue.", 
+                         f"Agent enters 'Wrap-Up' status and does NOT ring again until the {wrap_up_time} second ACW timer expires.")
 
             # --- Distribution Logic ---
-            add_case("5. Distribution Logic", "Active Call Decline", 
-                     "While the queue call is ringing an agent, the agent actively presses 'Decline / Send to VM'.", 
-                     "Ringing stops for that agent immediately. The call is NOT disconnected; it hunts to the next available agent.")
-
             if transfer_mode == 'Simultaneous':
-                add_case("5. Distribution Logic", f"Mode: {transfer_mode}", 
+                add_case("Call Queue Tests", "Distribution: Simultaneous", 
                          "Ensure multiple queue agents are 'Available'. Place a call into the queue.", 
                          "The call rings ALL available queue members at the exact same time.")
             else:
-                add_case("5. Distribution Logic", f"Mode: {transfer_mode}", 
+                add_case("Call Queue Tests", f"Distribution: {transfer_mode}", 
                          "Ensure multiple queue agents are 'Available'. Place a call into the queue.", 
-                         f"The call cascades to agents based on {transfer_mode} logic (e.g., longest idle or fixed order).")
+                         f"The call cascades to agents based on {transfer_mode} logic.")
                 
-                add_case("5. Distribution Logic", f"Agent Ring Timeout ({agent_timeout}s)", 
+                # Explicity ONLY test agent ring timeout if the queue is NOT simultaneous.
+                add_case("Agent Tests", f"Ring Timeout ({agent_timeout}s)", 
                          f"The targeted agent lets the call ring without answering or declining for exactly {agent_timeout} seconds.", 
-                         f"The {agent_timeout}s timer expires. The call automatically drops from Agent 1 and begins ringing Agent 2.")
+                         f"The {agent_timeout}s timer expires. The call drops from Agent 1 and begins ringing Agent 2.")
 
-            # --- Queue Capacity & Overflows ---
-            add_case("6. Queue Boundaries", "Zero Agents Logged In (No Members)", 
-                     "Ensure ALL assigned agents are either Logged Out or set to 'Not Accepting Queue Calls'. Initiate a call.", 
-                     "Call immediately bypasses queue hold music and triggers the 'No Members Available' overflow routing.")
+            # --- Overflows & Boundaries ---
+            add_case("Overflow Tests", "Zero Agents Logged In", 
+                     "Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", 
+                     "Call bypasses queue hold music and triggers 'No Members Available' overflow routing.")
 
             if hold_time > 0:
-                add_case("6. Queue Boundaries", f"Max Wait Time Limit ({hold_time}s)", 
+                add_case("Overflow Tests", f"Max Wait Time Limit ({hold_time}s)", 
                          f"Remain on hold in the queue until the {hold_time} second limit is reached.", 
-                         f"The {hold_time}s timer expires. Call is forcefully removed from the queue and executes: [{hold_action}] -> {hold_dest_name}.")
+                         f"The {hold_time}s timer expires. Call is removed from the queue and executes: [{hold_action}] -> {hold_dest}.")
             
             if max_callers > 0:
-                add_case("6. Queue Boundaries", f"Max Callers Limit ({max_callers} callers)", 
+                add_case("Overflow Tests", f"Max Callers Limit ({max_callers})", 
                          f"Simultaneously flood the queue with {max_callers + 1} concurrent inbound calls.", 
-                         f"The final call breaches the maximum queue capacity of {max_callers}. It instantly bypasses hold music and executes: [{max_call_action}] -> {max_dest_name}.")
+                         f"The final call breaches the capacity limit of {max_callers}. It bypasses hold music and executes: [{max_call_action}] -> {max_dest}.")
 
-            add_case("6. Queue Boundaries", "Zero-Out Exception (DTMF Interrupt)", 
-                     "While listening to the queue hold music, press '0' on the dialpad.", 
-                     "If a zero-out operator is configured, the call escapes the queue. If not configured, the DTMF input is gracefully ignored.")
+            if 'Voicemail' in str(hold_dest) or 'Voicemail' in str(max_dest) or hold_action == 'TakeMessagesReturnToGreeting':
+                add_case("Voicemail Tests", "Overflow Voicemail Deposit", 
+                         "Trigger a queue overflow that routes to Voicemail. Leave a 10-second test message.", 
+                         "The correct Voicemail greeting plays. The message is successfully recorded.")
+                add_case("Voicemail Tests", "Voicemail Delivery", 
+                         "Check the designated target's inbox.", 
+                         "The voicemail audio file is delivered accurately.")
 
     # ==========================================
-    # 4. IVR MENU EXHAUSTIVE MATRIX
+    # CATEGORY: IVR MENU TESTS
     # ==========================================
     elif extension_type == 'IvrMenu':
         ivr_info = rc_api_call(f'/restapi/v1.0/ivr-menus/{extension_id}', method='GET', raise_error=False)
         if ivr_info:
             prompt_data = ivr_info.get('prompt', {})
-            prompt_desc = f"Text-to-Speech ('{prompt_data.get('text', '...')}')" if 'text' in prompt_data else "Uploaded Audio File"
+            prompt_desc = f"Text-to-Speech prompt: '{prompt_data.get('text', '...')}'" if 'text' in prompt_data else "Uploaded Audio prompt"
             
-            # --- Prompt Audio ---
-            add_case("3. IVR Experience", "Audio Quality & Script Verification", 
-                     "Dial the IVR menu and listen to the complete greeting.", 
-                     f"The {prompt_desc} plays cleanly. The wording matches the officially approved script perfectly.")
-            add_case("3. IVR Experience", "Barge-in (Interruptibility)", 
-                     "Dial the IVR menu. While the greeting is still actively playing, press a valid menu key.", 
-                     "The IVR registers the DTMF tone immediately and routes the call without forcing the caller to listen to the rest of the greeting.")
+            add_case("IVR Menu Tests", "Audio Quality & Script", 
+                     "Dial the IVR menu.", 
+                     f"{prompt_desc} plays cleanly. Wording matches the approved script.")
+            add_case("IVR Menu Tests", "Barge-in (Interruptibility)", 
+                     "While the greeting is actively playing, press a valid menu key.", 
+                     "IVR registers the DTMF tone immediately and routes the call without forcing the caller to listen to the full greeting.")
             
-            # --- Explicit Key Mappings ---
             if 'actions' in ivr_info:
                 for act in ivr_info['actions']:
                     key = act.get('input', '')
@@ -241,50 +243,29 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
                     
                     act_type = act.get('action', 'Unknown')
                     if act_type == 'Transfer':
-                        target_name = resolve_target(act, ext_map)
-                        expected_str = f"System registers input and transfers the call to: [{target_name}]. Verify target rings."
+                        target = resolve_target(act, ext_map)
+                        expected_str = f"Transfers the call to: [{target}]. Verify target rings."
                     elif act_type == 'TakeMessagesReturnToGreeting':
-                        target_name = resolve_target(act, ext_map)
-                        expected_str = f"System transfers the call directly to Voicemail of: [{target_name}]."
-                        requires_voicemail_test = True
+                        target = resolve_target(act, ext_map)
+                        expected_str = f"Transfers the call directly to Voicemail of: [{target}]."
                     elif act_type == 'Forward':
-                        expected_str = f"System unconditionally forwards to external number: {act.get('phoneNumber', 'Unknown')}. Verify caller ID pass-through."
+                        expected_str = f"Forwards to external number: {act.get('phoneNumber', 'Unknown')}."
                     else:
-                        expected_str = f"System triggers {act_type} logic."
+                        expected_str = f"Triggers {act_type} logic."
                     
-                    add_case("4. IVR Key Routing", f"Valid Input: Press '{key}'", 
-                             f"Listen to the IVR prompt and press '{key}' on the dialpad.", 
+                    add_case("IVR Menu Tests", f"Key Mapping: Press '{key}'", 
+                             f"Listen to prompt and press '{key}' on the dialpad.", 
                              expected_str)
             
-            # --- Boundaries ---
-            add_case("5. IVR Boundaries", "Multi-Digit Extension Dialing", 
-                     "While in the IVR, dial a known 3 or 4-digit internal extension number using the dialpad.", 
-                     "If general extension dialing is enabled, the IVR intercepts the string and transfers the caller directly to that extension.")
-            add_case("5. IVR Boundaries", "Invalid Key Press", 
+            add_case("IVR Menu Tests", "Invalid Key Press", 
                      "Press an unassigned key on the dialpad (e.g., '9' or '#').", 
-                     "The system plays an 'Invalid entry' error prompt and seamlessly replays the main menu from the beginning.")
-            add_case("5. IVR Boundaries", "Timeout (No Input Provided)", 
+                     "System plays an 'Invalid entry' error prompt and replays the main menu.")
+            add_case("IVR Menu Tests", "Timeout (No Input)", 
                      "Listen to the entire IVR prompt and provide no DTMF input.", 
-                     "The system times out. It replays the menu (usually 3 times) and then executes the default timeout routing (e.g. disconnect or Operator).")
+                     "System times out, replays the menu, and eventually executes the default timeout routing.")
 
-    # ==========================================
-    # 5. POST-CALL & INFRASTRUCTURE
-    # ==========================================
-    
-    if requires_voicemail_test or extension_type == 'Department':
-        add_case("7. Voicemail Check", "Voicemail Deposit Verification", 
-                 "Trigger an overflow or key press that routes to Voicemail. Leave a 10-second test message.", 
-                 "The correct Voicemail greeting plays. The 10-second test message is successfully recorded without being cut off.")
-        add_case("7. Voicemail Check", "Voicemail Delivery & Transcription", 
-                 "Check the designated target's inbox (Email notification or RingEX App).", 
-                 "The voicemail audio file is delivered accurately. If enabled, the Voice-to-Text transcription is included.")
-
-    add_case("8. Analytics", "Call Log Generation", 
-             "Verify the test calls in the RingCentral Analytics or Call Log portal.", 
-             "The system generates accurate Call Log data containing the correct Caller ID, duration, and routing path.")
-             
-    add_case("8. Analytics", "Clean Disconnect", 
+    add_case("Administration Tasks", "Clean Disconnect", 
              "During any active connected state, have the caller hang up.", 
-             "The call drops immediately across all endpoints. Queue agents are returned to 'Available' status.")
+             "Call drops immediately. RingCentral generates accurate Call Log data.")
 
     return uat_cases
