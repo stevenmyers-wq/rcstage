@@ -19,13 +19,14 @@ document.addEventListener('DOMContentLoaded', () => {
             extInputContainer.style.display = 'block';
         } else {
             extInputContainer.style.display = 'none';
+            extInput.value = ''; // Clear value when hidden
         }
     });
 
     // Logging helper
     function logEvent(message, type = 'info') {
         const time = new Date().toLocaleTimeString();
-        let colorClass = 'text-green-400'; // default info
+        let colorClass = 'text-green-400'; 
         
         if (type === 'error') colorClass = 'text-red-400';
         if (type === 'system') colorClass = 'text-blue-300';
@@ -54,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
         eventLog.innerHTML = '';
     });
 
-    // Generate a simple UUID for message IDs
     function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -67,7 +67,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const subType = subTypeSelect.value;
         const extId = extInput.value.trim();
 
-        // Validate extension ID if required
         if (subType.includes('extension') && !extId) {
             logEvent('Error: Extension ID is required for this subscription type.', 'error');
             return;
@@ -76,7 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
         logEvent('Fetching WSS credentials...', 'system');
         
         try {
-            // 1. Get WSS token from your backend
             const response = await fetch('/api/live_events/wss-credentials', { method: 'POST' });
             if (response.status === 401) {
                 logEvent('Error: Not authenticated with RingCentral.', 'error');
@@ -87,21 +85,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.error) throw new Error(data.error);
             if (!data.uri || !data.ws_access_token) throw new Error('Incomplete WSS credentials returned from API.');
 
-            // 2. Construct the full URL by appending the token as a query parameter
             const connectionUrl = `${data.uri}?access_token=${data.ws_access_token}`;
 
             logEvent(`Connecting to RingCentral WebSocket...`, 'system');
             webSocket = new WebSocket(connectionUrl);
 
             webSocket.onopen = () => {
-                connectionStatus.innerHTML = '<span class="px-2 py-1 bg-green-200 text-green-800 rounded text-xs font-semibold">Status: Connected</span>';
+                connectionStatus.innerHTML = '<span class="px-3 py-1.5 bg-green-200 text-green-800 rounded-full text-xs font-bold uppercase tracking-wider">Status: Connected</span>';
                 logEvent('WebSocket connection successfully established!', 'system');
                 
                 createSubBtn.disabled = true;
                 disconnectBtn.disabled = false;
+                subTypeSelect.disabled = true;
+                extInput.disabled = true;
 
-                // 3. Determine the correct Event Filter based on UI selection
-                // We append the required query parameters to explicitly request the SIP payload from RingCentral
                 let eventFilter = '';
                 if (subType === 'accountTelephony') {
                     eventFilter = '/restapi/v1.0/account/~/telephony/sessions?sipData=true';
@@ -115,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 logEvent(`Creating subscription for: ${eventFilter}`, 'system');
 
-                // 4. Send the ClientRequest to create the subscription over the socket
                 const requestPayload = [
                     {
                         "type": "ClientRequest",
@@ -136,15 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             webSocket.onmessage = (event) => {
                 try {
-                    // Try to parse as JSON for pretty printing
                     const payload = JSON.parse(event.data);
                     
-                    // Filter out the noisy heartbeat messages
                     if (Array.isArray(payload) && payload[0] && payload[0].type === 'Heartbeat') {
                          return;
                     }
                     
-                    // Check if this is the confirmation of our subscription
                     if (Array.isArray(payload) && payload[0] && payload[0].type === 'ClientResponse') {
                         if (payload[0].status === 200 || payload[0].status === 201) {
                             logEvent('Subscription active! Listening for events...', 'system');
@@ -154,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     
-                    // Log actual live events
                     logEvent(JSON.stringify(payload, null, 2), 'info');
                 } catch (e) {
                     logEvent(`Raw Message: ${event.data}`, 'info');
@@ -167,11 +159,13 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             webSocket.onclose = () => {
-                connectionStatus.innerHTML = '<span class="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-semibold">Status: Disconnected</span>';
+                connectionStatus.innerHTML = '<span class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-full text-xs font-bold uppercase tracking-wider">Status: Idle</span>';
                 logEvent('WebSocket connection closed.', 'system');
                 
                 createSubBtn.disabled = false;
                 disconnectBtn.disabled = true;
+                subTypeSelect.disabled = false;
+                extInput.disabled = false;
                 webSocket = null;
             };
 
