@@ -136,6 +136,7 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
         if q_info:
             transfer_mode = q_info.get('transferMode', 'Simultaneous')
             agent_timeout = q_info.get('agentTimeout', 15) 
+            wrap_up_time = q_info.get('wrapUpTime', 0)
             hold_time = q_info.get('holdTime', 0)
             max_callers = q_info.get('maxCallers', 0)
             
@@ -143,6 +144,7 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
             max_call_action = q_info.get('maxCallersAction', 'Unknown')
             
             hold_dest_name = resolve_target(q_info.get('transfer') or q_info.get('voicemail'), ext_map)
+            max_dest_name = resolve_target(q_info.get('transfer') or q_info.get('voicemail'), ext_map)
             
             if hold_action == 'TakeMessagesReturnToGreeting' or max_call_action == 'TakeMessagesReturnToGreeting':
                 requires_voicemail_test = True
@@ -171,9 +173,11 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
             add_case("4. Agent States", "Agent Busy (On another call)", 
                      "Agent answers a non-queue call. Place a call into the queue.", 
                      "The system recognizes the agent is busy. Depending on user settings, the queue call either hunts to the next agent or provides call waiting.")
-            add_case("4. Agent States", "Wrap-Up (After Call Work - ACW)", 
-                     "Agent answers a queue call, connects, and hangs up. Place a second call immediately into the queue.", 
-                     "Agent enters 'Wrap-Up' status and does NOT receive the second call until their configured ACW timer expires.")
+            
+            if wrap_up_time > 0:
+                add_case("4. Agent States", f"Wrap-Up / ACW Timer ({wrap_up_time}s)", 
+                         f"Agent answers a queue call, connects, and hangs up. Place a second call immediately into the queue.", 
+                         f"Agent enters 'Wrap-Up' status and does NOT receive the second call until their {wrap_up_time}s ACW timer expires.")
 
             # --- Distribution Logic ---
             add_case("5. Distribution Logic", "Active Call Decline", 
@@ -206,7 +210,7 @@ def generate_uat_cases(extension_id, extension_name, extension_number, extension
             if max_callers > 0:
                 add_case("6. Queue Boundaries", f"Max Callers Limit ({max_callers} callers)", 
                          f"Simultaneously flood the queue with {max_callers + 1} concurrent inbound calls.", 
-                         f"The final call breaches the maximum queue capacity of {max_callers}. It instantly bypasses hold music and executes: [{max_call_action}].")
+                         f"The final call breaches the maximum queue capacity of {max_callers}. It instantly bypasses hold music and executes: [{max_call_action}] -> {max_dest_name}.")
 
             add_case("6. Queue Boundaries", "Zero-Out Exception (DTMF Interrupt)", 
                      "While listening to the queue hold music, press '0' on the dialpad.", 
