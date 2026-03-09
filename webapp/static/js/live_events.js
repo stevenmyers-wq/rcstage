@@ -110,6 +110,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Helper to safely extract the best display name from a party payload
+    function extractPartyName(p) {
+        if (!p) return null;
+        return p.phoneNumber || p.extensionId || p.name || null;
+    }
+
     function processTelephonyEvent(payload) {
         const body = payload.body;
         if (!body || !body.telephonySessionId || !body.parties) return;
@@ -117,41 +123,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionId = body.telephonySessionId;
         
         if (!activeCalls[sessionId]) {
-            // Added masterSipData to correlate headers across the entire session lifecycle
+            // masterSipData acts as a global dictionary for this specific session
             activeCalls[sessionId] = { id: sessionId, events: [], caller: 'Unknown', callee: 'Unknown', masterSipData: {} };
         }
 
         const callData = activeCalls[sessionId];
 
+        // Pass 1: Extract global data (Caller/Callee names and global SIP tags)
         body.parties.forEach(party => {
-            let participantName = party.extensionId ? `Ext ${party.extensionId}` : (party.from?.phoneNumber || party.to?.phoneNumber || 'External');
-            
-            if (party.direction === 'Inbound' && callData.caller === 'Unknown') {
-                callData.caller = party.from?.phoneNumber || 'Caller';
-                callData.callee = party.to?.phoneNumber || party.extensionId || 'System';
-            } else if (party.direction === 'Outbound' && callData.caller === 'Unknown') {
-                callData.caller = party.extensionId || 'Ext';
-                callData.callee = party.to?.phoneNumber || 'Callee';
+            if (callData.caller === 'Unknown') {
+                const dir = party.direction || 'Inbound';
+                if (dir === 'Inbound') {
+                    callData.caller = extractPartyName(party.from) || 'External Caller';
+                    callData.callee = extractPartyName(party.to) || 'Internal Callee';
+                } else {
+                    callData.caller = extractPartyName(party.from) || 'Internal Caller';
+                    callData.callee = extractPartyName(party.to) || 'External Callee';
+                }
             }
 
-            // CORRELATION LOGIC: Learn any SIP data provided in this leg
-            if (party.sipData && Object.keys(party.sipData).length > 0) {
+            // Continuously gather any SIP data RC provides across the call's lifespan
+            if (party.sipData && typeof party.sipData === 'object') {
                 Object.assign(callData.masterSipData, party.sipData);
             }
+        });
 
+        // Pass 2: Record the actual status events for the ladder
+        body.parties.forEach(party => {
             if (party.status && party.status.code) {
                 const sipMsg = mapStatusToSip(party.status.code);
                 
                 const lastEvent = callData.events[callData.events.length - 1];
-                if (!lastEvent || lastEvent.msg !== sipMsg || lastEvent.participant !== participantName) {
+                if (!lastEvent || lastEvent.msg !== sipMsg) {
                     callData.events.push({
-                        participant: participantName,
-                        direction: party.direction,
+                        direction: party.direction || 'Inbound',
                         msg: sipMsg,
                         rawStatus: party.status.code,
-                        rawSipData: party.sipData || {},
-                        // Take a snapshot of everything we know about this call's SIP headers so far
-                        correlatedSipData: { ...callData.masterSipData } 
+                        rawSipData: party.sipData || {} // Keep the raw data for debugging
                     });
                 }
             }
@@ -168,15 +176,21 @@ document.addEventListener('DOMContentLoaded', () => {
         let content = `<span class="text-pink-400 font-bold">${eventData.msg}</span> <span class="text-orange-400">sip:${callee}@ringcentral.com</span> SIP/2.0\n`;
         content += `<span class="text-blue-300">Session-ID:</span> ${activeCalls[callSelector.value].id}\n`;
         
-        // Use the correlated SIP data (gathered across the whole session) for the primary display
-        const displaySip = Object.keys(eventData.correlatedSipData).length > 0 ? eventData.correlatedSipData : eventData.rawSipData;
+        // Pull from the LIVE global dictionary for this call, so data is never missing
+        const masterSip = activeCalls[callSelector.value].masterSipData || {};
 
-        if (displaySip.callId) content += `<span class="text-blue-300">Call-ID:</span> ${displaySip.callId}\n`;
-        if (displaySip.fromTag) content += `<span class="text-blue-300">From:</span> &lt;sip:${caller}&gt;;tag=${displaySip.fromTag}\n`;
-        if (displaySip.toTag) content += `<span class="text-blue-300">To:</span> &lt;sip:${callee}&gt;;tag=${displaySip.toTag}\n`;
+        if (masterSip.callId) content += `<span class="text-blue-300">Call-ID:</span> ${masterSip.callId}\n`;
+        if (masterSip.fromTag) content += `<span class="text-blue-300">From Tag:</span> ${masterSip.fromTag}\n`;
+        if (masterSip.toTag) content += `<span class="text-blue-300">To Tag:</span> ${masterSip.toTag}\n`;
         
-        content += `\n<span class="text-gray-400">--- RC Raw SIP Object (This Specific Event) ---</span>\n`;
-        // Show exactly what RC sent for this specific packet, so you know if it was empty or not
+        // Dynamically print any extra headers RingCentral provides (like localUri, remoteUri)
+        Object.keys(masterSip).forEach(key => {
+            if (!['callId', 'fromTag', 'toTag'].includes(key)) {
+                content += `<span class="text-blue-300">${key}:</span> ${masterSip[key]}\n`;
+            }
+        });
+        
+        content += `\n<span class="text-gray-400">--- RC Raw SIP Object (This Specific Packet) ---</span>\n`;
         content += `<span class="text-green-200">${JSON.stringify(eventData.rawSipData, null, 2)}</span>`;
 
         sipModalContent.innerHTML = content;
@@ -190,6 +204,10 @@ document.addEventListener('DOMContentLoaded', () => {
              return;
         }
 
+        // Clean names for Mermaid rendering
+        const safeCaller = callData.caller.replace(/[^a-zA-Z0-9+]/g, '_');
+        const safeCallee = callData.callee.replace(/[^a-zA-Z0-9+]/g, '_');
+
         let mermaidCode = `sequenceDiagram\n    autonumber\n    participant Caller as ${callData.caller}\n    participant RC as RingCentral\n    participant Callee as ${callData.callee}\n\n`;
 
         callData.events.forEach(ev => {
@@ -197,12 +215,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ev.rawStatus === 'Setup') mermaidCode += `    Caller->>RC: ${ev.msg}\n`;
                 if (ev.rawStatus === 'Proceeding') mermaidCode += `    RC-->>Caller: ${ev.msg}\n`;
                 if (ev.rawStatus === 'Answered') mermaidCode += `    RC->>Caller: ${ev.msg}\n`;
-                if (ev.rawStatus === 'Disconnected') mermaidCode += `    RC->>Caller: ${ev.msg}\n`;
+                if (ev.rawStatus === 'Disconnected') mermaidCode += `    RC-->>Caller: ${ev.msg}\n`;
             } else if (ev.direction === 'Outbound') {
                 if (ev.rawStatus === 'Setup') mermaidCode += `    RC->>Callee: ${ev.msg}\n`;
                 if (ev.rawStatus === 'Proceeding') mermaidCode += `    Callee-->>RC: ${ev.msg}\n`;
                 if (ev.rawStatus === 'Answered') mermaidCode += `    Callee->>RC: ${ev.msg}\n`;
-                if (ev.rawStatus === 'Disconnected') mermaidCode += `    Callee->>RC: ${ev.msg}\n`;
+                if (ev.rawStatus === 'Disconnected') mermaidCode += `    RC-->>Callee: ${ev.msg}\n`;
             }
         });
 
