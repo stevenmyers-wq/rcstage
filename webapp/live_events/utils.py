@@ -19,7 +19,8 @@ def get_wss_credentials():
     WebSocket access token and the server URI.
     """
     try:
-        response = rc_api_call("/restapi/oauth/wstoken", method="POST")
+        # FIX: Added json={} so the POST request has a valid empty body
+        response = rc_api_call("/restapi/oauth/wstoken", method="POST", json={})
         return response
     except Exception as e:
         print(f"FATAL ERROR in get_wss_credentials: {e}")
