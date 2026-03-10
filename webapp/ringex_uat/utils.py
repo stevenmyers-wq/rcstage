@@ -225,20 +225,22 @@ class UATGenerator:
             
         return " AND ".join(conditions) if conditions else "Specific Configured Condition"
 
-    def _is_greeting_active(self, rule_obj, greeting_type):
-        """Determines if a specific greeting type is actively configured to play."""
+    def _get_greeting_info(self, rule_obj, greeting_type):
+        """Determines if a specific greeting type is active and extracts if it is Custom or Preset."""
         greetings = safe_list(rule_obj, 'greetings')
         for g in greetings:
             if isinstance(g, dict) and g.get('type') == greeting_type:
                 # If there's a custom uploaded greeting, it's active
                 if 'custom' in g and g['custom']:
-                    return True
+                    return {'active': True, 'desc': 'Custom'}
                 # If there's a preset, ensure it's not the "None" off switch
                 if 'preset' in g:
                     preset_name = safe_dict(g, 'preset').get('name', '')
                     if preset_name not in ['None', 'Off']:
-                        return True
-        return False
+                        return {'active': True, 'desc': f"Preset: {preset_name}"}
+                    else:
+                        return {'active': False, 'desc': 'None'}
+        return {'active': False, 'desc': 'System Default'}
 
     def process(self):
         while self.queue_to_process:
@@ -305,7 +307,9 @@ class UATGenerator:
             
             has_after_hours = False
             queue_settings = {}
-            has_intro = False
+            intro_info = {'active': False, 'desc': 'System Default'}
+            conn_audio_info = {'active': True, 'desc': 'System Default'}
+            hold_music_info = {'active': True, 'desc': 'System Default'}
 
             for rule_sum in rules_summary:
                 if not isinstance(rule_sum, dict) or not rule_sum.get('enabled', False): continue
@@ -345,7 +349,13 @@ class UATGenerator:
                 # --- QUEUE SETTINGS ---
                 elif rtype == 'BusinessHours' and ctype == 'Department':
                     queue_settings = safe_dict(rule, 'queue')
-                    has_intro = self._is_greeting_active(rule, 'Introductory')
+                    intro_info = self._get_greeting_info(rule, 'Introductory')
+                    
+                    c_info = self._get_greeting_info(rule, 'ConnectingAudio')
+                    if c_info['desc'] != 'System Default': conn_audio_info = c_info
+                    
+                    h_info = self._get_greeting_info(rule, 'HoldMusic')
+                    if h_info['desc'] != 'System Default': hold_music_info = h_info
 
             if not has_after_hours and bh_str != "24/7 (Always Open)":
                  self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of Business Hours: [{bh_str}].", f"Follows default account After Hours logic.")
@@ -367,14 +377,14 @@ class UATGenerator:
                 int_per = q_info.get('holdAudioInterruptionPeriod') or queue_settings.get('holdAudioInterruptionPeriod') or 0
 
                 # --- 3. Caller Experience ---
-                if has_intro:
-                    self.add_case(f"{prefix}3. Caller Experience", "Introductory Greeting", f"{path_str}Place a call to the queue.", "Configured Intro Greeting plays fully before agent ringing begins.")
-                self.add_case(f"{prefix}3. Caller Experience", "Hold Music Verification", f"Remain in the queue while agents are busy/ringing.", "The configured connecting audio/hold music plays cleanly without distortion.")
+                if intro_info['active']:
+                    self.add_case(f"{prefix}3. Caller Experience", "Introductory Greeting", f"{path_str}Place a call to the queue.", f"The [{intro_info['desc']}] Introductory Greeting plays fully before agent ringing begins.")
+                self.add_case(f"{prefix}3. Caller Experience", "Audio While Connecting", f"Remain in the queue while waiting for an agent.", f"The [{conn_audio_info['desc']}] connecting audio plays cleanly without distortion.")
                 
                 if int_mode == 'Periodically' and int_per and int(int_per) > 0:
-                    self.add_case(f"{prefix}3. Caller Experience", f"Interrupt Audio (Every {int_per}s)", f"Remain on hold in {cname} for at least {int(int_per) + 5} seconds.", f"At exactly {int_per}s, hold music pauses, the interrupt audio prompt plays, and hold music resumes.")
+                    self.add_case(f"{prefix}3. Caller Experience", f"Interrupt Audio (Every {int_per}s)", f"Remain on hold in {cname} for at least {int(int_per) + 5} seconds.", f"At exactly {int_per}s, audio pauses, the interrupt prompt plays, and connecting audio resumes.")
                 elif int_mode == 'WhenMusicEnds':
-                    self.add_case(f"{prefix}3. Caller Experience", "Interrupt Audio (When Music Ends)", f"Remain on hold in {cname} until the hold music track finishes.", "When the hold music track ends, the interrupt audio prompt plays before the music begins looping.")
+                    self.add_case(f"{prefix}3. Caller Experience", "Interrupt Audio (When Music Ends)", f"Remain on hold in {cname} until the connecting audio track finishes.", "When the audio track ends, the interrupt prompt plays before looping.")
 
                 # --- 4. Agent Experience ---
                 self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-In", f"Agent toggles 'Accept Queue Calls' ON in the RingEX App. Place a test call.", f"Agent's device rings. The Queue Name '{cname}' is prepended to the Caller ID.")
@@ -402,10 +412,10 @@ class UATGenerator:
                     self.add_case(f"{prefix}5. Routing & Distribution", f"Agent Ring Timeout ({ag_timeout}s)", f"Targeted agent lets the call ring without answering for exactly {ag_timeout} seconds.", f"The {ag_timeout}s timer expires. The call drops from Agent 1 and begins ringing the next available agent.")
 
                 # --- 6. Call Handling ---
-                self.add_case(f"{prefix}6. Call Handling", "Call Hold", "Agent answers the queue call and places the caller on hold using the RingEX App.", "The caller hears the agent hold music. The call can be successfully retrieved by the agent.")
+                self.add_case(f"{prefix}6. Call Handling", "Call Hold (Hold Music)", "Agent answers the queue call and places the caller on hold using the RingEX App.", f"The caller hears the [{hold_music_info['desc']}] hold music. The call can be successfully retrieved by the agent.")
                 self.add_case(f"{prefix}6. Call Handling", "Warm Transfer", "Agent answers, initiates a Warm Transfer to an internal extension, consults, and completes.", "The caller is successfully connected to the secondary extension with two-way audio.")
                 self.add_case(f"{prefix}6. Call Handling", "Blind Transfer", "Agent answers and initiates a Blind Transfer to an internal extension.", "The agent is immediately released. The caller is transferred and hears ringing to the secondary extension.")
-                self.add_case(f"{prefix}6. Call Handling", "Call Park", "Agent answers and Parks the call to a Park Location.", "The caller is parked and hears hold music. The call can be successfully retrieved by another user dialing the park code.")
+                self.add_case(f"{prefix}6. Call Handling", "Call Park", "Agent answers and Parks the call to a Park Location.", f"The caller is parked and hears the [{hold_music_info['desc']}] hold music. The call can be retrieved by dialing the park code.")
 
                 # --- 7. Boundaries & Overflows ---
                 no_ans_act = queue_settings.get('noAnswerAction')
@@ -455,8 +465,15 @@ class UATGenerator:
                 if not isinstance(ivr_info, dict): ivr_info = {}
                 
                 prompt = safe_dict(ivr_info, 'prompt')
-                ptext = prompt.get('text', 'Configured Audio File')
-                self.add_case(f"{prefix}3. Caller Experience", "Greeting Playback & Script", f"Dial {cname}.", f"The IVR prompt plays cleanly: '{ptext}'. Wording matches the officially approved script.")
+                mode = prompt.get('mode', '')
+                if mode == 'Audio':
+                    ptext = "[Custom Audio]"
+                elif mode == 'TextToSpeech':
+                    ptext = f"[Text-to-Speech] '{prompt.get('text', '')}'"
+                else:
+                    ptext = f"[Preset/Audio] {prompt.get('text', 'Configured Audio File')}"
+                    
+                self.add_case(f"{prefix}3. Caller Experience", "Greeting Playback & Script", f"Dial {cname}.", f"The IVR prompt {ptext} plays cleanly. Wording matches the officially approved script.")
                 self.add_case(f"{prefix}3. Caller Experience", "Barge-In (Interruptibility)", f"While the greeting is actively playing, press a valid menu key.", "The IVR registers the DTMF tone immediately and routes the call without forcing the caller to listen to the full message.")
                 
                 actions = safe_list(ivr_info, 'actions')
@@ -486,7 +503,7 @@ class UATGenerator:
         # ---------------------------------------------------------
         # GLOBAL ACCOUNT CHECKS
         # ---------------------------------------------------------
-        self.add_case("Global Validation", "Voicemail Deposit & Delivery", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message. Check the designated target's inbox.", "The correct Voicemail greeting plays. The voicemail audio file is recorded without truncating and delivered accurately.")
+        self.add_case("Global Validation", "Voicemail Deposit & Delivery", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message. Check the designated target's inbox.", "The configured Voicemail greeting plays. The voicemail audio file is recorded without truncating and delivered accurately.")
         self.add_case("Global Validation", "Call Logs Generation", "Log into the RingCentral Admin Portal and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result across the entire traced journey.")
 
 
