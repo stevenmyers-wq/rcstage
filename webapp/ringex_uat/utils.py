@@ -110,15 +110,34 @@ class UATGenerator:
             
         elif act in ['TakeMessagesReturnToGreeting', 'TakeMessagesOnly', 'Voicemail']:
             voicemail = safe_dict(rule_obj, 'voicemail')
-            recip = safe_dict(voicemail, 'recipient')
-            tid = str(recip.get('id', ''))
-            if tid:
-                tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}")
-                text = self.ext_map.get(tid, {}).get('ext', '')
-                ext_str = f" (Ext {text})" if text else ""
-                return f"Voicemail Inbox of {tname}{ext_str}", tid
+            
+            # Check if voicemail is actually enabled. If false, it falls back to missedCall behavior.
+            if voicemail.get('enabled', True) is False:
+                missed = safe_dict(rule_obj, 'missedCall')
+                m_act = missed.get('actionType', 'PlayGreetingAndDisconnect')
+                
+                if m_act == 'ConnectToExtension':
+                    tid = str(safe_dict(missed, 'extension').get('id', ''))
+                    tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}") if tid else "Unknown"
+                    text = self.ext_map.get(tid, {}).get('ext', '')
+                    ext_str = f" (Ext {text})" if text else ""
+                    return f"Missed Call Transfer -> {tname}{ext_str}", tid
+                elif m_act == 'ConnectToExternalNumber':
+                    num = missed.get('phoneNumber', 'Unknown Number')
+                    return f"Missed Call Forward -> {num}", None
+                else:
+                    return "Play Missed Call Greeting & Disconnect", None
             else:
-                return f"Voicemail Inbox of {current_ext_name}", None
+                # Standard Voicemail Routing
+                recip = safe_dict(voicemail, 'recipient')
+                tid = str(recip.get('id', ''))
+                if tid:
+                    tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}")
+                    text = self.ext_map.get(tid, {}).get('ext', '')
+                    ext_str = f" (Ext {text})" if text else ""
+                    return f"Voicemail Inbox of {tname}{ext_str}", tid
+                else:
+                    return f"Voicemail Inbox of {current_ext_name}", None
             
         elif act == 'UnconditionalForwarding':
             forward = safe_dict(rule_obj, 'unconditionalForwarding')
@@ -132,12 +151,29 @@ class UATGenerator:
             return "Play Announcement & Disconnect", None
             
         elif act == 'WaitPrimaryMembers':
-            return "Wait for Primary Members", None
+            return "Wait for Primary Members to Answer", None
+            
+        elif act == 'WaitPrimaryAndOverflowMembers':
+            return "Wait for Primary & Overflow Members to Answer", None
             
         elif act == 'AgentQueue':
             return "Queue Agents (Standard Queue Distribution)", None
             
         elif act == 'ForwardCalls':
+            fwd_obj = safe_dict(rule_obj, 'forwarding')
+            fwd_rules = safe_list(fwd_obj, 'rules')
+            destinations = []
+            
+            for fr in fwd_rules:
+                if isinstance(fr, dict):
+                    nums = safe_list(fr, 'forwardingNumbers')
+                    for fn in nums:
+                        if isinstance(fn, dict):
+                            label = fn.get('label') or fn.get('phoneNumber')
+                            if label: destinations.append(label)
+                            
+            if destinations:
+                return f"Forwarding Array [{', '.join(destinations)}]", None
             return "User's Configured Devices & Forwarding Numbers", None
             
         elif act == 'SharedLines':
@@ -188,6 +224,21 @@ class UATGenerator:
                 conditions.append("Matches Custom Time Schedule")
             
         return " AND ".join(conditions) if conditions else "Specific Configured Condition"
+
+    def _is_greeting_active(self, rule_obj, greeting_type):
+        """Determines if a specific greeting type is actively configured to play."""
+        greetings = safe_list(rule_obj, 'greetings')
+        for g in greetings:
+            if isinstance(g, dict) and g.get('type') == greeting_type:
+                # If there's a custom uploaded greeting, it's active
+                if 'custom' in g and g['custom']:
+                    return True
+                # If there's a preset, ensure it's not the "None" off switch
+                if 'preset' in g:
+                    preset_name = safe_dict(g, 'preset').get('name', '')
+                    if preset_name not in ['None', 'Off']:
+                        return True
+        return False
 
     def process(self):
         while self.queue_to_process:
@@ -265,6 +316,11 @@ class UATGenerator:
                 rule = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/answering-rule/{rule_id}', method='GET', raise_error=False)
                 if not isinstance(rule, dict): rule = rule_sum
 
+                # --- CALL SCREENING CHECK ---
+                screening = rule.get('screening')
+                if screening and screening != 'Off':
+                    self.add_case(f"{prefix}3. Caller Experience", f"Call Screening ({screening})", f"{path_str}Initiate a call triggering the {rtype} rule.", "Caller is prompted to record their name before the call is connected.")
+
                 # --- CUSTOM RULES ---
                 if rtype == 'Custom':
                     rname = rule.get('name', 'Custom Rule')
@@ -289,9 +345,7 @@ class UATGenerator:
                 # --- QUEUE SETTINGS ---
                 elif rtype == 'BusinessHours' and ctype == 'Department':
                     queue_settings = safe_dict(rule, 'queue')
-                    greetings = safe_list(rule, 'greetings')
-                    if any(isinstance(g, dict) and g.get('type') == 'Introductory' for g in greetings):
-                        has_intro = True
+                    has_intro = self._is_greeting_active(rule, 'Introductory')
 
             if not has_after_hours and bh_str != "24/7 (Always Open)":
                  self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of Business Hours: [{bh_str}].", f"Follows default account After Hours logic.")
@@ -308,14 +362,19 @@ class UATGenerator:
                 wrap_up = q_info.get('wrapUpTime') or queue_settings.get('wrapUpTime') or 0
                 hold_time = queue_settings.get('holdTime') or q_info.get('holdTime') or 0
                 max_callers = queue_settings.get('maxCallers') or q_info.get('maxCallers') or 0
+                
+                int_mode = q_info.get('holdAudioInterruptionMode') or queue_settings.get('holdAudioInterruptionMode') or 'Never'
                 int_per = q_info.get('holdAudioInterruptionPeriod') or queue_settings.get('holdAudioInterruptionPeriod') or 0
 
                 # --- 3. Caller Experience ---
                 if has_intro:
                     self.add_case(f"{prefix}3. Caller Experience", "Introductory Greeting", f"{path_str}Place a call to the queue.", "Configured Intro Greeting plays fully before agent ringing begins.")
                 self.add_case(f"{prefix}3. Caller Experience", "Hold Music Verification", f"Remain in the queue while agents are busy/ringing.", "The configured connecting audio/hold music plays cleanly without distortion.")
-                if int_per and int(int_per) > 0:
-                    self.add_case(f"{prefix}3. Caller Experience", f"Interrupt Audio ({int_per}s)", f"Remain on hold in {cname} for at least {int(int_per) + 5} seconds.", f"At exactly {int_per}s, hold music pauses, the interrupt audio prompt plays, and hold music resumes.")
+                
+                if int_mode == 'Periodically' and int_per and int(int_per) > 0:
+                    self.add_case(f"{prefix}3. Caller Experience", f"Interrupt Audio (Every {int_per}s)", f"Remain on hold in {cname} for at least {int(int_per) + 5} seconds.", f"At exactly {int_per}s, hold music pauses, the interrupt audio prompt plays, and hold music resumes.")
+                elif int_mode == 'WhenMusicEnds':
+                    self.add_case(f"{prefix}3. Caller Experience", "Interrupt Audio (When Music Ends)", f"Remain on hold in {cname} until the hold music track finishes.", "When the hold music track ends, the interrupt audio prompt plays before the music begins looping.")
 
                 # --- 4. Agent Experience ---
                 self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-In", f"Agent toggles 'Accept Queue Calls' ON in the RingEX App. Place a test call.", f"Agent's device rings. The Queue Name '{cname}' is prepended to the Caller ID.")
@@ -325,7 +384,20 @@ class UATGenerator:
                     self.add_case(f"{prefix}4. Agent Experience", f"Wrap-Up / ACW Timer ({wrap_up}s)", f"Agent answers a queue call and hangs up. Immediately place another call.", f"Agent enters 'Wrap-Up' status and does NOT receive the second call until the {wrap_up}s timer expires.")
 
                 # --- 5. Routing & Distribution ---
-                self.add_case(f"{prefix}5. Routing & Distribution", f"Distribution Method: {tmode}", f"Ensure multiple agents are 'Available'. Place a call into the queue.", f"The call distributes to agents based on {tmode} logic.")
+                # Check for explicit fixed order agent array
+                if str(tmode).lower() == 'fixedorder':
+                    agents_arr = safe_list(queue_settings, 'fixedOrderAgents') or safe_list(q_info, 'fixedOrderAgents')
+                    if agents_arr:
+                        agent_names = []
+                        for a in agents_arr:
+                            if isinstance(a, dict) and safe_dict(a, 'extension').get('id'):
+                                a_id = str(safe_dict(a, 'extension').get('id'))
+                                agent_names.append(self.ext_map.get(a_id, {}).get('name', f'Ext {a_id}'))
+                        agent_str = " -> ".join(agent_names) if agent_names else "Configured Agents"
+                        self.add_case(f"{prefix}5. Routing & Distribution", "Fixed Order Distribution", f"Ensure agents are 'Available'. Place a call.", f"Call rings agents sequentially in exactly this order: [{agent_str}].")
+                else:
+                    self.add_case(f"{prefix}5. Routing & Distribution", f"Distribution Method: {tmode}", f"Ensure multiple agents are 'Available'. Place a call into the queue.", f"The call distributes to agents based on {tmode} logic.")
+                
                 if str(tmode).lower() != 'simultaneous' and ag_timeout and int(ag_timeout) > 0:
                     self.add_case(f"{prefix}5. Routing & Distribution", f"Agent Ring Timeout ({ag_timeout}s)", f"Targeted agent lets the call ring without answering for exactly {ag_timeout} seconds.", f"The {ag_timeout}s timer expires. The call drops from Agent 1 and begins ringing the next available agent.")
 
@@ -336,6 +408,16 @@ class UATGenerator:
                 self.add_case(f"{prefix}6. Call Handling", "Call Park", "Agent answers and Parks the call to a Park Location.", "The caller is parked and hears hold music. The call can be successfully retrieved by another user dialing the park code.")
 
                 # --- 7. Boundaries & Overflows ---
+                no_ans_act = queue_settings.get('noAnswerAction')
+                if no_ans_act:
+                    if no_ans_act in ['WaitPrimaryMembers', 'WaitPrimaryAndOverflowMembers']:
+                        self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call remains in queue to continue waiting/hunting.")
+                    else:
+                        na_name, na_id = self._resolve_target(queue_settings, no_ans_act, cname)
+                        self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call executes overflow -> {na_name}.")
+                        if na_id and self.ext_map.get(na_id, {}).get('type') in ['Department', 'IvrMenu']:
+                            self.queue_to_process.append({"id": na_id, "name": self.ext_map[na_id]['name'], "ext": self.ext_map[na_id]['ext'], "type": self.ext_map[na_id]['type'], "path": f"No Answer Overflow"})
+
                 h_act = queue_settings.get('holdTimeExpirationAction')
                 h_name, h_id = self._resolve_target(queue_settings, h_act, cname) 
                 
