@@ -114,7 +114,9 @@ class UATGenerator:
             tid = str(recip.get('id', ''))
             if tid:
                 tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}")
-                return f"Voicemail Inbox of {tname}", tid
+                text = self.ext_map.get(tid, {}).get('ext', '')
+                ext_str = f" (Ext {text})" if text else ""
+                return f"Voicemail Inbox of {tname}{ext_str}", tid
             else:
                 return f"Voicemail Inbox of {current_ext_name}", None
             
@@ -280,7 +282,7 @@ class UATGenerator:
                     action = rule.get('callHandlingAction')
                     tname, tid = self._resolve_target(rule, action, cname)
                     
-                    self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of configured Business Hours.", f"Call executes After Hours logic and routes to -> {tname}.")
+                    self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of Business Hours: [{bh_str}].", f"Call executes After Hours logic and routes to -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"After Hours Routing"})
 
@@ -292,7 +294,7 @@ class UATGenerator:
                         has_intro = True
 
             if not has_after_hours and bh_str != "24/7 (Always Open)":
-                 self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of configured Business Hours: [{bh_str}].", f"Follows default account After Hours logic.")
+                 self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of Business Hours: [{bh_str}].", f"Follows default account After Hours logic.")
 
             # ---------------------------------------------------------
             # 4. CALL QUEUE EXHAUSTIVE TESTING
