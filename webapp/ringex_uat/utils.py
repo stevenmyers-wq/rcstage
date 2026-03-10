@@ -90,7 +90,7 @@ class UATGenerator:
         self.counter += 1
 
     def _resolve_target(self, rule_obj, action_type=None):
-        """Forensically digs through standard RingCentral routing objects to find the true destination."""
+        """Forensically maps specific overflow/transfer actions and RC backend Enums to human destinations."""
         if not isinstance(rule_obj, dict):
             return f"Action: {action_type or 'Unknown'}", None
             
@@ -106,14 +106,14 @@ class UATGenerator:
             tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}") if tid else "Unknown Extension"
             text = self.ext_map.get(tid, {}).get('ext', '')
             ext_str = f" (Ext {text})" if text else ""
-            return f"Transfer -> {tname}{ext_str}", tid
+            return f"Internal Extension: {tname}{ext_str}", tid
             
         elif act in ['TakeMessagesReturnToGreeting', 'Voicemail']:
             voicemail = safe_dict(rule_obj, 'voicemail')
             recip = safe_dict(voicemail, 'recipient')
             tid = str(recip.get('id', ''))
             tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}") if tid else "System Default"
-            return f"Voicemail -> {tname}", tid
+            return f"Voicemail Inbox of {tname}", tid
             
         elif act == 'UnconditionalForwarding':
             forward = safe_dict(rule_obj, 'unconditionalForwarding')
@@ -121,7 +121,7 @@ class UATGenerator:
                 f_list = safe_list(rule_obj, 'unconditionalForwarding')
                 if f_list and isinstance(f_list[0], dict): forward = f_list[0]
             num = forward.get('phoneNumber', 'Unknown Number') if isinstance(forward, dict) else 'Unknown Number'
-            return f"External Forward -> {num}", None
+            return f"External Forwarding Number ({num})", None
             
         elif act == 'PlayAnnouncementOnly':
             return "Play Announcement & Disconnect", None
@@ -129,7 +129,16 @@ class UATGenerator:
         elif act == 'WaitPrimaryMembers':
             return "Wait for Primary Members", None
             
-        return f"Action: {act}", None
+        elif act == 'AgentQueue':
+            return "Queue Agents (Standard Queue Distribution)", None
+            
+        elif act == 'ForwardCalls':
+            return "User's Configured Devices & Forwarding Numbers", None
+            
+        elif act == 'SharedLines':
+            return "Shared Lines Group", None
+            
+        return f"{act}", None
 
     def _extract_rule_conditions(self, rule):
         """Accurately parses the exact triggers for a custom rule from the JSON arrays."""
@@ -233,7 +242,7 @@ class UATGenerator:
                     action = rule.get('callHandlingAction')
                     tname, tid = self._resolve_target(rule, action)
                     
-                    self.add_case(f"{prefix}2. Schedule Boundaries", f"Custom Rule: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule intercepts call. Executes -> {tname}.")
+                    self.add_case(f"{prefix}2. Schedule Boundaries", f"Custom Rule: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule successfully intercepts the call and routes to -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Custom Rule '{rname}'"})
 
@@ -243,7 +252,7 @@ class UATGenerator:
                     action = rule.get('callHandlingAction')
                     tname, tid = self._resolve_target(rule, action)
                     
-                    self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of configured Business Hours.", f"Call executes After Hours logic -> {tname}.")
+                    self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of configured Business Hours.", f"Call executes After Hours logic and routes to -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"After Hours Routing"})
 
@@ -303,12 +312,12 @@ class UATGenerator:
                 m_act = queue_settings.get('maxCallersAction')
                 m_name, m_id = self._resolve_target(queue_settings, m_act)
 
-                self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero Agents Logged In", f"Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", f"Call bypasses queue ringing and immediately executes Overflow -> {h_name}.")
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero Agents Logged In", f"Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", f"Call bypasses queue ringing and immediately executes overflow -> {h_name}.")
 
                 if hold_time and int(hold_time) > 0:
                     h_mins = int(hold_time) // 60 if int(hold_time) >= 60 else int(hold_time)
                     lbl = f"{h_mins} minutes" if int(hold_time) >= 60 else f"{hold_time} seconds"
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires. Call is forcefully removed from the queue and executes -> {h_name}.")
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires. Call is forcefully removed from the queue and routes to -> {h_name}.")
                     if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": f"Wait Time Overflow"})
                 else:
@@ -319,13 +328,8 @@ class UATGenerator:
                     if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": f"Max Callers Overflow"})
 
-                zero_name = "Default Operator"
+                zero_name, _ = self._resolve_target(queue_settings, 'Voicemail')
                 vmail = safe_dict(queue_settings, 'voicemail')
-                recip = safe_dict(vmail, 'recipient')
-                if recip and recip.get('id'):
-                    z_id = str(recip.get('id'))
-                    zero_name = f"Voicemail of {self.ext_map.get(z_id, {}).get('name', z_id)}"
-                
                 if vmail or queue_settings.get('transfer'):
                     self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out (DTMF '0')", f"While listening to {cname} hold music, press '0' on the dialpad.", f"Call gracefully escapes the queue and routes to -> {zero_name}.")
                 else:
@@ -353,8 +357,7 @@ class UATGenerator:
                         a_type = act.get('action')
                         tname, tid = self._resolve_target(act, a_type)
                         
-                        act_label = a_type or 'Configured Action'
-                        self.add_case(f"{prefix}5. Routing & Distribution", f"Key Mapping: Press '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System correctly processes input and executes [{act_label}] -> {tname}.")
+                        self.add_case(f"{prefix}5. Routing & Distribution", f"Key Mapping: Press '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System correctly processes input and routes to -> {tname}.")
                         
                         if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                             self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Key '{key}'"})
