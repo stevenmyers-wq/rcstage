@@ -1,8 +1,7 @@
 from webapp.rc_api import rc_api_call
 
 # =============================================================================
-# TAILORED & HOLISTIC UAT GENERATOR
-# Every test uses EXACT data. Only tests CONFIGURED features.
+# FAIL-SAFE JSON EXTRACTORS
 # =============================================================================
 
 def safe_dict(d, key):
@@ -15,656 +14,298 @@ def safe_list(d, key):
     val = d.get(key)
     return val if isinstance(val, list) else []
 
-
-class TailoredUATGenerator:
-    """
-    Generates UAT cases tailored to ACTUAL queue configuration.
-    Uses exact phone numbers, agent names, configured values.
-    Only tests features that are actually configured.
-    """
-    
-    def __init__(self, start_id, start_name, start_number, start_type):
-        self.test_cases = []
-        self.test_counter = 1
-        self.processed_extensions = set()
-        self.processing_queue = []
-        
-        # Build extension directory
-        self.ext_directory = self._build_extension_directory()
-        
-        self.processing_queue.append({
-            'id': str(start_id),
-            'name': start_name,
-            'number': start_number,
-            'type': start_type,
-            'path': [],
-            'depth': 0,
-            'context': 'Primary Entry Point'
-        })
-    
-    def _build_extension_directory(self):
-        """Build complete extension directory"""
-        directory = {}
-        resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 2000}, raise_error=False)
-        
-        if isinstance(resp, dict):
-            for ext in safe_list(resp, 'records'):
-                if isinstance(ext, dict) and ext.get('id'):
-                    ext_id = str(ext.get('id'))
-                    contact = safe_dict(ext, 'contact')
-                    directory[ext_id] = {
-                        'id': ext_id,
-                        'name': ext.get('name', 'Unknown'),
-                        'number': ext.get('extensionNumber', 'N/A'),
-                        'type': ext.get('type', 'Unknown'),
-                        'email': contact.get('email'),
-                        'first_name': contact.get('firstName'),
-                        'last_name': contact.get('lastName')
-                    }
-        
-        return directory
-    
-    def add_test(self, category, scenario, action, expected):
-        """Add test case"""
-        self.test_cases.append({
-            'test_id': f'UAT-{self.test_counter:04d}',
-            'category': category,
-            'scenario': scenario,
-            'action': action,
-            'expected': expected
-        })
-        self.test_counter += 1
-    
-    def _format_phone(self, number):
-        """Format phone number as (XXX) XXX-XXXX"""
-        if not number:
-            return ''
-        clean = number.replace('+1', '').replace('+', '').replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
-        if len(clean) == 10:
-            return f"({clean[:3]}) {clean[3:6]}-{clean[6:]}"
-        elif len(clean) == 11 and clean[0] == '1':
-            return f"({clean[1:4]}) {clean[4:7]}-{clean[7:]}"
-        return number
-    
-    def _get_phone_numbers(self, ext_id):
-        """Get verified phone numbers for extension"""
-        numbers = []
-        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/phone-number', method='GET', raise_error=False)
-        
-        if isinstance(resp, dict):
-            for rec in safe_list(resp, 'records'):
-                if not isinstance(rec, dict):
-                    continue
-                # VERIFY belongs to this extension
-                ext_obj = safe_dict(rec, 'extension')
-                if str(ext_obj.get('id', '')) != str(ext_id):
-                    continue
-                phone = rec.get('phoneNumber')
-                if phone:
-                    numbers.append({
-                        'raw': phone,
-                        'formatted': self._format_phone(phone),
-                        'usage': rec.get('usageType', 'Unknown'),
-                        'type': rec.get('type', '')
-                    })
-        return numbers
-    
-    def _get_business_hours(self, ext_id):
-        """Get business hours"""
-        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours', method='GET', raise_error=False)
-        if not isinstance(resp, dict) or not safe_dict(resp, 'schedule'):
-            resp = rc_api_call('/restapi/v1.0/account/~/business-hours', method='GET', raise_error=False)
-        
-        if not isinstance(resp, dict):
-            return {'is_24_7': True, 'ranges': {}}
-        
-        weekly = safe_dict(safe_dict(resp, 'schedule'), 'weeklyRanges')
-        if not weekly:
-            return {'is_24_7': True, 'ranges': {}}
-        
-        ranges = {}
-        for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']:
-            if day in weekly:
-                times = weekly[day]
-                if isinstance(times, list) and times:
-                    ranges[day] = []
-                    for tr in times:
-                        if isinstance(tr, dict):
-                            ranges[day].append({'from': tr.get('from', ''), 'to': tr.get('to', '')})
-        
-        return {'is_24_7': False, 'ranges': ranges} if ranges else {'is_24_7': True, 'ranges': {}}
-    
-    def _get_rules(self, ext_id):
-        """Get answering rules"""
-        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', method='GET', raise_error=False)
-        rules = {'bh': None, 'ah': None, 'custom': []}
-        
-        if isinstance(resp, dict):
-            for rule in safe_list(resp, 'records'):
-                if isinstance(rule, dict) and rule.get('enabled'):
-                    rtype = rule.get('type')
-                    if rtype == 'BusinessHours':
-                        rules['bh'] = rule
-                    elif rtype == 'AfterHours':
-                        rules['ah'] = rule
-                    elif rtype == 'Custom':
-                        rules['custom'].append(rule)
-        return rules
-    
-    def _get_queue_config(self, ext_id, bh_rule):
-        """Get ACTUAL queue configuration - only what's configured"""
-        q_api = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/call-queue-info', method='GET', raise_error=False) or {}
-        q_settings = safe_dict(bh_rule, 'queue') if bh_rule else {}
-        
-        # Get transfer mode (REQUIRED field)
-        transfer_mode = q_api.get('transferMode') or q_settings.get('transferMode') or 'Rotating'
-        
-        config = {
-            'transfer_mode': transfer_mode,
-            'agent_timeout': None,
-            'wrap_up': None,
-            'hold_time': None,
-            'max_callers': None,
-            'interrupt': None,
-            'max_concurrent': None,
-            'agents': [],
-            'overflows': {},
-            'greetings': {},
-            'recording': None
-        }
-        
-        # Agent timeout - ONLY if NOT simultaneous AND configured
-        if transfer_mode.lower() != 'simultaneous':
-            timeout = q_api.get('agentTimeout') or q_settings.get('agentTimeout')
-            if timeout and int(timeout) > 0:
-                config['agent_timeout'] = int(timeout)
-        
-        # Wrap-up time - ONLY if configured
-        wrap = q_api.get('wrapUpTime') or q_settings.get('wrapUpTime')
-        if wrap and int(wrap) > 0:
-            config['wrap_up'] = int(wrap)
-        
-        # Hold time - ONLY if configured
-        hold = q_settings.get('holdTime') or q_api.get('holdTime')
-        if hold and int(hold) > 0:
-            config['hold_time'] = int(hold)
-        
-        # Max callers - ONLY if configured
-        max_c = q_settings.get('maxCallers') or q_api.get('maxCallers')
-        if max_c and int(max_c) > 0:
-            config['max_callers'] = int(max_c)
-        
-        # Interrupt period - ONLY if configured
-        intr = q_api.get('holdAudioInterruptionPeriod') or q_settings.get('holdAudioInterruptionPeriod')
-        if intr and int(intr) > 0:
-            config['interrupt'] = int(intr)
-        
-        # Max concurrent per agent
-        max_conc = q_settings.get('maxCallersPerAgent') or q_api.get('maxCallersPerAgent')
-        if max_conc and int(max_conc) > 0:
-            config['max_concurrent'] = int(max_conc)
-        
-        # Get agents with full details
-        agents = q_api.get('fixedOrderAgents', []) or q_api.get('agents', [])
-        for agent in agents:
-            if isinstance(agent, dict):
-                ext_obj = safe_dict(agent, 'extension')
-                agent_id = str(ext_obj.get('id', ''))
-                if agent_id in self.ext_directory:
-                    config['agents'].append(self.ext_directory[agent_id])
-        
-        # Greetings - check what's actually configured
-        if bh_rule:
-            for greet in safe_list(bh_rule, 'greetings'):
-                if isinstance(greet, dict):
-                    gtype = greet.get('type')
-                    if gtype == 'Introductory':
-                        config['greetings']['intro'] = True
-                    elif gtype == 'ConnectingAudio':
-                        config['greetings']['connecting'] = True
-                    elif gtype == 'InterruptPrompt':
-                        config['greetings']['interrupt_audio'] = True
-        
-        # Recording
-        if bh_rule:
-            rec = safe_dict(bh_rule, 'callRecording')
-            if rec and rec.get('enabled'):
-                config['recording'] = rec.get('mode', 'Automatic')
-        
-        # Overflows - extract actual destinations
-        for api_key, label in [('noAnswerAction', 'no_agents'), ('holdTimeExpirationAction', 'max_wait'), ('maxCallersAction', 'queue_full')]:
-            action = q_settings.get(api_key)
-            if action:
-                tid, tname = self._extract_target(action)
-                if tid or tname != 'Unknown':
-                    config['overflows'][label] = {'id': tid, 'name': tname}
-        
-        return config
-    
-    def _extract_target(self, action):
-        """Extract routing target"""
-        if not isinstance(action, dict):
-            return None, 'Unknown'
-        
-        # Extension
-        ext = safe_dict(action, 'extension') or safe_dict(safe_dict(action, 'transfer'), 'extension')
-        if ext and ext.get('id'):
-            tid = str(ext.get('id'))
-            if tid in self.ext_directory:
-                info = self.ext_directory[tid]
-                return tid, f"{info['name']} (Ext {info['number']})"
-            return tid, f"Extension {tid}"
-        
-        # Voicemail
-        vm = safe_dict(action, 'voicemail')
-        recip = safe_dict(vm, 'recipient')
-        if recip and recip.get('id'):
-            tid = str(recip.get('id'))
-            if tid in self.ext_directory:
-                return tid, f"Voicemail: {self.ext_directory[tid]['name']}"
-            return tid, 'Voicemail'
-        
-        # External
-        fwd = safe_dict(action, 'unconditionalForwarding')
-        if fwd and fwd.get('phoneNumber'):
-            return None, f"External: {self._format_phone(fwd.get('phoneNumber'))}"
-        
-        return None, 'Unknown'
-    
-    def process_all_flows(self):
-        """Main processing"""
-        while self.processing_queue:
-            curr = self.processing_queue.pop(0)
-            
-            if curr['depth'] > 10:
-                continue
-            
-            key = f"{curr['id']}:{curr['context']}"
-            if key in self.processed_extensions:
-                continue
-            self.processed_extensions.add(key)
-            
-            path_display = ' → '.join(curr['path'] + [curr['name']]) if curr['path'] else curr['name']
-            prefix = f"[{path_display}] " if curr['path'] else ""
-            
-            if curr['type'] == 'Department':
-                self._gen_queue_tests(curr['id'], curr['name'], curr['number'], curr['path'], prefix, curr['depth'])
-        
-        self._add_global()
-        return self.test_cases
-    
-    def _gen_queue_tests(self, qid, qname, qnum, path, prefix, depth):
-        """Generate tailored queue tests using EXACT configuration"""
-        
-        # Extract ACTUAL data
-        phones = self._get_phone_numbers(qid)
-        hours = self._get_business_hours(qid)
-        rules = self._get_rules(qid)
-        cfg = self._get_queue_config(qid, rules['bh'])
-        
-        # ================================================================
-        # INTEGRATION - Using EXACT phone numbers
-        # ================================================================
-        
-        if depth == 0:
-            # Internal
-            self.add_test(
-                f"{prefix}Integration",
-                "Internal Extension Dialing",
-                f"Using a desk phone or RingCentral app, dial extension {qnum}.",
-                f"Device rings and connects to {qname}. Clear two-way audio. No errors."
-            )
-            
-            # External - EVERY ACTUAL phone number
-            for phone in phones:
-                if phone['usage'] == 'DirectNumber':
-                    self.add_test(
-                        f"{prefix}Integration - PSTN",
-                        f"External DID: {phone['formatted']}",
-                        f"From your personal mobile phone (cellular network, NOT company WiFi), dial {phone['formatted']}.",
-                        f"Call routes through PSTN to {qname}. Your mobile caller ID displays to agents. Clear audio both ways."
-                    )
-                elif phone['usage'] == 'MainCompanyNumber':
-                    self.add_test(
-                        f"{prefix}Integration - Main",
-                        f"Main Number: {phone['formatted']}",
-                        f"From external phone, dial {phone['formatted']}. Navigate IVR to {qname}.",
-                        f"Reaches {qname} successfully."
-                    )
-            
-            # If NO phone numbers found
-            if not phones:
-                self.add_test(
-                    f"{prefix}Integration",
-                    "No Direct Numbers Configured",
-                    f"Verify {qname} configuration in Admin Portal.",
-                    f"Note: No direct phone numbers assigned to {qname}. Access only via internal dialing or call transfer."
-                )
-            
-            # Audio quality
-            self.add_test(
-                f"{prefix}Integration",
-                "Sustained Audio Quality",
-                f"Call {qname} (via extension {qnum}). Speak continuously for 2 minutes.",
-                "Audio remains clear with no jitter, latency, or quality degradation."
-            )
-        
-        # ================================================================
-        # BUSINESS HOURS - Using EXACT schedule
-        # ================================================================
-        
-        if not hours['is_24_7'] and hours['ranges']:
-            # Get first configured day
-            first_day = next(iter(hours['ranges'].keys()))
-            first_time = hours['ranges'][first_day][0]
-            
-            self.add_test(
-                f"{prefix}Time Routing",
-                "Business Hours - Open",
-                f"Place call on {first_day} at {first_time['from']} (start of business hours).",
-                f"Follows business hours routing for {qname}."
-            )
-            
-            self.add_test(
-                f"{prefix}Time Routing",
-                "Business Hours - Closed",
-                f"Place call on Sunday at 11:00 PM (outside business hours).",
-                f"Follows after-hours routing for {qname}."
-            )
-        
-        # ================================================================
-        # CALLER EXPERIENCE - Only configured features
-        # ================================================================
-        
-        # Intro greeting - ONLY if configured
-        if cfg['greetings'].get('intro'):
-            self.add_test(
-                f"{prefix}Queue - Caller Experience",
-                "Introductory Greeting",
-                f"Call {qname} (ext {qnum}). Listen to audio sequence.",
-                "Intro greeting plays fully before agent ringing begins."
-            )
-        
-        # Hold music - always applicable
-        self.add_test(
-            f"{prefix}Queue - Caller Experience",
-            "Hold Music",
-            f"Call {qname} (ext {qnum}) and wait in queue.",
-            "Hold music plays continuously without gaps or distortion."
-        )
-        
-        # Interrupt announcements - ONLY if configured
-        if cfg['interrupt']:
-            self.add_test(
-                f"{prefix}Queue - Caller Experience",
-                f"Periodic Announcements (every {cfg['interrupt']}s)",
-                f"Remain on hold for {cfg['interrupt'] + 15} seconds.",
-                f"Every {cfg['interrupt']}s, music pauses, announcement plays, music resumes."
-            )
-        
-        # Recording announcement - ONLY if enabled
-        if cfg['recording']:
-            self.add_test(
-                f"{prefix}Queue - Caller Experience",
-                f"Recording Announcement ({cfg['recording']} mode)",
-                f"Call {qname} (ext {qnum}).",
-                f"Announcement 'This call may be recorded' plays before agent connection. Mode: {cfg['recording']}."
-            )
-        
-        # ================================================================
-        # AGENT TESTS - Using ACTUAL agent names
-        # ================================================================
-        
-        if cfg['agents']:
-            # Use first actual agent
-            agent = cfg['agents'][0]
-            aname = f"{agent['name']} (Ext {agent['number']})"
-            
-            self.add_test(
-                f"{prefix}Queue - Agent Tests",
-                "Agent Opt-In",
-                f"{aname} enables 'Accept Queue Calls' for {qname}. Call ext {qnum}.",
-                f"{aname}'s device rings. Caller ID shows '{qname}'."
-            )
-            
-            self.add_test(
-                f"{prefix}Queue - Agent Tests",
-                "Agent Opt-Out",
-                f"{aname} disables 'Accept Queue Calls'. Call ext {qnum}.",
-                f"{aname} does NOT ring. Call routes to next agent."
-            )
-            
-            self.add_test(
-                f"{prefix}Queue - Agent Tests",
-                "Agent DND",
-                f"{aname} sets Do Not Disturb. Call ext {qnum}.",
-                f"{aname} does NOT ring. Treated as unavailable."
-            )
-            
-            self.add_test(
-                f"{prefix}Queue - Agent Tests",
-                "Agent Decline",
-                f"While ringing {aname}, agent clicks Decline.",
-                f"Ringing stops. Call hunts to next agent."
-            )
-            
-            self.add_test(
-                f"{prefix}Queue - Agent Tests",
-                "Agent Already Busy",
-                f"{aname} is on another call. Call ext {qnum}.",
-                "Busy agent does NOT ring. Routes to available agents."
-            )
-            
-            # Wrap-up - ONLY if configured
-            if cfg['wrap_up']:
-                self.add_test(
-                    f"{prefix}Queue - Agent Tests",
-                    f"After-Call Work ({cfg['wrap_up']}s)",
-                    f"{aname} completes call. Immediately call ext {qnum} again.",
-                    f"{aname} in wrap-up for {cfg['wrap_up']}s. Does NOT ring during this time."
-                )
-        else:
-            # No agents configured
-            self.add_test(
-                f"{prefix}Queue - Config Check",
-                "No Agents Assigned",
-                f"Verify {qname} agent configuration in Admin Portal.",
-                f"WARNING: No agents assigned to {qname}. All calls will overflow immediately."
-            )
-        
-        # ================================================================
-        # DISTRIBUTION - Using ACTUAL mode
-        # ================================================================
-        
-        self.add_test(
-            f"{prefix}Queue - Distribution",
-            f"Mode: {cfg['transfer_mode']}",
-            f"Ensure 2+ agents available. Call ext {qnum}.",
-            f"Distributes per {cfg['transfer_mode']} logic."
-        )
-        
-        # Agent timeout - ONLY if applicable
-        if cfg['agent_timeout']:
-            self.add_test(
-                f"{prefix}Queue - Distribution",
-                f"Agent Timeout ({cfg['agent_timeout']}s)",
-                f"First agent ignores call for {cfg['agent_timeout']}s.",
-                f"After {cfg['agent_timeout']}s, hunts to next agent."
-            )
-        
-        # ================================================================
-        # CALL HANDLING - Always applicable
-        # ================================================================
-        
-        self.add_test(
-            f"{prefix}Queue - Call Handling",
-            "Hold",
-            f"Agent answers from {qname}. Clicks Hold.",
-            "Caller hears hold music. Agent can retrieve."
-        )
-        
-        self.add_test(
-            f"{prefix}Queue - Call Handling",
-            "Warm Transfer",
-            f"Agent answers from {qname}. Warm transfer to ext 101.",
-            "Consults, then completes transfer successfully."
-        )
-        
-        self.add_test(
-            f"{prefix}Queue - Call Handling",
-            "Blind Transfer",
-            f"Agent answers from {qname}. Blind transfer to ext 101.",
-            "Agent released immediately. Caller transferred."
-        )
-        
-        # ================================================================
-        # OVERFLOWS - ONLY configured ones with ACTUAL destinations
-        # ================================================================
-        
-        # No agents overflow
-        if 'no_agents' in cfg['overflows']:
-            dest = cfg['overflows']['no_agents']
-            self.add_test(
-                f"{prefix}Queue - Overflow",
-                "No Agents Available",
-                f"All {qname} agents log out or set DND. Call ext {qnum}.",
-                f"Bypasses queue. Routes to: {dest['name']}"
-            )
-            
-            # Recursively process overflow destination
-            if dest['id'] and dest['id'] in self.ext_directory:
-                dinfo = self.ext_directory[dest['id']]
-                if dinfo['type'] in ['Department', 'IvrMenu']:
-                    self.processing_queue.append({
-                        'id': dest['id'],
-                        'name': dinfo['name'],
-                        'number': dinfo['number'],
-                        'type': dinfo['type'],
-                        'path': path + [qname],
-                        'depth': depth + 1,
-                        'context': 'No Agents Overflow'
-                    })
-        
-        # Max wait overflow - ONLY if configured
-        if cfg['hold_time'] and 'max_wait' in cfg['overflows']:
-            dest = cfg['overflows']['max_wait']
-            mins = cfg['hold_time'] // 60
-            secs = cfg['hold_time'] % 60
-            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-            
-            self.add_test(
-                f"{prefix}Queue - Overflow",
-                f"Max Wait Time ({time_str})",
-                f"Remain on hold in {qname} for {cfg['hold_time']}s ({time_str}).",
-                f"At {time_str}, removed from queue. Routes to: {dest['name']}"
-            )
-            
-            # Recursive
-            if dest['id'] and dest['id'] in self.ext_directory:
-                dinfo = self.ext_directory[dest['id']]
-                if dinfo['type'] in ['Department', 'IvrMenu']:
-                    self.processing_queue.append({
-                        'id': dest['id'],
-                        'name': dinfo['name'],
-                        'number': dinfo['number'],
-                        'type': dinfo['type'],
-                        'path': path + [qname],
-                        'depth': depth + 1,
-                        'context': f'Max Wait ({time_str}) Overflow'
-                    })
-        
-        # Queue full overflow - ONLY if configured
-        if cfg['max_callers'] and 'queue_full' in cfg['overflows']:
-            dest = cfg['overflows']['queue_full']
-            self.add_test(
-                f"{prefix}Queue - Overflow",
-                f"Queue Full ({cfg['max_callers']} max)",
-                f"Flood {qname} with {cfg['max_callers']} calls. Place call #{cfg['max_callers'] + 1}.",
-                f"Call #{cfg['max_callers'] + 1} rejected. Routes to: {dest['name']}"
-            )
-            
-            # Recursive
-            if dest['id'] and dest['id'] in self.ext_directory:
-                dinfo = self.ext_directory[dest['id']]
-                if dinfo['type'] in ['Department', 'IvrMenu']:
-                    self.processing_queue.append({
-                        'id': dest['id'],
-                        'name': dinfo['name'],
-                        'number': dinfo['number'],
-                        'type': dinfo['type'],
-                        'path': path + [qname],
-                        'depth': depth + 1,
-                        'context': f'Queue Full ({cfg["max_callers"]}) Overflow'
-                    })
-        
-        # ================================================================
-        # QUALITY TESTS
-        # ================================================================
-        
-        self.add_test(
-            f"{prefix}Quality",
-            "DTMF Recognition",
-            f"During call from {qname}, press keys 0-9.",
-            "All DTMF tones transmitted and recognized clearly."
-        )
-        
-        self.add_test(
-            f"{prefix}Quality",
-            "Background Noise Handling",
-            f"During {qname} call, introduce moderate background noise.",
-            "Speech remains clear. Noise appropriately suppressed."
-        )
-    
-    def _add_global(self):
-        """Global validation tests"""
-        
-        self.add_test(
-            "Global Validation",
-            "Call Logs",
-            "Admin Portal > Analytics > Call Log.",
-            "All test calls logged with correct details."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Call Recordings",
-            "Admin Portal > Call Recordings (if enabled).",
-            "Recordings available and playable."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Queue Analytics",
-            "Analytics > Queue Performance.",
-            "Metrics update in real-time."
-        )
-
-
 def get_testable_extensions():
-    """Get testable extensions"""
-    resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
-    if not isinstance(resp, dict):
-        return []
-    
-    valid = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site']
+    """Fetches base call flows for the UI dropdown. Excludes standard Users."""
+    response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
+    if not isinstance(response, dict): return []
+    records = safe_list(response, 'records')
+    valid_types = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site']
     entities = [
-        {
-            "id": e.get('id'),
-            "name": e.get('name', 'Unnamed'),
-            "extensionNumber": e.get('extensionNumber', 'N/A'),
-            "type": e.get('type')
-        }
-        for e in safe_list(resp, 'records')
-        if isinstance(e, dict) and e.get('type') in valid
+        {"id": ext.get('id'), "name": ext.get('name', 'Unnamed'), "extensionNumber": ext.get('extensionNumber', 'N/A'), "type": ext.get('type')}
+        for ext in records if isinstance(ext, dict) and ext.get('type') in valid_types
     ]
     return sorted(entities, key=lambda x: x['name'])
 
 
+class UATGenerator:
+    """Forensic, data-driven crawler that translates raw API JSON directly into holistic UAT cases."""
+    
+    def __init__(self, start_ext_id, start_ext_name, start_ext_number, start_ext_type):
+        self.ext_map = self._build_ext_map()
+        self.queue_to_process = [{
+            "id": str(start_ext_id),
+            "name": start_ext_name,
+            "ext": start_ext_number,
+            "type": start_ext_type,
+            "path": "Primary Flow"
+        }]
+        self.processed_ids = set()
+        self.test_cases = []
+        self.counter = 1
+
+    def _build_ext_map(self):
+        """Builds a cached dictionary of all extensions to resolve IDs into actual Names/Numbers."""
+        resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 2000}, raise_error=False)
+        m = {}
+        if isinstance(resp, dict):
+            records = safe_list(resp, 'records')
+            for e in records:
+                if isinstance(e, dict) and 'id' in e:
+                    m[str(e['id'])] = {
+                        'name': e.get('name', 'Unknown'),
+                        'ext': e.get('extensionNumber', 'N/A'),
+                        'type': e.get('type', 'Unknown')
+                    }
+        return m
+
+    def add_case(self, category, scenario, action, expected):
+        self.test_cases.append({
+            "test_id": f"UAT-{self.counter:04d}",
+            "category": category,
+            "scenario": scenario,
+            "action": action,
+            "expected": expected
+        })
+        self.counter += 1
+
+    def _resolve_target(self, rule_obj, action_type):
+        """Forensically maps specific overflow/transfer actions to their true configured destinations."""
+        if not isinstance(rule_obj, dict):
+            return "Unknown Destination", None
+            
+        if action_type in ['TransferToExtension', 'Bypass']:
+            tid = str(safe_dict(rule_obj, 'transfer').get('extension', {}).get('id', ''))
+            tname = self.ext_map.get(tid, {}).get('name', f"Extension ID {tid}")
+            text = self.ext_map.get(tid, {}).get('ext', '')
+            return f"Transfer -> {tname} (Ext {text})", tid
+            
+        elif action_type in ['TakeMessagesReturnToGreeting', 'Voicemail']:
+            tid = str(safe_dict(rule_obj, 'voicemail').get('recipient', {}).get('id', ''))
+            tname = self.ext_map.get(tid, {}).get('name', f"Extension ID {tid}")
+            text = self.ext_map.get(tid, {}).get('ext', '')
+            return f"Voicemail -> {tname} (Ext {text})", tid
+            
+        elif action_type == 'UnconditionalForwarding':
+            fw = safe_dict(rule_obj, 'unconditionalForwarding')
+            num = fw.get('phoneNumber') or str(fw)
+            return f"External Forward -> {num}", None
+            
+        elif action_type == 'PlayAnnouncementOnly':
+            return "Play Announcement & Disconnect", None
+            
+        elif action_type == 'WaitPrimaryMembers':
+            return "Wait for Primary Members", None
+            
+        return f"Action: {action_type}", None
+
+    def _extract_rule_conditions(self, rule):
+        """Accurately parses the exact triggers for a custom rule from the JSON arrays."""
+        conditions = []
+        callers = safe_list(rule, 'callers')
+        if callers:
+            c_ids = [c.get('callerId', c.get('name', '')) for c in callers if isinstance(c, dict) and (c.get('callerId') or c.get('name'))]
+            if c_ids: conditions.append(f"Caller ID is {', '.join(c_ids)}")
+            
+        called = safe_list(rule, 'calledNumbers')
+        if called:
+            n_ids = [n.get('phoneNumber', '') for n in called if isinstance(n, dict) and n.get('phoneNumber')]
+            if n_ids: conditions.append(f"Dialed Number is {', '.join(n_ids)}")
+            
+        sched = safe_dict(rule, 'schedule')
+        if sched and sched.get('ref') != 'BusinessHours':
+            conditions.append("Matches Custom Time Schedule")
+            
+        return " AND ".join(conditions) if conditions else "Specific Configured Condition"
+
+    def process(self):
+        while self.queue_to_process:
+            curr = self.queue_to_process.pop(0)
+            cid = curr['id']
+            cname = curr['name']
+            cext = curr['ext']
+            ctype = curr['type']
+            cpath = curr['path']
+
+            if cid in self.processed_ids: continue
+            self.processed_ids.add(cid)
+
+            prefix = f"[{cname}] "
+            path_str = f"[Path: {cpath}]\n" if cpath != "Primary Flow" else ""
+
+            # ---------------------------------------------------------
+            # 1. CONNECTIVITY (Strict DID Validation)
+            # ---------------------------------------------------------
+            dids = []
+            ph_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/phone-number', method='GET', raise_error=False)
+            if isinstance(ph_resp, dict):
+                for r in safe_list(ph_resp, 'records'):
+                    if isinstance(r, dict) and r.get('usageType') == 'DirectNumber':
+                        ext_obj = safe_dict(r, 'extension')
+                        if str(ext_obj.get('id')) == str(cid) and r.get('phoneNumber'):
+                            dids.append(r.get('phoneNumber'))
+
+            if cpath == "Primary Flow":
+                self.add_case(f"{prefix}Integration", "Internal Routing", f"Dial extension {cext} internally.", f"Call connects successfully to {cname} without dead air.")
+                if dids:
+                    for did in dids:
+                        self.add_case(f"{prefix}Integration", f"External Routing (DID)", f"Dial the assigned DID {did} from a mobile phone.", f"Call connects via the PSTN to {cname} with high-quality, two-way audio.")
+                else:
+                    self.add_case(f"{prefix}Integration", "External Routing (No DID)", f"Dial the Main Company Number and enter extension {cext}.", f"Call successfully routes to {cname}.")
+
+            # ---------------------------------------------------------
+            # 2. SCHEDULE BOUNDARIES
+            # ---------------------------------------------------------
+            bh_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/business-hours', method='GET', raise_error=False)
+            bh_str = "24/7 (Always Open)"
+            
+            if isinstance(bh_resp, dict) and safe_dict(bh_resp, 'schedule'):
+                sched = safe_dict(bh_resp, 'schedule')
+                weekly = safe_dict(sched, 'weeklyRanges')
+                if weekly:
+                    days = []
+                    for d, t_list in weekly.items():
+                        if isinstance(t_list, list) and len(t_list) > 0 and isinstance(t_list[0], dict):
+                            days.append(f"{d[:3]} {t_list[0].get('from')}-{t_list[0].get('to')}")
+                    if days: bh_str = ", ".join(days)
+
+            self.add_case(f"{prefix}Routing", "Business Hours (In-Hours)", f"{path_str}Initiate a call during Open Hours: [{bh_str}].", f"Call follows standard Business Hours routing path.")
+
+            # ---------------------------------------------------------
+            # 3. DETAILED ANSWERING RULES (Custom, After Hours, Overflows)
+            # ---------------------------------------------------------
+            ar_summary_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/answering-rule', method='GET', raise_error=False)
+            rules_summary = safe_list(ar_summary_resp, 'records') if isinstance(ar_summary_resp, dict) else []
+            
+            has_after_hours = False
+
+            for rule_sum in rules_summary:
+                if not isinstance(rule_sum, dict) or not rule_sum.get('enabled', False): continue
+                rule_id = rule_sum.get('id')
+                rtype = rule_sum.get('type')
+
+                # EXPLICITLY FETCH THE DEEP PAYLOAD TO EXPOSE QUEUE LIMITS AND CUSTOM CONDITIONS
+                rule = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/answering-rule/{rule_id}', method='GET', raise_error=False)
+                if not isinstance(rule, dict): rule = rule_sum
+
+                # --- CUSTOM RULES ---
+                if rtype == 'Custom':
+                    rname = rule.get('name', 'Custom Rule')
+                    cond_str = self._extract_rule_conditions(rule)
+                    action = rule.get('callHandlingAction', 'Unknown Action')
+                    tname, tid = self._resolve_target(rule, action)
+                    
+                    self.add_case(f"{prefix}Routing", f"Custom Rule Trigger: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule intercepts call. Executes [{action}] -> {tname}.")
+                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
+                        self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Custom Rule '{rname}'"})
+
+                # --- AFTER HOURS ---
+                elif rtype == 'AfterHours':
+                    has_after_hours = True
+                    action = rule.get('callHandlingAction', 'Unknown Action')
+                    tname, tid = self._resolve_target(rule, action)
+                    
+                    self.add_case(f"{prefix}Routing", "After Hours Routing", f"{path_str}Initiate a call OUTSIDE of Open Hours.", f"Executes After Hours logic [{action}] -> {tname}.")
+                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
+                        self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"After Hours Routing"})
+
+                # --- QUEUE BEHAVIOR (BusinessHours contains the Queue Limits) ---
+                elif rtype == 'BusinessHours' and ctype == 'Department':
+                    q = safe_dict(rule, 'queue')
+                    
+                    # Caller Experience
+                    greetings = safe_list(rule, 'greetings')
+                    if any(isinstance(g, dict) and g.get('type') == 'Introductory' for g in greetings):
+                        self.add_case(f"{prefix}Caller Experience", "Introductory Greeting", f"{path_str}Place a call to the queue.", "Configured Intro Greeting plays fully before agent ringing begins.")
+                    
+                    self.add_case(f"{prefix}Caller Experience", "Connecting Audio (Hold Music)", f"Remain in the queue while waiting.", "The configured hold music plays cleanly without distortion.")
+                    
+                    int_per = q.get('holdAudioInterruptionPeriod', 0)
+                    if int_per > 0:
+                        self.add_case(f"{prefix}Caller Experience", f"Wait Announcement ({int_per}s)", f"Remain on hold in {cname} for > {int_per} seconds.", f"At exactly {int_per}s, music pauses, wait announcement plays, and music resumes.")
+
+                    # Overflows and Boundaries (Max Wait & Max Callers)
+                    hold_time = q.get('holdTime', 0)
+                    if hold_time > 0:
+                        h_mins = hold_time // 60 if hold_time >= 60 else hold_time
+                        lbl = f"{h_mins} minutes" if hold_time >= 60 else f"{hold_time} seconds"
+                        
+                        h_act = q.get('holdTimeExpirationAction', 'Unknown')
+                        h_name, h_id = self._resolve_target(rule, h_act)
+                        
+                        self.add_case(f"{prefix}Queue Boundaries", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires. Call is forcefully removed and executes [{h_act}] -> {h_name}.")
+                        if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu']:
+                            self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": "Max Wait Time Overflow"})
+                    
+                    max_callers = q.get('maxCallers', 0)
+                    if max_callers > 0:
+                        m_act = q.get('maxCallersAction', 'Unknown')
+                        m_name, m_id = self._resolve_target(rule, m_act)
+                        
+                        self.add_case(f"{prefix}Queue Boundaries", f"Max Callers Limit ({max_callers})", f"Simultaneously flood {cname} with {max_callers} active calls. Dial call #{max_callers + 1}.", f"Call #{max_callers + 1} breaches capacity limit. Instantly executes [{m_act}] -> {m_name}.")
+                        if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu']:
+                            self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": "Max Callers Overflow"})
+
+                    # Zero-Out always routes to the Voicemail recipient in RC queues
+                    z_name, _ = self._resolve_target(rule, 'Voicemail')
+                    self.add_case(f"{prefix}Queue Boundaries", "Zero-Out (Press 0)", f"While listening to {cname} hold music, press '0'.", f"Call safely escapes the queue and routes to Voicemail Recipient / Operator -> {z_name}.")
+
+                    # Agent & Distribution Parameters
+                    tmode = q.get('transferMode', 'Simultaneous')
+                    ag_timeout = q.get('agentTimeout', 0)
+                    wrap_up = q.get('wrapUpTime', 0)
+
+                    self.add_case(f"{prefix}Agent & Distribution", f"Routing: {tmode}", "Ensure multiple agents are 'Available'. Place a call.", f"Call distributes based exactly on {tmode} logic.")
+                    if str(tmode).lower() != 'simultaneous' and ag_timeout > 0:
+                        self.add_case(f"{prefix}Agent & Distribution", f"Agent Ring Timeout ({ag_timeout}s)", f"Targeted agent lets the call ring without answering for {ag_timeout} seconds.", "Timer expires. Call immediately drops from Agent 1 and rings next available.")
+
+                    self.add_case(f"{prefix}Agent & Distribution", "Queue Opt-In/DND", "Agent toggles 'Accept Queue Calls' ON, then OFF.", "Device rings when ON, and smoothly bypasses the agent when OFF.")
+                    self.add_case(f"{prefix}Agent & Distribution", "Active Call Decline", "While call is ringing an agent, agent actively clicks 'Decline'.", "Ringing stops immediately for that agent. Call hunts to next available agent.")
+
+                    if wrap_up > 0:
+                        self.add_case(f"{prefix}Agent & Distribution", f"Wrap-Up (ACW) Timer ({wrap_up}s)", "Agent finishes a queue call and hangs up. Place new call.", f"Agent is in Wrap-Up state and does NOT ring again until {wrap_up}s expires.")
+
+                    # Generic Call Handling verification for Queues
+                    self.add_case(f"{prefix}Call Handling", "Queue Call Holding", "Agent answers queue call and places caller on hold.", "Caller hears agent hold music. Call is successfully retrieved.")
+                    self.add_case(f"{prefix}Call Handling", "Warm & Blind Transfers", "Agent answers queue call and initiates a transfer to an internal extension.", "Call successfully connects and routes to the target extension.")
+
+            if not has_after_hours and bh_str != "24/7 (Always Open)":
+                 self.add_case(f"{prefix}Routing", "After Hours Routing", f"{path_str}Initiate call OUTSIDE Business Hours.", f"Follows default account-level After Hours routing logic.")
+
+            # ---------------------------------------------------------
+            # 4. IVR MENU TESTING
+            # ---------------------------------------------------------
+            if ctype == 'IvrMenu':
+                ivr_info = rc_api_call(f'/restapi/v1.0/ivr-menus/{cid}', method='GET', raise_error=False)
+                if not isinstance(ivr_info, dict): ivr_info = {}
+                
+                prompt = safe_dict(ivr_info, 'prompt')
+                ptext = prompt.get('text', 'Configured Audio File')
+                self.add_case(f"{prefix}Caller Experience", "Greeting Playback", f"Dial {cname}.", f"Prompt plays clearly: '{ptext}'. Wording matches approved script.")
+                self.add_case(f"{prefix}Caller Experience", "Barge-In (Interruptibility)", f"While the greeting is actively playing, press a valid menu key.", "IVR registers DTMF tone immediately and routes the call without forcing caller to listen to full message.")
+                
+                actions = safe_list(ivr_info, 'actions')
+                if actions:
+                    for act in actions:
+                        if not isinstance(act, dict): continue
+                        key = act.get('input', '')
+                        if not key: continue
+                        
+                        a_type = act.get('action', 'Unknown')
+                        tname, tid = self._resolve_target({'transfer': act, 'voicemail': act, 'unconditionalForwarding': act}, a_type)
+                        self.add_case(f"{prefix}IVR Routing", f"Key Mapping: '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System processes input and executes [{a_type}] -> {tname}.")
+                        
+                        if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
+                            self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Key '{key}'"})
+                
+                self.add_case(f"{prefix}IVR Boundaries", "Dial-By-Extension", f"While in the IVR, enter a known internal user's 3 or 4-digit extension.", "If enabled, IVR intercepts the string and transfers call to the user.")
+                self.add_case(f"{prefix}IVR Boundaries", "Invalid Key Press", f"Press an unassigned key (e.g., '9' or '#').", "System plays 'Invalid entry' prompt and replays menu.")
+                self.add_case(f"{prefix}IVR Boundaries", "Timeout (No Input)", f"Listen to the entire prompt and provide no DTMF input.", "System times out, replays menu, and eventually executes default timeout routing.")
+
+        self.add_case("Global Validation", "Post-Call & Voicemail", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message.", "The correct Voicemail greeting plays. Voicemail audio is recorded and delivered accurately to inbox.")
+        self.add_case("Global Validation", "Analytics & Logging", "Log into the Admin Portal and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result.")
+
 def generate_uat_cases(extension_id, extension_name, extension_number, extension_type):
-    """
-    Generate tailored UAT cases using EXACT queue configuration.
-    Every test uses actual phone numbers, agent names, configured values.
-    Only tests features that are actually configured.
-    """
-    gen = TailoredUATGenerator(extension_id, extension_name, extension_number, extension_type)
-    return gen.process_all_flows()
+    """Entry point for the UI router."""
+    generator = UATGenerator(extension_id, extension_name, extension_number, extension_type)
+    generator.process()
+    return generator.test_cases
