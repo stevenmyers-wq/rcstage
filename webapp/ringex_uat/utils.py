@@ -32,6 +32,7 @@ class UATGenerator:
     
     def __init__(self, start_ext_id, start_ext_name, start_ext_number, start_ext_type):
         self.ext_map = self._build_ext_map()
+        self.phone_numbers_map = self._build_phone_numbers_map()
         self.queue_to_process = [{
             "id": str(start_ext_id),
             "name": start_ext_name,
@@ -67,6 +68,27 @@ class UATGenerator:
             "expected": expected
         })
         self.counter += 1
+
+    def _build_phone_numbers_map(self):
+        """Fetches all account phone numbers using v2 API to accurately map DIDs to extensions."""
+        resp = rc_api_call('/restapi/v2/accounts/~/phone-numbers', params={'perPage': 1000}, raise_error=False)
+        num_map = {}
+        if isinstance(resp, dict):
+            records = safe_list(resp, 'records')
+            for r in records:
+                if not isinstance(r, dict): continue
+                # We want to explicitly marry the number to the assigned extension ID
+                ext_obj = safe_dict(r, 'extension')
+                ext_id = str(ext_obj.get('id', ''))
+                phone_number = r.get('phoneNumber')
+                
+                if ext_id and phone_number:
+                    if ext_id not in num_map:
+                        num_map[ext_id] = []
+                    # Avoid duplicates
+                    if phone_number not in num_map[ext_id]:
+                        num_map[ext_id].append(phone_number)
+        return num_map
 
     def _resolve_target(self, rule_obj, action_type):
         """Forensically maps specific overflow/transfer actions to their true configured destinations."""
@@ -133,16 +155,9 @@ class UATGenerator:
             path_str = f"[Path: {cpath}]\n" if cpath != "Primary Flow" else ""
 
             # ---------------------------------------------------------
-            # 1. CONNECTIVITY (Strict DID Validation)
+            # 1. CONNECTIVITY (Account-level v2 DID Mapping)
             # ---------------------------------------------------------
-            dids = []
-            ph_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/phone-number', method='GET', raise_error=False)
-            if isinstance(ph_resp, dict):
-                for r in safe_list(ph_resp, 'records'):
-                    if isinstance(r, dict) and r.get('usageType') == 'DirectNumber':
-                        ext_obj = safe_dict(r, 'extension')
-                        if str(ext_obj.get('id')) == str(cid) and r.get('phoneNumber'):
-                            dids.append(r.get('phoneNumber'))
+            dids = self.phone_numbers_map.get(cid, [])
 
             if cpath == "Primary Flow":
                 self.add_case(f"{prefix}Integration", "Internal Routing", f"Dial extension {cext} internally.", f"Call connects successfully to {cname} without dead air.")
