@@ -90,42 +90,64 @@ class UATGenerator:
                         num_map[ext_id].append(phone_number)
         return num_map
 
-    def _resolve_target(self, rule_obj, action_type):
+    def _resolve_target(self, rule_obj, action_type=None):
         """Forensically maps specific overflow/transfer actions to their true configured destinations."""
         if not isinstance(rule_obj, dict):
             return "Unknown Destination", None
             
-        if action_type in ['TransferToExtension', 'Bypass']:
-            tid = str(safe_dict(rule_obj, 'transfer').get('extension', {}).get('id', ''))
+        act = action_type or rule_obj.get('callHandlingAction') or "Unknown Action"
+            
+        if act in ['TransferToExtension', 'Bypass']:
+            transfer = safe_dict(rule_obj, 'transfer')
+            # Handle cases where API returns transfer as a list
+            if not transfer:
+                t_list = safe_list(rule_obj, 'transfer')
+                if t_list and isinstance(t_list[0], dict): transfer = t_list[0]
+                
+            tid = str(safe_dict(transfer, 'extension').get('id', ''))
             tname = self.ext_map.get(tid, {}).get('name', f"Extension ID {tid}")
             text = self.ext_map.get(tid, {}).get('ext', '')
             return f"Transfer -> {tname} (Ext {text})", tid
             
-        elif action_type in ['TakeMessagesReturnToGreeting', 'Voicemail']:
+        elif act in ['TakeMessagesReturnToGreeting', 'Voicemail']:
             tid = str(safe_dict(rule_obj, 'voicemail').get('recipient', {}).get('id', ''))
             tname = self.ext_map.get(tid, {}).get('name', f"Extension ID {tid}")
             text = self.ext_map.get(tid, {}).get('ext', '')
             return f"Voicemail -> {tname} (Ext {text})", tid
             
-        elif action_type == 'UnconditionalForwarding':
+        elif act == 'UnconditionalForwarding':
             fw = safe_dict(rule_obj, 'unconditionalForwarding')
+            if not fw:
+                f_list = safe_list(rule_obj, 'unconditionalForwarding')
+                if f_list and isinstance(f_list[0], dict): fw = f_list[0]
+                
             num = fw.get('phoneNumber') or str(fw)
             return f"External Forward -> {num}", None
             
-        elif action_type == 'PlayAnnouncementOnly':
+        elif act == 'PlayAnnouncementOnly':
             return "Play Announcement & Disconnect", None
             
-        elif action_type == 'WaitPrimaryMembers':
+        elif act == 'WaitPrimaryMembers':
             return "Wait for Primary Members", None
             
-        return f"Action: {action_type}", None
+        elif act == 'ForwardCalls':
+            return "Forward to Extension's Devices/Numbers", None
+            
+        return f"Action: {act}", None
 
     def _extract_rule_conditions(self, rule):
         """Accurately parses the exact triggers for a custom rule from the JSON arrays."""
         conditions = []
         callers = safe_list(rule, 'callers')
         if callers:
-            c_ids = [c.get('callerId', c.get('name', '')) for c in callers if isinstance(c, dict) and (c.get('callerId') or c.get('name'))]
+            c_ids = []
+            for c in callers:
+                if isinstance(c, dict):
+                    cid = c.get('callerId')
+                    name = c.get('name')
+                    if cid and name: c_ids.append(f"{name} ({cid})")
+                    elif cid: c_ids.append(cid)
+                    elif name: c_ids.append(name)
             if c_ids: conditions.append(f"Caller ID is {', '.join(c_ids)}")
             
         called = safe_list(rule, 'calledNumbers')
@@ -134,8 +156,11 @@ class UATGenerator:
             if n_ids: conditions.append(f"Dialed Number is {', '.join(n_ids)}")
             
         sched = safe_dict(rule, 'schedule')
-        if sched and sched.get('ref') != 'BusinessHours':
-            conditions.append("Matches Custom Time Schedule")
+        if sched:
+            if sched.get('ref'):
+                conditions.append(f"Time matches '{sched.get('ref')}' schedule")
+            else:
+                conditions.append("Time matches specific Custom Schedule")
             
         return " AND ".join(conditions) if conditions else "Specific Configured Condition"
 
@@ -160,12 +185,12 @@ class UATGenerator:
             dids = self.phone_numbers_map.get(cid, [])
 
             if cpath == "Primary Flow":
-                self.add_case(f"{prefix}Integration", "Internal Routing", f"Dial extension {cext} internally.", f"Call connects successfully to {cname} without dead air.")
+                self.add_case(f"{prefix}1. Connectivity", "Internal Routing", f"Dial extension {cext} internally.", f"Call connects successfully to {cname} without dead air.")
                 if dids:
                     for did in dids:
-                        self.add_case(f"{prefix}Integration", f"External Routing (DID)", f"Dial the assigned DID {did} from a mobile phone.", f"Call connects via the PSTN to {cname} with high-quality, two-way audio.")
+                        self.add_case(f"{prefix}1. Connectivity", f"External Routing (DID)", f"Dial the assigned DID {did} from a mobile phone.", f"Call connects via the PSTN to {cname} with high-quality, two-way audio.")
                 else:
-                    self.add_case(f"{prefix}Integration", "External Routing (No DID)", f"Dial the Main Company Number and enter extension {cext}.", f"Call successfully routes to {cname}.")
+                    self.add_case(f"{prefix}1. Connectivity", "External Routing (No DID)", f"Dial the Main Company Number and enter extension {cext}.", f"Call successfully routes to {cname}.")
 
             # ---------------------------------------------------------
             # 2. SCHEDULE BOUNDARIES
@@ -183,7 +208,7 @@ class UATGenerator:
                             days.append(f"{d[:3]} {t_list[0].get('from')}-{t_list[0].get('to')}")
                     if days: bh_str = ", ".join(days)
 
-            self.add_case(f"{prefix}Routing", "Business Hours (In-Hours)", f"{path_str}Initiate a call during Open Hours: [{bh_str}].", f"Call follows standard Business Hours routing path.")
+            self.add_case(f"{prefix}2. Schedule Boundaries", "Business Hours (In-Hours)", f"{path_str}Initiate a call during Open Hours: [{bh_str}].", f"Call follows standard Business Hours routing path.")
 
             # ---------------------------------------------------------
             # 3. DETAILED ANSWERING RULES (Custom, After Hours, Overflows)
@@ -192,111 +217,130 @@ class UATGenerator:
             rules_summary = safe_list(ar_summary_resp, 'records') if isinstance(ar_summary_resp, dict) else []
             
             has_after_hours = False
+            queue_settings = {}
+            has_intro = False
 
             for rule_sum in rules_summary:
                 if not isinstance(rule_sum, dict) or not rule_sum.get('enabled', False): continue
-                rule_id = rule_sum.get('id')
+                rule_id = str(rule_sum.get('id', ''))
                 rtype = rule_sum.get('type')
 
                 # EXPLICITLY FETCH THE DEEP PAYLOAD TO EXPOSE QUEUE LIMITS AND CUSTOM CONDITIONS
                 rule = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/answering-rule/{rule_id}', method='GET', raise_error=False)
-                if not isinstance(rule, dict): rule = rule_sum
+                if not isinstance(rule, dict) or 'id' not in rule:
+                    rule = rule_sum
 
                 # --- CUSTOM RULES ---
                 if rtype == 'Custom':
                     rname = rule.get('name', 'Custom Rule')
                     cond_str = self._extract_rule_conditions(rule)
-                    action = rule.get('callHandlingAction', 'Unknown Action')
+                    action = rule.get('callHandlingAction')
                     tname, tid = self._resolve_target(rule, action)
                     
-                    self.add_case(f"{prefix}Routing", f"Custom Rule Trigger: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule intercepts call. Executes [{action}] -> {tname}.")
+                    act_label = action or 'Configured Action'
+                    self.add_case(f"{prefix}2. Schedule Boundaries", f"Custom Rule: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule intercepts call. Executes [{act_label}] -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Custom Rule '{rname}'"})
 
                 # --- AFTER HOURS ---
                 elif rtype == 'AfterHours':
                     has_after_hours = True
-                    action = rule.get('callHandlingAction', 'Unknown Action')
+                    action = rule.get('callHandlingAction')
                     tname, tid = self._resolve_target(rule, action)
                     
-                    self.add_case(f"{prefix}Routing", "After Hours Routing", f"{path_str}Initiate a call OUTSIDE of Open Hours.", f"Executes After Hours logic [{action}] -> {tname}.")
+                    act_label = action or 'Configured Action'
+                    self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours Routing", f"{path_str}Initiate a call OUTSIDE of Open Hours.", f"Executes After Hours logic [{act_label}] -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"After Hours Routing"})
 
                 # --- QUEUE BEHAVIOR (BusinessHours contains the Queue Limits) ---
                 elif rtype == 'BusinessHours' and ctype == 'Department':
-                    q = safe_dict(rule, 'queue')
-                    
-                    # Caller Experience
+                    queue_settings = safe_dict(rule, 'queue')
                     greetings = safe_list(rule, 'greetings')
                     if any(isinstance(g, dict) and g.get('type') == 'Introductory' for g in greetings):
-                        self.add_case(f"{prefix}Caller Experience", "Introductory Greeting", f"{path_str}Place a call to the queue.", "Configured Intro Greeting plays fully before agent ringing begins.")
-                    
-                    self.add_case(f"{prefix}Caller Experience", "Connecting Audio (Hold Music)", f"Remain in the queue while waiting.", "The configured hold music plays cleanly without distortion.")
-                    
-                    int_per = q.get('holdAudioInterruptionPeriod', 0)
-                    if int_per > 0:
-                        self.add_case(f"{prefix}Caller Experience", f"Wait Announcement ({int_per}s)", f"Remain on hold in {cname} for > {int_per} seconds.", f"At exactly {int_per}s, music pauses, wait announcement plays, and music resumes.")
-
-                    # Overflows and Boundaries (Max Wait & Max Callers)
-                    hold_time = q.get('holdTime', 0)
-                    if hold_time > 0:
-                        h_mins = hold_time // 60 if hold_time >= 60 else hold_time
-                        lbl = f"{h_mins} minutes" if hold_time >= 60 else f"{hold_time} seconds"
-                        
-                        h_act = q.get('holdTimeExpirationAction', 'Unknown')
-                        h_name, h_id = self._resolve_target(rule, h_act)
-                        
-                        self.add_case(f"{prefix}Queue Boundaries", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires. Call is forcefully removed and executes [{h_act}] -> {h_name}.")
-                        if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu']:
-                            self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": "Max Wait Time Overflow"})
-                    
-                    max_callers = q.get('maxCallers', 0)
-                    if max_callers > 0:
-                        m_act = q.get('maxCallersAction', 'Unknown')
-                        m_name, m_id = self._resolve_target(rule, m_act)
-                        
-                        self.add_case(f"{prefix}Queue Boundaries", f"Max Callers Limit ({max_callers})", f"Simultaneously flood {cname} with {max_callers} active calls. Dial call #{max_callers + 1}.", f"Call #{max_callers + 1} breaches capacity limit. Instantly executes [{m_act}] -> {m_name}.")
-                        if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu']:
-                            self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": "Max Callers Overflow"})
-
-                    # Zero-Out always routes to the Voicemail recipient in RC queues
-                    z_name, _ = self._resolve_target(rule, 'Voicemail')
-                    self.add_case(f"{prefix}Queue Boundaries", "Zero-Out (Press 0)", f"While listening to {cname} hold music, press '0'.", f"Call safely escapes the queue and routes to Voicemail Recipient / Operator -> {z_name}.")
-
-                    # Agent & Distribution Parameters
-                    tmode = q.get('transferMode', 'Simultaneous')
-                    ag_timeout = q.get('agentTimeout', 0)
-                    wrap_up = q.get('wrapUpTime', 0)
-
-                    self.add_case(f"{prefix}Agent & Distribution", f"Routing: {tmode}", "Ensure multiple agents are 'Available'. Place a call.", f"Call distributes based exactly on {tmode} logic.")
-                    if str(tmode).lower() != 'simultaneous' and ag_timeout > 0:
-                        self.add_case(f"{prefix}Agent & Distribution", f"Agent Ring Timeout ({ag_timeout}s)", f"Targeted agent lets the call ring without answering for {ag_timeout} seconds.", "Timer expires. Call immediately drops from Agent 1 and rings next available.")
-
-                    self.add_case(f"{prefix}Agent & Distribution", "Queue Opt-In/DND", "Agent toggles 'Accept Queue Calls' ON, then OFF.", "Device rings when ON, and smoothly bypasses the agent when OFF.")
-                    self.add_case(f"{prefix}Agent & Distribution", "Active Call Decline", "While call is ringing an agent, agent actively clicks 'Decline'.", "Ringing stops immediately for that agent. Call hunts to next available agent.")
-
-                    if wrap_up > 0:
-                        self.add_case(f"{prefix}Agent & Distribution", f"Wrap-Up (ACW) Timer ({wrap_up}s)", "Agent finishes a queue call and hangs up. Place new call.", f"Agent is in Wrap-Up state and does NOT ring again until {wrap_up}s expires.")
-
-                    # Generic Call Handling verification for Queues
-                    self.add_case(f"{prefix}Call Handling", "Queue Call Holding", "Agent answers queue call and places caller on hold.", "Caller hears agent hold music. Call is successfully retrieved.")
-                    self.add_case(f"{prefix}Call Handling", "Warm & Blind Transfers", "Agent answers queue call and initiates a transfer to an internal extension.", "Call successfully connects and routes to the target extension.")
+                        has_intro = True
 
             if not has_after_hours and bh_str != "24/7 (Always Open)":
-                 self.add_case(f"{prefix}Routing", "After Hours Routing", f"{path_str}Initiate call OUTSIDE Business Hours.", f"Follows default account-level After Hours routing logic.")
+                 self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours Routing", f"{path_str}Initiate a call OUTSIDE of Open Hours: [{bh_str}].", f"Follows default account After Hours logic.")
 
             # ---------------------------------------------------------
-            # 4. IVR MENU TESTING
+            # QUEUE EXHAUSTIVE TESTING
             # ---------------------------------------------------------
-            if ctype == 'IvrMenu':
+            if ctype == 'Department':
+                q_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{cid}/call-queue-info', method='GET', raise_error=False)
+                if not isinstance(q_info, dict): q_info = {}
+                
+                tmode = q_info.get('transferMode') or queue_settings.get('transferMode') or 'Simultaneous'
+                ag_timeout = q_info.get('agentTimeout') or queue_settings.get('agentTimeout') or 0
+                wrap_up = q_info.get('wrapUpTime') or queue_settings.get('wrapUpTime') or 0
+                hold_time = queue_settings.get('holdTime') or q_info.get('holdTime') or 0
+                max_callers = queue_settings.get('maxCallers') or q_info.get('maxCallers') or 0
+                int_per = q_info.get('holdAudioInterruptionPeriod') or queue_settings.get('holdAudioInterruptionPeriod') or 0
+
+                # --- 3. Caller Experience ---
+                if has_intro:
+                    self.add_case(f"{prefix}3. Caller Experience", "Introductory Greeting", f"{path_str}Place a call to the queue.", "Configured Intro Greeting plays fully before agent ringing begins.")
+                self.add_case(f"{prefix}3. Caller Experience", "Connecting Audio (Hold Music)", f"Remain in the queue while waiting.", "The configured hold music plays cleanly without distortion.")
+                if int_per and int(int_per) > 0:
+                    self.add_case(f"{prefix}3. Caller Experience", f"Wait Announcement ({int_per}s)", f"Remain on hold in {cname} for > {int_per} seconds.", f"At exactly {int_per}s, music pauses, wait announcement plays, and music resumes.")
+
+                # --- 4. Agent Experience ---
+                self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-In/DND", f"Agent toggles 'Accept Queue Calls' ON, then OFF.", "Device rings when ON, and smoothly bypasses the agent when OFF.")
+                self.add_case(f"{prefix}4. Agent Experience", "Active Call Decline", "While the queue call is ringing an agent, the agent actively clicks 'Decline'.", "Ringing stops for that agent immediately. Call hunts to the next available agent.")
+                if wrap_up and int(wrap_up) > 0:
+                    self.add_case(f"{prefix}4. Agent Experience", f"Wrap-Up / ACW Timer ({wrap_up}s)", "Agent finishes a queue call and hangs up. Place new call.", f"Agent enters 'Wrap-Up' state and does NOT ring again until {wrap_up}s expires.")
+
+                # --- 5. Routing & Distribution ---
+                self.add_case(f"{prefix}5. Routing & Distribution", f"Distribution Method: {tmode}", "Ensure multiple agents are 'Available'. Place a call.", f"The call distributes to agents based on {tmode} logic.")
+                if str(tmode).lower() != 'simultaneous' and ag_timeout and int(ag_timeout) > 0:
+                    self.add_case(f"{prefix}5. Routing & Distribution", f"Agent Ring Timeout ({ag_timeout}s)", f"Targeted agent lets the call ring without answering for {ag_timeout} seconds.", "Timer expires. Call immediately drops from Agent 1 and begins ringing the next available agent.")
+
+                # --- 6. Call Handling ---
+                self.add_case(f"{prefix}6. Call Handling", "Queue Call Holding", "Agent answers the queue call and places the caller on hold.", "Caller hears agent hold music. Call is successfully retrieved by the agent.")
+                self.add_case(f"{prefix}6. Call Handling", "Warm & Blind Transfers", "Agent answers, initiates a transfer to an internal extension.", "Call successfully connects and routes to the target extension.")
+                self.add_case(f"{prefix}6. Call Handling", "Call Park", "Agent answers and Parks the call to a Park Location.", "The caller is parked and hears hold music. The call can be successfully retrieved by another user dialing the park code.")
+
+                # --- 7. Boundaries & Overflows ---
+                h_act = queue_settings.get('holdTimeExpirationAction')
+                h_name, h_id = self._resolve_target(queue_settings, h_act)
+                
+                m_act = queue_settings.get('maxCallersAction')
+                m_name, m_id = self._resolve_target(queue_settings, m_act)
+
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero Agents Logged In", f"Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", f"Call bypasses queue ringing and immediately executes Overflow -> {h_name}.")
+
+                if hold_time and int(hold_time) > 0:
+                    h_mins = int(hold_time) // 60 if int(hold_time) >= 60 else int(hold_time)
+                    lbl = f"{h_mins} minutes" if int(hold_time) >= 60 else f"{hold_time} seconds"
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires. Call is forcefully removed from the queue and executes -> {h_name}.")
+                    if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu']:
+                        self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": f"Wait Time Overflow"})
+                else:
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Unlimited Wait Time", f"Remain on hold in {cname} for over 10 minutes.", "No maximum wait time limit configured. Call remains in queue indefinitely.")
+
+                if max_callers and int(max_callers) > 0:
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Callers Limit ({max_callers})", f"Simultaneously flood {cname} with {max_callers} calls. Dial call #{int(max_callers) + 1}.", f"The final call breaches the capacity limit. It is blocked and executes -> {m_name}.")
+                    if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu']:
+                        self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": f"Max Callers Overflow"})
+
+                zero_name, _ = self._resolve_target(queue_settings, 'Voicemail')
+                vmail = safe_dict(queue_settings, 'voicemail')
+                if vmail or queue_settings.get('transfer'):
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out (DTMF '0')", f"While listening to {cname} hold music, press '0' on the dialpad.", f"Call gracefully escapes the queue and routes to -> {zero_name}.")
+                else:
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out Disabled", f"While listening to {cname} hold music, press '0' on the dialpad.", "Input is safely ignored. Call remains in the queue.")
+
+            # ---------------------------------------------------------
+            # IVR MENU TESTING
+            # ---------------------------------------------------------
+            elif ctype == 'IvrMenu':
                 ivr_info = rc_api_call(f'/restapi/v1.0/ivr-menus/{cid}', method='GET', raise_error=False)
                 if not isinstance(ivr_info, dict): ivr_info = {}
                 
                 prompt = safe_dict(ivr_info, 'prompt')
                 ptext = prompt.get('text', 'Configured Audio File')
-                self.add_case(f"{prefix}Caller Experience", "Greeting Playback", f"Dial {cname}.", f"Prompt plays clearly: '{ptext}'. Wording matches approved script.")
-                self.add_case(f"{prefix}Caller Experience", "Barge-In (Interruptibility)", f"While the greeting is actively playing, press a valid menu key.", "IVR registers DTMF tone immediately and routes the call without forcing caller to listen to full message.")
+                self.add_case(f"{prefix}3. Caller Experience", "Greeting Playback & Script", f"Dial {cname}.", f"The IVR prompt plays cleanly: '{ptext}'. Wording matches the officially approved script.")
+                self.add_case(f"{prefix}3. Caller Experience", "Barge-In (Interruptibility)", f"While the greeting is actively playing, press a valid menu key.", "The IVR registers the DTMF tone immediately and routes the call without forcing the caller to listen to the full message.")
                 
                 actions = safe_list(ivr_info, 'actions')
                 if actions:
@@ -305,19 +349,26 @@ class UATGenerator:
                         key = act.get('input', '')
                         if not key: continue
                         
-                        a_type = act.get('action', 'Unknown')
-                        tname, tid = self._resolve_target({'transfer': act, 'voicemail': act, 'unconditionalForwarding': act}, a_type)
-                        self.add_case(f"{prefix}IVR Routing", f"Key Mapping: '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System processes input and executes [{a_type}] -> {tname}.")
+                        a_type = act.get('action')
+                        tname, tid = self._resolve_target(act, a_type)
+                        
+                        act_label = a_type or 'Configured Action'
+                        self.add_case(f"{prefix}5. Routing & Distribution", f"Key Mapping: Press '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System correctly processes input and executes [{act_label}] -> {tname}.")
                         
                         if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
                             self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Key '{key}'"})
                 
-                self.add_case(f"{prefix}IVR Boundaries", "Dial-By-Extension", f"While in the IVR, enter a known internal user's 3 or 4-digit extension.", "If enabled, IVR intercepts the string and transfers call to the user.")
-                self.add_case(f"{prefix}IVR Boundaries", "Invalid Key Press", f"Press an unassigned key (e.g., '9' or '#').", "System plays 'Invalid entry' prompt and replays menu.")
-                self.add_case(f"{prefix}IVR Boundaries", "Timeout (No Input)", f"Listen to the entire prompt and provide no DTMF input.", "System times out, replays menu, and eventually executes default timeout routing.")
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Dial-By-Extension Verification", f"While in the IVR, enter a known internal user's 3 or 4-digit extension.", "If general extension dialing is permitted, the IVR intercepts the string and transfers the call to the user.")
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Invalid Key Press", f"Press an unassigned key (e.g., '9' or '#').", "System plays an 'Invalid entry' error prompt and seamlessly replays the main menu.")
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Timeout (No Input)", f"Listen to the entire prompt and provide no DTMF input.", "System times out, replays the menu, and eventually executes the default timeout routing.")
 
-        self.add_case("Global Validation", "Post-Call & Voicemail", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message.", "The correct Voicemail greeting plays. Voicemail audio is recorded and delivered accurately to inbox.")
-        self.add_case("Global Validation", "Analytics & Logging", "Log into the Admin Portal and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result.")
+            # ---------------------------------------------------------
+            # 8. POST-CALL & ANALYTICS (Appended at the end of the node)
+            # ---------------------------------------------------------
+            self.add_case(f"{prefix}8. Post-Call", "Clean Disconnect", "During any active connected state, have the caller hang up.", "The call drops immediately across all endpoints. System returns agents to 'Available' status.")
+
+        self.add_case("Global Validation", "8. Post-Call", "Voicemail Deposit & Delivery", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message. Check the designated target's inbox.", "The correct Voicemail greeting plays. The voicemail audio file is recorded without truncating and delivered accurately.")
+        self.add_case("Global Validation", "8. Analytics", "Call Logs Generation", "Log into the RingCentral Admin Portal and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result across the entire traced journey.")
 
 def generate_uat_cases(extension_id, extension_name, extension_number, extension_type):
     """Entry point for the UI router."""
