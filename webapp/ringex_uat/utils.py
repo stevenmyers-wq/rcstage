@@ -1,8 +1,8 @@
 from webapp.rc_api import rc_api_call
 
 # =============================================================================
-# COMPREHENSIVE UAT GENERATOR - 50-100+ TESTS PER QUEUE
-# No shortcuts. Every scenario tested.
+# TAILORED & HOLISTIC UAT GENERATOR
+# Every test uses EXACT data. Only tests CONFIGURED features.
 # =============================================================================
 
 def safe_dict(d, key):
@@ -16,8 +16,12 @@ def safe_list(d, key):
     return val if isinstance(val, list) else []
 
 
-class ComprehensiveUATGenerator:
-    """Generates 50-100+ comprehensive test cases per queue"""
+class TailoredUATGenerator:
+    """
+    Generates UAT cases tailored to ACTUAL queue configuration.
+    Uses exact phone numbers, agent names, configured values.
+    Only tests features that are actually configured.
+    """
     
     def __init__(self, start_id, start_name, start_number, start_type):
         self.test_cases = []
@@ -53,7 +57,6 @@ class ComprehensiveUATGenerator:
                         'name': ext.get('name', 'Unknown'),
                         'number': ext.get('extensionNumber', 'N/A'),
                         'type': ext.get('type', 'Unknown'),
-                        'status': ext.get('status', 'Unknown'),
                         'email': contact.get('email'),
                         'first_name': contact.get('firstName'),
                         'last_name': contact.get('lastName')
@@ -72,913 +75,596 @@ class ComprehensiveUATGenerator:
         })
         self.test_counter += 1
     
-    def _format_phone_number(self, number):
-        """Format phone number"""
+    def _format_phone(self, number):
+        """Format phone number as (XXX) XXX-XXXX"""
         if not number:
             return ''
-        
         clean = number.replace('+1', '').replace('+', '').replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
-        
         if len(clean) == 10:
             return f"({clean[:3]}) {clean[3:6]}-{clean[6:]}"
         elif len(clean) == 11 and clean[0] == '1':
             return f"({clean[1:4]}) {clean[4:7]}-{clean[7:]}"
-        
         return number
     
-    def _extract_phone_numbers(self, ext_id):
-        """Extract ALL phone numbers for extension"""
+    def _get_phone_numbers(self, ext_id):
+        """Get verified phone numbers for extension"""
         numbers = []
-        
-        resp = rc_api_call(
-            f'/restapi/v1.0/account/~/extension/{ext_id}/phone-number',
-            method='GET',
-            raise_error=False
-        )
+        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/phone-number', method='GET', raise_error=False)
         
         if isinstance(resp, dict):
-            for record in safe_list(resp, 'records'):
-                if not isinstance(record, dict):
+            for rec in safe_list(resp, 'records'):
+                if not isinstance(rec, dict):
                     continue
-                
-                # Verify belongs to this extension
-                ext_obj = safe_dict(record, 'extension')
+                # VERIFY belongs to this extension
+                ext_obj = safe_dict(rec, 'extension')
                 if str(ext_obj.get('id', '')) != str(ext_id):
                     continue
-                
-                phone = record.get('phoneNumber')
+                phone = rec.get('phoneNumber')
                 if phone:
                     numbers.append({
-                        'phone': phone,
-                        'formatted': self._format_phone_number(phone),
-                        'usage_type': record.get('usageType', 'Unknown'),
-                        'type': record.get('type', 'Unknown')
+                        'raw': phone,
+                        'formatted': self._format_phone(phone),
+                        'usage': rec.get('usageType', 'Unknown'),
+                        'type': rec.get('type', '')
                     })
-        
         return numbers
     
-    def _extract_business_hours(self, ext_id):
-        """Extract business hours"""
-        resp = rc_api_call(
-            f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours',
-            method='GET',
-            raise_error=False
-        )
-        
+    def _get_business_hours(self, ext_id):
+        """Get business hours"""
+        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours', method='GET', raise_error=False)
         if not isinstance(resp, dict) or not safe_dict(resp, 'schedule'):
             resp = rc_api_call('/restapi/v1.0/account/~/business-hours', method='GET', raise_error=False)
         
         if not isinstance(resp, dict):
-            return {'is_24_7': True, 'display': '24/7', 'ranges': {}}
+            return {'is_24_7': True, 'ranges': {}}
         
-        schedule = safe_dict(resp, 'schedule')
-        weekly = safe_dict(schedule, 'weeklyRanges')
-        
+        weekly = safe_dict(safe_dict(resp, 'schedule'), 'weeklyRanges')
         if not weekly:
-            return {'is_24_7': True, 'display': '24/7', 'ranges': {}}
+            return {'is_24_7': True, 'ranges': {}}
         
-        day_ranges = {}
-        display_parts = []
-        
+        ranges = {}
         for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']:
             if day in weekly:
                 times = weekly[day]
                 if isinstance(times, list) and times:
-                    day_ranges[day] = []
-                    for time_range in times:
-                        if isinstance(time_range, dict):
-                            from_time = time_range.get('from', '')
-                            to_time = time_range.get('to', '')
-                            if from_time and to_time:
-                                day_ranges[day].append({'from': from_time, 'to': to_time})
-                                display_parts.append(f"{day[:3]} {from_time}-{to_time}")
+                    ranges[day] = []
+                    for tr in times:
+                        if isinstance(tr, dict):
+                            ranges[day].append({'from': tr.get('from', ''), 'to': tr.get('to', '')})
         
-        return {
-            'is_24_7': False,
-            'display': ', '.join(display_parts) if display_parts else 'Custom',
-            'ranges': day_ranges
-        }
+        return {'is_24_7': False, 'ranges': ranges} if ranges else {'is_24_7': True, 'ranges': {}}
     
-    def _extract_answering_rules(self, ext_id):
-        """Extract answering rules"""
-        resp = rc_api_call(
-            f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule',
-            method='GET',
-            raise_error=False
-        )
-        
-        rules = {'business_hours': None, 'after_hours': None, 'custom': []}
+    def _get_rules(self, ext_id):
+        """Get answering rules"""
+        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', method='GET', raise_error=False)
+        rules = {'bh': None, 'ah': None, 'custom': []}
         
         if isinstance(resp, dict):
             for rule in safe_list(resp, 'records'):
                 if isinstance(rule, dict) and rule.get('enabled'):
-                    rule_type = rule.get('type')
-                    if rule_type == 'BusinessHours':
-                        rules['business_hours'] = rule
-                    elif rule_type == 'AfterHours':
-                        rules['after_hours'] = rule
-                    elif rule_type == 'Custom':
+                    rtype = rule.get('type')
+                    if rtype == 'BusinessHours':
+                        rules['bh'] = rule
+                    elif rtype == 'AfterHours':
+                        rules['ah'] = rule
+                    elif rtype == 'Custom':
                         rules['custom'].append(rule)
-        
         return rules
     
-    def _extract_queue_config(self, ext_id, bh_rule):
-        """Extract queue configuration"""
-        queue_api = rc_api_call(
-            f'/restapi/v1.0/account/~/extension/{ext_id}/call-queue-info',
-            method='GET',
-            raise_error=False
-        ) or {}
+    def _get_queue_config(self, ext_id, bh_rule):
+        """Get ACTUAL queue configuration - only what's configured"""
+        q_api = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/call-queue-info', method='GET', raise_error=False) or {}
+        q_settings = safe_dict(bh_rule, 'queue') if bh_rule else {}
         
-        queue_settings = safe_dict(bh_rule, 'queue') if bh_rule else {}
+        # Get transfer mode (REQUIRED field)
+        transfer_mode = q_api.get('transferMode') or q_settings.get('transferMode') or 'Rotating'
         
         config = {
-            'transfer_mode': queue_api.get('transferMode') or queue_settings.get('transferMode') or 'Rotating',
+            'transfer_mode': transfer_mode,
             'agent_timeout': None,
-            'wrap_up_time': None,
+            'wrap_up': None,
             'hold_time': None,
             'max_callers': None,
-            'interrupt_period': None,
+            'interrupt': None,
+            'max_concurrent': None,
             'agents': [],
-            'overflow_actions': {},
-            'greetings': {}
+            'overflows': {},
+            'greetings': {},
+            'recording': None
         }
         
-        # Agent timeout - only if NOT simultaneous
-        timeout = queue_api.get('agentTimeout') or queue_settings.get('agentTimeout')
-        if timeout and int(timeout) > 0 and config['transfer_mode'].lower() != 'simultaneous':
-            config['agent_timeout'] = int(timeout)
+        # Agent timeout - ONLY if NOT simultaneous AND configured
+        if transfer_mode.lower() != 'simultaneous':
+            timeout = q_api.get('agentTimeout') or q_settings.get('agentTimeout')
+            if timeout and int(timeout) > 0:
+                config['agent_timeout'] = int(timeout)
         
-        # Wrap-up time
-        wrap_up = queue_api.get('wrapUpTime') or queue_settings.get('wrapUpTime')
-        if wrap_up and int(wrap_up) > 0:
-            config['wrap_up_time'] = int(wrap_up)
+        # Wrap-up time - ONLY if configured
+        wrap = q_api.get('wrapUpTime') or q_settings.get('wrapUpTime')
+        if wrap and int(wrap) > 0:
+            config['wrap_up'] = int(wrap)
         
-        # Hold time
-        hold = queue_settings.get('holdTime') or queue_api.get('holdTime')
+        # Hold time - ONLY if configured
+        hold = q_settings.get('holdTime') or q_api.get('holdTime')
         if hold and int(hold) > 0:
             config['hold_time'] = int(hold)
         
-        # Max callers
-        max_c = queue_settings.get('maxCallers') or queue_api.get('maxCallers')
+        # Max callers - ONLY if configured
+        max_c = q_settings.get('maxCallers') or q_api.get('maxCallers')
         if max_c and int(max_c) > 0:
             config['max_callers'] = int(max_c)
         
-        # Interrupt period
-        interrupt = queue_api.get('holdAudioInterruptionPeriod') or queue_settings.get('holdAudioInterruptionPeriod')
-        if interrupt and int(interrupt) > 0:
-            config['interrupt_period'] = int(interrupt)
+        # Interrupt period - ONLY if configured
+        intr = q_api.get('holdAudioInterruptionPeriod') or q_settings.get('holdAudioInterruptionPeriod')
+        if intr and int(intr) > 0:
+            config['interrupt'] = int(intr)
         
-        # Agents
-        agents = queue_api.get('fixedOrderAgents', []) or queue_api.get('agents', [])
+        # Max concurrent per agent
+        max_conc = q_settings.get('maxCallersPerAgent') or q_api.get('maxCallersPerAgent')
+        if max_conc and int(max_conc) > 0:
+            config['max_concurrent'] = int(max_conc)
+        
+        # Get agents with full details
+        agents = q_api.get('fixedOrderAgents', []) or q_api.get('agents', [])
         for agent in agents:
             if isinstance(agent, dict):
                 ext_obj = safe_dict(agent, 'extension')
                 agent_id = str(ext_obj.get('id', ''))
-                if agent_id and agent_id in self.ext_directory:
+                if agent_id in self.ext_directory:
                     config['agents'].append(self.ext_directory[agent_id])
         
-        # Greetings
+        # Greetings - check what's actually configured
         if bh_rule:
-            for greeting in safe_list(bh_rule, 'greetings'):
-                if isinstance(greeting, dict):
-                    g_type = greeting.get('type')
-                    if g_type == 'Introductory':
-                        config['greetings']['has_intro'] = True
-                    elif g_type == 'InterruptPrompt':
-                        config['greetings']['has_interrupt'] = True
+            for greet in safe_list(bh_rule, 'greetings'):
+                if isinstance(greet, dict):
+                    gtype = greet.get('type')
+                    if gtype == 'Introductory':
+                        config['greetings']['intro'] = True
+                    elif gtype == 'ConnectingAudio':
+                        config['greetings']['connecting'] = True
+                    elif gtype == 'InterruptPrompt':
+                        config['greetings']['interrupt_audio'] = True
         
-        # Overflow actions
-        for key, label in [('noAnswerAction', 'no_agents'), ('holdTimeExpirationAction', 'max_wait'), ('maxCallersAction', 'max_callers')]:
-            action = queue_settings.get(key)
+        # Recording
+        if bh_rule:
+            rec = safe_dict(bh_rule, 'callRecording')
+            if rec and rec.get('enabled'):
+                config['recording'] = rec.get('mode', 'Automatic')
+        
+        # Overflows - extract actual destinations
+        for api_key, label in [('noAnswerAction', 'no_agents'), ('holdTimeExpirationAction', 'max_wait'), ('maxCallersAction', 'queue_full')]:
+            action = q_settings.get(api_key)
             if action:
-                target_id, target_name = self._extract_target(action)
-                config['overflow_actions'][label] = {'target_id': target_id, 'target_name': target_name}
+                tid, tname = self._extract_target(action)
+                if tid or tname != 'Unknown':
+                    config['overflows'][label] = {'id': tid, 'name': tname}
         
         return config
     
-    def _extract_target(self, action_obj):
+    def _extract_target(self, action):
         """Extract routing target"""
-        if not isinstance(action_obj, dict):
-            return None, 'Configured Destination'
+        if not isinstance(action, dict):
+            return None, 'Unknown'
         
-        ext = safe_dict(action_obj, 'extension')
-        if not ext:
-            ext = safe_dict(safe_dict(action_obj, 'transfer'), 'extension')
-        
+        # Extension
+        ext = safe_dict(action, 'extension') or safe_dict(safe_dict(action, 'transfer'), 'extension')
         if ext and ext.get('id'):
-            target_id = str(ext.get('id'))
-            if target_id in self.ext_directory:
-                info = self.ext_directory[target_id]
-                return target_id, f"{info['name']} (Ext {info['number']})"
-            return target_id, f"Extension {target_id}"
+            tid = str(ext.get('id'))
+            if tid in self.ext_directory:
+                info = self.ext_directory[tid]
+                return tid, f"{info['name']} (Ext {info['number']})"
+            return tid, f"Extension {tid}"
         
-        voicemail = safe_dict(action_obj, 'voicemail')
-        recipient = safe_dict(voicemail, 'recipient')
-        if recipient and recipient.get('id'):
-            target_id = str(recipient.get('id'))
-            if target_id in self.ext_directory:
-                info = self.ext_directory[target_id]
-                return target_id, f"Voicemail of {info['name']}"
-            return target_id, 'Voicemail'
+        # Voicemail
+        vm = safe_dict(action, 'voicemail')
+        recip = safe_dict(vm, 'recipient')
+        if recip and recip.get('id'):
+            tid = str(recip.get('id'))
+            if tid in self.ext_directory:
+                return tid, f"Voicemail: {self.ext_directory[tid]['name']}"
+            return tid, 'Voicemail'
         
-        forwarding = safe_dict(action_obj, 'unconditionalForwarding')
-        if forwarding and forwarding.get('phoneNumber'):
-            phone = forwarding.get('phoneNumber')
-            return None, f"External: {self._format_phone_number(phone)}"
+        # External
+        fwd = safe_dict(action, 'unconditionalForwarding')
+        if fwd and fwd.get('phoneNumber'):
+            return None, f"External: {self._format_phone(fwd.get('phoneNumber'))}"
         
-        return None, 'Configured Destination'
+        return None, 'Unknown'
     
     def process_all_flows(self):
-        """Main processing loop"""
+        """Main processing"""
         while self.processing_queue:
-            current = self.processing_queue.pop(0)
+            curr = self.processing_queue.pop(0)
             
-            ext_id = current['id']
-            ext_name = current['name']
-            ext_number = current['number']
-            ext_type = current['type']
-            path = current['path']
-            depth = current['depth']
-            context = current['context']
-            
-            if depth > 10:
+            if curr['depth'] > 10:
                 continue
             
-            process_key = f"{ext_id}:{context}"
-            if process_key in self.processed_extensions:
+            key = f"{curr['id']}:{curr['context']}"
+            if key in self.processed_extensions:
                 continue
-            self.processed_extensions.add(process_key)
+            self.processed_extensions.add(key)
             
-            path_display = ' → '.join(path + [ext_name]) if path else ext_name
-            path_prefix = f"[{path_display}] " if path else ""
+            path_display = ' → '.join(curr['path'] + [curr['name']]) if curr['path'] else curr['name']
+            prefix = f"[{path_display}] " if curr['path'] else ""
             
-            if ext_type == 'Department':
-                self._generate_comprehensive_queue_tests(
-                    ext_id, ext_name, ext_number, path, path_prefix, depth, context
-                )
-            
-        self._add_global_tests()
+            if curr['type'] == 'Department':
+                self._gen_queue_tests(curr['id'], curr['name'], curr['number'], curr['path'], prefix, curr['depth'])
+        
+        self._add_global()
         return self.test_cases
     
-    def _generate_comprehensive_queue_tests(self, ext_id, ext_name, ext_number, path, path_prefix, depth, context):
-        """Generate COMPREHENSIVE queue tests - 50-100+ tests"""
+    def _gen_queue_tests(self, qid, qname, qnum, path, prefix, depth):
+        """Generate tailored queue tests using EXACT configuration"""
         
-        # Extract data
-        numbers = self._extract_phone_numbers(ext_id)
-        hours = self._extract_business_hours(ext_id)
-        rules = self._extract_answering_rules(ext_id)
-        queue_config = self._extract_queue_config(ext_id, rules.get('business_hours'))
+        # Extract ACTUAL data
+        phones = self._get_phone_numbers(qid)
+        hours = self._get_business_hours(qid)
+        rules = self._get_rules(qid)
+        cfg = self._get_queue_config(qid, rules['bh'])
         
-        # =================================================================
-        # SECTION 1: INTEGRATION & CONNECTIVITY (5-10 tests)
-        # =================================================================
+        # ================================================================
+        # INTEGRATION - Using EXACT phone numbers
+        # ================================================================
         
         if depth == 0:
-            # Internal dialing
+            # Internal
             self.add_test(
-                f"{path_prefix}Integration",
+                f"{prefix}Integration",
                 "Internal Extension Dialing",
-                f"Using a desk phone or RingCentral app logged into the company account, dial extension {ext_number}.",
-                f"Call connects to {ext_name} with clear two-way audio. No SIP errors or dead air."
+                f"Using a desk phone or RingCentral app, dial extension {qnum}.",
+                f"Device rings and connects to {qname}. Clear two-way audio. No errors."
             )
             
-            # PSTN routing - EVERY phone number
-            for num in numbers:
-                if num['usage_type'] == 'DirectNumber':
+            # External - EVERY ACTUAL phone number
+            for phone in phones:
+                if phone['usage'] == 'DirectNumber':
                     self.add_test(
-                        f"{path_prefix}Integration - PSTN",
-                        f"External Direct Number: {num['formatted']}",
-                        f"From your personal mobile phone (NOT connected to company network), dial {num['formatted']}. Use your actual mobile carrier.",
-                        f"Call routes through PSTN to {ext_name}. Caller ID displays your mobile number. Clear two-way audio established. No voice quality issues."
+                        f"{prefix}Integration - PSTN",
+                        f"External DID: {phone['formatted']}",
+                        f"From your personal mobile phone (cellular network, NOT company WiFi), dial {phone['formatted']}.",
+                        f"Call routes through PSTN to {qname}. Your mobile caller ID displays to agents. Clear audio both ways."
                     )
-                elif num['usage_type'] == 'MainCompanyNumber':
+                elif phone['usage'] == 'MainCompanyNumber':
                     self.add_test(
-                        f"{path_prefix}Integration - Main",
-                        f"Main Company Number: {num['formatted']}",
-                        f"From external phone, dial main company number {num['formatted']}. Follow auto-attendant prompts to reach {ext_name}.",
-                        f"Successfully connects to {ext_name} after IVR navigation."
+                        f"{prefix}Integration - Main",
+                        f"Main Number: {phone['formatted']}",
+                        f"From external phone, dial {phone['formatted']}. Navigate IVR to {qname}.",
+                        f"Reaches {qname} successfully."
                     )
             
-            # Audio quality sustained test
+            # If NO phone numbers found
+            if not phones:
+                self.add_test(
+                    f"{prefix}Integration",
+                    "No Direct Numbers Configured",
+                    f"Verify {qname} configuration in Admin Portal.",
+                    f"Note: No direct phone numbers assigned to {qname}. Access only via internal dialing or call transfer."
+                )
+            
+            # Audio quality
             self.add_test(
-                f"{path_prefix}Integration",
+                f"{prefix}Integration",
                 "Sustained Audio Quality",
-                f"Establish call to {ext_name}. Maintain active conversation for 3 full minutes with continuous speech.",
-                "Audio quality remains consistent throughout. No jitter, latency spikes, packet loss, or degradation over time."
-            )
-            
-            # Caller ID display
-            self.add_test(
-                f"{path_prefix}Integration",
-                "Caller ID Display Accuracy",
-                f"Place call to {ext_name} from known number. Observe caller ID on agent device.",
-                f"Caller ID accurately displays: Queue name '{ext_name}' prepended to actual caller information."
+                f"Call {qname} (via extension {qnum}). Speak continuously for 2 minutes.",
+                "Audio remains clear with no jitter, latency, or quality degradation."
             )
         
-        # =================================================================
-        # SECTION 2: TIME-BASED ROUTING (3-5 tests)
-        # =================================================================
+        # ================================================================
+        # BUSINESS HOURS - Using EXACT schedule
+        # ================================================================
         
         if not hours['is_24_7'] and hours['ranges']:
+            # Get first configured day
             first_day = next(iter(hours['ranges'].keys()))
-            first_range = hours['ranges'][first_day][0] if hours['ranges'][first_day] else None
+            first_time = hours['ranges'][first_day][0]
             
-            if first_range:
+            self.add_test(
+                f"{prefix}Time Routing",
+                "Business Hours - Open",
+                f"Place call on {first_day} at {first_time['from']} (start of business hours).",
+                f"Follows business hours routing for {qname}."
+            )
+            
+            self.add_test(
+                f"{prefix}Time Routing",
+                "Business Hours - Closed",
+                f"Place call on Sunday at 11:00 PM (outside business hours).",
+                f"Follows after-hours routing for {qname}."
+            )
+        
+        # ================================================================
+        # CALLER EXPERIENCE - Only configured features
+        # ================================================================
+        
+        # Intro greeting - ONLY if configured
+        if cfg['greetings'].get('intro'):
+            self.add_test(
+                f"{prefix}Queue - Caller Experience",
+                "Introductory Greeting",
+                f"Call {qname} (ext {qnum}). Listen to audio sequence.",
+                "Intro greeting plays fully before agent ringing begins."
+            )
+        
+        # Hold music - always applicable
+        self.add_test(
+            f"{prefix}Queue - Caller Experience",
+            "Hold Music",
+            f"Call {qname} (ext {qnum}) and wait in queue.",
+            "Hold music plays continuously without gaps or distortion."
+        )
+        
+        # Interrupt announcements - ONLY if configured
+        if cfg['interrupt']:
+            self.add_test(
+                f"{prefix}Queue - Caller Experience",
+                f"Periodic Announcements (every {cfg['interrupt']}s)",
+                f"Remain on hold for {cfg['interrupt'] + 15} seconds.",
+                f"Every {cfg['interrupt']}s, music pauses, announcement plays, music resumes."
+            )
+        
+        # Recording announcement - ONLY if enabled
+        if cfg['recording']:
+            self.add_test(
+                f"{prefix}Queue - Caller Experience",
+                f"Recording Announcement ({cfg['recording']} mode)",
+                f"Call {qname} (ext {qnum}).",
+                f"Announcement 'This call may be recorded' plays before agent connection. Mode: {cfg['recording']}."
+            )
+        
+        # ================================================================
+        # AGENT TESTS - Using ACTUAL agent names
+        # ================================================================
+        
+        if cfg['agents']:
+            # Use first actual agent
+            agent = cfg['agents'][0]
+            aname = f"{agent['name']} (Ext {agent['number']})"
+            
+            self.add_test(
+                f"{prefix}Queue - Agent Tests",
+                "Agent Opt-In",
+                f"{aname} enables 'Accept Queue Calls' for {qname}. Call ext {qnum}.",
+                f"{aname}'s device rings. Caller ID shows '{qname}'."
+            )
+            
+            self.add_test(
+                f"{prefix}Queue - Agent Tests",
+                "Agent Opt-Out",
+                f"{aname} disables 'Accept Queue Calls'. Call ext {qnum}.",
+                f"{aname} does NOT ring. Call routes to next agent."
+            )
+            
+            self.add_test(
+                f"{prefix}Queue - Agent Tests",
+                "Agent DND",
+                f"{aname} sets Do Not Disturb. Call ext {qnum}.",
+                f"{aname} does NOT ring. Treated as unavailable."
+            )
+            
+            self.add_test(
+                f"{prefix}Queue - Agent Tests",
+                "Agent Decline",
+                f"While ringing {aname}, agent clicks Decline.",
+                f"Ringing stops. Call hunts to next agent."
+            )
+            
+            self.add_test(
+                f"{prefix}Queue - Agent Tests",
+                "Agent Already Busy",
+                f"{aname} is on another call. Call ext {qnum}.",
+                "Busy agent does NOT ring. Routes to available agents."
+            )
+            
+            # Wrap-up - ONLY if configured
+            if cfg['wrap_up']:
                 self.add_test(
-                    f"{path_prefix}Time Routing",
-                    "Business Hours - During Open Hours",
-                    f"Place test call on {first_day} at {first_range['from']} (within configured hours: {hours['display']}).",
-                    f"Call follows Business Hours routing path. Plays business hours greeting (if configured). Routes to queue agents."
+                    f"{prefix}Queue - Agent Tests",
+                    f"After-Call Work ({cfg['wrap_up']}s)",
+                    f"{aname} completes call. Immediately call ext {qnum} again.",
+                    f"{aname} in wrap-up for {cfg['wrap_up']}s. Does NOT ring during this time."
                 )
-                
-                self.add_test(
-                    f"{path_prefix}Time Routing",
-                    "Business Hours - After Hours",
-                    f"Place test call on Sunday at 11:00 PM or {first_day} at 11:00 PM (outside configured hours: {hours['display']}).",
-                    f"Call follows After Hours routing path. Does NOT route to queue. Executes after hours action."
-                )
-                
-                self.add_test(
-                    f"{path_prefix}Time Routing",
-                    "Business Hours - Edge Case (Boundary)",
-                    f"Place test call exactly at {first_range['to']} (end of business hours).",
-                    "System correctly classifies call as either inside or outside hours based on exact time configuration."
-                )
-        
-        # Holiday routing
-        self.add_test(
-            f"{path_prefix}Time Routing",
-            "Holiday Schedule Override",
-            "Temporarily configure a holiday schedule for today in Admin Portal. Place test call.",
-            "Holiday schedule takes precedence over standard business hours. Call follows holiday routing."
-        )
-        
-        # =================================================================
-        # SECTION 3: CALLER EXPERIENCE (5-10 tests)
-        # =================================================================
-        
-        # Introductory greeting
-        if queue_config.get('greetings', {}).get('has_intro'):
+        else:
+            # No agents configured
             self.add_test(
-                f"{path_prefix}Queue - Caller Experience",
-                "Introductory Greeting Playback",
-                f"Place call to {ext_name}. Listen carefully to audio sequence.",
-                "Introductory greeting plays in full BEFORE any agent ringing begins. Greeting is not cut off or interrupted."
+                f"{prefix}Queue - Config Check",
+                "No Agents Assigned",
+                f"Verify {qname} agent configuration in Admin Portal.",
+                f"WARNING: No agents assigned to {qname}. All calls will overflow immediately."
             )
         
-        # Hold music
+        # ================================================================
+        # DISTRIBUTION - Using ACTUAL mode
+        # ================================================================
+        
         self.add_test(
-            f"{path_prefix}Queue - Caller Experience",
-            "Hold Music / Comfort Audio",
-            f"Place call to {ext_name}. Remain in queue while agents are unavailable or busy.",
-            "Configured hold music or comfort message plays continuously without gaps, dead air, or distortion."
+            f"{prefix}Queue - Distribution",
+            f"Mode: {cfg['transfer_mode']}",
+            f"Ensure 2+ agents available. Call ext {qnum}.",
+            f"Distributes per {cfg['transfer_mode']} logic."
         )
         
-        # Music on hold quality
-        self.add_test(
-            f"{path_prefix}Queue - Caller Experience",
-            "Hold Music Quality Sustained",
-            f"Remain in {ext_name} queue for 2+ minutes.",
-            "Hold music loops smoothly without audio artifacts, volume fluctuations, or quality degradation."
-        )
-        
-        # Interrupt announcements
-        if queue_config.get('interrupt_period'):
-            period = queue_config['interrupt_period']
+        # Agent timeout - ONLY if applicable
+        if cfg['agent_timeout']:
             self.add_test(
-                f"{path_prefix}Queue - Caller Experience",
-                f"Periodic Announcements ({period} second intervals)",
-                f"Remain on hold for at least {period + 20} seconds. Time the intervals.",
-                f"Every {period} seconds, hold music pauses, comfort announcement plays ('Please continue holding...'), then music resumes seamlessly."
+                f"{prefix}Queue - Distribution",
+                f"Agent Timeout ({cfg['agent_timeout']}s)",
+                f"First agent ignores call for {cfg['agent_timeout']}s.",
+                f"After {cfg['agent_timeout']}s, hunts to next agent."
             )
         
-        # Call recording announcement
+        # ================================================================
+        # CALL HANDLING - Always applicable
+        # ================================================================
+        
         self.add_test(
-            f"{path_prefix}Queue - Caller Experience",
-            "Call Recording Announcement (if enabled)",
-            f"Place call to {ext_name}.",
-            "If call recording is enabled, announcement 'This call may be recorded' plays before agent connection. If not enabled, no announcement plays."
+            f"{prefix}Queue - Call Handling",
+            "Hold",
+            f"Agent answers from {qname}. Clicks Hold.",
+            "Caller hears hold music. Agent can retrieve."
         )
         
-        # Queue position announcement (if configured)
         self.add_test(
-            f"{path_prefix}Queue - Caller Experience",
-            "Queue Position Announcement (if enabled)",
-            f"Place call to {ext_name} while other callers are already in queue.",
-            "If queue position announcements enabled, system announces position in queue (e.g., 'You are caller number 3')."
+            f"{prefix}Queue - Call Handling",
+            "Warm Transfer",
+            f"Agent answers from {qname}. Warm transfer to ext 101.",
+            "Consults, then completes transfer successfully."
         )
         
-        # Estimated wait time (if configured)
         self.add_test(
-            f"{path_prefix}Queue - Caller Experience",
-            "Estimated Wait Time Announcement (if enabled)",
-            f"Place call to {ext_name} during busy period.",
-            "If estimated wait time enabled, system announces approximate wait time based on current queue conditions."
-        )
-        
-        # =================================================================
-        # SECTION 4: AGENT BEHAVIOR & STATUS (10-15 tests)
-        # =================================================================
-        
-        agent_name = "the queue agent"
-        if queue_config.get('agents'):
-            first_agent = queue_config['agents'][0]
-            agent_name = f"{first_agent['name']} (Ext {first_agent['number']})"
-        
-        # Agent opt-in
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Queue Opt-In",
-            f"Have {agent_name} log into RingCentral app. Enable 'Accept Queue Calls' for {ext_name}. Verify status shows 'Available'. Place test call.",
-            f"Agent's device rings immediately. Caller ID displays queue name '{ext_name}' prepended to caller information."
-        )
-        
-        # Agent opt-out
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Queue Opt-Out",
-            f"Have {agent_name} disable 'Accept Queue Calls' for {ext_name}. Status should show they're not accepting queue calls. Place test call.",
-            f"Agent's device does NOT ring. Call immediately hunts to next available agent in queue. No ringing occurs for opted-out agent."
-        )
-        
-        # Agent DND
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Do Not Disturb Status",
-            f"Have {agent_name} set status to 'Do Not Disturb' in RingCentral app. Place test call to {ext_name}.",
-            f"Agent does NOT ring. System treats agent as unavailable. Call routes to other available agents."
-        )
-        
-        # Agent available but away
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent 'Away' Status",
-            f"Have {agent_name} set presence status to 'Away' but keep queue calls enabled. Place test call.",
-            "Agent DOES ring (queue calls override 'Away' status). Call routes normally to agent."
-        )
-        
-        # Agent decline call
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Active Decline",
-            f"While queue call is ringing {agent_name}, have agent click 'Decline' button.",
-            f"Ringing stops immediately for {agent_name}. Call seamlessly hunts to next available agent without caller experiencing disruption."
-        )
-        
-        # Agent ignore (let ring)
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Ignore (No Answer)",
-            f"While queue call is ringing {agent_name}, have agent neither answer nor decline. Let it ring.",
-            f"After configured ring timeout, call automatically moves to next agent. Agent who ignored is marked as missed call."
-        )
-        
-        # Agent on active call
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Already on Active Call",
-            f"Have {agent_name} place or answer a different call (make them busy). While busy, place new call to {ext_name}.",
-            f"System recognizes {agent_name} as busy. Queue call does NOT interrupt active call. Routes to other available agents."
-        )
-        
-        # Agent on hold with another call
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent with Call on Hold",
-            f"Have {agent_name} answer a call and place it on hold. While call is on hold, place new queue call.",
-            f"System may route queue call to {agent_name} OR treat as busy (depends on 'Max concurrent calls per agent' setting). Behavior is consistent with configuration."
-        )
-        
-        # Wrap-up time
-        if queue_config.get('wrap_up_time'):
-            wrap_up = queue_config['wrap_up_time']
-            self.add_test(
-                f"{path_prefix}Queue - Agent Tests",
-                f"After-Call Work Period ({wrap_up} seconds)",
-                f"Have {agent_name} answer queue call and complete it. Within 1 second of completing, place second queue call to {ext_name}.",
-                f"Agent {agent_name} enters 'Wrap-Up' status for {wrap_up} seconds. Does NOT ring for new queue calls during this period. After {wrap_up} seconds, becomes available again."
-            )
-            
-            # Wrap-up manual override
-            self.add_test(
-                f"{path_prefix}Queue - Agent Tests",
-                f"Wrap-Up Manual Release",
-                f"During wrap-up period, have {agent_name} manually set status back to 'Available' before timer expires.",
-                "Agent immediately becomes available for new queue calls. Wrap-up timer is cancelled. Next queue call routes to agent."
-            )
-        
-        # Agent logs out
-        self.add_test(
-            f"{path_prefix}Queue - Agent Tests",
-            "Agent Logout During Queue Call",
-            f"While queue call is ringing {agent_name}, have agent log out of RingCentral app.",
-            "Ringing stops immediately. Call hunts to next available agent. Logged-out agent no longer receives queue calls."
-        )
-        
-        # =================================================================
-        # SECTION 5: DISTRIBUTION LOGIC (5-10 tests)
-        # =================================================================
-        
-        transfer_mode = queue_config.get('transfer_mode', 'Rotating')
-        
-        # Distribution mode verification
-        self.add_test(
-            f"{path_prefix}Queue - Distribution",
-            f"Distribution Mode: {transfer_mode}",
-            f"Ensure at least 2 agents are available and opted-in to {ext_name}. Note which agents are available. Place test call.",
-            f"Call distributes according to {transfer_mode} logic. Rotating: calls next agent in sequence. Simultaneous: rings all agents at once. Sequential: always starts with first agent."
-        )
-        
-        # Multi-agent simultaneous (if mode is simultaneous)
-        if transfer_mode.lower() == 'simultaneous':
-            self.add_test(
-                f"{path_prefix}Queue - Distribution",
-                "Simultaneous Ring - Multiple Agents",
-                f"Ensure 3+ agents available. Place call to {ext_name}.",
-                "ALL available agents' devices ring simultaneously at the exact same time. First to answer gets the call."
-            )
-            
-            self.add_test(
-                f"{path_prefix}Queue - Distribution",
-                "Simultaneous Ring - First to Answer Wins",
-                f"During simultaneous ring, have one agent answer while others are still ringing.",
-                "Answering agent connects to caller. All other agents' devices stop ringing immediately. No duplicate connections."
-            )
-        
-        # Agent timeout (if applicable)
-        if queue_config.get('agent_timeout'):
-            timeout = queue_config['agent_timeout']
-            self.add_test(
-                f"{path_prefix}Queue - Distribution",
-                f"Agent Ring Timeout ({timeout} seconds)",
-                f"Place call to {ext_name}. Have first agent ignore call (no answer, no decline). Use stopwatch to time exactly {timeout} seconds.",
-                f"After exactly {timeout} seconds, call stops ringing first agent and immediately hunts to next agent per distribution mode. Timer is precise."
-            )
-            
-            # Verify timeout doesn't happen too early
-            self.add_test(
-                f"{path_prefix}Queue - Distribution",
-                f"Agent Ring Timeout - Premature Answer Prevention",
-                f"Place call to {ext_name}. Have agent answer at {timeout - 5} seconds (before timeout).",
-                "Agent successfully connects to caller. Timeout does NOT trigger. Connection is immediate."
-            )
-        
-        # Call hunting sequence
-        self.add_test(
-            f"{path_prefix}Queue - Distribution",
-            "Call Hunting Sequence",
-            f"Have first 2 agents decline or ignore call. Ensure 3rd agent is available. Place call.",
-            "Call hunts through agents in correct sequence. After first 2 declines/timeouts, reaches 3rd agent and rings successfully."
-        )
-        
-        # All agents busy
-        self.add_test(
-            f"{path_prefix}Queue - Distribution",
-            "All Agents Busy Scenario",
-            f"Have all {ext_name} agents become busy with other calls. Place new queue call.",
-            "Call enters queue and holds. Caller hears hold music. When first agent becomes available, call routes to them immediately."
-        )
-        
-        # =================================================================
-        # SECTION 6: CALL HANDLING & FEATURES (10-12 tests)
-        # =================================================================
-        
-        # Hold function
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Place Call on Hold",
-            f"Agent answers queue call. Agent clicks 'Hold' button in RingCentral app.",
-            "Caller immediately hears configured on-hold music. Agent's line is released. Agent can perform other tasks."
-        )
-        
-        # Retrieve from hold
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Retrieve Call from Hold",
-            f"Agent has queue call on hold. Agent clicks 'Resume' or retrieves the call.",
-            "Call is immediately retrieved. Two-way audio resumes. On-hold music stops for caller."
-        )
-        
-        # Hold for extended period
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Extended Hold Duration",
-            f"Agent places queue call on hold for 2+ minutes.",
-            "Caller continues hearing hold music. No disconnection occurs. Call remains stable. Agent can retrieve at any time."
-        )
-        
-        # Warm transfer initiate
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Warm Transfer - Initiation",
-            f"Agent answers queue call. Agent initiates warm transfer to another extension (e.g., supervisor extension 102).",
-            "Original caller is placed on hold automatically. Transfer destination begins ringing. Agent can hear ring-back tone."
-        )
-        
-        # Warm transfer consultation
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Warm Transfer - Consultation",
-            f"During warm transfer, have transfer destination answer. Agent consults with them while original caller on hold.",
-            "Agent can speak privately with transfer destination. Original caller remains on hold hearing hold music. Caller cannot hear consultation."
-        )
-        
-        # Warm transfer completion
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Warm Transfer - Completion",
-            f"After consultation, agent clicks 'Complete Transfer' button.",
-            "Original caller is connected to transfer destination with clear two-way audio. Transferring agent is released from call. Call does not drop."
-        )
-        
-        # Warm transfer cancellation
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Warm Transfer - Cancellation",
-            f"Agent initiates warm transfer but clicks 'Cancel' before completing.",
-            "Transfer is cancelled. Original caller is reconnected to original agent. No call drop occurs."
-        )
-        
-        # Blind transfer
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
+            f"{prefix}Queue - Call Handling",
             "Blind Transfer",
-            f"Agent answers queue call. Agent initiates blind transfer to another extension without consultation.",
-            "Transferring agent is released immediately. Caller hears ringing to destination extension. If destination answers, caller connects. If no answer, call may return to queue or voicemail."
+            f"Agent answers from {qname}. Blind transfer to ext 101.",
+            "Agent released immediately. Caller transferred."
         )
         
-        # Call park
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Call Park",
-            f"Agent answers queue call. Agent parks call to park location *801.",
-            "Caller is parked successfully and hears hold music. System announces park location to agent. Agent can hang up."
-        )
+        # ================================================================
+        # OVERFLOWS - ONLY configured ones with ACTUAL destinations
+        # ================================================================
         
-        # Call park retrieve
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Call Park Retrieval",
-            f"With call parked at *801, have another user dial *801.",
-            "Parked call is retrieved successfully. Retrieving user connects to caller with two-way audio."
-        )
-        
-        # Recording (if enabled)
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Call Recording (if enabled)",
-            f"Place call to {ext_name} and have agent answer. Complete the call.",
-            "If automatic recording enabled, call is recorded from start to finish. Recording captures both caller and agent audio clearly."
-        )
-        
-        # Call conferencing
-        self.add_test(
-            f"{path_prefix}Queue - Call Handling",
-            "Add to Conference",
-            f"Agent answers queue call. Agent adds another participant to create conference call.",
-            "Conference is created successfully. All parties can hear each other. Audio quality remains high."
-        )
-        
-        # =================================================================
-        # SECTION 7: OVERFLOW & BOUNDARY CONDITIONS (8-15 tests)
-        # =================================================================
-        
-        # No agents available
-        if 'no_agents' in queue_config.get('overflow_actions', {}):
-            overflow = queue_config['overflow_actions']['no_agents']
+        # No agents overflow
+        if 'no_agents' in cfg['overflows']:
+            dest = cfg['overflows']['no_agents']
             self.add_test(
-                f"{path_prefix}Queue - Overflow",
+                f"{prefix}Queue - Overflow",
                 "No Agents Available",
-                f"Ensure ALL {ext_name} agents are: logged out, on DND, or have queue calls disabled. Verify no agents show as available. Place test call.",
-                f"Call immediately bypasses queue (does not play hold music). Executes no-answer overflow action. Routes to: {overflow['target_name']}"
-            )
-        
-        # Max wait time
-        if queue_config.get('hold_time') and 'max_wait' in queue_config.get('overflow_actions', {}):
-            hold_time = queue_config['hold_time']
-            overflow = queue_config['overflow_actions']['max_wait']
-            
-            minutes = hold_time // 60
-            seconds = hold_time % 60
-            time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
-            
-            self.add_test(
-                f"{path_prefix}Queue - Overflow",
-                f"Maximum Wait Time ({time_str})",
-                f"Place call to {ext_name}. Ensure no agents answer. Remain on hold with stopwatch. Time exactly {hold_time} seconds ({time_str}).",
-                f"At {hold_time} second mark, hold music stops. Call is removed from queue. Executes wait time overflow action. Routes to: {overflow['target_name']}"
+                f"All {qname} agents log out or set DND. Call ext {qnum}.",
+                f"Bypasses queue. Routes to: {dest['name']}"
             )
             
-            # Max wait time - early answer prevention
-            self.add_test(
-                f"{path_prefix}Queue - Overflow",
-                f"Max Wait Time - Answer Before Expiry",
-                f"Place call to {ext_name}. Have agent answer at {hold_time - 10} seconds (before max wait expires).",
-                "Agent successfully connects to caller. Max wait timeout does NOT trigger. Call connects normally."
-            )
-        
-        # Max callers capacity
-        if queue_config.get('max_callers') and 'max_callers' in queue_config.get('overflow_actions', {}):
-            max_callers = queue_config['max_callers']
-            overflow = queue_config['overflow_actions']['max_callers']
-            
-            self.add_test(
-                f"{path_prefix}Queue - Overflow",
-                f"Queue Capacity Limit ({max_callers} maximum)",
-                f"Flood {ext_name} with {max_callers} simultaneous calls. While all {max_callers} are in queue or connected, place call #{max_callers + 1}.",
-                f"Call #{max_callers + 1} is rejected. Does NOT enter queue. Immediately executes max callers overflow action. Routes to: {overflow['target_name']}"
-            )
-            
-            # Capacity - call within limit
-            self.add_test(
-                f"{path_prefix}Queue - Overflow",
-                f"Queue Capacity - Within Limit",
-                f"Place {max_callers - 1} calls to {ext_name}. While queue has {max_callers - 1} calls, place one more call.",
-                "Call enters queue successfully. No overflow triggered. Caller hears hold music normally."
-            )
-        
-        # DTMF zero-out
-        self.add_test(
-            f"{path_prefix}Queue - Overflow",
-            "DTMF Zero-Out (Press 0)",
-            f"While on hold in {ext_name}, press '0' on telephone keypad.",
-            "If zero-out configured, call escapes queue immediately and routes to operator/voicemail. If not configured, keypress is ignored gracefully."
-        )
-        
-        # Invalid DTMF
-        self.add_test(
-            f"{path_prefix}Queue - Overflow",
-            "Invalid DTMF Input",
-            f"While on hold in {ext_name}, press various keys like *, #, 5, 9.",
-            "Invalid DTMF inputs are ignored. Caller remains in queue. Hold music continues. No errors or disruptions."
-        )
-        
-        # Caller hangup
-        self.add_test(
-            f"{path_prefix}Queue - Boundaries",
-            "Caller Abandons (Hangup)",
-            f"Place call to {ext_name}. While in queue before agent answers, hang up.",
-            "Call is removed from queue immediately. Queue statistics record abandoned call. No orphaned connections."
-        )
-        
-        # Network disruption
-        self.add_test(
-            f"{path_prefix}Queue - Boundaries",
-            "Network Disruption Handling",
-            f"Place call to {ext_name}. During call (while connected or in queue), temporarily disrupt network (e.g., disable WiFi for 5 seconds, then re-enable).",
-            "System handles disruption gracefully. Call either reconnects or disconnects cleanly. No ghost calls or stuck sessions."
-        )
-        
-        # =================================================================
-        # SECTION 8: QUALITY & PERFORMANCE (3-5 tests)
-        # =================================================================
-        
-        # DTMF tone recognition
-        self.add_test(
-            f"{path_prefix}Quality",
-            "DTMF Tone Recognition",
-            f"After agent answers queue call, press various keys (0-9, *, #).",
-            "All DTMF tones are transmitted clearly and recognized accurately by receiving system (if applicable)."
-        )
-        
-        # Background noise handling
-        self.add_test(
-            f"{path_prefix}Quality",
-            "Background Noise Suppression",
-            f"Place call to {ext_name}. During call, introduce moderate background noise (typing, conversation, music).",
-            "Primary speech remains clear and intelligible. Noise is suppressed appropriately without excessive distortion."
-        )
-        
-        # Echo test
-        self.add_test(
-            f"{path_prefix}Quality",
-            "Echo Detection",
-            f"During active queue call, have both parties speak simultaneously and listen for echo.",
-            "No noticeable echo or feedback. Both parties can hear each other clearly without their own voice echoing back."
-        )
-        
-        # Volume consistency
-        self.add_test(
-            f"{path_prefix}Quality",
-            "Volume Level Consistency",
-            f"During queue call, compare volume levels of: hold music, announcements, and live agent voice.",
-            "All audio elements have consistent, appropriate volume levels. No sudden loud/quiet jumps. Smooth audio experience."
-        )
-        
-        # =================================================================
-        # RECURSIVE OVERFLOW PROCESSING
-        # =================================================================
-        
-        # Add overflow destinations to processing queue for full recursive testing
-        for label, overflow in queue_config.get('overflow_actions', {}).items():
-            target_id = overflow.get('target_id')
-            if target_id and target_id in self.ext_directory:
-                dest = self.ext_directory[target_id]
-                if dest['type'] in ['Department', 'IvrMenu']:
+            # Recursively process overflow destination
+            if dest['id'] and dest['id'] in self.ext_directory:
+                dinfo = self.ext_directory[dest['id']]
+                if dinfo['type'] in ['Department', 'IvrMenu']:
                     self.processing_queue.append({
-                        'id': target_id,
-                        'name': dest['name'],
-                        'number': dest['number'],
-                        'type': dest['type'],
-                        'path': path + [ext_name],
+                        'id': dest['id'],
+                        'name': dinfo['name'],
+                        'number': dinfo['number'],
+                        'type': dinfo['type'],
+                        'path': path + [qname],
                         'depth': depth + 1,
-                        'context': f"{label.replace('_', ' ').title()} Overflow"
+                        'context': 'No Agents Overflow'
                     })
+        
+        # Max wait overflow - ONLY if configured
+        if cfg['hold_time'] and 'max_wait' in cfg['overflows']:
+            dest = cfg['overflows']['max_wait']
+            mins = cfg['hold_time'] // 60
+            secs = cfg['hold_time'] % 60
+            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+            
+            self.add_test(
+                f"{prefix}Queue - Overflow",
+                f"Max Wait Time ({time_str})",
+                f"Remain on hold in {qname} for {cfg['hold_time']}s ({time_str}).",
+                f"At {time_str}, removed from queue. Routes to: {dest['name']}"
+            )
+            
+            # Recursive
+            if dest['id'] and dest['id'] in self.ext_directory:
+                dinfo = self.ext_directory[dest['id']]
+                if dinfo['type'] in ['Department', 'IvrMenu']:
+                    self.processing_queue.append({
+                        'id': dest['id'],
+                        'name': dinfo['name'],
+                        'number': dinfo['number'],
+                        'type': dinfo['type'],
+                        'path': path + [qname],
+                        'depth': depth + 1,
+                        'context': f'Max Wait ({time_str}) Overflow'
+                    })
+        
+        # Queue full overflow - ONLY if configured
+        if cfg['max_callers'] and 'queue_full' in cfg['overflows']:
+            dest = cfg['overflows']['queue_full']
+            self.add_test(
+                f"{prefix}Queue - Overflow",
+                f"Queue Full ({cfg['max_callers']} max)",
+                f"Flood {qname} with {cfg['max_callers']} calls. Place call #{cfg['max_callers'] + 1}.",
+                f"Call #{cfg['max_callers'] + 1} rejected. Routes to: {dest['name']}"
+            )
+            
+            # Recursive
+            if dest['id'] and dest['id'] in self.ext_directory:
+                dinfo = self.ext_directory[dest['id']]
+                if dinfo['type'] in ['Department', 'IvrMenu']:
+                    self.processing_queue.append({
+                        'id': dest['id'],
+                        'name': dinfo['name'],
+                        'number': dinfo['number'],
+                        'type': dinfo['type'],
+                        'path': path + [qname],
+                        'depth': depth + 1,
+                        'context': f'Queue Full ({cfg["max_callers"]}) Overflow'
+                    })
+        
+        # ================================================================
+        # QUALITY TESTS
+        # ================================================================
+        
+        self.add_test(
+            f"{prefix}Quality",
+            "DTMF Recognition",
+            f"During call from {qname}, press keys 0-9.",
+            "All DTMF tones transmitted and recognized clearly."
+        )
+        
+        self.add_test(
+            f"{prefix}Quality",
+            "Background Noise Handling",
+            f"During {qname} call, introduce moderate background noise.",
+            "Speech remains clear. Noise appropriately suppressed."
+        )
     
-    def _add_global_tests(self):
-        """Add global validation tests"""
+    def _add_global(self):
+        """Global validation tests"""
         
         self.add_test(
             "Global Validation",
-            "Call Logs - Accuracy",
-            "Log into RingCentral Admin Portal. Navigate to Analytics > Reports > Call Log. Search for test calls.",
-            "All test calls appear in logs with correct: date/time, caller ID, destination extension, call duration, disposition (answered/voicemail/abandoned/transferred)."
+            "Call Logs",
+            "Admin Portal > Analytics > Call Log.",
+            "All test calls logged with correct details."
         )
         
         self.add_test(
             "Global Validation",
-            "Call Logs - Real-time Updates",
-            "Place test call. Immediately after call ends, refresh call log.",
-            "Call appears in log within 1-2 minutes of completion. Data is accurate and complete."
+            "Call Recordings",
+            "Admin Portal > Call Recordings (if enabled).",
+            "Recordings available and playable."
         )
         
         self.add_test(
             "Global Validation",
-            "Call Recording - Availability",
-            "If call recording enabled, navigate to Admin Portal > Phone System > Call Recording.",
-            "Test call recordings appear in list. Files are downloadable. Playback works correctly."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Call Recording - Audio Quality",
-            "Download and play call recording.",
-            "Recording captures both caller and agent audio clearly. No distortion or missing segments. Duration matches actual call time."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Voicemail - Delivery",
-            "Check voicemail recipient's email inbox and RingCentral app.",
-            "Voicemail audio file (.mp3/.wav) delivered successfully. Email subject and body contain correct details. Timestamp accurate."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Voicemail - Transcription",
-            "If transcription enabled, check voicemail email or app notification.",
-            "Voice-to-text transcription included. Transcription is reasonably accurate (allows for normal speech recognition limitations)."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Queue Analytics - Live Reports",
-            "Navigate to Analytics > Live Reports > Queue Performance.",
-            "Test queue calls update metrics in real-time: Service Level %, Average Wait Time, Abandoned Calls, Agents Available."
-        )
-        
-        self.add_test(
-            "Global Validation",
-            "Queue Analytics - Historical Reports",
-            "Run historical queue report for period covering test calls.",
-            "Report accurately reflects test call activity. Metrics calculated correctly. Charts/graphs display properly."
+            "Queue Analytics",
+            "Analytics > Queue Performance.",
+            "Metrics update in real-time."
         )
 
 
 def get_testable_extensions():
     """Get testable extensions"""
-    response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
-    if not isinstance(response, dict):
+    resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
+    if not isinstance(resp, dict):
         return []
     
-    records = safe_list(response, 'records')
-    valid_types = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site']
-    
+    valid = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site']
     entities = [
         {
-            "id": ext.get('id'),
-            "name": ext.get('name', 'Unnamed'),
-            "extensionNumber": ext.get('extensionNumber', 'N/A'),
-            "type": ext.get('type')
+            "id": e.get('id'),
+            "name": e.get('name', 'Unnamed'),
+            "extensionNumber": e.get('extensionNumber', 'N/A'),
+            "type": e.get('type')
         }
-        for ext in records 
-        if isinstance(ext, dict) and ext.get('type') in valid_types
+        for e in safe_list(resp, 'records')
+        if isinstance(e, dict) and e.get('type') in valid
     ]
-    
     return sorted(entities, key=lambda x: x['name'])
 
 
 def generate_uat_cases(extension_id, extension_name, extension_number, extension_type):
     """
-    Generate 50-100+ comprehensive UAT test cases.
-    Takes 1-2 minutes but produces complete coverage.
+    Generate tailored UAT cases using EXACT queue configuration.
+    Every test uses actual phone numbers, agent names, configured values.
+    Only tests features that are actually configured.
     """
-    generator = ComprehensiveUATGenerator(
-        extension_id,
-        extension_name,
-        extension_number,
-        extension_type
-    )
-    
-    return generator.process_all_flows()
+    gen = TailoredUATGenerator(extension_id, extension_name, extension_number, extension_type)
+    return gen.process_all_flows()
