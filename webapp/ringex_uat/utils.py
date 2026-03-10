@@ -186,7 +186,8 @@ class TrulyForensicAnalyzer:
                 'is_24_7': True,
                 'display': '24/7 (Always Open)',
                 'source': 'default',
-                'ranges': {}
+                'ranges': {},
+                'has_custom': False
             }
         
         schedule = safe_dict(resp, 'schedule')
@@ -198,7 +199,8 @@ class TrulyForensicAnalyzer:
                 'is_24_7': True,
                 'display': '24/7 (Always Open)',
                 'source': source,
-                'ranges': {}
+                'ranges': {},
+                'has_custom': False
             }
         
         # Build day ranges
@@ -227,7 +229,8 @@ class TrulyForensicAnalyzer:
             'is_24_7': False,
             'display': display_str,
             'source': source,
-            'ranges': day_ranges
+            'ranges': day_ranges,
+            'has_custom': True
         }
     
     def _extract_answering_rules_aggressive(self, ext_id):
@@ -616,10 +619,12 @@ class TrulyForensicAnalyzer:
                     )
         
         # === BUSINESS HOURS ===
-        if hours['has_custom']:
-            if hours['ranges']:
-                first_day = next(iter(hours['ranges'].keys()))
-                first_range = hours['ranges'][first_day][0] if hours['ranges'][first_day] else None
+        if hours.get('has_custom', False):
+            ranges = hours.get('ranges', {})
+            if ranges:
+                first_day = next(iter(ranges.keys()))
+                day_data = ranges.get(first_day, [])
+                first_range = day_data[0] if day_data else None
                 
                 if first_range:
                     self.add_test(
@@ -637,8 +642,9 @@ class TrulyForensicAnalyzer:
                     )
         
         # === AFTER HOURS RULE ===
-        if rules['after_hours']:
-            target_id, target_name, target_type = self._extract_routing_target(rules['after_hours']['raw'])
+        after_hours_rule = rules.get('after_hours')
+        if after_hours_rule:
+            target_id, target_name, target_type = self._extract_routing_target(after_hours_rule.get('raw', {}))
             
             self.add_test(
                 f"{path_prefix}After Hours",
@@ -662,17 +668,18 @@ class TrulyForensicAnalyzer:
                     })
         
         # === CUSTOM RULES ===
-        for custom_rule in rules['custom']:
-            conditions = custom_rule['conditions']
+        custom_rules = rules.get('custom', [])
+        for custom_rule in custom_rules:
+            conditions = custom_rule.get('conditions', {})
             
-            if conditions['description']:
-                target_id, target_name, target_type = self._extract_routing_target(custom_rule['raw'])
+            if conditions.get('description'):
+                target_id, target_name, target_type = self._extract_routing_target(custom_rule.get('raw', {}))
                 
                 condition_text = ' AND '.join(conditions['description'])
                 
                 self.add_test(
                     f"{path_prefix}Custom Rule",
-                    f"{custom_rule['name']}",
+                    f"{custom_rule.get('name', 'Custom Rule')}",
                     f"Trigger condition: {condition_text}",
                     f"Custom rule activates and routes to: {target_name}"
                 )
@@ -688,11 +695,13 @@ class TrulyForensicAnalyzer:
                             'type': dest['type'],
                             'path': path + [ext_name],
                             'depth': depth + 1,
-                            'context': f"Custom Rule '{custom_rule['name']}'"
+                            'context': f"Custom Rule '{custom_rule.get('name', 'Custom')}'"
                         })
         
         # === QUEUE EXPERIENCE ===
-        if queue_config['greetings']['has_introductory']:
+        greetings = queue_config.get('greetings', {})
+        
+        if greetings.get('has_introductory', False):
             self.add_test(
                 f"{path_prefix}Queue - Caller Experience",
                 "Introductory Greeting",
@@ -707,17 +716,19 @@ class TrulyForensicAnalyzer:
             "Hold music or comfort message plays clearly without distortion."
         )
         
-        if queue_config['interrupt_period']:
+        interrupt_period = queue_config.get('interrupt_period')
+        if interrupt_period:
             self.add_test(
                 f"{path_prefix}Queue - Caller Experience",
-                f"Periodic Announcements ({queue_config['interrupt_period']}s)",
-                f"Remain on hold for at least {queue_config['interrupt_period'] + 10} seconds.",
-                f"Every {queue_config['interrupt_period']} seconds, music pauses, announcement plays, music resumes."
+                f"Periodic Announcements ({interrupt_period}s)",
+                f"Remain on hold for at least {interrupt_period + 10} seconds.",
+                f"Every {interrupt_period} seconds, music pauses, announcement plays, music resumes."
             )
         
         # === AGENT TESTS ===
-        if queue_config['agents']:
-            first_agent = queue_config['agents'][0]
+        agents = queue_config.get('agents', [])
+        if agents:
+            first_agent = agents[0]
             agent_display = f"{first_agent['name']} (Ext {first_agent['number']})"
             
             self.add_test(
@@ -734,30 +745,33 @@ class TrulyForensicAnalyzer:
                 f"Agent {agent_display} does NOT ring. Call routes to next available agent."
             )
             
-            if queue_config['wrap_up_time']:
+            wrap_up_time = queue_config.get('wrap_up_time')
+            if wrap_up_time:
                 self.add_test(
                     f"{path_prefix}Queue - Agent Tests",
-                    f"After-Call Work ({queue_config['wrap_up_time']}s)",
+                    f"After-Call Work ({wrap_up_time}s)",
                     f"Agent {agent_display} completes call. Immediately place second call.",
-                    f"Agent enters Wrap-Up for {queue_config['wrap_up_time']}s. Does NOT ring during this period."
+                    f"Agent enters Wrap-Up for {wrap_up_time}s. Does NOT ring during this period."
                 )
         
         # === DISTRIBUTION ===
-        if queue_config['transfer_mode']:
+        transfer_mode = queue_config.get('transfer_mode')
+        if transfer_mode:
             self.add_test(
                 f"{path_prefix}Queue - Distribution",
-                f"Distribution Mode: {queue_config['transfer_mode']}",
+                f"Distribution Mode: {transfer_mode}",
                 f"Ensure 2+ agents available. Place test call.",
-                f"Call distributes per {queue_config['transfer_mode']} logic."
+                f"Call distributes per {transfer_mode} logic."
             )
             
             # Only test ring timeout if applicable
-            if queue_config['agent_timeout']:
+            agent_timeout = queue_config.get('agent_timeout')
+            if agent_timeout:
                 self.add_test(
                     f"{path_prefix}Queue - Distribution",
-                    f"Agent Ring Timeout ({queue_config['agent_timeout']}s)",
-                    f"First agent ignores call for {queue_config['agent_timeout']}s.",
-                    f"After {queue_config['agent_timeout']}s, call hunts to next agent."
+                    f"Agent Ring Timeout ({agent_timeout}s)",
+                    f"First agent ignores call for {agent_timeout}s.",
+                    f"After {agent_timeout}s, call hunts to next agent."
                 )
         
         # === CALL HANDLING ===
@@ -776,8 +790,10 @@ class TrulyForensicAnalyzer:
         )
         
         # === OVERFLOWS ===
-        if 'no_agents' in queue_config['overflow_actions']:
-            overflow = queue_config['overflow_actions']['no_agents']
+        overflow_actions = queue_config.get('overflow_actions', {})
+        
+        if 'no_agents' in overflow_actions:
+            overflow = overflow_actions['no_agents']
             
             self.add_test(
                 f"{path_prefix}Queue - Overflow",
@@ -787,7 +803,7 @@ class TrulyForensicAnalyzer:
             )
             
             # Recursive
-            if overflow['target_id'] and overflow['target_id'] in self.ext_directory:
+            if overflow.get('target_id') and overflow['target_id'] in self.ext_directory:
                 dest = self.ext_directory[overflow['target_id']]
                 if dest['type'] in ['Department', 'IvrMenu']:
                     self.processing_queue.append({
@@ -800,9 +816,9 @@ class TrulyForensicAnalyzer:
                         'context': 'No Agents Overflow'
                     })
         
-        if queue_config['hold_time'] and 'max_wait' in queue_config['overflow_actions']:
-            overflow = queue_config['overflow_actions']['max_wait']
-            hold_time = queue_config['hold_time']
+        hold_time = queue_config.get('hold_time')
+        if hold_time and 'max_wait' in overflow_actions:
+            overflow = overflow_actions['max_wait']
             
             minutes = hold_time // 60
             seconds = hold_time % 60
@@ -816,7 +832,7 @@ class TrulyForensicAnalyzer:
             )
             
             # Recursive
-            if overflow['target_id'] and overflow['target_id'] in self.ext_directory:
+            if overflow.get('target_id') and overflow['target_id'] in self.ext_directory:
                 dest = self.ext_directory[overflow['target_id']]
                 if dest['type'] in ['Department', 'IvrMenu']:
                     self.processing_queue.append({
