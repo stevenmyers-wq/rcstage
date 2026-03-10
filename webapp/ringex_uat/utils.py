@@ -89,7 +89,7 @@ class UATGenerator:
         })
         self.counter += 1
 
-    def _resolve_target(self, rule_obj, action_type=None):
+    def _resolve_target(self, rule_obj, action_type=None, current_ext_name="Unknown"):
         """Forensically maps specific overflow/transfer actions and RC backend Enums to human destinations."""
         if not isinstance(rule_obj, dict):
             return f"Action: {action_type or 'Unknown'}", None
@@ -108,12 +108,15 @@ class UATGenerator:
             ext_str = f" (Ext {text})" if text else ""
             return f"Internal Extension: {tname}{ext_str}", tid
             
-        elif act in ['TakeMessagesReturnToGreeting', 'Voicemail']:
+        elif act in ['TakeMessagesReturnToGreeting', 'TakeMessagesOnly', 'Voicemail']:
             voicemail = safe_dict(rule_obj, 'voicemail')
             recip = safe_dict(voicemail, 'recipient')
             tid = str(recip.get('id', ''))
-            tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}") if tid else "System Default"
-            return f"Voicemail Inbox of {tname}", tid
+            if tid:
+                tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}")
+                return f"Voicemail Inbox of {tname}", tid
+            else:
+                return f"Voicemail Inbox of {current_ext_name}", None
             
         elif act == 'UnconditionalForwarding':
             forward = safe_dict(rule_obj, 'unconditionalForwarding')
@@ -155,7 +158,32 @@ class UATGenerator:
             
         sched = safe_dict(rule, 'schedule')
         if sched and sched.get('ref') != 'BusinessHours':
-            conditions.append("Matches Custom Time Schedule")
+            sched_strs = []
+            
+            # Extract specific days and times
+            weekly = safe_dict(sched, 'weeklyRanges')
+            if weekly:
+                days = []
+                for d, t_list in weekly.items():
+                    if isinstance(t_list, list) and len(t_list) > 0 and isinstance(t_list[0], dict):
+                        days.append(f"{d[:3]} {t_list[0].get('from')}-{t_list[0].get('to')}")
+                if days:
+                    sched_strs.append(f"Days: [{', '.join(days)}]")
+            
+            # Extract specific dates (like holidays)
+            ranges = safe_list(sched, 'ranges')
+            if ranges:
+                dates = []
+                for r in ranges:
+                    if isinstance(r, dict) and r.get('from') and r.get('to'):
+                        dates.append(f"{r.get('from')} to {r.get('to')}")
+                if dates:
+                    sched_strs.append(f"Dates: [{', '.join(dates)}]")
+            
+            if sched_strs:
+                conditions.append(" AND ".join(sched_strs))
+            else:
+                conditions.append("Matches Custom Time Schedule")
             
         return " AND ".join(conditions) if conditions else "Specific Configured Condition"
 
@@ -240,7 +268,7 @@ class UATGenerator:
                     rname = rule.get('name', 'Custom Rule')
                     cond_str = self._extract_rule_conditions(rule)
                     action = rule.get('callHandlingAction')
-                    tname, tid = self._resolve_target(rule, action)
+                    tname, tid = self._resolve_target(rule, action, cname)
                     
                     self.add_case(f"{prefix}2. Schedule Boundaries", f"Custom Rule: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule successfully intercepts the call and routes to -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
@@ -250,7 +278,7 @@ class UATGenerator:
                 elif rtype == 'AfterHours':
                     has_after_hours = True
                     action = rule.get('callHandlingAction')
-                    tname, tid = self._resolve_target(rule, action)
+                    tname, tid = self._resolve_target(rule, action, cname)
                     
                     self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of configured Business Hours.", f"Call executes After Hours logic and routes to -> {tname}.")
                     if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
@@ -307,10 +335,10 @@ class UATGenerator:
 
                 # --- 7. Boundaries & Overflows ---
                 h_act = queue_settings.get('holdTimeExpirationAction')
-                h_name, h_id = self._resolve_target(queue_settings, h_act) 
+                h_name, h_id = self._resolve_target(queue_settings, h_act, cname) 
                 
                 m_act = queue_settings.get('maxCallersAction')
-                m_name, m_id = self._resolve_target(queue_settings, m_act)
+                m_name, m_id = self._resolve_target(queue_settings, m_act, cname)
 
                 self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero Agents Logged In", f"Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", f"Call bypasses queue ringing and immediately executes overflow -> {h_name}.")
 
@@ -328,7 +356,7 @@ class UATGenerator:
                     if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu']:
                         self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": f"Max Callers Overflow"})
 
-                zero_name, _ = self._resolve_target(queue_settings, 'Voicemail')
+                zero_name, _ = self._resolve_target(queue_settings, 'Voicemail', cname)
                 vmail = safe_dict(queue_settings, 'voicemail')
                 if vmail or queue_settings.get('transfer'):
                     self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out (DTMF '0')", f"While listening to {cname} hold music, press '0' on the dialpad.", f"Call gracefully escapes the queue and routes to -> {zero_name}.")
@@ -355,7 +383,7 @@ class UATGenerator:
                         if not key: continue
                         
                         a_type = act.get('action')
-                        tname, tid = self._resolve_target(act, a_type)
+                        tname, tid = self._resolve_target(act, a_type, cname)
                         
                         self.add_case(f"{prefix}5. Routing & Distribution", f"Key Mapping: Press '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System correctly processes input and routes to -> {tname}.")
                         
