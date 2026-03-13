@@ -1,5 +1,6 @@
 // --- GLOBAL WEBRTC VARIABLES ---
-let webPhone = null;
+window.rcWebPhoneEngine = null; // Global instance to prevent phantom calls
+window.intentToDial = false;    // Flag to stop background refreshes from dialing
 let activeSession = null;
 let audioCtx = null;
 let virtualMic = null;
@@ -24,27 +25,23 @@ function setupVirtualMicrophone() {
 }
 
 // --- 2. PIPING AUDIO INTO THE CALL ---
-// This function is triggered by the purple "Send to Call" buttons in the chat UI
 window.playTurnIntoCall = function(audioId) {
     const audioEl = document.getElementById(audioId);
     if (!audioEl) return;
     
-    // Browsers sometimes suspend the audio context if it's idle; wake it up
     if (audioCtx && audioCtx.state === 'suspended') {
         audioCtx.resume();
     }
     
-    // We only want to wire the element into the graph the first time it's clicked
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
-        source.connect(virtualMic); // Route into the phone call
-        // Note: We do NOT connect it to audioCtx.destination to prevent it playing aloud 
-        // on your PC speakers, which would cause an echo while you wear your headset.
+        source.connect(virtualMic); 
         audioEl.isRouted = true;
     }
     
     audioEl.play();
 };
+
 // --- 3. AUTO-PLAY SEQUENCER ---
 window.totalTurns = 0; 
 window.currentTurnIndex = 0;
@@ -52,15 +49,22 @@ window.currentTurnIndex = 0;
 window.startAutoDemo = function() {
     document.getElementById('auto-play-btn').disabled = true;
     document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Demo Running...';
-    window.currentTurnIndex = 0;
+    // Ensure we start from the top
+    if (window.currentTurnIndex >= window.totalTurns) {
+        window.currentTurnIndex = 0;
+    }
     playNextAutoTurn();
 };
 
 function playNextAutoTurn() {
+    // REPLAY FIX: Reset the sequence so you can hit the button again
     if (window.currentTurnIndex >= window.totalTurns) {
         console.log("Demo complete. Leaving call open.");
-        document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-check-circle mr-2"></i>Sequence Complete';
-        return; // We do NOT terminate the call, letting you hang up manually via RingEX
+        const btn = document.getElementById('auto-play-btn');
+        btn.innerHTML = '<i class="fas fa-redo mr-2"></i>Replay Sequence';
+        btn.disabled = false;
+        window.currentTurnIndex = 0; // Reset index for next time
+        return; 
     }
 
     const audioEl = document.getElementById(`audio-turn-${window.currentTurnIndex}`);
@@ -124,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
             generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating...';
             loadingIndicator.classList.remove('hidden');
             scriptDisplay.innerHTML = '';
-            dialerSection.classList.add('hidden'); // Hide dialer until new script is ready
+            dialerSection.classList.add('hidden');
 
             try {
                 // Step 1: Script
@@ -149,8 +153,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const audioData = await audioRes.json();
                 if (audioData.error) throw new Error(audioData.error);
 
+                // CACHE FIX: Save to LocalStorage so you don't lose it on refresh!
+                localStorage.setItem('cachedDemoScript', JSON.stringify(audioData.files));
+
                 renderScriptAndAudio(audioData.files);
-                dialerSection.classList.remove('hidden'); // Unlock the WebRTC Dialer
+                dialerSection.classList.remove('hidden');
 
             } catch (error) {
                 scriptDisplay.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg border border-red-200"><strong>Error:</strong> ${error.message}</div>`;
@@ -162,13 +169,46 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Extract the dialing execution so we can call it cleanly
+    function executeDial(targetNumber) {
+        callStatus.innerText = `Status: Dialing ${targetNumber}...`;
+        
+        activeSession = window.rcWebPhoneEngine.userAgent.invite(targetNumber, {
+            media: {
+                render: {
+                    remote: document.getElementById('remote-audio'),
+                    local: document.getElementById('local-audio')
+                }
+            }
+        });
+
+        activeSession.on('accepted', () => {
+            callStatus.innerText = "Status: 🟢 Connected. Ready for Auto-Play.";
+            callStatus.className = "mt-2 text-sm font-bold text-green-700 bg-green-100 p-2 rounded text-center border border-green-300";
+            callBtn.classList.add('hidden');
+            hangupBtn.classList.remove('hidden');
+            document.getElementById('auto-play-btn').classList.remove('hidden');
+            document.getElementById('auto-play-btn').disabled = false;
+            document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo';
+        });
+
+        activeSession.on('terminated', () => {
+            callStatus.innerText = "Status: 🔴 Call Ended.";
+            callStatus.className = "mt-2 text-sm font-bold text-gray-700 bg-gray-100 p-2 rounded text-center border border-gray-300";
+            hangupBtn.classList.add('hidden');
+            callBtn.classList.remove('hidden');
+            document.getElementById('auto-play-btn').classList.add('hidden');
+            callBtn.disabled = false;
+            activeSession = null;
+        });
+    }
+
     // --- PHASE 1: WEBRTC CALLING LOGIC ---
     if (callBtn) {
         callBtn.addEventListener('click', async () => {
             const target = dialTargetInput.value.trim();
             if (!target) return alert("Please enter an extension or phone number to dial.");
             
-            // Critical: AudioContext MUST be initialized during a user click event to bypass browser security
             setupVirtualMicrophone();
             if (audioCtx.state === 'suspended') await audioCtx.resume();
 
@@ -176,86 +216,59 @@ document.addEventListener('DOMContentLoaded', () => {
             callStatus.innerText = "Status: Provisioning SIP...";
             callStatus.className = "mt-2 text-sm font-bold text-yellow-700 bg-yellow-100 p-2 rounded text-center border border-yellow-300";
 
+            // PHANTOM CALL FIX: Explicitly mark that we clicked the button
+            window.intentToDial = true;
+
             try {
-                // 1. Get burner credentials from backend
-                const res = await fetch('/api/ai_demo_calls/sip-provision', { method: 'POST' });
-                const data = await res.json();
-                if (data.error) throw new Error(data.error);
+                // Only build the engine if it doesn't exist yet
+                if (!window.rcWebPhoneEngine) {
+                    const res = await fetch('/api/ai_demo_calls/sip-provision', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
 
-                callStatus.innerText = "Status: Loading WebRTC Engine...";
-                
-                callStatus.innerText = "Status: Loading WebRTC Engine...";
-                const rcModule = await import('https://cdn.jsdelivr.net/npm/ringcentral-web-phone@0.8.2/+esm');
-                
-                // Safely extract the WebPhone class no matter how the CDN nested it
-                const WebPhone = rcModule.WebPhone 
-                              || (rcModule.default && rcModule.default.WebPhone)
-                              || (rcModule.default && rcModule.default.default)
-                              || rcModule.default;
-
-                if (typeof WebPhone !== 'function') {
-                    throw new Error("Failed to extract WebPhone class from module.");
-                }
-
-                callStatus.innerText = "Status: Registering WebPhone...";
-                
-                // 3. Initialize WebPhone (Notice it's just 'new WebPhone' now)
-                webPhone = new WebPhone(data.sip_data, {
-                    appKey: 'ai-demo-calls',
-                    appName: 'AI Demo Call',
-                    appVersion: '1.0.0',
-                    uuid: 'demo-' + Date.now(),
-                    logLevel: 0 // Keep console clean
-                });
-
-                let hasDialedThisSession = false; // Prevents the ghost calling bug
-                // 4. Wait for registration, then dial
-                webPhone.userAgent.on('registered', () => {
-                    if (hasDialedThisSession) return; // If we already dialed, ignore future SIP refreshes
-                    hasDialedThisSession = true;
+                    callStatus.innerText = "Status: Loading WebRTC Engine...";
+                    const rcModule = await import('https://cdn.jsdelivr.net/npm/ringcentral-web-phone@0.8.2/+esm');
                     
-                    callStatus.innerText = `Status: Dialing ${target}...`;
+                    const WebPhone = rcModule.WebPhone 
+                                  || (rcModule.default && rcModule.default.WebPhone)
+                                  || (rcModule.default && rcModule.default.default)
+                                  || rcModule.default;
+
+                    if (typeof WebPhone !== 'function') throw new Error("Failed to extract WebPhone class from module.");
+
+                    callStatus.innerText = "Status: Registering WebPhone...";
                     
-                    activeSession = webPhone.userAgent.invite(target, {
-                        media: {
-                            render: {
-                                remote: document.getElementById('remote-audio'),
-                                local: document.getElementById('local-audio')
-                            }
+                    window.rcWebPhoneEngine = new WebPhone(data.sip_data, {
+                        appKey: 'ai-demo-calls',
+                        appName: 'AI Demo Call',
+                        appVersion: '1.0.0',
+                        uuid: 'demo-' + Date.now(),
+                        logLevel: 0 
+                    });
+
+                    window.rcWebPhoneEngine.userAgent.on('registered', () => {
+                        // Only dial if we actively clicked the dial button, ignoring background SIP refreshes
+                        if (window.intentToDial) {
+                            executeDial(target);
+                            window.intentToDial = false; 
                         }
                     });
 
-                    // 5. When the Agent answers the phone
-                    activeSession.on('accepted', () => {
-                        callStatus.innerText = "Status: 🟢 Connected. Ready for Auto-Play.";
-                        callStatus.className = "mt-2 text-sm font-bold text-green-700 bg-green-100 p-2 rounded text-center border border-green-300";
-                        callBtn.classList.add('hidden');
-                        hangupBtn.classList.remove('hidden');
-                        
-                        // Show the massive Auto-Play button
-                        document.getElementById('auto-play-btn').classList.remove('hidden');
+                    window.rcWebPhoneEngine.userAgent.on('registrationFailed', () => {
+                        throw new Error("SIP Registration Failed");
                     });
 
-                    // 6. When the call is hung up
-                    activeSession.on('terminated', () => {
-                        callStatus.innerText = "Status: 🔴 Call Ended.";
-                        callStatus.className = "mt-2 text-sm font-bold text-gray-700 bg-gray-100 p-2 rounded text-center border border-gray-300";
-                        hangupBtn.classList.add('hidden');
-                        callBtn.classList.remove('hidden');
-                        document.getElementById('auto-play-btn').classList.add('hidden');
-                        callBtn.disabled = false;
-                        hasDialedThisSession = false; // Reset for the next call
-                    });
-                });
-
-                webPhone.userAgent.on('registrationFailed', () => {
-                    throw new Error("SIP Registration Failed");
-                });
+                } else {
+                    // If the engine is already built and registered, just dial directly
+                    executeDial(target);
+                    window.intentToDial = false;
+                }
 
             } catch (err) {
                 callStatus.innerText = `Status: ❌ Error - ${err.message}`;
                 callStatus.className = "mt-2 text-sm font-bold text-red-700 bg-red-100 p-2 rounded text-center border border-red-300";
                 callBtn.disabled = false;
+                window.intentToDial = false;
             }
         });
     }
@@ -276,7 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="bg-[#e5ddd5] p-4 rounded-xl h-[600px] overflow-y-auto flex flex-col space-y-4 shadow-inner">
         `;
         
-        window.totalTurns = turns.length; // Save total turns for the auto-player
+        window.totalTurns = turns.length; 
 
         turns.forEach(turn => {
             const isAgent = turn.speaker.toLowerCase() === 'agent';
@@ -285,12 +298,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const senderName = isAgent ? 'Agent (BlackHole)' : 'Customer (WebRTC)';
             const nameColor = isAgent ? 'text-green-700' : 'text-blue-600';
 
-            // Notice we added data-speaker and removed the manual purple buttons
             const audioBlock = turn.audio_url ? `
                 <audio id="audio-turn-${turn.turn}" data-speaker="${turn.speaker.toLowerCase()}" controls src="${turn.audio_url}" class="h-8 w-full min-w-[200px] mt-2"></audio>
             ` : `<span class="text-red-600 text-xs font-semibold">Audio failed: ${turn.error}</span>`;
 
-            // Added an ID to the wrapper so we can highlight it while playing
             html += `
                 <div class="flex ${alignmentClass} w-full">
                     <div id="turn-container-${turn.turn}" class="p-3 rounded-xl shadow max-w-[85%] sm:max-w-[75%] flex flex-col ${bubbleClass} turn-container transition-all">
@@ -304,5 +315,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         html += '</div>';
         scriptDisplay.innerHTML = html;
+        if(dialerSection) dialerSection.classList.remove('hidden');
+    }
+
+    // --- CACHE LOADER ---
+    // Instantly loads your last generated demo when you hit refresh
+    const cachedScript = localStorage.getItem('cachedDemoScript');
+    if (cachedScript) {
+        console.log("Loaded script from cache - no waiting for Gemini!");
+        renderScriptAndAudio(JSON.parse(cachedScript));
     }
 });
