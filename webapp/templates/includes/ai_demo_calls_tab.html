@@ -1,0 +1,90 @@
+<audio id="remote-audio" hidden></audio>
+<audio id="local-audio" hidden></audio>
+
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div class="col-12">
+            <h3 class="text-2xl font-bold text-gray-800">AI Demo Call Generator (Phase 1)</h3>
+            <p class="text-gray-500">Generate a script, render AI audio, and dial directly into RingEX.</p>
+        </div>
+    </div>
+
+    <div class="row mt-4 flex flex-col md:flex-row gap-6">
+        <div class="w-full md:w-1/3 flex flex-col gap-4">
+            
+            <div class="bg-white rounded-lg shadow-md border border-gray-200">
+                <div class="bg-blue-600 text-white px-4 py-3 rounded-t-lg font-semibold">
+                    1. Define Scenario & Style
+                </div>
+                <div class="p-4 space-y-4">
+                    <div>
+                        <label for="scenario-input" class="block text-sm font-medium text-gray-700">What is this call about?</label>
+                        <textarea id="scenario-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" rows="3" placeholder="e.g., A frustrated customer whose internet is down."></textarea>
+                    </div>
+                    
+                    <div>
+                        <label for="voice-prompt-input" class="block text-sm font-medium text-gray-700">Voice & Accent Style</label>
+                        <input type="text" id="voice-prompt-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" 
+                               value="Australian English" 
+                               placeholder="e.g., Australian English, Grumpy Scottish">
+                    </div>
+
+                    <button id="generate-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-150">
+                        <i class="fas fa-magic mr-2"></i>Generate Content
+                    </button>
+                </div>
+            </div>
+
+            <div id="dialer-section" class="bg-white rounded-lg shadow-md border border-gray-200 hidden">
+                <div class="bg-purple-600 text-white px-4 py-3 rounded-t-lg font-semibold">
+                    2. WebRTC Live Demo
+                </div>
+                <div class="p-4 space-y-4">
+                    <p class="text-sm text-gray-600">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
+                    
+                    <div>
+                        <label for="dial-target" class="block text-sm font-medium text-gray-700">Target Extension / Number</label>
+                        <input type="text" id="dial-target" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 p-2 border" placeholder="e.g., 101 or +61400000000">
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button id="call-btn" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-150">
+                            <i class="fas fa-phone mr-2"></i>Dial Target
+                        </button>
+                        <button id="hangup-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition duration-150 hidden">
+                            <i class="fas fa-phone-slash mr-2"></i>Hang Up
+                        </button>
+                    </div>
+
+                    <div id="call-status" class="mt-2 text-sm font-bold text-gray-700 bg-gray-100 p-2 rounded text-center border">
+                        Status: Ready to provision
+                    </div>
+                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition duration-150 hidden shadow-lg">
+                        <i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo
+                    </button>
+                </div>
+            </div>
+
+        </div>
+        
+        <div class="w-full md:w-2/3">
+            <div id="loading-indicator" class="p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg hidden">
+                <div class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <strong>Gemini is thinking...</strong>&nbsp;Writing the script and rendering expressive audio.
+                </div>
+            </div>
+
+            <div id="script-display">
+                <div class="h-full flex items-center justify-center text-gray-400 border-2 border-dashed border-gray-300 rounded-lg p-12">
+                    <p>Enter a scenario and generate content to view the script here.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/ai_demo_calls.js') }}"></script>

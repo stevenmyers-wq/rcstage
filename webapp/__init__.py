@@ -65,5 +65,9 @@ def create_app():
         # RingEX UAT Generator routes
         from .ringex_uat import routes as ringex_uat_routes
         app.register_blueprint(ringex_uat_routes.ringex_uat_bp)
+        
+        # AI Demo Calls routes
+        from .ai_demo_calls import routes as ai_demo_calls_routes
+        app.register_blueprint(ai_demo_calls_routes.ai_demo_calls_bp)
 
     return app
