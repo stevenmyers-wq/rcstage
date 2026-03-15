@@ -1,30 +1,39 @@
 // --- GLOBAL WEBRTC VARIABLES ---
-window.rcWebPhoneEngine = null; // Global instance to prevent phantom calls
-window.intentToDial = false;    // Flag to stop background refreshes from dialing
+window.rcWebPhoneEngine = null; 
+window.intentToDial = false;    
 let activeSession = null;
 let audioCtx = null;
 let virtualMic = null;
+let customerMixer = null; // NEW: The permanent audio hub for the Customer
 
 // --- 1. THE VIRTUAL MICROPHONE INTERCEPTOR ---
 function setupVirtualMicrophone() {
-    if (audioCtx) return; // Only set this up once
+    // 1. If this is the very first time, build the audio engine and the permanent mixer
+    if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        customerMixer = audioCtx.createGain(); // Create the permanent power strip
+        
+        // Monkey-patch the browser's getUserMedia to ALWAYS return the current virtualMic
+        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+            if (constraints && constraints.audio) {
+                console.log("WebRTC requested mic. Supplying fresh Virtual AI Microphone stream.");
+                return virtualMic.stream;
+            }
+            return originalGetUserMedia(constraints);
+        };
+    }
     
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new AudioContext();
+    // 2. EVERY time we dial, generate a brand new live wire (virtualMic)
     virtualMic = audioCtx.createMediaStreamDestination();
     
-    // Monkey-patch the browser's getUserMedia to return our fake mic instead of the real one
-    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = async (constraints) => {
-        if (constraints && constraints.audio) {
-            console.log("WebRTC requested mic. Supplying Virtual AI Microphone stream instead.");
-            return virtualMic.stream;
-        }
-        return originalGetUserMedia(constraints);
-    };
+    // 3. Unplug the mixer from the old dead call, and plug it into the new live wire
+    customerMixer.disconnect();
+    customerMixer.connect(virtualMic);
 }
 
-// --- 2. PIPING AUDIO INTO THE CALL ---
+// --- 2. PIPING AUDIO INTO THE CALL (MANUAL BUTTONS) ---
 window.playTurnIntoCall = function(audioId) {
     const audioEl = document.getElementById(audioId);
     if (!audioEl) return;
@@ -35,7 +44,7 @@ window.playTurnIntoCall = function(audioId) {
     
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
-        source.connect(virtualMic); 
+        source.connect(customerMixer); // Plug directly into the permanent mixer
         audioEl.isRouted = true;
     }
     
@@ -49,7 +58,7 @@ window.currentTurnIndex = 0;
 window.startAutoDemo = function() {
     document.getElementById('auto-play-btn').disabled = true;
     document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Demo Running...';
-    // Ensure we start from the top
+    
     if (window.currentTurnIndex >= window.totalTurns) {
         window.currentTurnIndex = 0;
     }
@@ -57,13 +66,12 @@ window.startAutoDemo = function() {
 };
 
 function playNextAutoTurn() {
-    // REPLAY FIX: Reset the sequence so you can hit the button again
     if (window.currentTurnIndex >= window.totalTurns) {
         console.log("Demo complete. Leaving call open.");
         const btn = document.getElementById('auto-play-btn');
         btn.innerHTML = '<i class="fas fa-redo mr-2"></i>Replay Sequence';
         btn.disabled = false;
-        window.currentTurnIndex = 0; // Reset index for next time
+        window.currentTurnIndex = 0; 
         return; 
     }
 
@@ -83,17 +91,15 @@ function playNextAutoTurn() {
             // AGENT AUDIO: Route to Mac Speakers -> BlackHole -> RingEX Mic
             source.connect(audioCtx.destination);
         } else {
-            // CUSTOMER AUDIO: Route to Virtual Mic -> WebRTC Call -> RingEX Speaker
-            source.connect(virtualMic);
+            // CUSTOMER AUDIO: Route to the permanent mixer -> WebRTC Call
+            source.connect(customerMixer);
         }
         audioEl.isRouted = true;
     }
 
-    // Highlight the UI so you know who is talking
     document.querySelectorAll('.turn-container').forEach(el => el.classList.remove('ring-4', 'ring-purple-400', 'shadow-lg'));
     document.getElementById(`turn-container-${window.currentTurnIndex}`).classList.add('ring-4', 'ring-purple-400', 'shadow-lg');
 
-    // When this audio finishes, wait 1 second (for natural pacing), then play the next one
     audioEl.onended = () => {
         window.currentTurnIndex++;
         setTimeout(playNextAutoTurn, 1000); 
@@ -103,14 +109,12 @@ function playNextAutoTurn() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // UI Elements
     const generateBtn = document.getElementById('generate-btn');
     const scenarioInput = document.getElementById('scenario-input');
     const scriptDisplay = document.getElementById('script-display');
     const loadingIndicator = document.getElementById('loading-indicator');
     const dialerSection = document.getElementById('dialer-section');
     
-    // WebRTC Elements
     const callBtn = document.getElementById('call-btn');
     const hangupBtn = document.getElementById('hangup-btn');
     const dialTargetInput = document.getElementById('dial-target');
@@ -131,7 +135,6 @@ document.addEventListener('DOMContentLoaded', () => {
             dialerSection.classList.add('hidden');
 
             try {
-                // Step 1: Script
                 const scriptRes = await fetch('/api/ai_demo_calls/generate-script', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -140,7 +143,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const scriptData = await scriptRes.json();
                 if (scriptData.error) throw new Error(scriptData.error);
 
-                // Step 2: Audio
                 const audioRes = await fetch('/api/ai_demo_calls/generate-audio', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -153,9 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const audioData = await audioRes.json();
                 if (audioData.error) throw new Error(audioData.error);
 
-                // CACHE FIX: Save to LocalStorage so you don't lose it on refresh!
                 localStorage.setItem('cachedDemoScript', JSON.stringify(audioData.files));
-
                 renderScriptAndAudio(audioData.files);
                 dialerSection.classList.remove('hidden');
 
@@ -169,9 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Extract the dialing execution so we can call it cleanly
     function executeDial(targetNumber) {
         callStatus.innerText = `Status: Dialing ${targetNumber}...`;
+        
+        // CRITICAL FIX: Right before dialing, swap in the fresh virtual mic
+        setupVirtualMicrophone();
         
         activeSession = window.rcWebPhoneEngine.userAgent.invite(targetNumber, {
             media: {
@@ -209,18 +211,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = dialTargetInput.value.trim();
             if (!target) return alert("Please enter an extension or phone number to dial.");
             
-            setupVirtualMicrophone();
+            // We initialize audio context on the first click to bypass browser block
+            if (!audioCtx) setupVirtualMicrophone();
             if (audioCtx.state === 'suspended') await audioCtx.resume();
 
             callBtn.disabled = true;
             callStatus.innerText = "Status: Provisioning SIP...";
             callStatus.className = "mt-2 text-sm font-bold text-yellow-700 bg-yellow-100 p-2 rounded text-center border border-yellow-300";
 
-            // PHANTOM CALL FIX: Explicitly mark that we clicked the button
             window.intentToDial = true;
 
             try {
-                // Only build the engine if it doesn't exist yet
                 if (!window.rcWebPhoneEngine) {
                     const res = await fetch('/api/ai_demo_calls/sip-provision', { method: 'POST' });
                     const data = await res.json();
@@ -247,7 +248,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     window.rcWebPhoneEngine.userAgent.on('registered', () => {
-                        // Only dial if we actively clicked the dial button, ignoring background SIP refreshes
                         if (window.intentToDial) {
                             executeDial(target);
                             window.intentToDial = false; 
@@ -259,7 +259,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                 } else {
-                    // If the engine is already built and registered, just dial directly
                     executeDial(target);
                     window.intentToDial = false;
                 }
@@ -319,7 +318,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- CACHE LOADER ---
-    // Instantly loads your last generated demo when you hit refresh
     const cachedScript = localStorage.getItem('cachedDemoScript');
     if (cachedScript) {
         console.log("Loaded script from cache - no waiting for Gemini!");
