@@ -1,44 +1,76 @@
 <div id="greetings-uploader-tab">
-    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Greetings Uploader</h2>
-    <p class="text-gray-600 mb-6">Upload custom greetings directly to Message-Only and Announcement extensions.</p>
+    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Extension Tools</h2>
+    <p class="text-gray-600 mb-6">Manage custom greetings and directory visibility for Message-Only and Announcement extensions.</p>
     
     <div class="uploader-container">
-        <form id="greetings-form">
-            <div class="form-group">
-                <label>Select Target Extensions:</label>
-                
-                <div class="flex flex-col sm:flex-row gap-2 mb-3">
-                    <input type="text" id="extension-search" placeholder="Search by name, extension, or type..." 
-                           class="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                    <button type="button" id="toggle-select-btn" class="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200 transition text-sm font-medium whitespace-nowrap">
-                        Select All Filtered
-                    </button>
+        <div class="form-group mb-6">
+            <label>1. Select Target Extensions:</label>
+            
+            <div class="flex flex-col sm:flex-row gap-2 mb-3 mt-2">
+                <input type="text" id="extension-search" placeholder="Search by name, extension, or type..." 
+                       class="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                <button type="button" id="toggle-select-btn" class="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200 transition text-sm font-medium whitespace-nowrap">
+                    Select All Filtered
+                </button>
+            </div>
+            
+            <div id="extension-list" class="max-h-60 overflow-y-auto p-1 bg-gray-50 border border-gray-200 rounded-lg shadow-inner">
+                <div class="text-gray-500 text-sm p-4 text-center">Loading extensions...</div>
+            </div>
+        </div>
+
+        <label class="block mb-2 font-semibold text-gray-700">2. Choose Action:</label>
+        
+        <div class="flex border-b border-gray-200 mb-4">
+            <button id="tab-btn-greetings" class="px-4 py-3 border-b-2 border-blue-600 text-blue-600 font-medium transition-colors focus:outline-none">
+                Upload Greetings
+            </button>
+            <button id="tab-btn-directory" class="px-4 py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium transition-colors focus:outline-none">
+                Directory Visibility
+            </button>
+        </div>
+
+        <form id="bulk-tools-form">
+            <div id="action-area-greetings" class="action-pane">
+                <div class="form-group">
+                    <label for="audio-file">Upload Audio File (MP3/WAV):</label>
+                    <input type="file" id="audio-file" name="audio_file" accept=".mp3, .wav">
                 </div>
-                
-                <div id="extension-list" class="max-h-80 overflow-y-auto p-1 bg-gray-50 border border-gray-200 rounded-lg shadow-inner">
-                    <div class="text-gray-500 text-sm p-4 text-center">Loading extensions...</div>
-                </div>
+                <button type="button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150 mt-4 action-btn" data-action-type="greetings">
+                    Upload Greetings to Selected
+                </button>
             </div>
 
-            <div class="form-group mt-4">
-                <label for="audio-file">Upload Audio File (MP3/WAV):</label>
-                <input type="file" id="audio-file" name="audio_file" accept=".mp3, .wav" required>
+            <div id="action-area-directory" class="action-pane hidden">
+                <div class="form-group bg-gray-50 p-4 border border-gray-200 rounded-lg">
+                    <label class="mb-3">Set Directory Status For Selected:</label>
+                    <div class="flex flex-col gap-3 mt-2">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="radio" name="directory_action" value="show" class="mr-3 h-5 w-5 text-green-600 focus:ring-green-500" checked>
+                            <span class="text-gray-800 font-medium">Show in Company Directory</span>
+                        </label>
+                        <label class="flex items-center cursor-pointer">
+                            <input type="radio" name="directory_action" value="hide" class="mr-3 h-5 w-5 text-red-600 focus:ring-red-500">
+                            <span class="text-gray-800 font-medium">Hide from Company Directory</span>
+                        </label>
+                    </div>
+                </div>
+                <button type="button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition duration-150 mt-4 action-btn" data-action-type="directory">
+                    Apply Directory Settings
+                </button>
             </div>
 
-            <div id="progress-container" class="hidden mt-4 mb-4">
+            <div id="progress-container" class="hidden mt-6 mb-2">
                 <div class="flex justify-between text-sm font-medium text-gray-700 mb-1">
-                    <span id="progress-status-text">Starting upload...</span>
+                    <span id="progress-status-text">Starting...</span>
                     <span id="progress-text">0/0</span>
                 </div>
                 <div class="w-full bg-gray-200 rounded-full h-3 shadow-inner">
                     <div id="progress-bar-fill" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
                 </div>
             </div>
-
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150" id="upload-btn">
-                Upload to Selected
-            </button>
         </form>
+        
         <div id="upload-status" class="status-message"></div>
     </div>
 </div>
@@ -58,10 +90,15 @@
         const extensionList = document.getElementById('extension-list');
         const searchInput = document.getElementById('extension-search');
         const toggleSelectBtn = document.getElementById('toggle-select-btn');
-        const greetingsForm = document.getElementById('greetings-form');
         const statusMessage = document.getElementById('upload-status');
-        const uploadBtn = document.getElementById('upload-btn');
+        const actionBtns = document.querySelectorAll('.action-btn');
         
+        // Tab elements
+        const tabBtnGreetings = document.getElementById('tab-btn-greetings');
+        const tabBtnDirectory = document.getElementById('tab-btn-directory');
+        const areaGreetings = document.getElementById('action-area-greetings');
+        const areaDirectory = document.getElementById('action-area-directory');
+
         // Progress elements
         const progressContainer = document.getElementById('progress-container');
         const progressBarFill = document.getElementById('progress-bar-fill');
@@ -71,6 +108,34 @@
         let allExtensions = []; 
         let currentFiltered = [];
 
+        // --- Tab Switching Logic ---
+        function switchTab(tab) {
+            if (tab === 'greetings') {
+                tabBtnGreetings.classList.replace('border-transparent', 'border-blue-600');
+                tabBtnGreetings.classList.replace('text-gray-500', 'text-blue-600');
+                tabBtnDirectory.classList.replace('border-blue-600', 'border-transparent');
+                tabBtnDirectory.classList.replace('text-blue-600', 'text-gray-500');
+                
+                areaGreetings.classList.remove('hidden');
+                areaDirectory.classList.add('hidden');
+                progressBarFill.className = 'bg-blue-600 h-3 rounded-full transition-all duration-300';
+            } else {
+                tabBtnDirectory.classList.replace('border-transparent', 'border-blue-600');
+                tabBtnDirectory.classList.replace('text-gray-500', 'text-blue-600');
+                tabBtnGreetings.classList.replace('border-blue-600', 'border-transparent');
+                tabBtnGreetings.classList.replace('text-blue-600', 'text-gray-500');
+                
+                areaDirectory.classList.remove('hidden');
+                areaGreetings.classList.add('hidden');
+                progressBarFill.className = 'bg-indigo-600 h-3 rounded-full transition-all duration-300';
+            }
+            statusMessage.style.display = 'none';
+        }
+
+        tabBtnGreetings.addEventListener('click', () => switchTab('greetings'));
+        tabBtnDirectory.addEventListener('click', () => switchTab('directory'));
+
+        // --- Extension Loading & Rendering ---
         async function loadExtensions() {
             try {
                 const response = await fetch('/api/greetings_uploader/extensions');
@@ -104,17 +169,15 @@
             
             extensions.forEach(ext => {
                 const label = document.createElement('label');
-                // Creating a larger, card-like hit area
                 label.className = 'flex items-center p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all shadow-sm';
                 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.name = 'extension_ids';
                 checkbox.value = ext.id;
-                checkbox.dataset.name = ext.name; // Store name for the progress bar text
+                checkbox.dataset.name = ext.name;
                 checkbox.className = 'mr-4 h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer';
 
-                // Visual feedback when checkbox is toggled
                 checkbox.addEventListener('change', (e) => {
                     if(e.target.checked) {
                         label.classList.add('border-blue-500', 'bg-blue-50', 'ring-1', 'ring-blue-500');
@@ -145,7 +208,6 @@
             });
         }
 
-        // Live Search Filter
         searchInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
             currentFiltered = allExtensions.filter(ext => 
@@ -157,127 +219,141 @@
             toggleSelectBtn.textContent = 'Select All Filtered';
         });
 
-        // Select All / Deselect All Button Logic
         toggleSelectBtn.addEventListener('click', () => {
             const checkboxes = extensionList.querySelectorAll('input[type="checkbox"]');
             if (checkboxes.length === 0) return;
 
-            // Check if all currently visible are selected
             const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-            
             checkboxes.forEach(cb => {
                 cb.checked = !allChecked;
-                // Dispatch change event to trigger the visual styling updates
                 cb.dispatchEvent(new Event('change'));
             });
-
             toggleSelectBtn.textContent = allChecked ? 'Select All Filtered' : 'Deselect All Filtered';
         });
 
-        greetingsForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const checkedBoxes = extensionList.querySelectorAll('input[name="extension_ids"]:checked');
-            if (checkedBoxes.length === 0) {
-                statusMessage.textContent = 'Please select at least one extension.';
-                statusMessage.className = 'status-message error';
-                return;
-            }
+        // --- Abstracted Processing Loop ---
+        actionBtns.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const actionType = e.target.dataset.actionType;
+                
+                const checkedBoxes = extensionList.querySelectorAll('input[name="extension_ids"]:checked');
+                if (checkedBoxes.length === 0) {
+                    statusMessage.textContent = 'Please select at least one extension.';
+                    statusMessage.className = 'status-message error';
+                    return;
+                }
 
-            const audioFileInput = document.getElementById('audio-file');
-            const audioFile = audioFileInput.files[0];
+                let audioFile = null;
+                let dirAction = null;
+                let endpoint = '';
+                let actionVerb = '';
 
-            // Lock UI and show Progress Bar
-            uploadBtn.disabled = true;
-            statusMessage.style.display = 'none';
-            progressContainer.classList.remove('hidden');
-            
-            const total = checkedBoxes.length;
-            let successCount = 0;
-            let failCount = 0;
-
-            // Loop sequentially to track progress and handle rate limits
-            for (let i = 0; i < total; i++) {
-                const cb = checkedBoxes[i];
-                const extId = cb.value;
-                const extName = cb.dataset.name;
-
-                // Update Progress UI
-                progressStatusText.textContent = `Uploading to ${extName}...`;
-                progressText.textContent = `${i}/${total}`;
-                progressBarFill.style.width = `${(i / total) * 100}%`;
-
-                let success = false;
-                let attempts = 0;
-                const maxAttempts = 3;
-
-                // Retry loop for rate limiting
-                while (!success && attempts < maxAttempts) {
-                    attempts++;
-                    const formData = new FormData();
-                    formData.append('extension_id', extId);
-                    formData.append('audio_file', audioFile);
-
-                    try {
-                        const response = await fetch('/api/greetings_uploader/upload', {
-                            method: 'POST',
-                            body: formData
-                        });
-
-                        if (response.status === 429) {
-                            const data = await response.json();
-                            const waitSeconds = data.retry_after || 60;
-                            progressStatusText.textContent = `Rate limited! Pausing for ${waitSeconds} seconds...`;
-                            progressBarFill.classList.add('bg-yellow-500'); // Visual indicator of pause
-                            
-                            // Sleep JS thread
-                            await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-                            
-                            progressBarFill.classList.remove('bg-yellow-500');
-                            continue; // Loop again to retry
-                        }
-
-                        const result = await response.json();
-                        if (response.ok && result.success) {
-                            successCount++;
-                            success = true;
-                            // Visually uncheck successful items
-                            cb.checked = false;
-                            cb.dispatchEvent(new Event('change'));
-                        } else {
-                            console.error(`Failed ${extName}:`, result.error);
-                            break; // Break the retry loop on normal errors (like bad file)
-                        }
-                    } catch (error) {
-                        console.error(`Network error on ${extName}:`, error);
-                        break;
+                // Validate specific tab requirements
+                if (actionType === 'greetings') {
+                    const audioFileInput = document.getElementById('audio-file');
+                    audioFile = audioFileInput.files[0];
+                    if (!audioFile) {
+                        statusMessage.textContent = 'Please select an audio file.';
+                        statusMessage.className = 'status-message error';
+                        return;
                     }
+                    endpoint = '/api/greetings_uploader/upload';
+                    actionVerb = 'Uploading to';
+                } else if (actionType === 'directory') {
+                    dirAction = document.querySelector('input[name="directory_action"]:checked').value;
+                    endpoint = '/api/greetings_uploader/directory';
+                    actionVerb = 'Updating directory for';
+                }
+
+                // Lock UI
+                actionBtns.forEach(b => b.disabled = true);
+                statusMessage.style.display = 'none';
+                progressContainer.classList.remove('hidden');
+                
+                const total = checkedBoxes.length;
+                let successCount = 0;
+                let failCount = 0;
+
+                for (let i = 0; i < total; i++) {
+                    const cb = checkedBoxes[i];
+                    const extId = cb.value;
+                    const extName = cb.dataset.name;
+
+                    progressStatusText.textContent = `${actionVerb} ${extName}...`;
+                    progressText.textContent = `${i}/${total}`;
+                    progressBarFill.style.width = `${(i / total) * 100}%`;
+
+                    let success = false;
+                    let attempts = 0;
+                    const maxAttempts = 3;
+
+                    while (!success && attempts < maxAttempts) {
+                        attempts++;
+                        const formData = new FormData();
+                        formData.append('extension_id', extId);
+                        
+                        if (actionType === 'greetings') {
+                            formData.append('audio_file', audioFile);
+                        } else {
+                            formData.append('action', dirAction);
+                        }
+
+                        try {
+                            const response = await fetch(endpoint, {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            if (response.status === 429) {
+                                const data = await response.json();
+                                const waitSeconds = data.retry_after || 60;
+                                progressStatusText.textContent = `Rate limited! Pausing for ${waitSeconds} seconds...`;
+                                progressBarFill.classList.add('bg-yellow-500');
+                                
+                                await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+                                
+                                progressBarFill.classList.remove('bg-yellow-500');
+                                continue; 
+                            }
+
+                            const result = await response.json();
+                            if (response.ok && result.success) {
+                                successCount++;
+                                success = true;
+                                cb.checked = false;
+                                cb.dispatchEvent(new Event('change'));
+                            } else {
+                                console.error(`Failed ${extName}:`, result.error);
+                                break; 
+                            }
+                        } catch (error) {
+                            console.error(`Network error on ${extName}:`, error);
+                            break;
+                        }
+                    }
+                    
+                    if (!success) failCount++;
+                }
+
+                progressBarFill.style.width = '100%';
+                progressText.textContent = `${total}/${total}`;
+                progressStatusText.textContent = 'Sequence complete!';
+                
+                statusMessage.style.display = 'block';
+                if (failCount === 0) {
+                    statusMessage.textContent = `Success: Processed all ${successCount} extensions!`;
+                    statusMessage.className = 'status-message success';
+                    document.getElementById('audio-file').value = ''; // clear file
+                    setTimeout(() => { progressContainer.classList.add('hidden'); }, 3000);
+                } else {
+                    statusMessage.textContent = `Finished with errors: ${successCount} succeeded, ${failCount} failed. Check console.`;
+                    statusMessage.className = 'status-message error';
                 }
                 
-                if (!success) failCount++;
-            }
-
-            // Finish Progress Bar
-            progressBarFill.style.width = '100%';
-            progressText.textContent = `${total}/${total}`;
-            progressStatusText.textContent = 'Upload sequence complete!';
-            
-            // Show final status message
-            statusMessage.style.display = 'block';
-            if (failCount === 0) {
-                statusMessage.textContent = `Success: Uploaded to all ${successCount} extensions!`;
-                statusMessage.className = 'status-message success';
-                greetingsForm.reset();
-                setTimeout(() => { progressContainer.classList.add('hidden'); }, 3000);
-            } else {
-                statusMessage.textContent = `Finished with errors: ${successCount} succeeded, ${failCount} failed. Check console.`;
-                statusMessage.className = 'status-message error';
-            }
-            
-            uploadBtn.disabled = false;
+                actionBtns.forEach(b => b.disabled = false);
+            });
         });
 
-        // Load data on start
         loadExtensions();
     });
 </script>
