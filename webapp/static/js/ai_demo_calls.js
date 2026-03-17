@@ -1,20 +1,51 @@
+// --- INDEXEDDB UNLIMITED CACHE WRAPPER ---
+// This replaces localStorage so we can store massive 3+ minute Base64 audio files without hitting 5MB quotas
+const initDB = () => {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('DemoAppDB', 1);
+        request.onupgradeneeded = (e) => {
+            e.target.result.createObjectStore('demoCache');
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+    });
+};
+
+const saveToCache = async (data) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('demoCache', 'readwrite');
+        const req = tx.objectStore('demoCache').put(data, 'cachedDemoScript');
+        req.onsuccess = () => resolve();
+        req.onerror = (e) => reject(e.target.error);
+    });
+};
+
+const loadFromCache = async () => {
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction('demoCache', 'readonly');
+        const req = tx.objectStore('demoCache').get('cachedDemoScript');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+    });
+};
+
 // --- GLOBAL WEBRTC VARIABLES ---
 window.rcWebPhoneEngine = null; 
 window.intentToDial = false;    
 let activeSession = null;
 let audioCtx = null;
 let virtualMic = null;
-let customerMixer = null; // NEW: The permanent audio hub for the Customer
+let customerMixer = null; 
 
 // --- 1. THE VIRTUAL MICROPHONE INTERCEPTOR ---
 function setupVirtualMicrophone() {
-    // 1. If this is the very first time, build the audio engine and the permanent mixer
     if (!audioCtx) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         audioCtx = new AudioContext();
-        customerMixer = audioCtx.createGain(); // Create the permanent power strip
+        customerMixer = audioCtx.createGain(); 
         
-        // Monkey-patch the browser's getUserMedia to ALWAYS return the current virtualMic
         const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
         navigator.mediaDevices.getUserMedia = async (constraints) => {
             if (constraints && constraints.audio) {
@@ -25,10 +56,7 @@ function setupVirtualMicrophone() {
         };
     }
     
-    // 2. EVERY time we dial, generate a brand new live wire (virtualMic)
     virtualMic = audioCtx.createMediaStreamDestination();
-    
-    // 3. Unplug the mixer from the old dead call, and plug it into the new live wire
     customerMixer.disconnect();
     customerMixer.connect(virtualMic);
 }
@@ -38,13 +66,11 @@ window.playTurnIntoCall = function(audioId) {
     const audioEl = document.getElementById(audioId);
     if (!audioEl) return;
     
-    if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
-        source.connect(customerMixer); // Plug directly into the permanent mixer
+        source.connect(customerMixer); 
         audioEl.isRouted = true;
     }
     
@@ -80,18 +106,14 @@ function playNextAutoTurn() {
 
     const isAgent = audioEl.dataset.speaker === 'agent';
 
-    if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
         
         if (isAgent) {
-            // AGENT AUDIO: Route to Mac Speakers -> BlackHole -> RingEX Mic
             source.connect(audioCtx.destination);
         } else {
-            // CUSTOMER AUDIO: Route to the permanent mixer -> WebRTC Call
             source.connect(customerMixer);
         }
         audioEl.isRouted = true;
@@ -155,7 +177,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const audioData = await audioRes.json();
                 if (audioData.error) throw new Error(audioData.error);
 
-                localStorage.setItem('cachedDemoScript', JSON.stringify(audioData.files));
+                // MASSIVE CACHE FIX: Saving to IndexedDB
+                await saveToCache(audioData.files);
+                
                 renderScriptAndAudio(audioData.files);
                 dialerSection.classList.remove('hidden');
 
@@ -172,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function executeDial(targetNumber) {
         callStatus.innerText = `Status: Dialing ${targetNumber}...`;
         
-        // CRITICAL FIX: Right before dialing, swap in the fresh virtual mic
         setupVirtualMicrophone();
         
         activeSession = window.rcWebPhoneEngine.userAgent.invite(targetNumber, {
@@ -211,7 +234,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = dialTargetInput.value.trim();
             if (!target) return alert("Please enter an extension or phone number to dial.");
             
-            // We initialize audio context on the first click to bypass browser block
             if (!audioCtx) setupVirtualMicrophone();
             if (audioCtx.state === 'suspended') await audioCtx.resume();
 
@@ -317,10 +339,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if(dialerSection) dialerSection.classList.remove('hidden');
     }
 
-    // --- CACHE LOADER ---
-    const cachedScript = localStorage.getItem('cachedDemoScript');
-    if (cachedScript) {
-        console.log("Loaded script from cache - no waiting for Gemini!");
-        renderScriptAndAudio(JSON.parse(cachedScript));
-    }
+    // --- CACHE LOADER (INDEXEDDB) ---
+    loadFromCache().then(cachedScript => {
+        if (cachedScript) {
+            console.log("Loaded script from IndexedDB cache - no waiting for Gemini!");
+            renderScriptAndAudio(cachedScript);
+        }
+    });
 });
