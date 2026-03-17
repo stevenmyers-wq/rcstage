@@ -3,6 +3,7 @@ import os
 import wave
 import io
 import base64
+import concurrent.futures
 from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call  # Pulling in your RC API wrapper
@@ -32,8 +33,9 @@ def generate_script_with_gemini(scenario, voice_prompt):
     """
     
     try:
+        # CHANGED: Switched to flash for massive speed improvements
         response = client.models.generate_content(
-            model='gemini-2.5-pro',
+            model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -61,56 +63,73 @@ def create_wave_base64(pcm_data):
     b64_encoded = base64.b64encode(wav_bytes).decode('utf-8')
     return f"data:audio/wav;base64,{b64_encoded}"
 
-def generate_audio_for_script(script_array, template_id, voice_prompt):
-    """Loops through the script and generates an expressive audio Base64 string per turn using Gemini Native Audio."""
-    client = get_gemini_client()
-    generated_files = []
+def _process_single_turn(index, turn, voice_prompt, client):
+    """Helper function to generate a single audio clip (used for parallel processing)."""
+    speaker = turn.get('speaker', 'Customer')
+    text = turn.get('text', '')
+    emotion = turn.get('emotion', 'Speak normally.')
     
-    for index, turn in enumerate(script_array):
-        speaker = turn.get('speaker', 'Customer')
-        text = turn.get('text', '')
-        emotion = turn.get('emotion', 'Speak normally.')
-        
-        voice_name = 'Aoede' if speaker.lower() == 'agent' else 'Puck'
-        tts_prompt = f"Voice instruction: You MUST speak with a very strong and natural {voice_prompt} accent/style. Style instruction: {emotion}. \nText to speak: {text}"
-        
-        try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash-preview-tts',
-                contents=tts_prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name=voice_name
-                            )
+    voice_name = 'Aoede' if speaker.lower() == 'agent' else 'Puck'
+    tts_prompt = f"Voice instruction: You MUST speak with a very strong and natural {voice_prompt} accent/style. Style instruction: {emotion}. \nText to speak: {text}"
+    
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-preview-tts',
+            contents=tts_prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=voice_name
                         )
                     )
                 )
             )
+        )
+        
+        # Get raw PCM bytes
+        audio_bytes = response.candidates[0].content.parts[0].inline_data.data
+        
+        # Convert directly to Base64 Data URI instead of saving to disk
+        audio_data_uri = create_wave_base64(audio_bytes)
+        
+        return {
+            "turn": index,
+            "speaker": speaker,
+            "text": text,
+            "emotion": emotion,
+            "audio_url": audio_data_uri  
+        }
+    except Exception as e:
+        print(f"Failed to generate audio for turn {index}: {e}")
+        return {
+            "turn": index,
+            "speaker": speaker,
+            "text": text,
+            "error": str(e)
+        }
+
+def generate_audio_for_script(script_array, template_id, voice_prompt):
+    """Loops through the script and generates expressive audio Base64 strings concurrently."""
+    client = get_gemini_client()
+    generated_files = []
+    
+    # CHANGED: Added ThreadPoolExecutor for Parallel Processing
+    # max_workers=10 means we process up to 10 audio requests at the exact same time
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Submit all tasks to the executor
+        futures = [
+            executor.submit(_process_single_turn, index, turn, voice_prompt, client) 
+            for index, turn in enumerate(script_array)
+        ]
+        
+        # Gather the results as they finish
+        for future in concurrent.futures.as_completed(futures):
+            generated_files.append(future.result())
             
-            # Get raw PCM bytes
-            audio_bytes = response.candidates[0].content.parts[0].inline_data.data
-            
-            # Convert directly to Base64 Data URI instead of saving to disk
-            audio_data_uri = create_wave_base64(audio_bytes)
-            
-            generated_files.append({
-                "turn": index,
-                "speaker": speaker,
-                "text": text,
-                "emotion": emotion,
-                "audio_url": audio_data_uri  # UI will play this seamlessly
-            })
-        except Exception as e:
-            print(f"Failed to generate audio for turn {index}: {e}")
-            generated_files.append({
-                "turn": index,
-                "speaker": speaker,
-                "text": text,
-                "error": str(e)
-            })
+    # Because threads finish at random times, we must sort the final array back into the correct order
+    generated_files.sort(key=lambda x: x["turn"])
             
     return generated_files
 
