@@ -7,7 +7,6 @@ def get_message_extensions():
     if not response or 'records' not in response:
         raise Exception("Failed to fetch extensions from RingCentral.")
 
-    # RingCentral API uses 'Voicemail' for Message-Only extensions
     valid_types = ['Voicemail', 'Announcement']
     filtered_exts = [
         {
@@ -22,12 +21,9 @@ def get_message_extensions():
 
 def upload_greeting_to_extension(extension_id, file):
     """Uploads an audio file as a custom greeting to the specified extension."""
-    
-    # 1. Fetch extension info to determine if it needs a Voicemail or Announcement greeting
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{extension_id}', method='GET', raise_error=True)
     ext_type = ext_info.get('type')
     
-    # Match against the API's internal 'Voicemail' type
     if ext_type == 'Voicemail':
         greeting_type = 'Voicemail'
     elif ext_type == 'Announcement':
@@ -35,14 +31,12 @@ def upload_greeting_to_extension(extension_id, file):
     else:
         raise Exception(f"Unsupported extension type for this tool: {ext_type}")
 
-    # 2. Fetch the answering rules for this extension to find the active rule ID
     rules = rc_api_call(f'/restapi/v1.0/account/~/extension/{extension_id}/answering-rule', method='GET', raise_error=True)
     
     rule_id = None
     if rules and 'records' in rules and len(rules['records']) > 0:
         rule_id = rules['records'][0]['id']
 
-    # 3. Build the correctly nested JSON metadata payload
     metadata = {
         "type": greeting_type
     }
@@ -50,24 +44,26 @@ def upload_greeting_to_extension(extension_id, file):
     if rule_id:
         metadata["answeringRule"] = {"id": rule_id}
 
-    # 4. Prepare the multipart/form-data files payload
     files = {
-        'json': (
-            'request.json', 
-            json.dumps(metadata), 
-            'application/json'
-        ),
-        'attachment': (
-            file.filename, 
-            file.read(), 
-            file.content_type or 'audio/mpeg'
-        )
+        'json': ('request.json', json.dumps(metadata), 'application/json'),
+        'attachment': (file.filename, file.read(), file.content_type or 'audio/mpeg')
     }
 
-    # 5. Execute the upload
     return rc_api_call(
         f'/restapi/v1.0/account/~/extension/{extension_id}/greeting',
         method='POST',
         raise_error=True,
         files=files
+    )
+
+def set_directory_visibility(extension_id, is_hidden):
+    """Updates the directory visibility (hidden status) for an extension."""
+    payload = {
+        "hidden": is_hidden
+    }
+    return rc_api_call(
+        f'/restapi/v1.0/account/~/extension/{extension_id}',
+        method='PUT',
+        raise_error=True,
+        json=payload
     )
