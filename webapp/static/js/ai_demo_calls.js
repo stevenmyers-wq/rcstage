@@ -141,6 +141,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const hangupBtn = document.getElementById('hangup-btn');
     const dialTargetInput = document.getElementById('dial-target');
     const callStatus = document.getElementById('call-status');
+    const dtmfKeypad = document.getElementById('dtmf-keypad');
+
+    // --- DTMF KEYPAD LOGIC ---
+    document.querySelectorAll('.dtmf-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const key = e.target.dataset.key;
+            if (activeSession) {
+                console.log(`Sending DTMF Tone: ${key}`);
+                activeSession.dtmf(key); // This sends the tone down the active SIP line!
+            }
+        });
+    });
 
     // --- PHASE 0: SCRIPT & AUDIO GENERATION ---
     if (generateBtn) {
@@ -215,6 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('auto-play-btn').classList.remove('hidden');
             document.getElementById('auto-play-btn').disabled = false;
             document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo';
+            
+            // Show the DTMF Keypad
+            if (dtmfKeypad) dtmfKeypad.classList.remove('hidden'); 
         });
 
         activeSession.on('terminated', () => {
@@ -225,6 +240,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('auto-play-btn').classList.add('hidden');
             callBtn.disabled = false;
             activeSession = null;
+
+            // Hide the DTMF Keypad
+            if (dtmfKeypad) dtmfKeypad.classList.add('hidden');
         });
     }
 
