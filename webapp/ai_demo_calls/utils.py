@@ -4,6 +4,7 @@ import wave
 import io
 import base64
 import concurrent.futures
+import requests
 from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call  # Pulling in your RC API wrapper
@@ -133,8 +134,48 @@ def generate_audio_for_script(script_array, template_id, voice_prompt):
             
     return generated_files
 
-def generate_sip_credentials():
+def get_demo_account_token(region="AU"):
+    """Exchanges a region-specific JWT for a RingCentral access token."""
+    client_id = os.environ.get("DEMO_RC_CLIENT_ID")
+    client_secret = os.environ.get("DEMO_RC_CLIENT_SECRET")
+    
+    if region == "UK":
+        jwt = os.environ.get("DEMO_RC_JWT_UK")
+    elif region == "US":
+        jwt = os.environ.get("DEMO_RC_JWT_US")
+    else:
+        jwt = os.environ.get("DEMO_RC_JWT_AU")
+        
+    if not all([client_id, client_secret, jwt]):
+        raise ValueError(f"Missing JWT credentials for region {region} in environment.")
+        
+    token_url = "https://platform.ringcentral.com/restapi/oauth/token"
+    auth_str = base64.b64encode(f"{client_id}:{client_secret}".encode('utf-8')).decode('utf-8')
+    
+    headers = {
+        "Authorization": f"Basic {auth_str}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": jwt
+    }
+    
+    response = requests.post(token_url, headers=headers, data=data)
+    
+    if not response.ok:
+        error_data = response.json() if response.content else {}
+        # RingCentral returns 'invalid_grant' for expired or revoked JWTs
+        if error_data.get("error") in ["invalid_grant", "invalid_client"]:
+            raise ValueError(f"The JWT for the {region} region has expired or is invalid. Please generate a new one.")
+        response.raise_for_status()
+        
+    return response.json().get("access_token")
+
+def generate_sip_credentials(region="AU"):
     """Calls the RingCentral API to generate temporary WebRTC credentials."""
+    demo_token = get_demo_account_token(region)
+
     endpoint = "/restapi/v1.0/client-info/sip-provision"
     payload = {
         "sipInfo": [{
@@ -142,7 +183,7 @@ def generate_sip_credentials():
         }]
     }
     try:
-        response = rc_api_call(endpoint, method="POST", json=payload)
+        response = rc_api_call(endpoint, method="POST", json=payload, token=demo_token)
         return response
     except Exception as e:
         print(f"FATAL ERROR in generate_sip_credentials: {e}")

@@ -42,6 +42,17 @@
                 <div class="p-4 space-y-4">
                     <p class="text-sm text-gray-600">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
                     
+                    <!-- Region Selection Dropdown -->
+                    <div class="flex flex-col space-y-1 mb-4">
+                        <label for="demo-region-select" class="text-sm font-bold text-gray-700">Dialer Persona (Region)</label>
+                        <select id="demo-region-select" class="p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 bg-white">
+                            <option value="AU" selected>Australia (AU Caller)</option>
+                            <option value="UK">United Kingdom (UK Caller)</option>
+                            <option value="US">United States (US Caller)</option>
+                        </select>
+                        <span class="text-xs text-gray-500">Select which dedicated test account to provision the WebRTC phone with.</span>
+                    </div>
+
                     <div>
                         <label for="dial-target" class="block text-sm font-medium text-gray-700">Target Extension / Number</label>
                         <input type="text" id="dial-target" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 p-2 border" placeholder="e.g., 101 or +61400000000">

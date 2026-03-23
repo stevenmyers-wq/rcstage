@@ -1,6 +1,5 @@
 import uuid
 from flask import Blueprint, jsonify, request
-from webapp.auth_utils import require_rc_token
 from . import utils
 
 ai_demo_calls_bp = Blueprint(
@@ -9,7 +8,6 @@ ai_demo_calls_bp = Blueprint(
 )
 
 @ai_demo_calls_bp.route('/generate-script', methods=['POST'])
-@require_rc_token
 def generate_demo_script():
     """Takes a scenario description and returns a Gemini-generated script."""
     data = request.get_json()
@@ -27,7 +25,6 @@ def generate_demo_script():
         return jsonify({"error": str(e)}), 500
 
 @ai_demo_calls_bp.route('/generate-audio', methods=['POST'])
-@require_rc_token
 def generate_demo_audio():
     """Takes a generated JSON script and synthesizes the individual audio files."""
     data = request.get_json()
@@ -53,12 +50,13 @@ def generate_demo_audio():
         return jsonify({"error": "Failed to generate audio."}), 500
 
 @ai_demo_calls_bp.route('/sip-provision', methods=['POST'])
-@require_rc_token
 def provision_sip():
     """Fetches WebRTC SIP credentials from RingCentral."""
+    data = request.get_json() or {}
+    region = data.get('region', 'AU')
     try:
-        sip_data = utils.generate_sip_credentials()
+        sip_data = utils.generate_sip_credentials(region)
         return jsonify({"status": "success", "sip_data": sip_data})
     except Exception as e:
         print(f"Error provisioning SIP: {e}")
-        return jsonify({"error": "Failed to provision SIP credentials."}), 500
+        return jsonify({"error": str(e)}), 500

@@ -263,7 +263,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 if (!window.rcWebPhoneEngine) {
-                    const res = await fetch('/api/ai_demo_calls/sip-provision', { method: 'POST' });
+                    const regionSelect = document.getElementById('demo-region-select');
+                    const region = regionSelect ? regionSelect.value : 'AU';
+
+                    const res = await fetch('/api/ai_demo_calls/sip-provision', { 
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ region: region })
+                    });
                     const data = await res.json();
                     if (data.error) throw new Error(data.error);
 
