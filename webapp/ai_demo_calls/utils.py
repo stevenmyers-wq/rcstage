@@ -24,7 +24,8 @@ def generate_script_with_gemini(scenario, voice_prompt):
     You are an expert contact center script writer. 
     Write a realistic phone conversation based on this scenario: {scenario}
     
-    CRITICAL INSTRUCTION: The characters MUST speak using {voice_prompt} vocabulary, slang, and phrasing.
+    CRITICAL INSTRUCTION: The characters MUST speak using {voice_prompt} vocabulary and phrasing. However, the tone MUST be highly professional, polite, and corporate. DO NOT use heavy regional slang or overly casual colloquialisms.
+
     
     Output strictly as a JSON array of objects, with no markdown formatting.
     Each object must have:
@@ -71,7 +72,7 @@ def _process_single_turn(index, turn, voice_prompt, client):
     emotion = turn.get('emotion', 'Speak normally.')
     
     voice_name = 'Aoede' if speaker.lower() == 'agent' else 'Puck'
-    tts_prompt = f"Voice instruction: You MUST speak with a very strong and natural {voice_prompt} accent/style. Style instruction: {emotion}. \nText to speak: {text}"
+    tts_prompt = f"Voice instruction: You MUST speak with a clear, professional, and natural {voice_prompt} accent/style. Avoid overly exaggerated colloquialisms. Style instruction: {emotion}. \nText to speak: {text}"
     
     try:
         response = client.models.generate_content(
