@@ -3,6 +3,7 @@ import sys
 import time
 from flask import Blueprint, jsonify, request, session
 from webapp.auth_utils import is_authenticated, get_rc_access_token
+from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
 from webapp.visualiser.utils import generate_mermaid_flow
 
@@ -161,6 +162,7 @@ def search_for_visualiser_targets():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @viz_bp.route('/api/rc/trace-flow/<ext_id>', methods=['GET'])
+@track_usage('Call Flow Visualiser')
 def visualize_call_flow_api(ext_id):
     if not is_authenticated() or not get_rc_access_token():
         return jsonify({'status': 'error', 'message': 'Auth failed'}), 401

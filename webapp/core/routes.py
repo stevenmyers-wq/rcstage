@@ -4,8 +4,10 @@ from flask import (
     Blueprint, render_template, request, session, jsonify, redirect, url_for,
     make_response
 )
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from webapp.auth_utils import is_authenticated
-from webapp.firestore_utils import get_config_from_firestore
+from webapp.usage_tracking import get_analytics_data
 
 # A Blueprint for core app functionality (page serving, website auth)
 core_bp = Blueprint('core', __name__)
@@ -13,13 +15,13 @@ core_bp = Blueprint('core', __name__)
 @core_bp.route('/')
 def index():
     """Serves the main application page."""
-    # The temporary auto-login bypass has been removed from here.
     rc_redirect_uri_clean = os.getenv("RC_REDIRECT_URI", "http://localhost:8080/auth/callback").rstrip('/')
     return render_template(
         'index.html', 
         AUTHENTICATED=is_authenticated(), 
         USER_ROLE='Admin' if session.get('is_admin') else 'User',
         RC_REDIRECT_URI=rc_redirect_uri_clean,
+        GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID", ""),
         current_tab=request.args.get('tab', 'authenticator')
     )
 
@@ -31,44 +33,43 @@ def logout():
     response.delete_cookie('app_session') # Use the configured cookie name
     return response
 
-@core_bp.route('/api/auth/login', methods=['POST'])
-def login():
-    """Handles the website login via email and shared passcode."""
+@core_bp.route('/api/auth/google', methods=['POST'])
+def google_login():
+    """Handles the website login via Google SSO."""
     data = request.get_json()
-    if not data:
-        return jsonify({'status': 'error', 'message': 'Invalid format.'}), 400
+    if not data or 'credential' not in data:
+        return jsonify({'status': 'error', 'message': 'Missing Google credential.'}), 400
     
-    user_email = data.get('email', '').strip().lower()
+    token = data['credential']
+    client_id = os.getenv('GOOGLE_CLIENT_ID')
 
     # --- DEVELOPMENT MODE BYPASS ---
-    # If in development, skip the passcode check and log in automatically.
-    if os.getenv('FLASK_ENV') == 'development':
+    if os.getenv('FLASK_ENV') == 'development' and not client_id:
         session['authenticated'] = True
-        session['user_email'] = user_email or 'developer@local.test'
+        session['user_email'] = 'developer@local.test'
         session['is_admin'] = True # Assume admin for local testing
         session.modified = True
         return jsonify({'status': 'success', 'redirect_url': url_for('core.index')}), 200
     # --- END DEVELOPMENT MODE BYPASS ---
 
-    # --- PRODUCTION LOGIC ---
-    # This part will run only when not in development mode.
-    config = get_config_from_firestore()
-    if not config:
-        return jsonify({'status': 'error', 'message': 'Server Error.'}), 500
+    try:
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        user_email = idinfo.get('email', '').lower()
         
-    expected_passcode = config['passcode']
-    admin_emails = config['admin_list']
-    passcode_attempt = data.get('passcode', '').strip()
+        if not user_email.endswith('@ringcentral.com'):
+            return jsonify({'status': 'error', 'message': 'Access restricted to @ringcentral.com employees.'}), 403
 
-    if passcode_attempt != expected_passcode:
-        return jsonify({'status': 'error', 'message': 'Invalid Passcode.'}), 401
+        session['authenticated'] = True
+        session['user_email'] = user_email
+        
+        admin_emails = [e.strip().lower() for e in os.getenv('ADMIN_EMAILS', '').split(',') if e.strip()]
+        session['is_admin'] = user_email in admin_emails
+        session.modified = True
+        
+        return jsonify({'status': 'success', 'redirect_url': url_for('core.index')}), 200
 
-    session['authenticated'] = True
-    session['user_email'] = user_email
-    session['is_admin'] = user_email in admin_emails
-    session.modified = True
-    
-    return jsonify({'status': 'success', 'redirect_url': url_for('core.index')}), 200
+    except ValueError:
+        return jsonify({'status': 'error', 'message': 'Invalid Google token. Please try again.'}), 401
 
 
 @core_bp.route('/api/auth/status')
@@ -80,4 +81,11 @@ def get_auth_status():
         'user_email': session.get('user_email', None)
     }), 200
 
-
+@core_bp.route('/api/admin/analytics')
+def admin_analytics():
+    """API endpoint to serve analytics data for Chart.js."""
+    if not is_authenticated() or not session.get('is_admin'):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+        
+    data = get_analytics_data()
+    return jsonify(data), 200

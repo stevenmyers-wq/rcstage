@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RingCentral RCAU API Tools</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
     <style>
@@ -30,20 +31,35 @@
         {% if not AUTHENTICATED %}
         <div id="login-screen" class="card max-w-2xl mx-auto">
             <h2 class="text-2xl font-semibold mb-4 text-gray-700">Login to RCAU Tools</h2>
-            <p class="text-gray-600 mb-6">Enter your organizational email and the shared passcode to unlock the dashboard.</p>
+            <p class="text-gray-600 mb-6">Sign in with your RingCentral Google account to unlock the dashboard.</p>
             
-            <form id="login-form" class="space-y-4">
-                <input type="email" id="login-email" name="email" required
-                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                       placeholder="Your Email (Used for Admin Check)">
-                <input type="password" id="login-passcode" name="passcode" required
-                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                       placeholder="Shared Organizational Passcode">
-                <button type="submit" id="passcode-submit"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150">
-                    Login and Unlock Dashboard
-                </button>
-            </form>
+            <div class="flex flex-col items-center justify-center space-y-4 mt-6">
+                <!-- Google Identity Services -->
+                <script src="https://accounts.google.com/gsi/client" async defer></script>
+                <script>
+                  function handleCredentialResponse(response) {
+                    fetch('/api/auth/google', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ credential: response.credential })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                      if (data.status === 'success') {
+                        window.location.href = data.redirect_url || '/';
+                      } else {
+                        alert(data.message || 'Login failed.');
+                      }
+                    })
+                    .catch(err => alert('An error occurred during login.'));
+                  }
+                </script>
+                
+                <div id="g_id_onload" data-client_id="{{ GOOGLE_CLIENT_ID }}" data-context="signin" data-ux_mode="popup" data-callback="handleCredentialResponse" data-auto_prompt="false"></div>
+                <div class="g_id_signin" data-type="standard" data-shape="rectangular" data-theme="outline" data-text="sign_in_with" data-size="large" data-logo_alignment="left"></div>
+                
+                <p class="text-xs text-gray-400 mt-4">Authorized RingCentral personnel only.</p>
+            </div>
         </div>
 
         {% else %}
@@ -106,6 +122,14 @@
                                 {{ tab_name }}
                             </a>
                         {% endfor %}
+                        
+                        {% if USER_ROLE == 'Admin' %}
+                            <a href="{{ url_for('core.index', tab='admin_dashboard') }}" 
+                               class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 mt-4 {% if current_tab == 'admin_dashboard' %}bg-red-50 border-red-600 text-red-700 shadow-sm{% else %}border-transparent text-red-600 hover:bg-red-100 hover:text-red-900{% endif %}"
+                               title="Admin Analytics Dashboard">
+                                Admin Dashboard
+                            </a>
+                        {% endif %}
                     </nav>
 
                     {% if USER_ROLE == 'Admin' %}
@@ -144,6 +168,8 @@
                             {% include 'includes/ringex_uat_tab.html' %}
                         {% elif current_tab == 'ai_demo_calls' %}
                             {% include 'includes/ai_demo_calls_tab.html' %}
+                        {% elif current_tab == 'admin_dashboard' and USER_ROLE == 'Admin' %}
+                            {% include 'includes/admin_dashboard_tab.html' %}
                         {% else %}
                             <div class="card text-center py-12">
                                 <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>

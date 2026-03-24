@@ -1,6 +1,6 @@
 flask
 requests
-google-cloud-firestore
+google-auth
 python-dotenv
 gunicorn
 pandas
@@ -8,4 +8,4 @@ openpyxl
 ringcentral
 xlsxwriter
 google-genai==0.3.0
-
+google-cloud-firestore

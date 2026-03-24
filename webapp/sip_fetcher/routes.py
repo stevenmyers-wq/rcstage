@@ -1,10 +1,12 @@
 from flask import Blueprint, jsonify
 from webapp.auth_utils import is_authenticated, get_rc_access_token
+from webapp.usage_tracking import track_usage
 
 # A Blueprint for the SIP Fetcher tool
 sip_fetcher_bp = Blueprint('sip_fetcher', __name__)
 
 @sip_fetcher_bp.route('/api/rc/sip-fetcher', methods=['POST'])
+@track_usage('SIP Fetcher')
 def sip_fetcher_endpoint():
     """Placeholder function for the SIP Fetcher tab."""
     if not is_authenticated():

@@ -1,6 +1,7 @@
 # webapp/bulk_hours/routes.py
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
+from webapp.usage_tracking import track_usage
 from . import utils
 
 bulk_hours_bp = Blueprint(
@@ -42,6 +43,7 @@ def get_rules_list(entity_type):
 
 @bulk_hours_bp.route('/upload', methods=['POST'])
 @require_rc_token
+@track_usage('Bulk Open Hours')
 def upload_data():
     """
     Receives either Hours or Rules data and processes the updates.

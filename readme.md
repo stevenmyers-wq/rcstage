@@ -2,14 +2,11 @@
 
 This web application provides a suite of tools for interacting with the RingCentral API, designed for support, administration, and development tasks. The application is built with a modular architecture to allow for easy maintenance and independent development of new features.
 Website to access: `https://rcau-api-tools-396158962307.us-central1.run.app/`
-Login email: `your email` - any works. Its just for tracking.
-Passcode: `serotonin-human-prodigy-croon-palace-scheming`
 
 ## Key Features
 
-* **Secure Two-Layer Authentication:**
-    * A shared passcode to unlock the website.
-    * An OAuth 2.0 PKCE flow to securely connect to a RingCentral account.
+* **Secure Authentication:** Google Workspace SSO ensures only internal `@ringcentral.com` employees can access the tools.
+* **Usage & Admin Access:** Seamlessly configures Admin tiers via Cloud Run variables for future usage dashboards.
 * **Call Flow Visualiser:** An interactive tool that traces and displays the complete call routing path for any phone number in the account.
 * **Modular Tool Tabs:** The application is designed to be easily extensible with new tools, each contained within its own tab. Current placeholders include:
     * SIP Credentials Fetcher
@@ -22,6 +19,13 @@ Passcode: `serotonin-human-prodigy-croon-palace-scheming`
    * Create a new API application on the customers UID
    * Enter the following as the callback URL - https://rcau-api-tools-396158962307.us-central1.run.app/auth/callback
    * Set App Permissions
+## Authentication Models Explained
+
+Because this app handles both internal tasks and customer-specific actions, it utilizes three distinct authentication models:
+
+1. **Website Auth (Google SSO):** This is the baseline access layer. Users must log in with a valid `@ringcentral.com` Google account to unlock the interface. 
+2. **Core Tools Auth (RingCentral PKCE):** Most tools act on behalf of a specific RingCentral customer. To use them, the user must input a Client ID from a public OAuth app created in that *customer's* RingCentral Developer Portal.
+3. **AI Demo Calls (JWT Server-to-Server):** This module does *not* require the user to log in to a customer account via PKCE. Instead, it relies on static RingCentral JWTs securely injected into the backend via Cloud Run environment variables.
 
 ## Project Structure
 
@@ -67,7 +71,6 @@ The project follows a modular Flask Blueprint architecture. Each major feature i
     │   └── routes.py
     |
     ├── auth_utils.py       # Shared authentication helper functions
-    ├── firestore_utils.py  # Shared Firestore database functions
     └── rc_api.py           # Shared, generic RingCentral API call handler
 ```
 
@@ -174,6 +177,24 @@ The project includes a centralized, intelligent helper function for all communic
         return sites_data
     ```
 
+#### **3. Tracking Tool Usage with `@track_usage`**
+
+To ensure the Admin Analytics Dashboard stays up-to-date, every core action endpoint of a new tool must be decorated with the `@track_usage` decorator.
+
+* **Location:** `webapp/usage_tracking.py`
+* **Purpose:** Silently logs the execution status, timestamp, and user of a tool to Firestore for visualization in the Admin tab.
+* **Implementation:**
+    ```python
+    # In your new routes.py file
+    from webapp.usage_tracking import track_usage # <-- Import the tracker
+
+    @new_tool_bp.route('/api/new_tool/execute-action', methods=['POST'])
+    @require_rc_token
+    @track_usage('My New Tool Name') # <-- Apply the decorator with a human-readable name
+    def execute_tool_action():
+        # Your code here...
+    ```
+
 ---
 
 ### **AI-Assisted Development (Gemini Prompt Template)**
@@ -221,6 +242,7 @@ Here are the contents of a working module. Please use this as the primary refere
 4.  **Do not pass the access token manually to the `rc_api_call()` function.** It retrieves the token from the session automatically.
 5.  Provide the necessary changes for `webapp/__init__.py` to register the new blueprint and for `webapp/templates/index.html` to add the new tab to the navigation.
 6.  Use the `webapp/bulk_hours/` module as the primary example of a correctly implemented tool.
+7.  Ensure the primary action endpoint for the new tool is decorated with `@track_usage('[Your Tool Name]')` imported from `webapp.usage_tracking`.
 
 ---
 

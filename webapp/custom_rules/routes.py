@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify, send_file
 from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
+from webapp.usage_tracking import track_usage
 from .utils import build_v1_payload, format_phone, parse_rule_to_row, transform_v1_to_v2
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
@@ -29,6 +30,7 @@ def get_user_devices(ext_id):
 # --- AUDIT ROUTE ---
 @custom_rules_bp.route('/api/custom_rules/audit', methods=['GET'])
 @require_rc_token
+@track_usage('Custom Rules Audit')
 def audit_rules():
     try:
         ext_resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000, 'type': 'User'})
@@ -105,6 +107,7 @@ def audit_rules():
 # --- UPDATE ROUTE ---
 @custom_rules_bp.route('/api/update_rules', methods=['POST'])
 @require_rc_token
+@track_usage('Custom Rules Update')
 def update_rules():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
