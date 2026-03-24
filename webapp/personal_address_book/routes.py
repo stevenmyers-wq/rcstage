@@ -1,6 +1,7 @@
 # webapp/personal_address_book/routes.py
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
+from webapp.usage_tracking import track_usage
 from . import utils
 import traceback
 
@@ -25,6 +26,7 @@ def get_user_list():
 
 @personal_address_book_bp.route('/contacts', methods=['POST'])
 @require_rc_token
+@track_usage('PAB - Fetch Contacts')
 def get_contacts_for_users():
     """
     Fetches and aggregates personal address book contacts for a list of selected user IDs.
@@ -46,6 +48,7 @@ def get_contacts_for_users():
 
 @personal_address_book_bp.route('/contacts/upload', methods=['POST'])
 @require_rc_token
+@track_usage('PAB - Upload Contacts')
 def upload_contacts():
     """
     Handles adding, removing, or syncing contacts from a CSV for selected users.
@@ -73,6 +76,7 @@ def upload_contacts():
 
 @personal_address_book_bp.route('/contacts/delete', methods=['POST'])
 @require_rc_token
+@track_usage('PAB - Delete Contacts')
 def delete_contacts():
     """
     Deletes specific contacts for specific users.

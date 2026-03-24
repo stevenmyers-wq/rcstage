@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
+from webapp.usage_tracking import track_usage
 from .utils import get_message_extensions, upload_greeting_to_extension, set_directory_visibility
 from requests.exceptions import HTTPError
 
@@ -16,6 +17,7 @@ def api_get_target_extensions():
 
 @greetings_uploader_bp.route('/api/greetings_uploader/upload', methods=['POST'])
 @require_rc_token
+@track_usage('Greetings - Upload Audio')
 def api_upload_greeting():
     if 'audio_file' not in request.files:
         return jsonify({"error": "No audio file provided."}), 400
@@ -43,6 +45,7 @@ def api_upload_greeting():
 
 @greetings_uploader_bp.route('/api/greetings_uploader/directory', methods=['POST'])
 @require_rc_token
+@track_usage('Greetings - Update Directory Visibility')
 def api_set_directory_visibility():
     extension_id = request.form.get('extension_id')
     action = request.form.get('action') # 'show' or 'hide'

@@ -1,5 +1,6 @@
 import uuid
 from flask import Blueprint, jsonify, request
+from webapp.usage_tracking import track_usage
 from . import utils
 
 ai_demo_calls_bp = Blueprint(
@@ -25,6 +26,7 @@ def generate_demo_script():
         return jsonify({"error": str(e)}), 500
 
 @ai_demo_calls_bp.route('/generate-audio', methods=['POST'])
+@track_usage('AI Demo - Generate Audio')
 def generate_demo_audio():
     """Takes a generated JSON script and synthesizes the individual audio files."""
     data = request.get_json()
@@ -50,6 +52,7 @@ def generate_demo_audio():
         return jsonify({"error": "Failed to generate audio."}), 500
 
 @ai_demo_calls_bp.route('/sip-provision', methods=['POST'])
+@track_usage('AI Demo - SIP Provision')
 def provision_sip():
     """Fetches WebRTC SIP credentials from RingCentral."""
     data = request.get_json() or {}

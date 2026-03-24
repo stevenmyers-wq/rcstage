@@ -1,6 +1,7 @@
 # webapp/live_events/routes.py
 from flask import Blueprint, jsonify
 from webapp.auth_utils import require_rc_token
+from webapp.usage_tracking import track_usage
 from . import utils
 
 live_events_bp = Blueprint(
@@ -10,6 +11,7 @@ live_events_bp = Blueprint(
 
 @live_events_bp.route('/wss-credentials', methods=['POST'])
 @require_rc_token
+@track_usage('Live Events - Fetch Credentials')
 def get_wss_token():
     """Fetches the credentials needed to establish a direct WebSocket connection."""
     try:
