@@ -106,7 +106,8 @@
                             ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
                             ('greetings_uploader', 'Greetings Uploader', 'Upload custom greetings to Message-Only and Announcement extensions'),
                             ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'),
-                            ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX')
+                            ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'),
+                            ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports')
                         ] %}
                         
                         {% for tab_id, tab_name, tab_desc in tabs %}
@@ -168,6 +169,8 @@
                             {% include 'includes/ringex_uat_tab.html' %}
                         {% elif current_tab == 'ai_demo_calls' %}
                             {% include 'includes/ai_demo_calls_tab.html' %}
+                        {% elif current_tab == 'analytics' %}
+                            {% include 'includes/analytics_tab.html' %}
                         {% elif current_tab == 'admin_dashboard' and USER_ROLE == 'Admin' %}
                             {% include 'includes/admin_dashboard_tab.html' %}
                         {% else %}
