@@ -70,4 +70,8 @@ def create_app():
         from .ai_demo_calls import routes as ai_demo_calls_routes
         app.register_blueprint(ai_demo_calls_routes.ai_demo_calls_bp)
 
+        # Business Analytics routes
+        from .analytics import routes as analytics_routes
+        app.register_blueprint(analytics_routes.analytics_bp)
+
     return app
