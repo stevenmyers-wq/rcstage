@@ -10,36 +10,31 @@ def get_call_records():
         data = request.json or {}
         time_from = data.get('timeFrom')
         time_to = data.get('timeTo')
-        ui_dimension = data.get('dimension', 'Company')
+        ui_dimension = data.get('dimension', 'Users')
         time_zone = data.get('timeZone', 'UTC')
 
-        # STRICT API MAPPING:
-        # These are the only strings the Records API accepts for these categories.
+        # Map UI labels back to the specific singular strings the Records API requires
         dimension_map = {
-            'Company': 'Account',
             'Users': 'Extension',
-            'Queues': 'CallQueue'
+            'Queues': 'CallQueue',
+            'Company': 'Account'
         }
         
-        api_dimension = dimension_map.get(ui_dimension, 'Account')
+        api_dimension = dimension_map.get(ui_dimension, 'Extension')
 
         rc_analytics = RCBusinessAnalytics()
         time_settings = {
             "timeZone": time_zone,
-            "timeRange": {
-                "timeFrom": time_from,
-                "timeTo": time_to
-            }
+            "timeRange": {"timeFrom": time_from, "timeTo": time_to}
         }
 
-        # Request a broad page of 250 records for stitching
+        # Request data for the SPECIFIC dimension selected
         result = rc_analytics.fetch_records(
             dimension=api_dimension, 
             time_settings=time_settings,
             per_page=250 
         )
 
-        # Safety check: Ensure we always return a JSON object with a data list
         if not isinstance(result, dict) or 'data' not in result:
             result = {"data": []}
 
