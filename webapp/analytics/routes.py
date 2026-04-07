@@ -1,13 +1,8 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, request, jsonify
 from webapp.analytics.utils import RCBusinessAnalytics
 
 # Create a blueprint for the analytics module
 analytics_bp = Blueprint('analytics', __name__)
-
-@analytics_bp.route('/analytics')
-def analytics_dashboard():
-    """Renders the main Analytics HTML page."""
-    return render_template('analytics.html')
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
