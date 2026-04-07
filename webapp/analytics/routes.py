@@ -1,41 +1,42 @@
 from flask import Blueprint, request, jsonify
 from webapp.analytics.utils import RCBusinessAnalytics
-import logging
 
+# Create a blueprint for the analytics module
 analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
+    """API endpoint called by the frontend JS to fetch granular Call Records."""
+    data = request.json
+    if not data:
+        return jsonify({"error": "No payload provided."}), 400
+
+    time_from = data.get('timeFrom')
+    time_to = data.get('timeTo')
+    dimension = data.get('dimension', 'Queues') # Mapped from groupBy in UI
+    time_zone = data.get('timeZone', 'UTC')
+
+    # Initialize our API Wrapper
+    rc_analytics = RCBusinessAnalytics()
+
+    # Construct the TimeSettings based on OpenAPI 3.0.3 spec
+    time_settings = {
+        "timeZone": time_zone,
+        "timeRange": {
+            "timeFrom": time_from,
+            "timeTo": time_to
+        }
+    }
+
     try:
-        data = request.json or {}
-        time_from = data.get('timeFrom')
-        time_to = data.get('timeTo')
-        ui_dimension = data.get('dimension', 'Users')
-        time_zone = data.get('timeZone', 'UTC')
-
-        # Precise mapping for the Records API
-        dimension_map = {
-            'Users': 'Extension',
-            'Queues': 'CallQueue',
-            'Company': 'Account'
-        }
-        
-        api_dimension = dimension_map.get(ui_dimension, 'Extension')
-
-        rc_analytics = RCBusinessAnalytics()
-        time_settings = {
-            "timeZone": time_zone,
-            "timeRange": {"timeFrom": time_from, "timeTo": time_to}
-        }
-
+        # Fetch detailed call records
+        # Defaulting to 100 records per page (the max allowed by the API)
         result = rc_analytics.fetch_records(
-            dimension=api_dimension, 
+            dimension=dimension,
             time_settings=time_settings,
+            page=1,
             per_page=100 
         )
-
-        return jsonify(result if result else {"data": []})
-
+        return jsonify(result)
     except Exception as e:
-        logging.error(f"Analytics API Error: {str(e)}")
-        return jsonify({"error": str(e), "data": []}), 500
+        return jsonify({"error": str(e)}), 500
