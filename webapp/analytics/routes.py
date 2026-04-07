@@ -13,11 +13,12 @@ def get_call_records():
         ui_dimension = data.get('dimension', 'Users')
         time_zone = data.get('timeZone', 'UTC')
 
-        # Map UI labels back to the specific singular strings the Records API requires
+        # STRICT API MAPPING:
+        # Records API requires these exact strings. 'Extension' covers Users.
         dimension_map = {
             'Users': 'Extension',
             'Queues': 'CallQueue',
-            'Company': 'Account'
+            'EntireAccount': 'Account'
         }
         
         api_dimension = dimension_map.get(ui_dimension, 'Extension')
@@ -25,17 +26,20 @@ def get_call_records():
         rc_analytics = RCBusinessAnalytics()
         time_settings = {
             "timeZone": time_zone,
-            "timeRange": {"timeFrom": time_from, "timeTo": time_to}
+            "timeRange": {
+                "timeFrom": time_from,
+                "timeTo": time_to
+            }
         }
 
-        # Request data for the SPECIFIC dimension selected
+        # per_page=100 is the most stable limit across all account tiers
         result = rc_analytics.fetch_records(
             dimension=api_dimension, 
             time_settings=time_settings,
-            per_page=250 
+            per_page=100 
         )
 
-        if not isinstance(result, dict) or 'data' not in result:
+        if not result or 'data' not in result:
             result = {"data": []}
 
         return jsonify(result)
