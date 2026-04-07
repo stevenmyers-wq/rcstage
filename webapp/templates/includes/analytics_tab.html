@@ -148,10 +148,15 @@
 
             const data = await response.json();
 
-            if (!response.ok) throw new Error(data.error || 'Failed to fetch call records.');
+            // Use optional chaining to prevent null crashes if the API returns an error message
+            if (!response.ok) throw new Error(data?.error || 'Failed to fetch call records.');
 
             renderTable(data);
-            exportBtn.classList.remove('hidden');
+            
+            // Only show export button if we actually have data records to export
+            if (data && data.data && data.data.length > 0) {
+                exportBtn.classList.remove('hidden');
+            }
             
         } catch (error) {
             tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Failed to load records. Please try adjusting your filters.</td></tr>`;
@@ -196,8 +201,9 @@
         const tableBody = document.getElementById('tableBody');
         tableBody.innerHTML = '';
 
-        if (!data.data || data.data.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">No calls found for this date range.</td></tr>`;
+        // Safeguard: Check if data is null OR if data.data is null/empty
+        if (!data || !data.data || data.data.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">No calls found for this date range and dimension.</td></tr>`;
             return;
         }
 
@@ -259,7 +265,7 @@
                 const hTo = (hop.to && (hop.to.name || hop.to.number || hop.to.extensionNumber)) || 'Unknown';
                 const hType = hop.callType || 'Call';
                 const hResult = hop.result || 'Unknown';
-                const hResponse = hop.response || 'Unknown'; // Forensic tracking
+                const hResponse = hop.response || 'Unknown';
                 const hDur = formatSeconds((hop.duration || 0) / 1000);
                 const hopConfig = getStatusConfig(hResult);
                 
