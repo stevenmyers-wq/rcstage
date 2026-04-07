@@ -13,7 +13,7 @@
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Forensic end-to-end journey tracking. Call sessions are stitched by Call ID.</p>
+    <p class="text-slate-500 text-sm">Stitched Call Journey Tracking (Stitching Engine v2.1)</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
@@ -24,7 +24,7 @@
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Dimension</label>
                 <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
-                    <option value="Users">Users</option>
+                    <option value="Users">Users (Extensions)</option>
                     <option value="Queues">Call Queues</option>
                     <option value="Company">Entire Account</option>
                 </select>
@@ -37,15 +37,16 @@
                 <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
                 <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
             </div>
-            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
+            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition shadow-sm">
                 Fetch Full Journeys
             </button>
             <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
         </form>
 
         <div class="mt-8 pt-4 border-t border-slate-100">
-            <button onclick="document.getElementById('debugPanel').classList.toggle('hidden')" class="text-[10px] text-slate-400 hover:text-slate-600 uppercase font-bold tracking-widest">
-                Toggle Debug Panel
+            <p class="text-[10px] text-slate-400 font-bold uppercase mb-2">Debugging</p>
+            <button onclick="document.getElementById('debugPanel').classList.toggle('hidden')" class="text-[10px] text-blue-500 hover:underline font-bold uppercase tracking-widest">
+                Toggle Raw JSON View
             </button>
         </div>
     </div>
@@ -70,29 +71,29 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Fetch records to begin.</td></tr>
+                        <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Select parameters and fetch records.</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <div id="debugPanel" class="hidden bg-slate-900 text-green-400 p-4 rounded font-mono text-xs overflow-auto max-h-64 shadow-inner">
-            <div class="mb-2 text-slate-500">// Raw API Data</div>
-            <pre id="debugContent">Waiting for query...</pre>
+        <div id="debugPanel" class="hidden bg-slate-900 text-green-400 p-4 rounded font-mono text-xs overflow-auto max-h-96 shadow-inner">
+            <div class="mb-2 text-slate-500 border-b border-slate-800 pb-1 uppercase tracking-widest font-bold">Raw Analytics Output</div>
+            <pre id="debugContent">Waiting for API call...</pre>
         </div>
     </div>
 </div>
 
 <script>
-    // 1. Init Dates
+    // 1. Initialize Dates
     (function() {
-        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 1);
+        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 2); // Set back 2 days for stability
         const formatDt = (d) => {
             const tzOffset = (new Date()).getTimezoneOffset() * 60000;
             return (new Date(d - tzOffset)).toISOString().slice(0, 16);
         };
         document.getElementById('timeFrom').value = formatDt(start);
-        document.getElementById('timeTo').value = formatDt(end);
+        document.getElementById('timeTo').value = formatDt(new Date());
     })();
 
     // 2. Fetch Logic
@@ -104,10 +105,10 @@
         const debugContent = document.getElementById('debugContent');
         
         submitBtn.disabled = true;
-        submitBtn.innerHTML = `Querying...`;
+        submitBtn.innerHTML = `Running Stitcher...`;
         errorMsg.classList.add('hidden');
         
-        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Reconstructing Call Journeys...</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Consulting Analytics Cloud...</td></tr>`;
 
         try {
             const response = await fetch('/api/analytics/records', {
@@ -124,13 +125,14 @@
             const data = await response.json();
             debugContent.innerText = JSON.stringify(data, null, 2);
 
-            if (!response.ok) throw new Error(data?.error || 'Failed to fetch.');
+            if (!response.ok) throw new Error(data?.error || 'API Error.');
 
             renderTable(data);
             if (data?.data?.length > 0) document.getElementById('exportBtn').classList.remove('hidden');
             
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Request failed. Check Debug View.</td></tr>`;
+            console.error("UI Render Failure:", error);
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Request Failed. See Raw JSON view below for technical reason.</td></tr>`;
             errorMsg.innerText = error.message;
             errorMsg.classList.remove('hidden');
         } finally {
@@ -139,15 +141,15 @@
         }
     });
 
-    // 3. Rendering Logic
+    // 3. The Stitching & Rendering Engine
     function renderTable(payload) {
         const tableBody = document.getElementById('tableBody');
         tableBody.innerHTML = '';
         
-        if (!payload?.data || payload.data.length === 0) {
+        if (!payload || !payload.data || payload.data.length === 0) {
             tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">
-                <b>No records found.</b><br>
-                <span class="text-xs">Note: Analytics data is typically delayed by 2-4 hours.</span>
+                <p class="font-bold">No calls found in the RC Cloud for this range.</p>
+                <p class="text-xs mt-1">Check the Raw JSON view to confirm if RingCentral returned an empty set.</p>
             </td></tr>`;
             return;
         }
@@ -179,13 +181,13 @@
             if (!j.hops.length) return;
             const first = j.hops[0], last = j.hops[j.hops.length - 1];
             let res = last.result || 'Unknown';
-            if (j.hops.some(h => h.result === 'Voicemail' || h.segmentsDuration?.voicemail > 0)) res = 'Voicemail';
+            if (j.hops.some(h => h.result === 'Voicemail' || (h.segmentsDuration && h.segmentsDuration.voicemail > 0))) res = 'Voicemail';
             
             const durMs = j.hops.reduce((s,h) => s + (h.duration || 0), 0);
             const conf = getStatusConfig(res);
 
             const row = document.createElement('tr');
-            row.className = "hover:bg-blue-50 border-b cursor-pointer";
+            row.className = "hover:bg-blue-50 border-b cursor-pointer transition-colors";
             row.onclick = () => {
                 document.getElementById(`details-${idx}`).classList.toggle('hidden');
                 document.getElementById(`chevron-${idx}`).classList.toggle('open');
@@ -193,7 +195,7 @@
             row.innerHTML = `
                 <td class="px-4 py-4"><svg id="chevron-${idx}" class="chevron w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
                 <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
-                <td class="px-6 py-4 text-xs font-mono text-slate-400">${j.callId.slice(0,8)}...</td>
+                <td class="px-6 py-4 text-xs font-mono text-slate-400">${j.callId.slice(0,10)}...</td>
                 <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || first.from?.number || 'Unknown'}</td>
                 <td class="px-6 py-4 text-center"><span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold border border-blue-100">${j.hops.length}</span></td>
                 <td class="px-6 py-4 text-center"><span class="${conf.bg} ${conf.text} px-2.5 py-1 rounded-full text-xs font-bold border">${res}</span></td>
@@ -209,10 +211,10 @@
                 const hConf = getStatusConfig(h.result);
                 let segs = '';
                 const active = [{k:'ivrPrompt',l:'IVR'},{k:'ringing',l:'Ringing'},{k:'liveTalk',l:'Talk'},{k:'hold',l:'Hold'},{k:'vmGreeting',l:'VM'},{k:'voicemail',l:'Rec'}]
-                    .filter(o => h.segmentsDuration?.[o.k] > 0);
+                    .filter(o => h.segmentsDuration && h.segmentsDuration[o.k] > 0);
                 if (active.length) {
                     segs = `<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t">` + 
-                           active.map(a => `<span class="bg-white border text-[10px] px-2 py-1 rounded text-slate-600"><b>${a.l}:</b> ${formatSeconds(h.segmentsDuration[a.k]/1000)}</span>`).join(' ➔ ') + 
+                           active.map(a => `<span class="bg-white border text-[10px] px-2 py-1 rounded text-slate-600 shadow-sm"><b>${a.l}:</b> ${formatSeconds(h.segmentsDuration[a.k]/1000)}</span>`).join(' ➔ ') + 
                            `</div>`;
                 }
                 timeline += `
@@ -225,10 +227,10 @@
                                         <span class="text-[10px] font-bold bg-slate-800 text-white px-2 py-0.5 rounded uppercase">HOP ${hidx+1}</span>
                                         <span class="font-bold text-slate-900">${h.from?.number || 'Unknown'} ➔ ${h.to?.name || h.to?.number || 'Unknown'}</span>
                                     </div>
-                                    <div class="text-[9px] text-slate-400">SID: ${h.parentSid.slice(0,10)}...</div>
+                                    <div class="text-[9px] text-slate-400">Session: ${h.parentSid.slice(0,12)}...</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-xs font-black ${hConf.text} uppercase">${h.result}</div>
+                                    <div class="text-xs font-black ${hConf.text} uppercase tracking-tight">${h.result}</div>
                                     <div class="text-[10px] text-slate-500">${h.callType} • ${formatSeconds(h.duration/1000)}</div>
                                 </div>
                             </div>
