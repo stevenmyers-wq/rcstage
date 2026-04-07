@@ -16,7 +16,6 @@ class RCBusinessAnalytics:
         params = {"page": page, "perPage": per_page}
         result = rc_api_call(f"{self.base_path}/records/fetch", method="POST", json=payload, params=params)
         
-        # If the API returns None or an error, return a valid empty structure
         if result is None:
             return {"data": []}
         return result
