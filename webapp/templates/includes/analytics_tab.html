@@ -13,7 +13,7 @@
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Stitched Call Journey Tracking (Stitching Engine v2.1)</p>
+    <p class="text-slate-500 text-sm">Full Journey Tracking. Sessions are stitched by Call ID.</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
@@ -24,9 +24,9 @@
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Dimension</label>
                 <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
+                    <option value="Company">Entire Account (Recommended)</option>
                     <option value="Users">Users (Extensions)</option>
                     <option value="Queues">Call Queues</option>
-                    <option value="Company">Entire Account</option>
                 </select>
             </div>
             <div>
@@ -37,25 +37,23 @@
                 <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
                 <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
             </div>
-            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition shadow-sm">
+            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
                 Fetch Full Journeys
             </button>
-            <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
         </form>
 
         <div class="mt-8 pt-4 border-t border-slate-100">
-            <p class="text-[10px] text-slate-400 font-bold uppercase mb-2">Debugging</p>
-            <button onclick="document.getElementById('debugPanel').classList.toggle('hidden')" class="text-[10px] text-blue-500 hover:underline font-bold uppercase tracking-widest">
-                Toggle Raw JSON View
+            <button onclick="document.getElementById('debugPanel').classList.toggle('hidden')" class="text-[10px] text-slate-400 hover:text-slate-600 uppercase font-bold tracking-widest">
+                Toggle Debug View
             </button>
         </div>
     </div>
 
     <div class="w-full xl:w-3/4 flex flex-col gap-4">
-        <div class="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
+        <div class="bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
             <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                 <h3 class="font-bold text-slate-700">Unified Call Flow</h3>
-                <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden" id="exportBtn">Export Summary</button>
+                <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden" id="exportBtn">Export CSV</button>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left whitespace-nowrap">
@@ -71,23 +69,22 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Select parameters and fetch records.</td></tr>
+                        <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Fetch records to begin.</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <div id="debugPanel" class="hidden bg-slate-900 text-green-400 p-4 rounded font-mono text-xs overflow-auto max-h-96 shadow-inner">
-            <div class="mb-2 text-slate-500 border-b border-slate-800 pb-1 uppercase tracking-widest font-bold">Raw Analytics Output</div>
-            <pre id="debugContent">Waiting for API call...</pre>
+        <div id="debugPanel" class="hidden bg-slate-900 text-green-400 p-4 rounded font-mono text-xs overflow-auto max-h-64 shadow-inner">
+            <pre id="debugContent">Waiting for query...</pre>
         </div>
     </div>
 </div>
 
 <script>
-    // 1. Initialize Dates
+    // Set default dates to 2 days ago (for processing stability)
     (function() {
-        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 2); // Set back 2 days for stability
+        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 2); 
         const formatDt = (d) => {
             const tzOffset = (new Date()).getTimezoneOffset() * 60000;
             return (new Date(d - tzOffset)).toISOString().slice(0, 16);
@@ -96,17 +93,14 @@
         document.getElementById('timeTo').value = formatDt(new Date());
     })();
 
-    // 2. Fetch Logic
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const submitBtn = document.getElementById('submitBtn');
         const tableBody = document.getElementById('tableBody');
-        const errorMsg = document.getElementById('errorMsg');
         const debugContent = document.getElementById('debugContent');
         
         submitBtn.disabled = true;
-        submitBtn.innerHTML = `Running Stitcher...`;
-        errorMsg.classList.add('hidden');
+        submitBtn.innerHTML = `Querying...`;
         
         tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Consulting Analytics Cloud...</td></tr>`;
 
@@ -125,32 +119,31 @@
             const data = await response.json();
             debugContent.innerText = JSON.stringify(data, null, 2);
 
-            if (!response.ok) throw new Error(data?.error || 'API Error.');
-
             renderTable(data);
             if (data?.data?.length > 0) document.getElementById('exportBtn').classList.remove('hidden');
             
         } catch (error) {
-            console.error("UI Render Failure:", error);
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Request Failed. See Raw JSON view below for technical reason.</td></tr>`;
-            errorMsg.innerText = error.message;
-            errorMsg.classList.remove('hidden');
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Error: See Debug Panel below.</td></tr>`;
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = 'Fetch Full Journeys';
         }
     });
 
-    // 3. The Stitching & Rendering Engine
+    function getStatusConfig(res) {
+        const r = (res || '').toLowerCase();
+        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
+        if (['missed', 'abandoned'].includes(r)) return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
+        if (['voicemail'].includes(r)) return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
+        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
+    }
+
     function renderTable(payload) {
         const tableBody = document.getElementById('tableBody');
         tableBody.innerHTML = '';
         
-        if (!payload || !payload.data || payload.data.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">
-                <p class="font-bold">No calls found in the RC Cloud for this range.</p>
-                <p class="text-xs mt-1">Check the Raw JSON view to confirm if RingCentral returned an empty set.</p>
-            </td></tr>`;
+        if (!payload?.data?.length) {
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-500"><p class="font-bold">No calls found in this range.</p></td></tr>`;
             return;
         }
 
@@ -210,11 +203,11 @@
             j.hops.forEach((h, hidx) => {
                 const hConf = getStatusConfig(h.result);
                 let segs = '';
-                const active = [{k:'ivrPrompt',l:'IVR'},{k:'ringing',l:'Ringing'},{k:'liveTalk',l:'Talk'},{k:'hold',l:'Hold'},{k:'vmGreeting',l:'VM'},{k:'voicemail',l:'Rec'}]
-                    .filter(o => h.segmentsDuration && h.segmentsDuration[o.k] > 0);
+                const segOrder = [{k:'ivrPrompt',l:'IVR'},{k:'ringing',l:'Ringing'},{k:'liveTalk',l:'Talk'},{k:'hold',l:'Hold'},{k:'vmGreeting',l:'VM'},{k:'voicemail',l:'Rec'}];
+                const active = segOrder.filter(o => h.segmentsDuration && h.segmentsDuration[o.k] > 0);
                 if (active.length) {
                     segs = `<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t">` + 
-                           active.map(a => `<span class="bg-white border text-[10px] px-2 py-1 rounded text-slate-600 shadow-sm"><b>${a.l}:</b> ${formatSeconds(h.segmentsDuration[a.k]/1000)}</span>`).join(' ➔ ') + 
+                           active.map(a => `<span class="bg-white border text-[10px] px-2 py-1 rounded shadow-sm"><b>${a.l}:</b> ${formatSeconds(h.segmentsDuration[a.k]/1000)}</span>`).join(' ➔ ') + 
                            `</div>`;
                 }
                 timeline += `
@@ -224,13 +217,13 @@
                             <div class="flex justify-between items-start">
                                 <div class="flex flex-col gap-1">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-bold bg-slate-800 text-white px-2 py-0.5 rounded uppercase">HOP ${hidx+1}</span>
+                                        <span class="text-[10px] font-bold bg-slate-800 text-white px-2 py-0.5 rounded">HOP ${hidx+1}</span>
                                         <span class="font-bold text-slate-900">${h.from?.number || 'Unknown'} ➔ ${h.to?.name || h.to?.number || 'Unknown'}</span>
                                     </div>
                                     <div class="text-[9px] text-slate-400">Session: ${h.parentSid.slice(0,12)}...</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-xs font-black ${hConf.text} uppercase tracking-tight">${h.result}</div>
+                                    <div class="text-xs font-black ${hConf.text} uppercase">${h.result}</div>
                                     <div class="text-[10px] text-slate-500">${h.callType} • ${formatSeconds(h.duration/1000)}</div>
                                 </div>
                             </div>
@@ -249,11 +242,13 @@
         return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
     }
 
-    function getStatusConfig(res) {
-        const r = (res || '').toLowerCase();
-        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
-        if (['missed', 'abandoned'].includes(r)) return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
-        if (['voicemail'].includes(r)) return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
-        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
+    function exportToCSV() {
+        let csv = "Start Time,Call ID,Originator,Hops,Result,Duration\n";
+        document.querySelectorAll(".summary-row").forEach(r => {
+            csv += Array.from(r.children).slice(1).map(c => `"${c.innerText.trim()}"`).join(",") + "\n";
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'RC_Analytics.csv'; a.click();
     }
 </script>
