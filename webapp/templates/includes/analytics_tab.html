@@ -4,19 +4,29 @@
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     
-    /* Chevron animation for accordion */
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
+    
+    /* Custom Timeline styling */
+    .journey-timeline::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 20px;
+        width: 2px;
+        background-color: #e2e8f0; /* slate-200 */
+    }
 </style>
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Fetch granular, call-by-call logs and view end-to-end routing hops and segment durations.</p>
+    <p class="text-slate-500 text-sm">Fetch granular, call-by-call logs to view end-to-end routing journeys and segment breakdowns.</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
     
-    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
+    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
         <h3 class="font-bold text-lg text-slate-800 mb-4">Report Parameters</h3>
         
         <form id="analyticsForm" class="space-y-4">
@@ -44,14 +54,14 @@
                 Fetch Call Flow Records
             </button>
             
-            <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2"></div>
+            <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
         </form>
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
         <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <h3 class="font-bold text-slate-700">End-to-End Call Logs</h3>
-            <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 px-3 rounded hidden" id="exportBtn">
+            <h3 class="font-bold text-slate-700">End-to-End Call Journeys</h3>
+            <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden transition-colors" id="exportBtn">
                 Export Summary CSV
             </button>
         </div>
@@ -71,7 +81,10 @@
                 </thead>
                 <tbody id="tableBody" class="divide-y divide-slate-100">
                     <tr>
-                        <td colspan="7" class="px-6 py-8 text-center text-slate-400">
+                        <td colspan="7" class="px-6 py-12 text-center text-slate-400">
+                            <svg class="mx-auto h-12 w-12 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                            </svg>
                             Select parameters and click "Fetch Call Flow Records" to view granular logs.
                         </td>
                     </tr>
@@ -111,11 +124,17 @@
         const exportBtn = document.getElementById('exportBtn');
         
         submitBtn.disabled = true;
-        submitBtn.innerText = 'Fetching Call Flows...';
+        submitBtn.innerHTML = `<span class="animate-pulse">Fetching...</span>`;
         errorMsg.classList.add('hidden');
         exportBtn.classList.add('hidden');
         
-        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-blue-600 font-semibold animate-pulse">Fetching end-to-end call records...</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold">
+            <svg class="animate-spin mx-auto h-8 w-8 text-blue-500 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Querying RingCentral API...
+        </td></tr>`;
 
         const timeFrom = new Date(document.getElementById('timeFrom').value).toISOString();
         const timeTo = new Date(document.getElementById('timeTo').value).toISOString();
@@ -137,7 +156,7 @@
             exportBtn.classList.remove('hidden');
             
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Failed to load records.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Failed to load records. Please try adjusting your filters.</td></tr>`;
             errorMsg.innerText = error.message;
             errorMsg.classList.remove('hidden');
         } finally {
@@ -146,7 +165,6 @@
         }
     });
 
-    // Global toggle function for accordion rows
     window.toggleDetails = function(rowId) {
         const detailsRow = document.getElementById(`details-${rowId}`);
         const chevron = document.getElementById(`chevron-${rowId}`);
@@ -158,6 +176,24 @@
             chevron.classList.remove('open');
         }
     };
+
+    // Helper to get consistent status coloring
+    function getStatusConfig(result) {
+        const r = (result || '').toLowerCase();
+        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) {
+            return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
+        }
+        if (['missed', 'abandoned'].includes(r)) {
+            return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
+        }
+        if (['voicemail'].includes(r)) {
+            return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
+        }
+        if (['transferred', 'forwarded'].includes(r)) {
+            return { text: 'text-purple-700', bg: 'bg-purple-100', dot: 'bg-purple-500', border: 'border-purple-200' };
+        }
+        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
+    }
 
     function renderTable(data) {
         const tableBody = document.getElementById('tableBody');
@@ -176,102 +212,122 @@
             const lastHop = hops[hops.length - 1];
             
             const startTime = new Date(firstHop.startedAt).toLocaleString();
-            const shortCallId = record.callId ? record.callId.substring(0, 10) + '...' : '-';
+            const shortCallId = record.callId ? record.callId.substring(0, 11) + '...' : '-';
             
-            // Overall Originator
             const originator = (firstHop.from && (firstHop.from.name || firstHop.from.number || firstHop.from.extensionNumber)) || 'Unknown';
+            const finalResult = lastHop.result || firstHop.result || 'Unknown';
             
-            // Final Result of the whole call is usually determined by the last hop
-            const finalResult = lastHop.result || firstHop.result || '-';
-            
-            // Calculate total duration across all hops
             const totalDurationMs = hops.reduce((sum, h) => sum + (h.duration || 0), 0);
             const totalDurationFmt = formatSeconds(totalDurationMs / 1000);
 
-            // Coloring for final result
-            let resultColor = "text-slate-700";
-            if (["Completed", "Accepted", "Answered"].includes(finalResult)) resultColor = "text-green-600 font-medium";
-            if (["Missed", "Abandoned"].includes(finalResult)) resultColor = "text-red-600 font-medium";
-            if (finalResult === "Voicemail") resultColor = "text-orange-500 font-medium";
-
-            const rowClass = index % 2 === 0 ? "bg-white" : "bg-slate-50";
+            const resultConfig = getStatusConfig(finalResult);
+            const rowClass = index % 2 === 0 ? "bg-white" : "bg-slate-50/50";
 
             // Main Row (Summary)
             const trMain = document.createElement('tr');
-            trMain.className = `${rowClass} hover:bg-blue-50 border-b border-slate-100 cursor-pointer summary-row`;
+            trMain.className = `${rowClass} hover:bg-blue-50 border-b border-slate-100 cursor-pointer summary-row transition-colors`;
             trMain.setAttribute('onclick', `toggleDetails(${index})`);
             trMain.innerHTML = `
-                <td class="px-4 py-3 text-slate-400">
-                    <svg id="chevron-${index}" class="chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                <td class="px-4 py-4 text-slate-400">
+                    <svg id="chevron-${index}" class="chevron w-5 h-5 text-slate-400 hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </td>
-                <td class="px-6 py-3">${startTime}</td>
-                <td class="px-6 py-3 text-slate-500 font-mono text-xs" title="${record.callId}">${shortCallId}</td>
-                <td class="px-6 py-3 font-medium text-slate-700">${originator}</td>
-                <td class="px-6 py-3 text-center"><span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-full">${hops.length}</span></td>
-                <td class="px-6 py-3 text-center ${resultColor}">${finalResult}</td>
-                <td class="px-6 py-3 text-center font-semibold text-slate-700">${totalDurationFmt}</td>
+                <td class="px-6 py-4 font-medium text-slate-700">${startTime}</td>
+                <td class="px-6 py-4 text-slate-500 font-mono text-xs" title="${record.callId}">${shortCallId}</td>
+                <td class="px-6 py-4 font-semibold text-slate-800">${originator}</td>
+                <td class="px-6 py-4 text-center">
+                    <span class="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2.5 py-1 rounded-full">${hops.length}</span>
+                </td>
+                <td class="px-6 py-4 text-center">
+                    <span class="${resultConfig.bg} ${resultConfig.text} border ${resultConfig.border} text-xs font-bold px-2.5 py-1 rounded-full">${finalResult}</span>
+                </td>
+                <td class="px-6 py-4 text-center font-medium text-slate-700">${totalDurationFmt}</td>
             `;
             tableBody.appendChild(trMain);
 
-            // Details Row (Hops & Segments)
+            // Details Row (The Visual Timeline)
             const trDetails = document.createElement('tr');
             trDetails.id = `details-${index}`;
-            trDetails.className = `hidden bg-slate-100 border-b border-slate-200`;
+            trDetails.className = `hidden bg-slate-50 border-b-2 border-slate-200 shadow-inner`;
             
-            let hopsHtml = `<div class="p-4 w-full flex flex-col space-y-3">`;
+            let hopsHtml = `<div class="p-6 w-full max-w-5xl mx-auto relative journey-timeline">`;
             
             hops.forEach((hop, hIndex) => {
                 const hFrom = (hop.from && (hop.from.name || hop.from.number || hop.from.extensionNumber)) || 'Unknown';
                 const hTo = (hop.to && (hop.to.name || hop.to.number || hop.to.extensionNumber)) || 'Unknown';
                 const hType = hop.callType || 'Call';
-                const hResult = hop.result || '-';
+                const hResult = hop.result || 'Unknown';
                 const hDur = formatSeconds((hop.duration || 0) / 1000);
+                const hopConfig = getStatusConfig(hResult);
                 
-                // Build Segments Badges
+                // Segments Logic: Force a logical chronological order for rendering
                 let segmentsHtml = '';
                 if (hop.segmentsDuration) {
                     const segs = hop.segmentsDuration;
                     const segmentsToDisplay = [];
-                    // Map API keys to readable labels and colors
-                    const segMap = [
-                        { key: 'setup', label: 'Setup', color: 'bg-slate-200 text-slate-700' },
-                        { key: 'ivrPrompt', label: 'IVR Prompt', color: 'bg-indigo-100 text-indigo-800' },
-                        { key: 'ringing', label: 'Ringing', color: 'bg-yellow-100 text-yellow-800' },
-                        { key: 'liveTalk', label: 'Talk', color: 'bg-green-100 text-green-800' },
-                        { key: 'hold', label: 'Hold', color: 'bg-red-100 text-red-800' },
-                        { key: 'park', label: 'Park', color: 'bg-orange-100 text-orange-800' },
-                        { key: 'transfer', label: 'Transfer', color: 'bg-purple-100 text-purple-800' },
-                        { key: 'vmGreeting', label: 'VM Greeting', color: 'bg-pink-100 text-pink-800' },
-                        { key: 'voicemail', label: 'Voicemail (Rec)', color: 'bg-rose-100 text-rose-800' }
+                    
+                    // Logical chronological order of a phone call
+                    const chronologicalOrder = [
+                        { key: 'setup', label: 'Setup', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+                        { key: 'ivrPrompt', label: 'IVR', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z' },
+                        { key: 'ringing', label: 'Ringing', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+                        { key: 'liveTalk', label: 'Talk', icon: 'M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z' },
+                        { key: 'hold', label: 'Hold', icon: 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+                        { key: 'park', label: 'Park', icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4' },
+                        { key: 'transfer', label: 'Transfer', icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4' },
+                        { key: 'vmGreeting', label: 'VM Greeting', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z' },
+                        { key: 'voicemail', label: 'Voicemail', icon: 'M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z' },
+                        { key: 'forwarding', label: 'Forwarding', icon: 'M13 5l7 7-7 7M5 5l7 7-7 7' }
                     ];
 
-                    segMap.forEach(s => {
+                    chronologicalOrder.forEach(s => {
                         if (segs[s.key] && segs[s.key] > 0) {
-                            segmentsToDisplay.push(`<span class="${s.color} text-[10px] font-semibold px-2 py-0.5 rounded border border-white/20">${s.label}: ${formatSeconds(segs[s.key]/1000)}</span>`);
+                            segmentsToDisplay.push(`
+                                <div class="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded text-slate-600">
+                                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${s.icon}"></path></svg>
+                                    <span class="text-[11px] font-semibold">${s.label}: ${formatSeconds(segs[s.key]/1000)}</span>
+                                </div>
+                            `);
                         }
                     });
 
                     if (segmentsToDisplay.length > 0) {
-                        segmentsHtml = `<div class="flex flex-wrap gap-1 mt-2">${segmentsToDisplay.join('')}</div>`;
+                        // Join segments with an arrow indicating flow
+                        const arrowDivider = `<svg class="w-3 h-3 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
+                        segmentsHtml = `<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                                            ${segmentsToDisplay.join(arrowDivider)}
+                                        </div>`;
                     }
                 }
 
+                // Node marker on the timeline
                 hopsHtml += `
-                    <div class="bg-white border border-slate-200 rounded p-3 shadow-sm ml-6 relative">
-                        <div class="absolute -left-3 top-4 w-3 h-0.5 bg-slate-300"></div>
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <span class="text-xs font-bold uppercase tracking-wider text-slate-400 mr-2">Hop ${hIndex + 1}</span>
-                                <span class="font-medium text-slate-800 text-sm">${hFrom}</span>
-                                <span class="text-slate-400 mx-1">➔</span>
-                                <span class="font-medium text-slate-800 text-sm">${hTo}</span>
+                    <div class="relative pl-10 pb-6 last:pb-0">
+                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full ${hopConfig.dot} border-[3px] border-white shadow-sm z-10"></div>
+                        
+                        <div class="bg-white border ${hopConfig.border} rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                            
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                                <div class="flex items-center flex-wrap gap-2">
+                                    <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">Hop ${hIndex + 1}</span>
+                                    <span class="font-bold text-slate-800">${hFrom}</span>
+                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                                    <span class="font-bold text-slate-800">${hTo}</span>
+                                </div>
+                                
+                                <div class="flex items-center gap-3 text-right">
+                                    <div class="flex flex-col items-end">
+                                        <span class="text-xs font-semibold text-slate-500">${hType}</span>
+                                        <span class="text-sm font-bold ${hopConfig.text}">${hResult}</span>
+                                    </div>
+                                    <div class="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md text-sm font-medium text-slate-600">
+                                        ⏱ ${hDur}
+                                    </div>
+                                </div>
                             </div>
-                            <div class="text-right">
-                                <div class="text-xs font-semibold text-slate-500">${hType} • ${hResult}</div>
-                                <div class="text-xs text-slate-400">${hDur}</div>
-                            </div>
+                            
+                            ${segmentsHtml}
+                            
                         </div>
-                        ${segmentsHtml}
                     </div>
                 `;
             });
@@ -290,16 +346,14 @@
     }
 
     function exportToCSV() {
-        // Only exports the main summary rows to keep CSV flat
         const rows = document.querySelectorAll("table tr.summary-row");
         let csvContent = "Start Time,Call ID,Originator,Total Hops,Final Result,Total Duration\r\n";
         
         rows.forEach(row => {
             const cols = row.querySelectorAll("td");
             if (cols.length > 1) { 
-                // Skip the chevron column (index 0)
                 const rowData = Array.from(cols).slice(1).map(col => {
-                    let text = col.getAttribute("title") || col.innerText;
+                    let text = col.getAttribute("title") || col.innerText.trim();
                     return `"${text}"`;
                 }).join(",");
                 csvContent += rowData + "\r\n";
