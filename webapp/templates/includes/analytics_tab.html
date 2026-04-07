@@ -3,65 +3,90 @@
     .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
+    
     .journey-timeline::before {
-        content: ''; position: absolute; top: 0; bottom: 0;
-        left: 20px; width: 2px; background-color: #e2e8f0;
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 20px;
+        width: 2px;
+        background-color: #e2e8f0;
     }
 </style>
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Direct session logging. View granular hop-by-hop details for every call.</p>
+    <p class="text-slate-500 text-sm">Fetch granular, call-by-call logs to view end-to-end routing journeys and segment breakdowns.</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
     
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
-        <h3 class="font-bold text-lg text-slate-800 mb-4">Filters</h3>
+        <h3 class="font-bold text-lg text-slate-800 mb-4">Report Parameters</h3>
+        
         <form id="analyticsForm" class="space-y-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Dimension</label>
-                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
-                    <option value="Users">Users</option>
+                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
                     <option value="Queues">Call Queues</option>
-                    <option value="Company">Entire Account</option>
+                    <option value="Users">Users</option>
+                    <option value="Sites">Sites</option>
+                    <option value="IVRs">IVR Menus</option>
                 </select>
             </div>
+
             <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
-                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Start Date & Time</label>
+                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
             </div>
+
             <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
-                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                <label class="block text-sm font-medium text-slate-700 mb-1">End Date & Time</label>
+                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
             </div>
-            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
-                Fetch Records
+
+            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-150 ease-in-out mt-2">
+                Fetch Call Flow Records
             </button>
+            
+            <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
         </form>
     </div>
 
     <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
         <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <h3 class="font-bold text-slate-700">Call Logs</h3>
+            <h3 class="font-bold text-slate-700">End-to-End Call Journeys</h3>
+            <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden transition-colors" id="exportBtn">
+                Export Summary CSV
+            </button>
         </div>
+        
         <div class="table-container overflow-x-auto w-full">
             <table class="w-full text-sm text-left whitespace-nowrap">
-                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b">
+                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b border-slate-200">
                     <tr>
-                        <th class="px-4 py-3 w-8"></th>
-                        <th class="px-6 py-3">Start Time</th>
-                        <th class="px-6 py-3">Call ID</th>
-                        <th class="px-6 py-3">Originator</th>
-                        <th class="px-6 py-3 text-center">Hops</th>
-                        <th class="px-6 py-3 text-center">Result</th>
-                        <th class="px-6 py-3 text-center">Duration</th>
+                        <th scope="col" class="px-4 py-3 w-8"></th>
+                        <th scope="col" class="px-6 py-3">Start Time</th>
+                        <th scope="col" class="px-6 py-3">Call ID</th>
+                        <th scope="col" class="px-6 py-3">Originator</th>
+                        <th scope="col" class="px-6 py-3 text-center">Hops</th>
+                        <th scope="col" class="px-6 py-3 text-center">Final Result</th>
+                        <th scope="col" class="px-6 py-3 text-center">Total Duration</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody" class="divide-y divide-slate-100">
-                    <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Fetch records to begin.</td></tr>
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-slate-400">
+                            <svg class="mx-auto h-12 w-12 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                            </svg>
+                            Select parameters and click "Fetch Call Flow Records" to view granular logs.
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -70,131 +95,281 @@
 
 <script>
     (function() {
-        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 1); 
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 1);
+        
         const formatDt = (d) => {
             const tzOffset = (new Date()).getTimezoneOffset() * 60000;
             return (new Date(d - tzOffset)).toISOString().slice(0, 16);
         };
-        document.getElementById('timeFrom').value = formatDt(start);
-        document.getElementById('timeTo').value = formatDt(end);
+        
+        const fromInput = document.getElementById('timeFrom');
+        const toInput = document.getElementById('timeTo');
+        
+        if (fromInput && toInput) {
+            fromInput.value = formatDt(start);
+            toInput.value = formatDt(end);
+        }
     })();
 
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
         const submitBtn = document.getElementById('submitBtn');
         const tableBody = document.getElementById('tableBody');
+        const errorMsg = document.getElementById('errorMsg');
+        const exportBtn = document.getElementById('exportBtn');
         
         submitBtn.disabled = true;
-        submitBtn.innerHTML = `Loading...`;
-        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Fetching records...</td></tr>`;
+        submitBtn.innerHTML = `<span class="animate-pulse">Fetching...</span>`;
+        errorMsg.classList.add('hidden');
+        exportBtn.classList.add('hidden');
+        
+        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold">
+            <svg class="animate-spin mx-auto h-8 w-8 text-blue-500 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Querying RingCentral API...
+        </td></tr>`;
+
+        const timeFrom = new Date(document.getElementById('timeFrom').value).toISOString();
+        const timeTo = new Date(document.getElementById('timeTo').value).toISOString();
+        const dimension = document.getElementById('dimension').value;
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
         try {
             const response = await fetch('/api/analytics/records', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
-                    timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
-                    dimension: document.getElementById('dimension').value,
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-                })
+                body: JSON.stringify({ timeFrom, timeTo, dimension, timeZone })
             });
 
             const data = await response.json();
+
+            // Use optional chaining to prevent null crashes if the API returns an error message
+            if (!response.ok) throw new Error(data?.error || 'Failed to fetch call records.');
+
             renderTable(data);
             
+            // Only show export button if we actually have data records to export
+            if (data && data.data && data.data.length > 0) {
+                exportBtn.classList.remove('hidden');
+            }
+            
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Request failed. Check filters.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Failed to load records. Please try adjusting your filters.</td></tr>`;
+            errorMsg.innerText = error.message;
+            errorMsg.classList.remove('hidden');
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerText = 'Fetch Records';
+            submitBtn.innerText = 'Fetch Call Flow Records';
         }
     });
 
-    function getStatusConfig(res) {
-        const r = (res || '').toLowerCase();
-        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500' };
-        if (['missed', 'abandoned'].includes(r)) return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500' };
-        if (['voicemail'].includes(r)) return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500' };
-        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400' };
+    window.toggleDetails = function(rowId) {
+        const detailsRow = document.getElementById(`details-${rowId}`);
+        const chevron = document.getElementById(`chevron-${rowId}`);
+        if (detailsRow.classList.contains('hidden')) {
+            detailsRow.classList.remove('hidden');
+            chevron.classList.add('open');
+        } else {
+            detailsRow.classList.add('hidden');
+            chevron.classList.remove('open');
+        }
+    };
+
+    function getStatusConfig(result) {
+        const r = (result || '').toLowerCase();
+        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) {
+            return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
+        }
+        if (['missed', 'abandoned'].includes(r)) {
+            return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
+        }
+        if (['voicemail'].includes(r)) {
+            return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
+        }
+        if (['transferred', 'forwarded'].includes(r)) {
+            return { text: 'text-purple-700', bg: 'bg-purple-100', dot: 'bg-purple-500', border: 'border-purple-200' };
+        }
+        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
     }
 
-    function renderTable(payload) {
+    function renderTable(data) {
         const tableBody = document.getElementById('tableBody');
         tableBody.innerHTML = '';
-        
-        if (!payload?.data?.length) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">No records found.</td></tr>`;
+
+        // Safeguard: Check if data is null OR if data.data is null/empty
+        if (!data || !data.data || data.data.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">No calls found for this date range and dimension.</td></tr>`;
             return;
         }
 
-        payload.data.forEach((session, idx) => {
-            const hops = session.hops || [];
-            if (!hops.length) return;
+        data.data.forEach((record, index) => {
+            const hops = record.hops || [];
+            if (hops.length === 0) return;
 
-            const first = hops[0], last = hops[hops.length - 1];
-            const conf = getStatusConfig(last.result);
-            const dur = formatSeconds(hops.reduce((s, h) => s + (h.duration || 0), 0) / 1000);
+            const firstHop = hops[0];
+            const lastHop = hops[hops.length - 1];
+            
+            const startTime = new Date(firstHop.startedAt).toLocaleString();
+            const shortCallId = record.callId ? record.callId.substring(0, 11) + '...' : '-';
+            const originator = (firstHop.from && (firstHop.from.name || firstHop.from.number || firstHop.from.extensionNumber)) || 'Unknown';
+            
+            // Forensic logic: If API says completed, but a VM segment exists anywhere, force it to Voicemail
+            let finalResult = lastHop.result || firstHop.result || 'Unknown';
+            const wentToVm = hops.some(h => 
+                h.result === 'Voicemail' || 
+                (h.segmentsDuration && (h.segmentsDuration.voicemail > 0 || h.segmentsDuration.vmGreeting > 0))
+            );
+            if (wentToVm) finalResult = 'Voicemail';
+            
+            const totalDurationMs = hops.reduce((sum, h) => sum + (h.duration || 0), 0);
+            const totalDurationFmt = formatSeconds(totalDurationMs / 1000);
 
-            const row = document.createElement('tr');
-            row.className = "hover:bg-blue-50 border-b cursor-pointer transition-colors";
-            row.onclick = () => {
-                document.getElementById(`details-${idx}`).classList.toggle('hidden');
-                document.getElementById(`chevron-${idx}`).classList.toggle('open');
-            };
-            row.innerHTML = `
-                <td class="px-4 py-4"><svg id="chevron-${idx}" class="chevron w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
-                <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
-                <td class="px-6 py-4 text-xs font-mono text-slate-400">${session.callId.slice(0,10)}...</td>
-                <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || first.from?.number || 'Unknown'}</td>
-                <td class="px-6 py-4 text-center"><span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold border border-blue-100">${hops.length}</span></td>
-                <td class="px-6 py-4 text-center"><span class="${conf.bg} ${conf.text} px-2.5 py-1 rounded-full text-xs font-bold border">${last.result || 'Completed'}</span></td>
-                <td class="px-6 py-4 text-center font-medium">${dur}</td>
+            const resultConfig = getStatusConfig(finalResult);
+            const rowClass = index % 2 === 0 ? "bg-white" : "bg-slate-50/50";
+
+            // Main Row
+            const trMain = document.createElement('tr');
+            trMain.className = `${rowClass} hover:bg-blue-50 border-b border-slate-100 cursor-pointer summary-row transition-colors`;
+            trMain.setAttribute('onclick', `toggleDetails(${index})`);
+            trMain.innerHTML = `
+                <td class="px-4 py-4 text-slate-400">
+                    <svg id="chevron-${index}" class="chevron w-5 h-5 text-slate-400 hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </td>
+                <td class="px-6 py-4 font-medium text-slate-700">${startTime}</td>
+                <td class="px-6 py-4 text-slate-500 font-mono text-xs" title="${record.callId}">${shortCallId}</td>
+                <td class="px-6 py-4 font-semibold text-slate-800">${originator}</td>
+                <td class="px-6 py-4 text-center">
+                    <span class="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2.5 py-1 rounded-full">${hops.length}</span>
+                </td>
+                <td class="px-6 py-4 text-center">
+                    <span class="${resultConfig.bg} ${resultConfig.text} border ${resultConfig.border} text-xs font-bold px-2.5 py-1 rounded-full">${finalResult}</span>
+                </td>
+                <td class="px-6 py-4 text-center font-medium text-slate-700">${totalDurationFmt}</td>
             `;
-            tableBody.appendChild(row);
+            tableBody.appendChild(trMain);
 
-            const det = document.createElement('tr');
-            det.id = `details-${idx}`;
-            det.className = "hidden bg-slate-50 border-b-2 shadow-inner";
-            let timeline = `<div class="p-8 max-w-5xl mx-auto relative journey-timeline">`;
-            hops.forEach((h, hidx) => {
-                const hConf = getStatusConfig(h.result);
-                let segs = '';
-                const segOrder = [{k:'ivrPrompt',l:'IVR'},{k:'ringing',l:'Ringing'},{k:'liveTalk',l:'Talk'},{k:'hold',l:'Hold'},{k:'vmGreeting',l:'VM'},{k:'voicemail',l:'Rec'}];
-                const active = segOrder.filter(o => h.segmentsDuration && h.segmentsDuration[o.k] > 0);
-                if (active.length) {
-                    segs = `<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t">` + 
-                           active.map(a => `<span class="bg-white border text-[10px] px-2 py-1 rounded shadow-sm"><b>${a.l}:</b> ${formatSeconds(h.segmentsDuration[a.k]/1000)}</span>`).join(' ➔ ') + 
-                           `</div>`;
-                }
-                timeline += `
-                    <div class="relative pl-10 pb-8 last:pb-0">
-                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full ${hConf.dot} border-[3px] border-white z-10 shadow-sm"></div>
-                        <div class="bg-white border rounded-xl p-4 shadow-sm">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-bold bg-slate-800 text-white px-2 py-0.5 rounded">HOP ${hidx+1}</span>
-                                        <span class="font-bold text-slate-900">${h.from?.number || 'Unknown'} ➔ ${h.to?.name || h.to?.number || 'Unknown'}</span>
-                                    </div>
-                                    <div class="text-[10px] text-slate-500 mt-1">${h.callType} • Result: ${h.result}</div>
+            // Details Row
+            const trDetails = document.createElement('tr');
+            trDetails.id = `details-${index}`;
+            trDetails.className = `hidden bg-slate-50 border-b-2 border-slate-200 shadow-inner`;
+            
+            let hopsHtml = `<div class="p-6 w-full max-w-5xl mx-auto relative journey-timeline">`;
+            
+            hops.forEach((hop, hIndex) => {
+                const hFrom = (hop.from && (hop.from.name || hop.from.number || hop.from.extensionNumber)) || 'Unknown';
+                const hTo = (hop.to && (hop.to.name || hop.to.number || hop.to.extensionNumber)) || 'Unknown';
+                const hType = hop.callType || 'Call';
+                const hResult = hop.result || 'Unknown';
+                const hResponse = hop.response || 'Unknown';
+                const hDur = formatSeconds((hop.duration || 0) / 1000);
+                const hopConfig = getStatusConfig(hResult);
+                
+                let segmentsHtml = '';
+                if (hop.segmentsDuration) {
+                    const segs = hop.segmentsDuration;
+                    const segmentsToDisplay = [];
+                    
+                    const chronologicalOrder = [
+                        { key: 'setup', label: 'Setup', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+                        { key: 'ivrPrompt', label: 'IVR', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z' },
+                        { key: 'ringing', label: 'Ringing', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+                        { key: 'liveTalk', label: 'Talk', icon: 'M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z' },
+                        { key: 'hold', label: 'Hold', icon: 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+                        { key: 'park', label: 'Park', icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4' },
+                        { key: 'transfer', label: 'Transfer', icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4' },
+                        { key: 'vmGreeting', label: 'VM Greeting', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z' },
+                        { key: 'voicemail', label: 'Voicemail', icon: 'M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z' },
+                        { key: 'forwarding', label: 'Forwarding', icon: 'M13 5l7 7-7 7M5 5l7 7-7 7' }
+                    ];
+
+                    chronologicalOrder.forEach(s => {
+                        if (segs[s.key] && segs[s.key] > 0) {
+                            segmentsToDisplay.push(`
+                                <div class="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded text-slate-600">
+                                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${s.icon}"></path></svg>
+                                    <span class="text-[11px] font-semibold">${s.label}: ${formatSeconds(segs[s.key]/1000)}</span>
                                 </div>
-                                <div class="text-right text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                    ${formatSeconds(h.duration/1000)}
+                            `);
+                        }
+                    });
+
+                    if (segmentsToDisplay.length > 0) {
+                        const arrowDivider = `<svg class="w-3 h-3 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
+                        segmentsHtml = `<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                                            ${segmentsToDisplay.join(arrowDivider)}
+                                        </div>`;
+                    }
+                }
+
+                hopsHtml += `
+                    <div class="relative pl-10 pb-6 last:pb-0">
+                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full ${hopConfig.dot} border-[3px] border-white shadow-sm z-10"></div>
+                        
+                        <div class="bg-white border ${hopConfig.border} rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                                <div class="flex items-center flex-wrap gap-2">
+                                    <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">Hop ${hIndex + 1}</span>
+                                    <span class="font-bold text-slate-800">${hFrom}</span>
+                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                                    <span class="font-bold text-slate-800">${hTo}</span>
+                                </div>
+                                
+                                <div class="flex items-center gap-3 text-right">
+                                    <div class="flex flex-col items-end">
+                                        <span class="text-xs font-semibold text-slate-500">${hType} • ${hResponse}</span>
+                                        <span class="text-sm font-bold ${hopConfig.text}">${hResult}</span>
+                                    </div>
+                                    <div class="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md text-sm font-medium text-slate-600">
+                                        ⏱ ${hDur}
+                                    </div>
                                 </div>
                             </div>
-                            ${segs}
+                            ${segmentsHtml}
                         </div>
-                    </div>`;
+                    </div>
+                `;
             });
-            det.innerHTML = `<td colspan="7" class="p-0">${timeline}</div></td>`;
-            tableBody.appendChild(det);
+            
+            hopsHtml += `</div>`;
+            trDetails.innerHTML = `<td colspan="7" class="p-0">${hopsHtml}</td>`;
+            tableBody.appendChild(trDetails);
         });
     }
 
-    function formatSeconds(s) {
-        if (!s || s <= 0) return "0s";
-        const m = Math.floor(s/60); const sec = Math.round(s%60);
-        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    function formatSeconds(sec) {
+        if (!sec || sec <= 0) return "0s";
+        const m = Math.floor(sec / 60);
+        const s = Math.round(sec % 60);
+        return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+
+    function exportToCSV() {
+        const rows = document.querySelectorAll("table tr.summary-row");
+        let csvContent = "Start Time,Call ID,Originator,Total Hops,Final Result,Total Duration\r\n";
+        
+        rows.forEach(row => {
+            const cols = row.querySelectorAll("td");
+            if (cols.length > 1) { 
+                const rowData = Array.from(cols).slice(1).map(col => {
+                    let text = col.getAttribute("title") || col.innerText.trim();
+                    return `"${text}"`;
+                }).join(",");
+                csvContent += rowData + "\r\n";
+            }
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "RC_CallFlow_Summary.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 </script>
