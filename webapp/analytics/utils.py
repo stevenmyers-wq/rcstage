@@ -18,13 +18,6 @@ class RCBusinessAnalytics:
         """
         POST /analytics/calls/v1/accounts/{accountId}/aggregation/fetch
         Returns call aggregations filtered by specified parameters.
-        
-        :param grouping: dict (e.g., {"groupBy": "Queues", "keys": ["1111"]})
-        :param time_settings: dict (e.g., {"timeZone": "America/New_York", "timeRange": {"timeFrom": "...", "timeTo": "..."}})
-        :param response_options: dict (e.g., {"counters": {"allCalls": {"aggregationType": "Sum"}}})
-        :param call_filters: dict (Optional filters)
-        :param page: int (Default 1)
-        :param per_page: int (Default 200, Max 200)
         """
         payload = {
             "grouping": grouping,
