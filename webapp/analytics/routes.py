@@ -8,21 +8,24 @@ analytics_bp = Blueprint('analytics', __name__)
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
     """
-    API endpoint to fetch broad Call Records.
-    We use dimension='Company' to ensure we get all session legs for stitching.
+    API endpoint to fetch Call Records.
+    Restored dimension selection to ensure data returns based on user permissions.
     """
     try:
         data = request.json
         if not data:
             return jsonify({"error": "Missing request body"}), 400
 
+        # Extract parameters with defaults
         time_from = data.get('timeFrom')
         time_to = data.get('timeTo')
+        dimension = data.get('dimension', 'Company')
         time_zone = data.get('timeZone', 'UTC')
 
         if not time_from or not time_to:
             return jsonify({"error": "timeFrom and timeTo are required"}), 400
 
+        # Initialize API Wrapper
         rc_analytics = RCBusinessAnalytics()
 
         time_settings = {
@@ -33,15 +36,18 @@ def get_call_records():
             }
         }
 
-        # We fetch for 'Company' dimension to ensure we get every session leg 
-        # in the account, allowing the frontend to stitch transfers together.
+        # Fetch up to 250 records to allow for forensic stitching of transfers
         result = rc_analytics.fetch_records(
-            dimension="Company", 
+            dimension=dimension, 
             time_settings=time_settings,
             page=1,
             per_page=250 
         )
 
+        # Log for debugging
+        if result and 'data' in result:
+            logging.info(f"Analytics API returned {len(result['data'])} sessions.")
+        
         return jsonify(result)
 
     except Exception as e:
