@@ -1,41 +1,26 @@
-from flask import Blueprint, request, jsonify
-from webapp.analytics.utils import RCBusinessAnalytics
-
-# Create a blueprint for the analytics module
-analytics_bp = Blueprint('analytics', __name__)
-
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """API endpoint called by the frontend JS to fetch granular Call Records."""
     data = request.json
-    if not data:
-        return jsonify({"error": "No payload provided."}), 400
-
-    time_from = data.get('timeFrom')
-    time_to = data.get('timeTo')
-    dimension = data.get('dimension', 'Queues') # Mapped from groupBy in UI
-    time_zone = data.get('timeZone', 'UTC')
-
-    # Initialize our API Wrapper
-    rc_analytics = RCBusinessAnalytics()
-
-    # Construct the TimeSettings based on OpenAPI 3.0.3 spec
+    # Note: We are now fetching broadly to ensure we get all 'legs' of a call
+    # instead of just the leg matching a specific user/queue
     time_settings = {
-        "timeZone": time_zone,
+        "timeZone": data.get('timeZone', 'UTC'),
         "timeRange": {
-            "timeFrom": time_from,
-            "timeTo": time_to
+            "timeFrom": data.get('timeFrom'),
+            "timeTo": data.get('timeTo')
         }
     }
 
+    rc_analytics = RCBusinessAnalytics()
+
     try:
-        # Fetch detailed call records instead of aggregations
-        # Defaulting to 100 records per page (the max allowed by the API)
+        # We fetch for 'Company' dimension to ensure we get every session in the account
+        # this allows the frontend to stitch transfers together.
         result = rc_analytics.fetch_records(
-            dimension=dimension,
+            dimension="Company", 
             time_settings=time_settings,
             page=1,
-            per_page=100 
+            per_page=250 # Increased to get more context for stitching
         )
         return jsonify(result)
     except Exception as e:
