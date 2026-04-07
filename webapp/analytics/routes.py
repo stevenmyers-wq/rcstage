@@ -10,18 +10,18 @@ def get_call_records():
         data = request.json or {}
         time_from = data.get('timeFrom')
         time_to = data.get('timeTo')
-        ui_dimension = data.get('dimension', 'Users')
+        ui_dimension = data.get('dimension', 'Company')
         time_zone = data.get('timeZone', 'UTC')
 
-        # The Records API is very sensitive to these strings.
+        # STRICT API MAPPING:
+        # These keys must be exactly as written or the API returns {"data": []}
         dimension_map = {
-            'Users': 'Extension',
-            'Queues': 'CallQueue',
             'Company': 'Account',
-            'IVRs': 'IvrMenu'
+            'Users': 'Extension',
+            'Queues': 'CallQueue'
         }
         
-        api_dimension = dimension_map.get(ui_dimension, 'Extension')
+        api_dimension = dimension_map.get(ui_dimension, 'Account')
 
         rc_analytics = RCBusinessAnalytics()
         time_settings = {
@@ -29,19 +29,18 @@ def get_call_records():
             "timeRange": {"timeFrom": time_from, "timeTo": time_to}
         }
 
-        # Fetch the data
+        # per_page=250 gives the frontend enough data to stitch transfers
         result = rc_analytics.fetch_records(
             dimension=api_dimension, 
             time_settings=time_settings,
             per_page=250 
         )
 
-        # Force a valid dictionary response
-        if not result:
-            result = {"data": [], "paging": {}}
+        if not result or 'data' not in result:
+            result = {"data": []}
 
         return jsonify(result)
 
     except Exception as e:
-        logging.error(f"Analytics Route Crash: {str(e)}")
+        logging.error(f"Analytics Route Error: {str(e)}")
         return jsonify({"error": str(e), "data": []}), 500
