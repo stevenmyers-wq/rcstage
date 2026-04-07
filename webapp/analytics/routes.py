@@ -13,15 +13,15 @@ def get_call_records():
         ui_dimension = data.get('dimension', 'Users')
         time_zone = data.get('timeZone', 'UTC')
 
-        # STRICT SINGULAR MAPPING: The Records API fails on plural strings.
+        # The Records API is very sensitive to these strings.
         dimension_map = {
+            'Users': 'Extension',
+            'Queues': 'CallQueue',
             'Company': 'Account',
-            'Users': 'User',
-            'Queues': 'Queue',
-            'IVRs': 'IVR'
+            'IVRs': 'IvrMenu'
         }
         
-        api_dimension = dimension_map.get(ui_dimension, 'User')
+        api_dimension = dimension_map.get(ui_dimension, 'Extension')
 
         rc_analytics = RCBusinessAnalytics()
         time_settings = {
@@ -29,16 +29,19 @@ def get_call_records():
             "timeRange": {"timeFrom": time_from, "timeTo": time_to}
         }
 
-        # We pull 250 records per page to ensure we have enough 'legs' 
-        # to stitch transfers together in the frontend.
+        # Fetch the data
         result = rc_analytics.fetch_records(
             dimension=api_dimension, 
             time_settings=time_settings,
             per_page=250 
         )
 
+        # Force a valid dictionary response
+        if not result:
+            result = {"data": [], "paging": {}}
+
         return jsonify(result)
 
     except Exception as e:
-        logging.error(f"Analytics API Route Error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        logging.error(f"Analytics Route Crash: {str(e)}")
+        return jsonify({"error": str(e), "data": []}), 500
