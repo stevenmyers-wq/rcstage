@@ -9,26 +9,22 @@ def analytics_dashboard():
     """Renders the main Analytics HTML page."""
     return render_template('analytics.html')
 
-@analytics_bp.route('/api/analytics/aggregation', methods=['POST'])
-def get_aggregation_report():
-    """API endpoint called by the frontend JS to fetch RC Analytics."""
+@analytics_bp.route('/api/analytics/records', methods=['POST'])
+def get_call_records():
+    """API endpoint called by the frontend JS to fetch granular Call Records."""
     data = request.json
     if not data:
         return jsonify({"error": "No payload provided."}), 400
 
     time_from = data.get('timeFrom')
     time_to = data.get('timeTo')
-    group_by = data.get('groupBy', 'Queues')
+    dimension = data.get('dimension', 'Queues') # Mapped from groupBy in UI
     time_zone = data.get('timeZone', 'UTC')
 
     # Initialize our API Wrapper
     rc_analytics = RCBusinessAnalytics()
 
-    # Construct the Analytics Payload based on OpenAPI 3.0.3 spec
-    grouping = {
-        "groupBy": group_by
-    }
-    
+    # Construct the TimeSettings based on OpenAPI 3.0.3 spec
     time_settings = {
         "timeZone": time_zone,
         "timeRange": {
@@ -36,23 +32,15 @@ def get_aggregation_report():
             "timeTo": time_to
         }
     }
-    
-    # Pull Total Calls and the exact breakdown of Call Results
-    response_options = {
-        "counters": {
-            "allCalls": {"aggregationType": "Sum"},
-            "callsByResult": {"aggregationType": "Sum"}
-        },
-        "timers": {
-            "allCallsDuration": {"aggregationType": "Average"}
-        }
-    }
 
     try:
-        result = rc_analytics.fetch_aggregation(
-            grouping=grouping,
+        # Fetch detailed call records instead of aggregations
+        # Defaulting to 100 records per page (the max allowed by the API)
+        result = rc_analytics.fetch_records(
+            dimension=dimension,
             time_settings=time_settings,
-            response_options=response_options
+            page=1,
+            per_page=100 
         )
         return jsonify(result)
     except Exception as e:
