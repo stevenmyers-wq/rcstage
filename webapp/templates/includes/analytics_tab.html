@@ -13,7 +13,7 @@
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Forensic Journey Tracking. Multi-leg calls are stitched by Call ID.</p>
+    <p class="text-slate-500 text-sm">Full Journey Tracking (Stitching Engine v3.0). Select a dimension and date range.</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
@@ -26,7 +26,7 @@
                 <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
                     <option value="Users">Users (Extensions)</option>
                     <option value="Queues">Call Queues</option>
-                    <option value="Company">Entire Account</option>
+                    <option value="EntireAccount">Entire Account</option>
                 </select>
             </div>
             <div>
@@ -82,7 +82,6 @@
 </div>
 
 <script>
-    // Initialize dates (Setting back 24 hours to ensure data is processed)
     (function() {
         const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 1); 
         const formatDt = (d) => {
@@ -90,7 +89,7 @@
             return (new Date(d - tzOffset)).toISOString().slice(0, 16);
         };
         document.getElementById('timeFrom').value = formatDt(start);
-        document.getElementById('timeTo').value = formatDt(new Date());
+        document.getElementById('timeTo').value = formatDt(end);
     })();
 
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
@@ -240,5 +239,15 @@
         if (!s || s <= 0) return "0s";
         const m = Math.floor(s/60); const sec = Math.round(s%60);
         return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    }
+
+    function exportToCSV() {
+        let csv = "Start Time,Call ID,Originator,Hops,Result,Duration\n";
+        document.querySelectorAll(".summary-row").forEach(r => {
+            csv += Array.from(r.children).slice(1).map(c => `"${c.innerText.trim()}"`).join(",") + "\n";
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'RC_Analytics.csv'; a.click();
     }
 </script>
