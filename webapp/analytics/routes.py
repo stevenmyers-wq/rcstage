@@ -1,6 +1,10 @@
 import os
 import requests
-from flask import Blueprint, request, jsonify, session, redirect
+import logging
+from flask import Blueprint, request, jsonify, session, redirect, url_for
+
+# Configure logging to see errors in GCP Logs
+logger = logging.getLogger(__name__)
 
 # GCP Env variables
 CLIENT_ID = os.environ.get('SM_CLIENT_ID')
@@ -13,16 +17,14 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
-    """Step 1: Redirect to RingCentral with the corrected scope string."""
+    """Step 1: Save target and redirect to RingCentral."""
     target_id = request.args.get('targetAccountId')
     if not target_id:
         return "Missing Target Account ID", 400
 
-    # Store target ID in session for the callback
     session['analytics_target_id'] = target_id
     
-    # Updated scopes: Using "Analytics" instead of "ReadAnalytics"
-    # These technical names correspond to the tags in your screenshot
+    # Correct scope string for Business Analytics
     scopes = "Analytics ReadCallLog ReadAccounts"
     
     rc_url = (
@@ -34,48 +36,44 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
-    """Step 2: Exchange code for token and return to Analytics tab."""
-    # Handle error returns from RingCentral
+    """Step 2: Exchange code and return to frontend."""
     error = request.args.get('error')
     if error:
-        desc = request.args.get('error_description', 'No description provided')
-        return f"Authorization Error: {error} - {desc}. <br>Please verify your App Scopes.", 400
+        return f"Auth Error: {error} - {request.args.get('error_description')}", 400
 
     code = request.args.get('code')
-    if not code:
-        return "Authorization failed: No code returned.", 400
-
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
+    
     data = {
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": REDIRECT_URI
     }
     
-    # Exchange code for access token using client secret
-    response = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
-    
-    if response.ok:
-        token_data = response.json()
-        # Save to a dedicated analytics token key to keep PKCE session separate
-        session['analytics_token'] = token_data.get('access_token')
-        return redirect('/#business-analytics') 
-    
-    return f"Token Exchange Failed: {response.text}", 400
+    try:
+        response = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
+        if response.ok:
+            session['analytics_token'] = response.json().get('access_token')
+            # Use an absolute redirect to ensure the user lands back on the app
+            return redirect("https://rcau-api-tools-396158962307.us-central1.run.app/#business-analytics")
+        return f"Token Exchange Failed: {response.text}", 400
+    except Exception as e:
+        return f"Callback System Error: {str(e)}", 500
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """Step 3: Run queries using the isolated analytics token."""
-    data = request.json
-    token = session.get('analytics_token')
-    target_id = session.get('analytics_target_id')
-    
-    if not token or not target_id:
-        return jsonify({"error": "AUTH_REQUIRED"}), 401
-
-    rc_analytics = RCBusinessAnalytics(account_id=target_id, token=token)
-
+    """Step 3: Secure JSON-only endpoint."""
     try:
+        data = request.json
+        token = session.get('analytics_token')
+        target_id = session.get('analytics_target_id')
+        
+        if not token or not target_id:
+            return jsonify({"error": "AUTH_REQUIRED", "message": "Session expired or not authorized."}), 401
+
+        from webapp.analytics.utils import RCBusinessAnalytics
+        rc_analytics = RCBusinessAnalytics(account_id=target_id, token=token)
+
         result = rc_analytics.fetch_records(
             dimension=data.get('dimension', 'Queues'),
             time_settings={
@@ -83,6 +81,13 @@ def get_call_records():
                 "timeRange": {"timeFrom": data.get('timeFrom'), "timeTo": data.get('timeTo')}
             }
         )
+        
+        if result is None:
+            return jsonify({"error": "EMPTY_RESPONSE", "message": "RingCentral returned no data."}), 500
+            
         return jsonify(result)
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Analytics Route Error: {str(e)}")
+        # We catch everything and return JSON so the UI doesn't see '<'
+        return jsonify({"error": "SERVER_ERROR", "message": str(e)}), 500
