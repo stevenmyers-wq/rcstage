@@ -12,12 +12,12 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
+    """Step 1: Redirect to RC SSO. Clears existing tokens first."""
     target_id = request.args.get('targetAccountId')
     if not target_id: return "Target ID required", 400
     
-    session['analytics_target_id'] = target_id
-    # We clear old tokens to prevent 400 invalid_grant errors
     session.pop('analytics_isolated_token_vfinal', None)
+    session['analytics_target_id'] = target_id
     
     scopes = "Analytics ReadCallLog ReadAccounts"
     
@@ -30,21 +30,23 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
+    """Step 2: Employee login -> Bridge swap."""
     code = request.args.get('code')
     target_id = session.get('analytics_target_id')
     
     if not code:
-        err = request.args.get('error_description', 'Authorization Denied')
-        return f"Auth Error: {err}", 400
+        return f"Auth Error: {request.args.get('error_description', 'Denied')}", 400
 
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
-    auth_data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
-    res = requests.post(token_url, data=auth_data, auth=(CLIENT_ID, CLIENT_SECRET))
+    data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
     
+    res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
     if not res.ok:
-        return f"Initial Token Error: {res.text}", 400
+        return f"Token Error: {res.text}", 400
     
     employee_token = res.json().get('access_token')
+    
+    # Get the impersonated token
     customer_token = get_impersonation_token(employee_token, target_id)
     
     if customer_token:
@@ -53,33 +55,36 @@ def analytics_callback():
             <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
-    return "Impersonation failed. Check bridge logs.", 403
+    return "Bridge failure. Please check logs.", 403
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Returns the specific Company Name for burden of proof."""
+    """Returns Legal Company Name for burden of proof via the api subdomain."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
-    if not token:
-        return jsonify({"error": "No active session"}), 401
+    if not token: return jsonify({"error": "No Session"}), 401
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
-    info = rc.get_account_info()
+    info = rc.get_account_identity()
     
-    # Check if we got a valid response or an error dictionary
-    if info and 'contactInfo' in info:
+    # Extract legal entity from contactInfo
+    company = info.get('contactInfo', {}).get('company', 'Unknown')
+    actual_id = info.get('id')
+    
+    if company != 'Unknown':
         return jsonify({
             "status": "success",
-            "company": info.get('contactInfo', {}).get('company', 'Unknown Entity'),
-            "rcAccountId": info.get('id'),
-            "isMatch": str(info.get('id')) == str(target_id)
+            "company": company,
+            "rcId": actual_id,
+            "isMatch": str(actual_id) == str(target_id)
         })
     
-    return jsonify({"status": "failed", "error": info}), 400
+    return jsonify({"status": "failed", "raw": info}), 400
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
+    """Step 3: Query using Internal Backend Route."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
@@ -102,6 +107,5 @@ def get_call_records():
 
 @analytics_bp.route('/api/analytics/logout')
 def analytics_logout():
-    session.pop('analytics_isolated_token_vfinal', None)
-    session.pop('analytics_target_id', None)
+    session.clear()
     return redirect("/?tab=analytics#business-analytics")
