@@ -16,8 +16,11 @@ def analytics_authorize():
     if not target_id: return "Target ID required", 400
     
     session.pop('analytics_isolated_token_vfinal', None)
+    session.pop('analytics_bridge_profile', None)
+    session.pop('analytics_bridge_scopes', None)
     session['analytics_target_id'] = target_id
     
+    # We ask the platform for Analytics
     scopes = "Analytics ReadAccounts ReadCallLog"
     rc_url = f"https://platform.ringcentral.com/restapi/oauth/authorize?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope={scopes}"
     return redirect(rc_url)
@@ -33,12 +36,17 @@ def analytics_callback():
     res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
     
     employee_token = res.json().get('access_token')
-    customer_token = get_impersonation_token(employee_token, target_id)
+    
+    # Pass through the bridge looper
+    customer_token, scopes, profile = get_impersonation_token(employee_token, target_id)
     
     if customer_token:
         session['analytics_isolated_token_vfinal'] = customer_token
+        session['analytics_bridge_profile'] = profile
+        session['analytics_bridge_scopes'] = scopes
         return render_template_string("<html><body><script>window.location.href = '/?tab=analytics#business-analytics';</script></body></html>")
-    return "Bridge Failed", 403
+    
+    return "Bridge Failed. Check GCP Logs.", 403
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
@@ -62,19 +70,33 @@ def get_call_records():
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Diagnostic check to prove identity."""
+    """Diagnostic check to prove identity via V2."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
+    scopes = session.get('analytics_bridge_scopes', "")
+    profile = session.get('analytics_bridge_profile', "unknown")
+    
     if not token: return jsonify({"error": "No token"}), 401
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
     info = rc.get_account_identity_v2()
-    company = info.get('contactInfo', {}).get('company', 'Unknown')
+    
+    # V2 Aggressive Name Extractor
+    # V2 puts the name at the top level, or sometimes inside company/contactInfo
+    company = (
+        info.get('name') or 
+        info.get('company') or 
+        info.get('contactInfo', {}).get('company') or 
+        info.get('serviceInfo', {}).get('brand', {}).get('name') or 
+        "Unknown"
+    )
     
     return jsonify({
         "status": "success", 
         "company": company, 
-        "rcId": info.get('id')
+        "rcId": info.get('id'),
+        "hasAnalytics": "Analytics" in scopes,
+        "profile": profile
     })
 
 @analytics_bp.route('/api/analytics/logout')
