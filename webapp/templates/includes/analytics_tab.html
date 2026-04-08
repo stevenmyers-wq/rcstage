@@ -1,13 +1,11 @@
 <style>
     .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .chevron { transition: transform 0.2s ease-in-out; }
-    .chevron.open { transform: rotate(90deg); }
 </style>
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm italic">Secure Admin Impersonation Mode</p>
+    <p class="text-slate-500 text-sm italic">Admin Impersonation Mode</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
@@ -20,65 +18,60 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-[10px] font-black text-slate-400 mb-1 uppercase">Target Account ID</label>
-                    <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-black" placeholder="e.g. 758735...">
+                    <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm" placeholder="e.g. 758735...">
                 </div>
                 <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all shadow-sm">
-                    VALIDATE & LOG IN
+                    LOG IN & AUTHORIZE
                 </button>
             </div>
         </div>
         {% else %}
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                <span class="text-[10px] font-bold text-green-600 uppercase tracking-tighter italic">● Authenticated: {{ session.get('analytics_target_id') }}</span>
+                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Authenticated: {{ session.get('analytics_target_id') }}</span>
                 <button onclick="window.location.href='/api/analytics/auth?targetAccountId=reset'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
             </div>
             
             <form id="analyticsForm" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">DIMENSION</label>
+                    <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">Dimension</label>
                     <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
-                        <option value="Users">Users</option>
                         <option value="Queues">Call Queues</option>
-                        <option value="Sites">Sites</option>
+                        <option value="Users">Users</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">START DATE</label>
+                    <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">Start Date</label>
                     <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm" required>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">END DATE</label>
+                    <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">End Date</label>
                     <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
                 </div>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition shadow-sm">
                     RUN ANALYSIS
                 </button>
             </form>
         </div>
         {% endif %}
-        <div id="sideError" class="hidden mt-4 p-3 text-[11px] bg-red-50 text-red-600 border border-red-100 rounded"></div>
     </div>
 
     <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
         {% if not session.get('analytics_token') %}
         <div class="p-24 text-center bg-slate-50/50">
-            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-            <p class="text-slate-400 font-medium italic">Authenticate a Target Account ID to unlock visualization.</p>
+            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <p class="text-slate-400 font-medium italic">Enter Account ID to begin.</p>
         </div>
         {% else %}
         <div id="dataTable">
-            <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                <h3 class="font-bold text-slate-700 text-xs uppercase tracking-widest italic">Records for {{ session.get('analytics_target_id') }}</h3>
-                <button onclick="exportToCSV()" id="exportBtn" class="hidden bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1 px-3 rounded shadow-sm">EXPORT CSV</button>
+            <div class="p-4 bg-slate-50 border-b border-slate-200">
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest italic uppercase">Records for {{ session.get('analytics_target_id') }}</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left">
                     <thead class="text-[10px] text-slate-500 uppercase bg-slate-100 border-b">
                         <tr>
-                            <th class="px-4 py-3 w-8"></th>
                             <th class="px-6 py-3">Start Time</th>
-                            <th class="px-6 py-3">Call ID</th>
                             <th class="px-6 py-3">Originator</th>
                             <th class="px-6 py-3 text-center">Hops</th>
                             <th class="px-6 py-3 text-center">Result</th>
@@ -86,7 +79,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="7" class="py-20 text-center text-slate-400 font-medium italic">Ready. Adjust parameters and Run Analysis.</td></tr>
+                        <tr><td colspan="5" class="py-20 text-center text-slate-400 italic">Ready to run query.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -99,7 +92,6 @@
     function startAnalyticsAuth() {
         const id = document.getElementById('targetAccountId').value.trim();
         if (!id) return;
-        // Step 1 Redirect
         window.location.href = `/api/analytics/auth?targetAccountId=${id}`;
     }
 
@@ -107,7 +99,7 @@
         e.preventDefault();
         const sBtn = document.getElementById('submitBtn');
         const tBody = document.getElementById('tableBody');
-        sBtn.disabled = true; sBtn.innerHTML = `<span class="animate-pulse">Fetching...</span>`;
+        sBtn.disabled = true; sBtn.innerHTML = `<span>Loading...</span>`;
 
         try {
             const r = await fetch('/api/analytics/records', {
@@ -120,15 +112,23 @@
                     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                 })
             });
-            const d = await r.json();
-            if (d.error === "AUTH_REQUIRED") {
-                location.reload(); return;
+
+            // CRITICAL CHECK: Ensure response is JSON
+            const contentType = r.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                const text = await r.text();
+                throw new Error("Server returned non-JSON response. This is likely a 500 error page.");
             }
-            if (!r.ok) throw new Error(d.error || 'Fetch failed');
+
+            const d = await r.json();
+            if (d.error === "AUTH_REQUIRED") { window.location.reload(); return; }
+            if (!r.ok) throw new Error(d.message || d.error || 'Fetch failed');
+            
             renderTable(d);
-            document.getElementById('exportBtn').classList.remove('hidden');
         } catch(e) {
-            tBody.innerHTML = `<tr><td colspan="7" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="5" class="py-20 text-center text-red-500 font-bold italic">
+                Query Failed: ${e.message}
+            </td></tr>`;
         } finally {
             sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
@@ -138,21 +138,19 @@
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
         if (!data || !data.data || data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="7" class="py-20 text-center text-slate-400 italic">No records found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400 italic">No records found.</td></tr>';
             return;
         }
-        data.data.forEach((rec, idx) => {
+        data.data.forEach((rec) => {
             const first = rec.hops[0];
             const last = rec.hops[rec.hops.length-1];
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
             tr.innerHTML = `
-                <td class="p-4"></td>
                 <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
-                <td class="px-6 py-4 font-mono text-[10px] text-slate-400">${rec.callId.substring(0,8)}...</td>
-                <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || first.from?.number || 'System'}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-500">${rec.hops.length}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-900">${last.result || 'Unknown'}</td>
+                <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-500 underline">${rec.hops.length}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-900 uppercase">${last.result || 'Unknown'}</td>
                 <td class="px-6 py-4 text-center font-bold text-slate-700">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
             `;
             body.appendChild(tr);
