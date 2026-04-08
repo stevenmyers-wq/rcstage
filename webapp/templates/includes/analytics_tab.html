@@ -35,7 +35,7 @@
                     <button onclick="checkConnection()" class="w-full bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold py-2 rounded text-[10px] uppercase">
                         Verify Identity Proof
                     </button>
-                    <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden"></div>
+                    <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden break-words"></div>
                 </div>
             </div>
         {% endif %}
@@ -77,15 +77,25 @@
 
     async function checkConnection() {
         const resDiv = document.getElementById('connResult');
-        resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
-        resDiv.innerText = "Checking...";
+        resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600', 'text-orange-600');
+        resDiv.innerText = "Checking V2 Data...";
 
         try {
             const r = await fetch('/api/analytics/test-connection');
             const d = await r.json();
+            
             if (d.status === 'success') {
-                resDiv.innerText = `IDENTITY: ${d.company} (${d.rcId})`;
-                resDiv.classList.add('text-green-600');
+                let msg = `IDENTITY: ${d.company} (${d.rcId})`;
+                
+                if (!d.hasAnalytics) {
+                    msg += `\n⚠️ Bridge profile '${d.profile}' blocked the Analytics scope. Run Analysis will fail.`;
+                    resDiv.classList.add('text-orange-600');
+                } else {
+                    msg += `\n✅ Profile '${d.profile}' granted Analytics.`;
+                    resDiv.classList.add('text-green-600');
+                }
+                
+                resDiv.innerText = msg;
             } else {
                 resDiv.innerText = "VERIFICATION FAILED";
                 resDiv.classList.add('text-red-600');
@@ -116,7 +126,6 @@
             });
             const d = await r.json();
             
-            // If the API returns the ANL-102 error anyway, we'll see it here.
             if (!r.ok || d.error || d.errorCode) {
                 throw new Error(d.message || d.error || d.errorCode || 'Fetch failed');
             }
