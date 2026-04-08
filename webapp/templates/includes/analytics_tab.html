@@ -15,7 +15,7 @@
             <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Account Target</h3>
             <div class="space-y-4">
                 <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID">
-                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs">
+                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs transition-all">
                     IMPERSONATE & AUTHORIZE
                 </button>
             </div>
@@ -34,14 +34,14 @@
                 </select>
                 <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
                 <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white font-bold py-2 rounded">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
                     RUN ANALYSIS
                 </button>
             </form>
 
             <div class="pt-4 border-t border-slate-100">
                 <button onclick="checkConnection()" class="w-full bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold py-2 rounded text-[10px] uppercase tracking-widest">
-                    Verify Account Connectivity
+                    Verify Account Name
                 </button>
                 <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden"></div>
             </div>
@@ -53,7 +53,7 @@
         {% if session.get('analytics_isolated_token_vfinal') %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b">
-                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Call Records</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase tracking-widest">Call Records</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left">
@@ -66,7 +66,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Ready.</td></tr>
+                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Select parameters and run analysis.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -89,19 +89,20 @@
     async function checkConnection() {
         const resDiv = document.getElementById('connResult');
         resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
-        resDiv.innerText = "Checking...";
+        resDiv.innerText = "Querying Account Info...";
 
         try {
             const r = await fetch('/api/analytics/test-connection');
             const d = await r.json();
             if (d.status === 'success') {
-                resDiv.innerText = `CONNECTED: ${d.accountName}`;
+                // Returns the actual Company Name (e.g. "Acme Corp")
+                resDiv.innerText = `CONFIRMED: ${d.accountName}`;
                 resDiv.classList.add('text-green-600');
             } else {
-                throw new Error("Invalid Response");
+                throw new Error();
             }
         } catch (e) {
-            resDiv.innerText = "CONNECTION FAILED";
+            resDiv.innerText = "VERIFICATION FAILED";
             resDiv.classList.add('text-red-600');
         }
     }
@@ -127,7 +128,7 @@
             if (!r.ok) throw new Error(d.message || d.error || 'Fetch failed');
             renderTable(d);
         } catch(e) {
-            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 italic">${e.message}</td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 italic font-bold">${e.message}</td></tr>`;
         } finally {
             sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
@@ -148,8 +149,8 @@
                 <tr class="hover:bg-slate-50 border-b">
                     <td class="px-6 py-4 italic">${new Date(first.startedAt).toLocaleString()}</td>
                     <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                    <td class="px-6 py-4 text-center uppercase font-black">${last.result || 'Unknown'}</td>
-                    <td class="px-6 py-4 text-center">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                    <td class="px-6 py-4 text-center uppercase font-black text-slate-900">${last.result || 'Disconnected'}</td>
+                    <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
                 </tr>`;
         });
     }
