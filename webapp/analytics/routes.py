@@ -16,6 +16,9 @@ def analytics_authorize():
     if not target_id: return "Target ID required", 400
     
     session['analytics_target_id'] = target_id
+    # We clear old tokens to prevent 400 invalid_grant errors
+    session.pop('analytics_isolated_token_vfinal', None)
+    
     scopes = "Analytics ReadCallLog ReadAccounts"
     
     rc_url = (
@@ -54,27 +57,26 @@ def analytics_callback():
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Returns the actual Company Name for burden of proof."""
+    """Returns the specific Company Name for burden of proof."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
-    if not token or not target_id:
+    if not token:
         return jsonify({"error": "No active session"}), 401
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
     info = rc.get_account_info()
     
-    # Extract Company Name from Contact Info (not Brand Info)
-    company_name = info.get('contactInfo', {}).get('company', 'Unknown Company')
-    
-    if company_name != 'Unknown Company':
+    # Check if we got a valid response or an error dictionary
+    if info and 'contactInfo' in info:
         return jsonify({
             "status": "success",
-            "accountName": company_name,
-            "id": target_id
+            "company": info.get('contactInfo', {}).get('company', 'Unknown Entity'),
+            "rcAccountId": info.get('id'),
+            "isMatch": str(info.get('id')) == str(target_id)
         })
     
-    return jsonify({"status": "failed", "details": "Could not retrieve company name"}), 400
+    return jsonify({"status": "failed", "error": info}), 400
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
