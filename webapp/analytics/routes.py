@@ -12,11 +12,12 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
-    """Step 1: Redirect to RC SSO. Clears existing tokens first."""
+    """Step 1: Redirect to RC SSO. Clears session to prevent code reuse errors."""
     target_id = request.args.get('targetAccountId')
     if not target_id: return "Target ID required", 400
     
-    session.pop('analytics_isolated_token_vfinal', None)
+    # Crucial: Reset session to prevent 400 invalid_grant on refreshes
+    session.clear() 
     session['analytics_target_id'] = target_id
     
     scopes = "Analytics ReadCallLog ReadAccounts"
@@ -30,23 +31,25 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
-    """Step 2: Employee login -> Bridge swap."""
+    """Step 2: Authenticate Employee and Bridge to Customer context."""
     code = request.args.get('code')
     target_id = session.get('analytics_target_id')
     
     if not code:
-        return f"Auth Error: {request.args.get('error_description', 'Denied')}", 400
+        err = request.args.get('error_description', 'Authorization Denied')
+        return f"Auth Error: {err}", 400
 
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
-    data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
+    auth_data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
     
-    res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
+    # Authenticate the employee
+    res = requests.post(token_url, data=auth_data, auth=(CLIENT_ID, CLIENT_SECRET))
     if not res.ok:
-        return f"Token Error: {res.text}", 400
+        return f"Token Exchange Error (400 invalid_grant): {res.text}", 400
     
     employee_token = res.json().get('access_token')
     
-    # Get the impersonated token
+    # Exchange for the impersonated token
     customer_token = get_impersonation_token(employee_token, target_id)
     
     if customer_token:
@@ -55,36 +58,37 @@ def analytics_callback():
             <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
-    return "Bridge failure. Please check logs.", 403
+    return "Impersonation bridge failed. Check GCP Logs for BRIDGE ERROR.", 403
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Returns Legal Company Name for burden of proof via the api subdomain."""
+    """Diagnostic Proof: Returns the Legal Company Name for the current token."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
-    if not token: return jsonify({"error": "No Session"}), 401
+    if not token:
+        return jsonify({"status": "error", "message": "No Active Token found in session"}), 401
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
-    info = rc.get_account_identity()
+    status_code, info = rc.get_account_identity_proof()
     
-    # Extract legal entity from contactInfo
-    company = info.get('contactInfo', {}).get('company', 'Unknown')
-    actual_id = info.get('id')
-    
-    if company != 'Unknown':
+    if status_code == 200:
         return jsonify({
             "status": "success",
-            "company": company,
-            "rcId": actual_id,
-            "isMatch": str(actual_id) == str(target_id)
+            "company": info.get('contactInfo', {}).get('company', 'Unknown Entity'),
+            "ownerId": info.get('id'),
+            "isCorrectAccount": str(info.get('id')) == str(target_id)
         })
     
-    return jsonify({"status": "failed", "raw": info}), 400
+    # If it fails, return the full error so we can see the 'burden of proof' fail reason
+    return jsonify({
+        "status": "failed", 
+        "rc_status_code": status_code,
+        "rc_response": info
+    }), 400
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """Step 3: Query using Internal Backend Route."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
