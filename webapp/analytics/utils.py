@@ -43,10 +43,10 @@ class RCBusinessAnalytics:
 
     def get_account_info(self):
         """
-        Diagnostic: Fetches full account metadata.
-        Endpoint: /restapi/v1.0/account/{accountId}
+        Diagnostic: Fetches the 'Identity' of the token.
+        Using '~' proves exactly which account this token belongs to.
         """
-        endpoint = f"/restapi/v1.0/account/{self.account_id}"
+        endpoint = "/restapi/v1.0/account/~"
         return rc_api_call(endpoint, token=self.token)
 
     def get_super_admin_extension(self):
