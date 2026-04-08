@@ -5,7 +5,7 @@ from webapp.rc_api import rc_api_call
 def get_impersonation_token(employee_token, target_account_id):
     """
     Exchanges an Employee SSO token for a Customer-scoped session token.
-    Uses 'brd' (Build) as the stable internal profile for impersonation.
+    Uses 'brd' (Build) as the stable internal profile.
     """
     exchange_url = "https://auth.ps.ringcentral.com/jwks"
     headers = {
@@ -25,30 +25,30 @@ def get_impersonation_token(employee_token, target_account_id):
         response = requests.post(exchange_url, json=payload, headers=headers)
         if response.ok:
             data = response.json()
+            # LOGGING: Verify if 'Analytics' is in this string
             print(f"--- BRIDGE SUCCESS: OWNER={data.get('owner_id')} SCOPES={data.get('scope')} ---")
-            return data.get("access_token")
+            return data.get("access_token"), data.get("scope", "")
         else:
             print(f"--- BRIDGE FAILED: {response.status_code} {response.text} ---")
-            return None
+            return None, ""
     except Exception as e:
         print(f"--- BRIDGE EXCEPTION: {str(e)} ---")
-        return None
+        return None, ""
 
 class RCBusinessAnalytics:
     def __init__(self, account_id, token):
         self.account_id = account_id
         self.token = token
-        self.platform_url = "https://platform.ringcentral.com"
 
     def get_account_identity_proof(self):
         """
-        Directly queries the identity of the token to provide burden of proof.
-        Using '~' tells the API: 'Tell me who I am impersonating right now.'
+        Diagnostic: Fetches the 'Identity' of the token.
+        Checks multiple fields to find a recognizable account name.
         """
-        url = f"{self.platform_url}/restapi/v1.0/account/~"
+        # We target the primary platform endpoint
+        url = "https://platform.ringcentral.com/restapi/v1.0/account/~"
         headers = {"Authorization": f"Bearer {self.token}"}
         
-        # Use direct requests to bypass any custom logic in rc_api_call
         response = requests.get(url, headers=headers)
         return response.status_code, response.json()
 
@@ -61,11 +61,8 @@ class RCBusinessAnalytics:
         return None
 
     def fetch_records(self, dimension, time_settings, admin_extension_id=None):
-        """
-        POST analytics query. Uses platform.ringcentral.com as per the HAR.
-        If this returns 403, it means the 'brd' bridge profile lacks Analytics scopes.
-        """
-        url = f"{self.platform_url}/analytics/calls/v1/accounts/{self.account_id}/records/fetch"
+        """POST analytics query for aggregate call records."""
+        url = f"https://platform.ringcentral.com/analytics/calls/v1/accounts/{self.account_id}/records/fetch"
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
