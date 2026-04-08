@@ -1,45 +1,10 @@
-import os
-from flask import Blueprint, request, jsonify, session
-from webapp.analytics.utils import RCBusinessAnalytics
-
-# Pulling from GCP Environment Variables
-SM_CLIENT_ID = os.environ.get('SM_CLIENT_ID')
-SM_CLIENT_SECRET = os.environ.get('SM_CLIENT_SECRET')
-
-analytics_bp = Blueprint('analytics', __name__)
-
-@analytics_bp.route('/api/analytics/validate', methods=['POST'])
-def validate_account():
-    """Validates the Account ID by attempting a minimal metadata call."""
-    data = request.json
-    target_id = data.get('targetAccountId')
-
-    if not target_id:
-        return jsonify({"error": "Target Account ID is required."}), 400
-
-    # Initialize client to test access
-    rc_analytics = RCBusinessAnalytics(account_id=target_id)
-    
-    try:
-        # Minimal 'ping' call to verify the ID exists and we have permissions
-        rc_analytics.fetch_aggregation(
-            grouping={"groupBy": "Company"},
-            time_settings={"timeZone": "UTC", "timeRange": {"timeFrom": "2024-01-01T00:00:00Z", "timeTo": "2024-01-01T01:00:00Z"}},
-            response_options={"counters": {"allCalls": {"aggregationType": "Sum"}}},
-            per_page=1
-        )
-        session['active_analytics_id'] = target_id
-        return jsonify({"success": True, "account": target_id})
-    except Exception as e:
-        return jsonify({"error": f"Validation Failed: {str(e)}"}), 401
-
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
     data = request.json
     target_account = data.get('targetAccountId') or session.get('active_analytics_id')
     
     if not target_account:
-        return jsonify({"error": "No active account session found."}), 400
+        return jsonify({"error": "No target account specified."}), 400
 
     rc_analytics = RCBusinessAnalytics(account_id=target_account)
 
@@ -51,6 +16,14 @@ def get_call_records():
                 "timeRange": {"timeFrom": data.get('timeFrom'), "timeTo": data.get('timeTo')}
             }
         )
+        
+        # CRITICAL FIX: If rc_api_call returns None or an error object, handle it here
+        if result is None:
+            return jsonify({"error": "RingCentral API returned no data. Check if the app is 'Connected' in the header."}), 500
+        
+        if 'error' in result:
+            return jsonify({"error": f"RC API Error: {result.get('error_description', result['error'])}"}), 500
+
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
