@@ -5,6 +5,16 @@
     .chevron.open { transform: rotate(90deg); }
 </style>
 
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        if (window.location.hash === "#business-analytics") {
+            // Find the button in your sidebar that controls the Business Analytics tab and click it
+            const analyticsTabBtn = document.querySelector('[onclick*="business-analytics"]');
+            if (analyticsTabBtn) analyticsTabBtn.click();
+        }
+    });
+</script>
+
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800">Business Analytics Records</h2>
     <p class="text-slate-500 text-sm italic">Admin Impersonation Mode</p>
@@ -13,12 +23,12 @@
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         
-        {% if not session.get('analytics_token') %}
+        {% if not session.get('rc_access_token') or not session.get('analytics_target_id') %}
         <div id="authGate">
             <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Authenticate Target</h3>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-[10px] font-black text-slate-400 mb-1 uppercase">Account ID</label>
+                    <label class="block text-[10px] font-black text-slate-400 mb-1 uppercase">Target Account ID</label>
                     <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm outline-none" placeholder="e.g. 758735...">
                 </div>
                 <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all shadow-sm">
@@ -26,10 +36,11 @@
                 </button>
             </div>
         </div>
+        
         {% else %}
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Connected: {{ session.get('analytics_target_id') }}</span>
+                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Session: {{ session.get('analytics_target_id') }}</span>
                 <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
             </div>
             
@@ -37,8 +48,9 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">Dimension</label>
                     <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
-                        <option value="Users">Users</option>
                         <option value="Queues">Call Queues</option>
+                        <option value="Users">Users</option>
+                        <option value="Sites">Sites</option>
                     </select>
                 </div>
                 <div>
@@ -55,22 +67,23 @@
             </form>
         </div>
         {% endif %}
+        <div id="sideError" class="hidden mt-4 p-3 text-[11px] bg-red-50 text-red-600 border border-red-100 rounded"></div>
     </div>
 
     <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 min-h-[500px]">
-        {% if not session.get('analytics_token') %}
+        {% if not session.get('rc_access_token') %}
         <div class="p-24 text-center bg-slate-50/50">
-            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2-2V7a4 4 0 00-8 0v4h8z" /></svg>
-            <p class="text-slate-400 font-medium italic">Identify an account to begin.</p>
+            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <p class="text-slate-400 font-medium italic">Identification required. Enter an Account ID to unlock.</p>
         </div>
         {% else %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b border-slate-200">
-                <h3 class="font-bold text-slate-700 text-xs uppercase italic">Call Records: {{ session.get('analytics_target_id') }}</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase tracking-widest italic">Records for Account: {{ session.get('analytics_target_id') }}</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left whitespace-nowrap">
-                    <thead class="text-[10px] text-slate-500 uppercase bg-slate-100 border-b">
+                    <thead class="text-[10px] text-slate-500 uppercase bg-slate-100 border-b border-slate-200">
                         <tr>
                             <th class="px-6 py-3">Start Time</th>
                             <th class="px-6 py-3">Originator</th>
@@ -80,7 +93,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="5" class="py-20 text-center text-slate-400 italic">Ready. Adjust parameters and Run Analysis.</td></tr>
+                        <tr><td colspan="5" class="py-20 text-center text-slate-400 font-medium italic">Ready. Click Run Analysis.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -90,14 +103,6 @@
 </div>
 
 <script>
-    // 1. REDIRECT FIX: Listen for URL hash changes to open this tab automatically
-    window.addEventListener('load', () => {
-        if (window.location.hash === '#business-analytics') {
-            // Trigger your dashboard's tab-switching logic here if it doesn't happen automatically
-            console.log("Analytics tab active via redirect");
-        }
-    });
-
     function startAnalyticsAuth() {
         const id = document.getElementById('targetAccountId').value.trim();
         if (!id) return;
@@ -108,7 +113,7 @@
         e.preventDefault();
         const sBtn = document.getElementById('submitBtn');
         const tBody = document.getElementById('tableBody');
-        sBtn.disabled = true; sBtn.innerHTML = `<span>Loading...</span>`;
+        sBtn.disabled = true; sBtn.innerHTML = `<span>Fetching...</span>`;
 
         try {
             const r = await fetch('/api/analytics/records', {
@@ -121,11 +126,15 @@
                 })
             });
 
-            const d = await r.json();
-            if (!r.ok) {
-                // Now shows the specific error message instead of just 'SERVER_ERROR'
-                throw new Error(d.message || d.error || 'Fetch failed');
+            // Catch HTML error pages from the server
+            const contentType = r.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                throw new Error("The server encountered an error (check logs).");
             }
+
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.message || d.error || 'Query failed.');
+            
             renderTable(d);
         } catch(e) {
             tBody.innerHTML = `<tr><td colspan="5" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
@@ -138,26 +147,27 @@
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
         if (!data || !data.data || data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400">No records found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400 italic">No records found for this period.</td></tr>';
             return;
         }
         data.data.forEach((rec) => {
             const first = rec.hops[0];
             const last = rec.hops[rec.hops.length-1];
+            const dur = Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000);
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
             tr.innerHTML = `
-                <td class="px-6 py-4 text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
+                <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
                 <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                <td class="px-6 py-4 text-center text-slate-500 underline">${rec.hops.length}</td>
-                <td class="px-6 py-4 text-center font-black text-slate-900 uppercase">${last.result || 'Unknown'}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-700">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-500 underline">${rec.hops.length}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-900 uppercase">${last.result || 'Unknown'}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-700">${dur}s</td>
             `;
             body.appendChild(tr);
         });
     }
 
-    // Default Date Range: Last 24 Hours (API limit for granular records)
+    // Default to 23 hours to prevent the "exceeds 24h" API error
     (function() {
         const now = new Date(); const start = new Date(); start.setHours(now.getHours() - 23);
         const fmt = (d) => {
