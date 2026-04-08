@@ -3,29 +3,25 @@
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
-    .journey-timeline::before {
-        content: ''; position: absolute; top: 0; bottom: 0; left: 20px;
-        width: 2px; background-color: #e2e8f0;
-    }
 </style>
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Target a specific RingCentral Account ID to begin analysis.</p>
+    <p class="text-slate-500 text-sm italic">Secure Admin Impersonation Mode</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
     
-    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
+    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         
         <div id="authGate">
-            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest">Identify Target</h3>
+            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest">Connect to Target</h3>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-[10px] font-black text-slate-400 mb-1">RINGCENTRAL ACCOUNT ID</label>
+                    <label class="block text-[10px] font-black text-slate-400 mb-1 uppercase">Target Account ID</label>
                     <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-black outline-none" placeholder="Enter ID (e.g. 758735...)">
                 </div>
-                <button type="button" id="connectBtn" onclick="runAuth()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all">
+                <button type="button" id="connectBtn" onclick="validateSessionAndAccount()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all">
                     VALIDATE & UNLOCK
                 </button>
             </div>
@@ -33,16 +29,16 @@
 
         <div id="paramControls" style="display: none;">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                <span class="text-[10px] font-bold text-green-600 uppercase">● Session Active</span>
-                <button onclick="location.reload()" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">RESET</button>
+                <span class="text-[10px] font-bold text-green-600 uppercase">● Session Authorized</span>
+                <button onclick="location.reload()" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Reset</button>
             </div>
             
             <form id="analyticsForm" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">DIMENSION</label>
-                    <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
-                        <option value="Queues">Call Queues</option>
+                    <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
                         <option value="Users">Users</option>
+                        <option value="Queues">Call Queues</option>
                         <option value="Sites">Sites</option>
                         <option value="IVRs">IVR Menus</option>
                     </select>
@@ -60,19 +56,20 @@
                 </button>
             </form>
         </div>
-        <div id="sideError" class="hidden mt-4 p-2 text-[11px] bg-red-50 text-red-600 border border-red-100 rounded"></div>
+        
+        <div id="sideError" class="hidden mt-4 p-3 text-[11px] bg-red-50 text-red-600 border border-red-100 rounded leading-relaxed"></div>
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
-        <div id="uiLockout" class="p-20 text-center bg-slate-50/50">
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
+        <div id="uiLockout" class="p-24 text-center bg-slate-50/50">
             <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2-2V7a4 4 0 00-8 0v4h8z" /></svg>
-            <p class="text-slate-400 font-medium italic">Authenticate a Target Account ID to unlock data visualization.</p>
+            <p class="text-slate-400 font-medium italic">Please enter a Target Account ID to unlock analytics.</p>
         </div>
 
         <div id="dataTable" class="hidden">
             <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                <h3 id="tableTitle" class="font-bold text-slate-700 text-sm uppercase tracking-tight italic">Records</h3>
-                <button onclick="exportToCSV()" id="exportBtn" class="hidden bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1 px-3 rounded shadow-sm transition-colors">EXPORT Summary CSV</button>
+                <h3 id="tableTitle" class="font-bold text-slate-700 text-xs uppercase tracking-widest italic">Call Records</h3>
+                <button onclick="exportToCSV()" id="exportBtn" class="hidden bg-green-600 text-white text-[10px] font-bold py-1 px-3 rounded shadow-sm">EXPORT CSV</button>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left whitespace-nowrap">
@@ -95,64 +92,61 @@
 </div>
 
 <script>
-    // 1. INITIALIZATION
-    (function() {
-        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 1);
-        const formatDt = (d) => {
-            const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-            return (new Date(d - tzOffset)).toISOString().slice(0, 16);
-        };
-        const fromInput = document.getElementById('timeFrom');
-        const toInput = document.getElementById('timeTo');
-        if (fromInput && toInput) { fromInput.value = formatDt(start); toInput.value = formatDt(end); }
-    })();
-
-    // 2. AUTHENTICATION (GATEKEEPER)
-    async function runAuth() {
-        const idInput = document.getElementById('targetAccountId');
-        const id = idInput.value.trim();
+    // 1. Validate Session & Account
+    async function validateSessionAndAccount() {
+        const id = document.getElementById('targetAccountId').value.trim();
         const btn = document.getElementById('connectBtn');
         const err = document.getElementById('sideError');
         
-        if(!id) {
-            err.innerText = "Please enter an Account ID."; err.classList.remove('hidden');
+        if (!id) {
+            err.innerText = "Please enter a Target Account ID.";
+            err.classList.remove('hidden');
             return;
         }
-        
-        btn.disabled = true; btn.innerText = 'Verifying...'; err.classList.add('hidden');
-        
+
+        btn.disabled = true; btn.innerText = 'Validating...'; err.classList.add('hidden');
+
         try {
-            const r = await fetch('/api/analytics/validate', {
+            const response = await fetch('/api/analytics/validate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({targetAccountId: id})
+                body: JSON.stringify({ targetAccountId: id })
             });
-            const d = await r.json();
-            if(!r.ok) throw new Error(d.error);
+            const data = await response.json();
 
-            // Unlock UI components
+            if (!response.ok) {
+                // Check if error is due to missing PKCE connection
+                if (data.error === "NOT_CONNECTED") {
+                    err.innerHTML = `<strong>Disconnected:</strong> ${data.message}`;
+                } else {
+                    err.innerText = data.message || data.error;
+                }
+                err.classList.remove('hidden');
+                return;
+            }
+
+            // UNLOCK UI
             document.getElementById('authGate').style.display = 'none';
             document.getElementById('paramControls').style.display = 'block';
             document.getElementById('uiLockout').classList.add('hidden');
             document.getElementById('dataTable').classList.remove('hidden');
-            document.getElementById('tableTitle').innerText = `Records for Account: ${id}`;
-            document.getElementById('tableBody').innerHTML = `<tr><td colspan="7" class="py-20 text-center text-slate-400 italic">Ready. Adjust parameters and click Run Analysis.</td></tr>`;
+            document.getElementById('tableTitle').innerText = `Records: Account ${id}`;
+            document.getElementById('tableBody').innerHTML = `<tr><td colspan="7" class="py-20 text-center text-slate-400 italic">Connected. Adjust parameters and Run Analysis.</td></tr>`;
+
         } catch(e) {
-            err.innerText = e.message; err.classList.remove('hidden');
+            err.innerText = "System Error: Unable to reach validation endpoint.";
+            err.classList.remove('hidden');
         } finally {
             btn.disabled = false; btn.innerText = 'VALIDATE & UNLOCK';
         }
     }
 
-    // 3. FETCH RECORDS
+    // 2. Main Form Submit
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const sBtn = document.getElementById('submitBtn');
         const tBody = document.getElementById('tableBody');
-        const eBtn = document.getElementById('exportBtn');
-        
-        sBtn.disabled = true; sBtn.innerHTML = `<span class="animate-pulse">Loading...</span>`;
-        eBtn.classList.add('hidden');
+        sBtn.disabled = true; sBtn.innerHTML = `<span class="animate-pulse">Fetching...</span>`;
 
         const payload = {
             targetAccountId: document.getElementById('targetAccountId').value,
@@ -169,90 +163,68 @@
                 body: JSON.stringify(payload)
             });
             const d = await r.json();
-            if(!r.ok) throw new Error(d.error);
+            
+            if (!r.ok) throw new Error(d.message || d.error || 'Failed to fetch.');
             
             renderTable(d);
-            if (d && d.data && d.data.length > 0) eBtn.classList.remove('hidden');
+            document.getElementById('exportBtn').classList.remove('hidden');
         } catch(e) {
-            tBody.innerHTML = `<tr><td colspan="7" class="py-20 text-center text-red-400 font-bold italic">${e.message}</td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="7" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
         } finally {
             sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
     });
 
-    // 4. RENDERING & HELPERS
+    // 3. Robust Rendering (Original helper functions included)
     function renderTable(data) {
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
-
-        // Safeguard for null or malformed data
-        if (!data || !data.data) {
-            body.innerHTML = `<tr><td colspan="7" class="py-20 text-center text-red-500 font-bold italic">
-                Error parsing data: ${data?.error || 'Malformed API response'}
-            </td></tr>`;
-            return;
-        }
-
-        if(data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="7" class="py-20 text-center text-slate-400 italic font-medium">No records found for this timeframe.</td></tr>';
+        if (!data || !data.data || data.data.length === 0) {
+            body.innerHTML = '<tr><td colspan="7" class="py-20 text-center text-slate-400 font-medium">No records found for this period.</td></tr>';
             return;
         }
 
         data.data.forEach((rec, idx) => {
             const hops = rec.hops || [];
-            if(hops.length === 0) return;
+            if (hops.length === 0) return;
             const first = hops[0]; const last = hops[hops.length-1];
             
-            // Result Logic
             let result = last.result || first.result || 'Unknown';
-            const wentToVm = hops.some(h => 
-                h.result === 'Voicemail' || 
-                (h.segmentsDuration && (h.segmentsDuration.voicemail > 0 || h.segmentsDuration.vmGreeting > 0))
-            );
+            const wentToVm = hops.some(h => h.result === 'Voicemail' || (h.segmentsDuration && (h.segmentsDuration.voicemail > 0)));
             if (wentToVm) result = 'Voicemail';
 
             const resCfg = getStatusConfig(result);
-            const totalDur = hops.reduce((s, h) => s + (h.duration || 0), 0);
-            const durationFmt = formatSeconds(totalDur / 1000);
-
-            const row = document.createElement('tr');
-            row.className = "hover:bg-blue-50/50 cursor-pointer border-b border-slate-100 transition-colors";
-            row.onclick = () => toggleDetails(idx);
-            row.innerHTML = `
+            const totalMs = hops.reduce((s, h) => s + (h.duration || 0), 0);
+            
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50 cursor-pointer border-b transition-colors";
+            tr.onclick = () => toggleDetails(idx);
+            tr.innerHTML = `
                 <td class="px-4 py-4 text-slate-300">
-                    <svg id="chevron-${idx}" class="chevron w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    <svg id="chevron-${idx}" class="chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </td>
                 <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
                 <td class="px-6 py-4 font-mono text-[10px] text-slate-400">${rec.callId.substring(0,10)}...</td>
                 <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || first.from?.number || 'System'}</td>
-                <td class="px-6 py-4 text-center"><span class="bg-slate-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600">${hops.length}</span></td>
+                <td class="px-6 py-4 text-center"><span class="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-bold text-slate-600">${hops.length}</span></td>
                 <td class="px-6 py-4 text-center"><span class="${resCfg.bg} ${resCfg.text} text-[10px] font-black px-2 py-1 rounded-full border border-current shadow-sm">${result}</span></td>
-                <td class="px-6 py-4 text-center font-bold text-slate-700 italic">${durationFmt}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-700">${formatSeconds(totalMs/1000)}</td>
             `;
-            body.appendChild(row);
+            body.appendChild(tr);
 
-            // Detailed Journey Row
+            // Detail Row
             const detailRow = document.createElement('tr');
             detailRow.id = `details-${idx}`;
-            detailRow.className = "hidden bg-slate-50/70 border-b border-slate-200";
-            let hopList = '<td colspan="7" class="p-8 relative journey-timeline space-y-5">';
+            detailRow.className = "hidden bg-slate-50/50";
+            let hopList = '<td colspan="7" class="p-8 relative space-y-4">';
             hops.forEach((h, hidx) => {
                 const hCfg = getStatusConfig(h.result);
                 hopList += `
-                    <div class="relative pl-10">
-                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full ${hCfg.dot} border-[3px] border-white shadow-sm z-10"></div>
-                        <div class="bg-white border p-4 rounded-xl shadow-sm flex justify-between items-center border-slate-200">
-                            <div class="flex items-center gap-3">
-                                <span class="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-bold text-slate-500 italic">Hop ${hidx+1}</span>
-                                <span class="text-xs font-bold text-slate-800">${h.from?.name || 'In'} <span class="text-slate-300 mx-1">➔</span> ${h.to?.name || 'Out'}</span>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <div class="text-right">
-                                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${h.callType || 'CALL'}</p>
-                                    <p class="text-xs font-black ${hCfg.text}">${h.result || 'Unknown'}</p>
-                                </div>
-                                <span class="bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-md text-[11px] font-bold text-slate-500 italic shadow-inner">⏱ ${formatSeconds(h.duration/1000)}</span>
-                            </div>
+                    <div class="relative pl-8">
+                        <div class="absolute left-0 top-1.5 w-3 h-3 rounded-full ${hCfg.dot} border-2 border-white shadow-sm"></div>
+                        <div class="bg-white border p-3 rounded shadow-sm flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-700">Hop ${hidx+1}: ${h.from?.name || 'In'} ➔ ${h.to?.name || 'Out'}</span>
+                            <span class="text-[10px] font-bold ${hCfg.text}">${h.result} (${formatSeconds(h.duration/1000)})</span>
                         </div>
                     </div>`;
             });
@@ -268,30 +240,14 @@
 
     function getStatusConfig(r) {
         const s = (r || '').toLowerCase();
-        if(['completed','answered','accepted','pickedup'].includes(s)) return {text:'text-green-700', bg:'bg-green-100/50', dot:'bg-green-500'};
-        if(['missed','abandoned','dropped'].includes(s)) return {text:'text-red-700', bg:'bg-red-100/50', dot:'bg-red-500'};
-        if(['voicemail'].includes(s)) return {text:'text-orange-700', bg:'bg-orange-100/50', dot:'bg-orange-500'};
-        return {text:'text-slate-500', bg:'bg-slate-100/50', dot:'bg-slate-400'};
+        if(['completed','answered','accepted'].includes(s)) return {text:'text-green-700', bg:'bg-green-50', dot:'bg-green-500'};
+        if(['missed','abandoned','dropped'].includes(s)) return {text:'text-red-700', bg:'bg-red-50', dot:'bg-red-500'};
+        return {text:'text-slate-500', bg:'bg-slate-50', dot:'bg-slate-400'};
     }
 
     function formatSeconds(s) {
         if(!s || s<=0) return "0s";
         const m = Math.floor(s/60); const sec = Math.round(s%60);
         return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-    }
-
-    function exportToCSV() {
-        const rows = document.querySelectorAll("#tableBody tr:not(.hidden)");
-        let csv = "Start Time,Call ID,Originator,Hops,Final Result,Total Duration\n";
-        rows.forEach(r => {
-            const c = r.querySelectorAll('td');
-            if(c.length > 1) {
-                const rowData = [c[1], c[2], c[3], c[4], c[5], c[6]].map(td => `"${td.innerText.trim()}"`).join(",");
-                csv += rowData + "\n";
-            }
-        });
-        const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `rc_analytics_records_${new Date().getTime()}.csv`; a.click();
     }
 </script>
