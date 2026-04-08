@@ -12,9 +12,9 @@
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         {% if not session.get('analytics_isolated_token_vfinal') %}
         <div id="authGate">
-            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Account Target</h3>
+            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Identity Context</h3>
             <div class="space-y-4">
-                <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID">
+                <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID (e.g. 777100124)">
                 <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs transition-all">
                     IMPERSONATE & AUTHORIZE
                 </button>
@@ -34,7 +34,7 @@
                 </select>
                 <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
                 <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white font-bold py-2 rounded">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
                     RUN ANALYSIS
                 </button>
             </form>
@@ -53,7 +53,7 @@
         {% if session.get('analytics_isolated_token_vfinal') %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b">
-                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Call Records</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Call Data</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left">
@@ -66,14 +66,14 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Select parameters and run analysis.</td></tr>
+                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Select parameters and click Run Analysis.</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
         {% else %}
-        <div class="p-24 text-center">
-            <p class="text-slate-400 italic">Authorization required.</p>
+        <div class="p-24 text-center bg-slate-50/50">
+            <p class="text-slate-400 italic font-medium">Authorization required.</p>
         </div>
         {% endif %}
     </div>
@@ -89,16 +89,17 @@
     async function checkConnection() {
         const resDiv = document.getElementById('connResult');
         resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
-        resDiv.innerText = "Querying api.ringcentral.com (~)...";
+        resDiv.innerText = "Querying Identity Proof...";
 
         try {
             const r = await fetch('/api/analytics/test-connection');
             const d = await r.json();
             if (d.status === 'success') {
-                resDiv.innerText = `IDENTITY: ${d.company} (${d.rcId})`;
+                // Returns the Legal Company Name found in the contactInfo object
+                resDiv.innerText = `IDENTITY PROVEN: ${d.company}`;
                 resDiv.classList.add('text-green-600');
             } else {
-                resDiv.innerText = "VERIFICATION FAILED: Invalid Context";
+                resDiv.innerText = "ERROR: " + (d.rc_response?.error_description || "Invalid Session");
                 resDiv.classList.add('text-red-600');
             }
         } catch (e) {
@@ -128,7 +129,7 @@
             if (!r.ok) throw new Error(d.message || d.error || 'Fetch failed');
             renderTable(d);
         } catch(e) {
-            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 italic font-bold">${e.message}</td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 italic font-bold font-mono text-xs">${e.message}</td></tr>`;
         } finally {
             sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
