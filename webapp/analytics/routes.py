@@ -1,42 +1,47 @@
-from flask import Blueprint, request, jsonify
+import os
+from flask import Blueprint, request, jsonify, session
 from webapp.analytics.utils import RCBusinessAnalytics
 
-# Create a blueprint for the analytics module
+# GCP Env Variables are available via os.environ
+CLIENT_ID = os.environ.get('SM_CLIENT_ID')
+CLIENT_SECRET = os.environ.get('SM_CLIENT_SECRET')
+
 analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """API endpoint called by the frontend JS to fetch granular Call Records."""
+    """API endpoint to fetch granular Call Records with Impersonation support."""
     data = request.json
     if not data:
         return jsonify({"error": "No payload provided."}), 400
 
-    time_from = data.get('timeFrom')
-    time_to = data.get('timeTo')
-    dimension = data.get('dimension', 'Queues') # Mapped from groupBy in UI
-    time_zone = data.get('timeZone', 'UTC')
+    # Impersonation Check: Grab the target ID from session or default to self ("~")
+    target_account = session.get('impersonate_id', '~')
 
-    # Initialize our API Wrapper
-    rc_analytics = RCBusinessAnalytics()
+    # Initialize the wrapper with the impersonated account ID
+    rc_analytics = RCBusinessAnalytics(account_id=target_account)
 
-    # Construct the TimeSettings based on OpenAPI 3.0.3 spec
     time_settings = {
-        "timeZone": time_zone,
+        "timeZone": data.get('timeZone', 'UTC'),
         "timeRange": {
-            "timeFrom": time_from,
-            "timeTo": time_to
+            "timeFrom": data.get('timeFrom'),
+            "timeTo": data.get('timeTo')
         }
     }
 
     try:
         # Fetch detailed call records
-        # Defaulting to 100 records per page (the max allowed by the API)
         result = rc_analytics.fetch_records(
-            dimension=dimension,
+            dimension=data.get('dimension', 'Queues'),
             time_settings=time_settings,
             page=1,
             per_page=100 
         )
+        
+        # Add metadata for the frontend to display impersonation state
+        result['impersonated'] = (target_account != "~")
+        result['active_account'] = target_account
+        
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
