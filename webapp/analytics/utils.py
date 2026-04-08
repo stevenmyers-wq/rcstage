@@ -22,8 +22,8 @@ class RCBusinessAnalytics:
         if kwargs.get('callFilters'):
             payload['callFilters'] = kwargs.get('callFilters')
         
-        # Pass token override to rc_api_call. 
-        # We use return_response=True to manually handle the error body if it fails.
+        # Explicitly pass token to rc_api_call. 
+        # We use return_response=True to handle API errors without crashing.
         response = rc_api_call(
             f"{self.base_path}/records/fetch", 
             method='POST', 
@@ -33,9 +33,12 @@ class RCBusinessAnalytics:
             **kwargs
         )
         
+        if response is None:
+            return {"error": "CONNECTION_ERROR", "message": "The RingCentral API could not be reached."}
+
         if not response.ok:
             try:
-                return response.json() # Return RC's specific error JSON
+                return response.json() 
             except:
                 return {"error": "API_ERROR", "message": response.text}
                 
