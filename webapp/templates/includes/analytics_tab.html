@@ -1,43 +1,72 @@
 <div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800">Operability Test: Delete Extension</h2>
-    <p class="text-red-500 text-xs font-bold uppercase">Hard-Delete Action (Irreversible)</p>
+    <h2 class="text-2xl font-bold text-slate-800">Business Analytics</h2>
+    <p class="text-slate-500 text-sm italic">Impersonating Context (ANL-102 Bypass Enabled)</p>
 </div>
 
-<div class="w-full max-w-2xl bg-white p-6 rounded shadow-sm border border-slate-200">
-    {% if not session.get('analytics_isolated_token_vfinal') %}
-        <div class="space-y-4">
-            <p class="text-sm text-slate-600">Enter the <strong>Target Account ID</strong> to begin the impersonation bridge.</p>
-            <input type="text" id="targetAccountId" class="border p-3 w-full rounded font-mono" placeholder="Target Account ID (e.g. 777100124)">
-            <button onclick="startAuth()" class="bg-slate-900 text-white p-3 w-full font-bold rounded hover:bg-black transition">
-                AUTHORIZE & BRIDGE
-            </button>
-        </div>
-    {% else %}
-        <div class="space-y-6">
-            <div class="bg-slate-50 p-4 rounded border flex justify-between items-center">
-                <div>
-                    <span class="text-[10px] font-bold text-slate-400 uppercase block">Active Context</span>
-                    <span class="font-mono font-bold text-blue-600">{{ session.get('analytics_target_id') }}</span>
+<div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
+        {% if not session.get('analytics_isolated_token_vfinal') %}
+            <div class="space-y-4">
+                <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID">
+                <button onclick="startAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs">
+                    AUTHORIZE & BRIDGE
+                </button>
+            </div>
+        {% else %}
+            <div class="space-y-4">
+                <div class="flex justify-between items-center pb-2 border-b">
+                    <span class="text-[10px] font-bold text-green-600 uppercase">● Session Active</span>
+                    <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">LOGOUT</button>
                 </div>
-                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] bg-white border px-2 py-1 rounded font-bold hover:bg-red-50 hover:text-red-600">EXIT</button>
-            </div>
+                
+                <form id="analyticsForm" class="space-y-4">
+                    <select id="dimension" class="w-full border rounded p-2 text-sm">
+                        <option value="Users">Users</option>
+                        <option value="Queues">Call Queues</option>
+                    </select>
+                    <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
+                    <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
+                    <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded">
+                        RUN ANALYSIS
+                    </button>
+                </form>
 
-            <div class="space-y-2">
-                <label class="text-xs font-bold text-slate-700 uppercase">Extension ID to Delete</label>
-                <input type="text" id="extId" class="border p-4 w-full rounded font-mono text-lg" placeholder="e.g. 12345678">
-                <p class="text-[10px] text-slate-400 italic">Verify this ID in the RC Admin portal before executing.</p>
+                <div class="pt-4 border-t border-slate-100">
+                    <button onclick="checkConnection()" class="w-full bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold py-2 rounded text-[10px] uppercase">
+                        Verify Identity Proof
+                    </button>
+                    <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden"></div>
+                </div>
             </div>
+        {% endif %}
+    </div>
 
-            <button onclick="runDelete()" id="btnDelete" class="bg-red-600 text-white p-4 w-full font-black rounded shadow-lg hover:bg-red-700 transition-all uppercase tracking-widest">
-                Execute Delete
-            </button>
-
-            <div id="resultBox" class="mt-6 hidden">
-                <h3 class="text-[10px] font-bold uppercase text-slate-400 mb-2">Raw API Response</h3>
-                <pre id="rawOutput" class="bg-slate-900 text-white p-4 rounded text-xs font-mono overflow-auto max-h-80 border-l-4"></pre>
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 min-h-[500px]">
+        {% if session.get('analytics_isolated_token_vfinal') %}
+            <div class="p-4 bg-slate-50 border-b">
+                <h3 class="font-bold text-slate-700 text-xs uppercase tracking-widest">Call Records</h3>
             </div>
-        </div>
-    {% endif %}
+            <div class="overflow-x-auto w-full">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-[10px] text-slate-500 uppercase bg-slate-100 border-b">
+                        <tr>
+                            <th class="px-6 py-3">Start Time</th>
+                            <th class="px-6 py-3">Originator</th>
+                            <th class="px-6 py-3 text-center">Result</th>
+                            <th class="px-6 py-3 text-center">Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100">
+                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic" id="tableStatus">Ready for Analysis.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="p-24 text-center">
+                <p class="text-slate-400 italic">Authorization required.</p>
+            </div>
+        {% endif %}
+    </div>
 </div>
 
 <script>
@@ -46,43 +75,92 @@
         if (id) window.location.href = `/api/analytics/auth?targetAccountId=${id}`;
     }
 
-    async function runDelete() {
-        const extId = document.getElementById('extId').value.trim();
-        if (!extId) return alert("Missing Extension ID");
-        if (!confirm("Are you sure? This will delete extension " + extId + " permanently.")) return;
-
-        const btn = document.getElementById('btnDelete');
-        const out = document.getElementById('rawOutput');
-        const box = document.getElementById('resultBox');
-
-        btn.disabled = true;
-        btn.innerText = "DELETING...";
-        box.classList.remove('hidden');
-        out.innerText = "Sending request...";
-        out.style.borderColor = "#94a3b8"; // slate-400
+    async function checkConnection() {
+        const resDiv = document.getElementById('connResult');
+        resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
+        resDiv.innerText = "Checking...";
 
         try {
-            const r = await fetch('/api/analytics/execute-delete', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ extensionId: extId })
-            });
-            const data = await r.json();
-            
-            out.innerText = JSON.stringify(data, null, 4);
-            
-            if (data.status_code === 204) {
-                out.style.borderColor = "#22c55e"; // green-500
-                btn.innerText = "SUCCESS (204 NO CONTENT)";
+            const r = await fetch('/api/analytics/test-connection');
+            const d = await r.json();
+            if (d.status === 'success') {
+                resDiv.innerText = `IDENTITY: ${d.company} (${d.rcId})`;
+                resDiv.classList.add('text-green-600');
             } else {
-                out.style.borderColor = "#ef4444"; // red-500
-                btn.innerText = "FAILED (HTTP " + data.status_code + ")";
+                resDiv.innerText = "VERIFICATION FAILED";
+                resDiv.classList.add('text-red-600');
             }
         } catch (e) {
-            out.innerText = "Error: " + e.message;
-            btn.innerText = "SYSTEM ERROR";
-        } finally {
-            btn.disabled = false;
+            resDiv.innerText = "NETWORK ERROR";
+            resDiv.classList.add('text-red-600');
         }
     }
+
+    document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const sBtn = document.getElementById('submitBtn');
+        const tBody = document.getElementById('tableBody');
+        sBtn.disabled = true; sBtn.innerText = "Fetching...";
+        tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-blue-500 italic font-bold">Querying RingCentral Analytics API...</td></tr>`;
+
+        try {
+            const r = await fetch('/api/analytics/records', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
+                    timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
+                    dimension: document.getElementById('dimension').value,
+                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                })
+            });
+            const d = await r.json();
+            
+            // If the API returns the ANL-102 error anyway, we'll see it here.
+            if (!r.ok || d.error || d.errorCode) {
+                throw new Error(d.message || d.error || d.errorCode || 'Fetch failed');
+            }
+            
+            renderTable(d);
+        } catch(e) {
+            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 font-bold font-mono text-xs">API ERROR: ${e.message}</td></tr>`;
+        } finally {
+            sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
+        }
+    });
+
+    function renderTable(data) {
+        const body = document.getElementById('tableBody');
+        body.innerHTML = '';
+        const records = data.records || data.data || [];
+        
+        if (records.length === 0) {
+            body.innerHTML = '<tr><td colspan="4" class="py-20 text-center text-slate-400">No records found for this timeframe.</td></tr>';
+            return;
+        }
+        
+        records.forEach((rec) => {
+            const first = rec.hops[0];
+            const last = rec.hops[rec.hops.length-1];
+            body.innerHTML += `
+                <tr class="hover:bg-slate-50 border-b">
+                    <td class="px-6 py-4 italic text-slate-500">${new Date(first.startedAt).toLocaleString()}</td>
+                    <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="px-2 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase text-slate-900">${last.result || 'Unknown'}</span>
+                    </td>
+                    <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                </tr>`;
+        });
+    }
+
+    (function() {
+        const now = new Date(); const start = new Date(); start.setHours(now.getHours() - 24);
+        const fmt = (d) => {
+            const tz = (new Date()).getTimezoneOffset() * 60000;
+            return (new Date(d - tz)).toISOString().slice(0, 16);
+        };
+        const fI = document.getElementById('timeFrom'); const tI = document.getElementById('timeTo');
+        if (fI && tI) { fI.value = fmt(start); tI.value = fmt(now); }
+    })();
 </script>
