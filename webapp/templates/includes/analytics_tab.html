@@ -1,29 +1,36 @@
 <div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800">V2 API Debugger</h2>
-    <p class="text-slate-500 text-sm italic">Burden of Proof: Full /v2/accounts/~ Dump</p>
+    <h2 class="text-2xl font-bold text-slate-800">Operability Test (Write)</h2>
+    <p class="text-red-500 text-xs font-bold uppercase tracking-tighter">⚠️ Warning: This will delete the specified extension from the account.</p>
 </div>
 
 <div class="w-full bg-white p-6 rounded shadow-sm border border-slate-200">
     {% if not session.get('analytics_isolated_token_vfinal') %}
         <div class="space-y-4">
-            <input type="text" id="targetAccountId" class="border p-3 w-full rounded" placeholder="Enter RC Account ID">
+            <input type="text" id="targetAccountId" class="border p-3 w-full rounded" placeholder="Target Account ID">
             <button onclick="startAuth()" class="bg-slate-900 text-white p-3 w-full font-bold rounded">LOGIN & BRIDGE</button>
         </div>
     {% else %}
-        <button onclick="dumpV2Response()" class="bg-blue-600 hover:bg-blue-700 text-white p-4 w-full font-bold rounded shadow-transition">
-            FETCH RAW V2 ACCOUNT JSON
-        </button>
-        
-        <div id="v2ResponseContainer" class="mt-6 hidden">
-            <div class="flex justify-between items-center mb-2">
-                <h3 class="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Platform Response (v2)</h3>
-                <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">Status: 200 OK</span>
+        <div class="space-y-4">
+            <div class="p-3 bg-slate-50 border rounded text-center mb-4">
+                <span class="text-[10px] font-bold text-slate-400 block uppercase">Impersonating Account</span>
+                <span class="font-mono font-bold">{{ session.get('analytics_target_id') }}</span>
             </div>
-            <pre id="v2JsonDump" class="bg-slate-900 text-green-400 p-4 rounded text-xs overflow-auto max-h-[500px] font-mono leading-relaxed border-l-4 border-green-500"></pre>
+
+            <label class="text-xs font-bold text-slate-600 uppercase">Extension ID to Delete</label>
+            <input type="text" id="extToDelete" class="border p-3 w-full rounded font-mono" placeholder="e.g. 123456789">
+            
+            <button onclick="triggerDelete()" id="deleteBtn" class="bg-red-600 hover:bg-red-700 text-white p-4 w-full font-bold rounded shadow-lg transition-all">
+                EXECUTE DELETE EXTENSION
+            </button>
         </div>
         
-        <div class="mt-6 text-center border-t pt-4">
-            <button onclick="location.href='/api/analytics/logout'" class="text-xs text-slate-400 hover:text-red-500 underline font-bold uppercase">Reset Session</button>
+        <div id="deleteResponseContainer" class="mt-8 hidden">
+            <h3 class="text-[10px] font-bold uppercase text-slate-400 mb-2 tracking-widest">Raw Execution Log</h3>
+            <pre id="deleteRawOutput" class="bg-slate-900 text-red-400 p-4 rounded text-xs overflow-auto max-h-[400px] font-mono border-l-4 border-red-500"></pre>
+        </div>
+        
+        <div class="mt-6 text-center pt-4 border-t">
+            <button onclick="location.href='/api/analytics/logout'" class="text-xs text-slate-400 hover:text-slate-600 underline uppercase font-bold">Cancel / Exit Session</button>
         </div>
     {% endif %}
 </div>
@@ -34,21 +41,44 @@
         if (id) window.location.href = `/api/analytics/auth?targetAccountId=${id}`;
     }
 
-    async function dumpV2Response() {
-        const container = document.getElementById('v2ResponseContainer');
-        const display = document.getElementById('v2JsonDump');
-        
+    async function triggerDelete() {
+        const extId = document.getElementById('extToDelete').value.trim();
+        if (!extId) return alert("Please enter an Extension ID");
+        if (!confirm("Are you SURE you want to delete extension " + extId + "? This cannot be undone.")) return;
+
+        const btn = document.getElementById('deleteBtn');
+        const container = document.getElementById('deleteResponseContainer');
+        const display = document.getElementById('deleteRawOutput');
+
+        btn.disabled = true;
+        btn.innerText = "EXECUTING DESTRUCTION...";
         container.classList.remove('hidden');
-        display.innerText = "// Requesting: https://platform.ringcentral.com/restapi/v2/accounts/~\n// Please wait...";
+        display.innerText = "Sending DELETE request to RingCentral Platform...";
 
         try {
-            const r = await fetch('/api/analytics/test-connection');
+            const r = await fetch('/api/analytics/delete-test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ extensionId: extId })
+            });
             const data = await r.json();
             
-            // Format the JSON for maximum readability
+            // Format output
             display.innerText = JSON.stringify(data, null, 4);
+            
+            if (data.status_code === 204) {
+                display.classList.replace('text-red-400', 'text-green-400');
+                display.style.borderColor = "#22c55e";
+                btn.innerText = "SUCCESS: EXTENSION DELETED";
+            } else {
+                display.classList.replace('text-green-400', 'text-red-400');
+                btn.innerText = "FAILED: CHECK LOG BELOW";
+            }
         } catch (e) {
-            display.innerText = "Error fetching v2 response: " + e.message;
+            display.innerText = "EXECUTION ERROR: " + e.message;
+            btn.innerText = "SYSTEM ERROR";
+        } finally {
+            btn.disabled = false;
         }
     }
 </script>
