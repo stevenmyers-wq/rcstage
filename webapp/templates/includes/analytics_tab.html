@@ -16,7 +16,7 @@
             <div class="space-y-4">
                 <div class="flex justify-between items-center pb-2 border-b">
                     <span class="text-[10px] font-bold text-green-600 uppercase">● Session Active</span>
-                    <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">LOGOUT</button>
+                    <button onclick="location.href='/api/analytics/logout'" class="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded text-slate-500 hover:text-red-500 hover:border-red-500 font-bold uppercase transition">LOGOUT / REFRESH</button>
                 </div>
                 
                 <form id="analyticsForm" class="space-y-4">
@@ -78,20 +78,22 @@
     async function checkConnection() {
         const resDiv = document.getElementById('connResult');
         resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600', 'text-orange-600');
-        resDiv.innerText = "Checking V2 Data...";
+        resDiv.innerText = "Checking V2 Identity...";
 
         try {
             const r = await fetch('/api/analytics/test-connection');
             const d = await r.json();
             
-            if (d.status === 'success') {
+            if (d.status === 'expired') {
+                resDiv.innerText = "TOKEN EXPIRED: Click Logout to refresh.";
+                resDiv.classList.add('text-red-600');
+            } else if (d.status === 'success') {
                 let msg = `IDENTITY: ${d.company} (${d.rcId})`;
                 
                 if (!d.hasAnalytics) {
-                    msg += `\n⚠️ Bridge profile '${d.profile}' blocked the Analytics scope. Run Analysis will fail.`;
+                    msg += `\n⚠️ Bridge stripped Analytics scope. Queries will fail.`;
                     resDiv.classList.add('text-orange-600');
                 } else {
-                    msg += `\n✅ Profile '${d.profile}' granted Analytics.`;
                     resDiv.classList.add('text-green-600');
                 }
                 
@@ -126,6 +128,10 @@
             });
             const d = await r.json();
             
+            // Explicitly catch expired token (401 invalid_token)
+            if (d._status === 401 || d.error === 'invalid_token') {
+                throw new Error('TOKEN EXPIRED (1 Hour Limit). Please click LOGOUT and re-authorize.');
+            }
             if (!r.ok || d.error || d.errorCode) {
                 throw new Error(d.message || d.error || d.errorCode || 'Fetch failed');
             }
