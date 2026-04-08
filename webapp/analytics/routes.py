@@ -12,12 +12,13 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
-    """Step 1: Redirect to RC SSO. Clears session to prevent code reuse errors."""
+    """Step 1: Redirect to RC SSO. Fix: Only clear analytics data, not global session."""
     target_id = request.args.get('targetAccountId')
     if not target_id: return "Target ID required", 400
     
-    # Crucial: Reset session to prevent 400 invalid_grant on refreshes
-    session.clear() 
+    # FIX: Do NOT use session.clear() here. It logs you out of the whole site.
+    session.pop('analytics_isolated_token_vfinal', None)
+    session.pop('analytics_token_scopes', None)
     session['analytics_target_id'] = target_id
     
     scopes = "Analytics ReadCallLog ReadAccounts"
@@ -31,7 +32,7 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
-    """Step 2: Authenticate Employee and Bridge to Customer context."""
+    """Step 2: Employee login -> Bridge swap."""
     code = request.args.get('code')
     target_id = session.get('analytics_target_id')
     
@@ -42,50 +43,51 @@ def analytics_callback():
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
     auth_data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
     
-    # Authenticate the employee
     res = requests.post(token_url, data=auth_data, auth=(CLIENT_ID, CLIENT_SECRET))
     if not res.ok:
-        return f"Token Exchange Error (400 invalid_grant): {res.text}", 400
+        return f"Token Exchange Error: {res.text}", 400
     
     employee_token = res.json().get('access_token')
     
-    # Exchange for the impersonated token
-    customer_token = get_impersonation_token(employee_token, target_id)
+    # Get the impersonated token and its scopes
+    customer_token, scopes = get_impersonation_token(employee_token, target_id)
     
     if customer_token:
         session['analytics_isolated_token_vfinal'] = customer_token
+        session['analytics_token_scopes'] = scopes
         return render_template_string("""
             <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
-    return "Impersonation bridge failed. Check GCP Logs for BRIDGE ERROR.", 403
+    return "Bridge failure. Please check logs.", 403
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Diagnostic Proof: Returns the Legal Company Name for the current token."""
+    """Returns the legal Company Name and verifies the Analytics scope."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
+    scopes = session.get('analytics_token_scopes', "")
     
-    if not token:
-        return jsonify({"status": "error", "message": "No Active Token found in session"}), 401
+    if not token: return jsonify({"error": "No Session"}), 401
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
     status_code, info = rc.get_account_identity_proof()
     
-    if status_code == 200:
-        return jsonify({
-            "status": "success",
-            "company": info.get('contactInfo', {}).get('company', 'Unknown Entity'),
-            "ownerId": info.get('id'),
-            "isCorrectAccount": str(info.get('id')) == str(target_id)
-        })
+    # FIND THE NAME: Check multiple common fields
+    name = (
+        info.get('contactInfo', {}).get('company') or 
+        info.get('serviceInfo', {}).get('contact', {}).get('company') or
+        info.get('serviceInfo', {}).get('brand', {}).get('name') or
+        "Company Name Unknown"
+    )
     
-    # If it fails, return the full error so we can see the 'burden of proof' fail reason
     return jsonify({
-        "status": "failed", 
-        "rc_status_code": status_code,
-        "rc_response": info
-    }), 400
+        "status": "success" if status_code == 200 else "failed",
+        "companyName": name,
+        "rcId": info.get('id'),
+        "hasAnalyticsScope": "Analytics" in scopes,
+        "isMatch": str(info.get('id')) == str(target_id)
+    })
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
@@ -111,5 +113,7 @@ def get_call_records():
 
 @analytics_bp.route('/api/analytics/logout')
 def analytics_logout():
-    session.clear()
+    session.pop('analytics_isolated_token_vfinal', None)
+    session.pop('analytics_target_id', None)
+    session.pop('analytics_token_scopes', None)
     return redirect("/?tab=analytics#business-analytics")
