@@ -21,7 +21,7 @@ def get_impersonation_token(employee_token, target_account_id):
     # 'brd' is the appName used by build.ps.ringcentral.com
     payload = {
         "accountId": str(target_account_id),
-        "appName": "brd" 
+        "appName": "analytics" 
     }
 
     try:
