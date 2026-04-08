@@ -13,19 +13,19 @@ class RCBusinessAnalytics:
     def fetch_records(self, dimension, time_settings, **kwargs):
         """POST /analytics/calls/v1/accounts/{accountId}/records/fetch"""
         if not self.token:
-            return {"error": "AUTH_REQUIRED", "message": "No analytics token found."}
+            return {"error": "AUTH_REQUIRED", "message": "Analytics token missing."}
             
         payload = {
             "dimension": dimension,
             "timeSettings": time_settings
         }
         
-        # We pass the token explicitly to the 'token' argument in your rc_api_call
-        # This prevents it from falling back to session.get('rc_access_token')
+        # CRITICAL: We pass token=self.token so rc_api_call ignores the session
         return rc_api_call(
             f"{self.base_path}/records/fetch", 
             method='POST', 
             json=payload, 
-            token=self.token,
+            token=self.token, # Manual token override
+            return_response=False, 
             **kwargs
         )
