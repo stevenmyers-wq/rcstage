@@ -12,6 +12,9 @@ class RCBusinessAnalytics:
 
     def fetch_records(self, dimension, time_settings, **kwargs):
         """POST /analytics/calls/v1/accounts/{accountId}/records/fetch"""
+        if not self.token:
+            return {"error": "No analytics token provided to client."}
+            
         payload = {
             "dimension": dimension,
             "timeSettings": time_settings
@@ -19,11 +22,13 @@ class RCBusinessAnalytics:
         if kwargs.get('callFilters'):
             payload['callFilters'] = kwargs.get('callFilters')
         
-        # We pass the token override to the existing rc_api_call utility
+        # Explicitly pass the isolated token override to your rc_api_call utility
+        # Using raise_error=True so our route can catch and JSONify the error
         return rc_api_call(
             f"{self.base_path}/records/fetch", 
             method='POST', 
             json=payload, 
-            token=self.token, 
+            token=self.token,
+            raise_error=True,
             **kwargs
         )
