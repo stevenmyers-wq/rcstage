@@ -24,7 +24,7 @@
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b">
                 <span class="text-[10px] font-bold text-green-600 uppercase italic">● Session Active: {{ session.get('analytics_target_id') }}</span>
-                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
+                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Logout</button>
             </div>
             
             <form id="analyticsForm" class="space-y-4 mb-6">
@@ -34,7 +34,7 @@
                 </select>
                 <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
                 <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white font-bold py-2 rounded">
                     RUN ANALYSIS
                 </button>
             </form>
@@ -43,7 +43,7 @@
                 <button onclick="checkConnection()" class="w-full bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold py-2 rounded text-[10px] uppercase tracking-widest">
                     Verify Identity Proof
                 </button>
-                <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden"></div>
+                <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden break-words"></div>
             </div>
         </div>
         {% endif %}
@@ -73,7 +73,7 @@
         </div>
         {% else %}
         <div class="p-24 text-center">
-            <p class="text-slate-400 italic">Identification required.</p>
+            <p class="text-slate-400 italic">Authorization required.</p>
         </div>
         {% endif %}
     </div>
@@ -89,21 +89,20 @@
     async function checkConnection() {
         const resDiv = document.getElementById('connResult');
         resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
-        resDiv.innerText = "Querying Account Identity...";
+        resDiv.innerText = "Querying api.ringcentral.com (~)...";
 
         try {
             const r = await fetch('/api/analytics/test-connection');
             const d = await r.json();
             if (d.status === 'success') {
-                // Returns the actual Legal Company Name
-                resDiv.innerText = `COMPANY: ${d.company}`;
+                resDiv.innerText = `IDENTITY: ${d.company} (${d.rcId})`;
                 resDiv.classList.add('text-green-600');
             } else {
-                resDiv.innerText = "ERROR: " + (d.error?.error || "Invalid Token");
+                resDiv.innerText = "VERIFICATION FAILED: Invalid Context";
                 resDiv.classList.add('text-red-600');
             }
         } catch (e) {
-            resDiv.innerText = "VERIFICATION FAILED";
+            resDiv.innerText = "NETWORK ERROR";
             resDiv.classList.add('text-red-600');
         }
     }
@@ -151,7 +150,7 @@
                     <td class="px-6 py-4 italic text-slate-500">${new Date(first.startedAt).toLocaleString()}</td>
                     <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
                     <td class="px-6 py-4 text-center">
-                        <span class="px-2 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase text-slate-900">${last.result || 'Disconnected'}</span>
+                        <span class="px-2 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase text-slate-900">${last.result || 'Unknown'}</span>
                     </td>
                     <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
                 </tr>`;
