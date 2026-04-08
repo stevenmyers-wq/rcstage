@@ -1,16 +1,13 @@
 <style>
     .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .chevron { transition: transform 0.2s ease-in-out; }
-    .chevron.open { transform: rotate(90deg); }
 </style>
 
 <script>
     (function() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('tab') === 'analytics' || window.location.hash === '#business-analytics') {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('tab') === 'analytics' || window.location.hash === '#business-analytics') {
             window.addEventListener('load', () => {
-                // Selector for your specific sidebar button
                 const btn = document.querySelector('a[href*="business-analytics"]') || 
                             document.querySelector('[onclick*="business-analytics"]');
                 if (btn) btn.click();
@@ -21,38 +18,38 @@
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm italic">Isolated Impersonation Mode</p>
+    <p class="text-slate-500 text-sm italic font-bold">Default Super Admin Impersonation Mode</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         
-        {% if not session.get('analytics_token_isolated') %}
+        {% if not session.get('analytics_access_token_v2') %}
         <div id="authGate">
-            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Step 1: Authenticate</h3>
+            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Enter Tenant ID</h3>
             <div class="space-y-4">
-                <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm" placeholder="Target Account ID">
-                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all">
-                    LOG IN & AUTHORIZE
+                <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="e.g. 758735...">
+                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs transition-all">
+                    IMPERSONATE & LOGIN
                 </button>
             </div>
         </div>
         {% else %}
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Session: {{ session.get('analytics_target_id') }}</span>
-                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change Account</button>
+                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Impersonating: {{ session.get('analytics_target_id') }}</span>
+                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
             </div>
             
             <form id="analyticsForm" class="space-y-4">
-                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
+                <select id="dimension" class="w-full border rounded p-2 text-sm">
                     <option value="Users">Users</option>
                     <option value="Queues">Call Queues</option>
                 </select>
-                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm" required>
-                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
+                <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
                 <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
-                    RUN ANALYSIS
+                    FETCH ANALYTICS
                 </button>
             </form>
         </div>
@@ -60,14 +57,14 @@
     </div>
 
     <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
-        {% if not session.get('analytics_token_isolated') %}
+        {% if not session.get('analytics_access_token_v2') %}
         <div class="p-24 text-center bg-slate-50/50">
-            <p class="text-slate-400 font-medium italic italic">Identification required. Enter an Account ID to unlock.</p>
+            <p class="text-slate-400 font-medium italic">Identification required for impersonation.</p>
         </div>
         {% else %}
         <div id="dataTable">
-            <div class="p-4 bg-slate-50 border-b border-slate-200">
-                <h3 class="font-bold text-slate-700 text-xs uppercase tracking-widest italic">Records for {{ session.get('analytics_target_id') }}</h3>
+            <div class="p-4 bg-slate-50 border-b">
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest uppercase">Admin Records: {{ session.get('analytics_target_id') }}</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left whitespace-nowrap">
@@ -81,7 +78,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="5" class="py-20 text-center text-slate-400 italic font-medium">Ready. Click Run Analysis.</td></tr>
+                        <tr><td colspan="5" class="py-20 text-center text-slate-400 italic">Ready. Analysis will target the Default Super Admin.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -103,9 +100,6 @@
         const tBody = document.getElementById('tableBody');
         sBtn.disabled = true; sBtn.innerHTML = `<span>Loading...</span>`;
 
-        // FIXED: Use the browser's local timezone so the API matches your selected dates
-        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
         try {
             const r = await fetch('/api/analytics/records', {
                 method: 'POST',
@@ -114,7 +108,7 @@
                     timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
                     timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
                     dimension: document.getElementById('dimension').value,
-                    timeZone: timeZone 
+                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                 })
             });
 
@@ -124,7 +118,7 @@
         } catch(e) {
             tBody.innerHTML = `<tr><td colspan="5" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
         } finally {
-            sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
+            sBtn.disabled = false; sBtn.innerText = 'FETCH ANALYTICS';
         }
     });
 
@@ -132,22 +126,20 @@
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
         if (!data || !data.data || data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400 italic">No records found. Check date range or dimension.</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400 italic">No admin records found for this period.</td></tr>';
             return;
         }
         data.data.forEach((rec) => {
             const first = rec.hops[0];
             const last = rec.hops[rec.hops.length-1];
-            const tr = document.createElement('tr');
-            tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
-            tr.innerHTML = `
-                <td class="px-6 py-4 font-medium text-slate-700 italic">${new Date(first.startedAt).toLocaleString()}</td>
-                <td class="px-6 py-4 font-bold text-slate-800 italic">${first.from?.name || 'System'}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-500 underline">${rec.hops.length}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-900 uppercase">${last.result || 'Unknown'}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-700">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
-            `;
-            body.appendChild(tr);
+            body.innerHTML += `
+                <tr class="hover:bg-slate-50 border-b">
+                    <td class="px-6 py-4 font-medium italic">${new Date(first.startedAt).toLocaleString()}</td>
+                    <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
+                    <td class="px-6 py-4 text-center font-bold text-slate-500 underline">${rec.hops.length}</td>
+                    <td class="px-6 py-4 text-center font-black uppercase text-slate-900">${last.result || 'Unknown'}</td>
+                    <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                </tr>`;
         });
     }
 
