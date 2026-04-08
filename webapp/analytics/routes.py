@@ -50,11 +50,11 @@ def analytics_callback():
             <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
-    return "Impersonation failed. See logs.", 403
+    return "Impersonation failed. Check bridge logs.", 403
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Diagnostic route to verify token validity via Account Info."""
+    """Returns the actual Company Name for burden of proof."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
@@ -64,15 +64,17 @@ def test_connection():
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
     info = rc.get_account_info()
     
-    if info and 'serviceInfo' in info:
-        # Return just the account name and brand for verification
+    # Extract Company Name from Contact Info (not Brand Info)
+    company_name = info.get('contactInfo', {}).get('company', 'Unknown Company')
+    
+    if company_name != 'Unknown Company':
         return jsonify({
             "status": "success",
-            "accountName": info.get('serviceInfo', {}).get('brand', {}).get('name', 'Unknown Name'),
-            "mainNumber": info.get('mainNumber', 'N/A')
+            "accountName": company_name,
+            "id": target_id
         })
     
-    return jsonify({"status": "failed", "raw": info}), 400
+    return jsonify({"status": "failed", "details": "Could not retrieve company name"}), 400
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
