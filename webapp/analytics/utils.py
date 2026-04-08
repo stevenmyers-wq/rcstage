@@ -5,7 +5,7 @@ from webapp.rc_api import rc_api_call
 def get_impersonation_token(employee_token, target_account_id):
     """
     Exchanges an Employee SSO token for a Customer-scoped session token.
-    Reverted to 'brd' as it is the confirmed working internal profile.
+    Uses 'brd' (Build) as the stable internal profile for impersonation.
     """
     exchange_url = "https://auth.ps.ringcentral.com/jwks"
     headers = {
@@ -43,14 +43,14 @@ class RCBusinessAnalytics:
 
     def get_account_info(self):
         """
-        Diagnostic Check: Fetches basic account details.
+        Diagnostic: Fetches full account metadata.
         Endpoint: /restapi/v1.0/account/{accountId}
         """
         endpoint = f"/restapi/v1.0/account/{self.account_id}"
         return rc_api_call(endpoint, token=self.token)
 
     def get_super_admin_extension(self):
-        """Resolves Operator extension."""
+        """Resolves the Operator extension ID."""
         endpoint = f"/restapi/v1.0/account/{self.account_id}"
         res = rc_api_call(endpoint, token=self.token)
         if res and 'operator' in res:
@@ -58,7 +58,7 @@ class RCBusinessAnalytics:
         return None
 
     def fetch_records(self, dimension, time_settings, admin_extension_id=None, **kwargs):
-        """POST analytics query."""
+        """POST analytics query for aggregate call records."""
         payload = {
             "dimension": dimension,
             "timeSettings": time_settings
