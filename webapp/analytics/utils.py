@@ -4,30 +4,41 @@ from webapp.rc_api import rc_api_call
 
 def get_impersonation_token(employee_token, target_account_id):
     """
-    Exchanges the Employee SSO token for a Customer-scoped session token.
+    Exchanges an Employee SSO token for a Customer-scoped session token.
     This resolves the 404 (Account Not Found) and 403 (Forbidden) errors.
     """
+    # Endpoint identified in the working tool's HAR file
     exchange_url = "https://auth.ps.ringcentral.com/jwks"
+    
+    # CRITICAL: The bridge requires the token in an 'access_token' header, 
+    # not the standard 'Authorization' header.
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "access_token": employee_token  # Passing the employee token in this header
+        "access_token": employee_token  
     }
+    
+    # 'brd' is the appName used by build.ps.ringcentral.com
     payload = {
         "accountId": str(target_account_id),
-        "appName": "brd" # Identifier from the successful internal tool
+        "appName": "brd" 
     }
 
     try:
         response = requests.post(exchange_url, json=payload, headers=headers)
         if response.ok:
-            # The returned token context is now the target customer account
-            return response.json().get("access_token")
+            data = response.json()
+            # LOGGING: Verify that 'Analytics' appears in this string
+            print(f"--- BRIDGE SUCCESS ---")
+            print(f"TARGET ACCOUNT: {data.get('owner_id')}")
+            print(f"GRANTED SCOPES: {data.get('scope')}")
+            return data.get("access_token")
         else:
-            print(f"Exchange Bridge Error: {response.status_code} - {response.text}")
+            print(f"--- BRIDGE ERROR: {response.status_code} ---")
+            print(f"RESPONSE: {response.text}")
             return None
     except Exception as e:
-        print(f"Token Exchange Exception: {str(e)}")
+        print(f"--- BRIDGE EXCEPTION: {str(e)} ---")
         return None
 
 class RCBusinessAnalytics:
@@ -43,25 +54,26 @@ class RCBusinessAnalytics:
     def get_super_admin_extension(self):
         """
         Resolves the Operator extension ID for the account.
-        With the impersonated token, this will no longer return a 404.
+        Using the impersonated token fixes the 404 error here.
         """
         endpoint = f"/restapi/v1.0/account/{self.account_id}"
         res = rc_api_call(endpoint, token=self.token)
         
-        # 'operator' is the RC technical term for the primary admin/extension
         if res and 'operator' in res:
             return res['operator'].get('id')
         
         return None
 
     def fetch_records(self, dimension, time_settings, admin_extension_id=None, **kwargs):
-        """POST analytics query targeting the identified admin extension."""
+        """
+        POST analytics query.
+        Using the impersonated token fixes the 403 error here.
+        """
         payload = {
             "dimension": dimension,
             "timeSettings": time_settings
         }
 
-        # Impersonation: Restrict query to data 'seen' by the Super Admin
         if admin_extension_id:
             payload["callFilters"] = {
                 "extensionFilters": [
