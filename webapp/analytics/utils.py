@@ -3,7 +3,7 @@ from webapp.rc_api import rc_api_call
 class RCBusinessAnalytics:
     """
     Python Client for the RingCentral Business Analytics API.
-    Uses an explicit token to support the independent analytics auth flow.
+    Isolated from the global PKCE session via an explicit token.
     """
     def __init__(self, account_id, token):
         self.account_id = account_id
@@ -13,7 +13,7 @@ class RCBusinessAnalytics:
     def fetch_records(self, dimension, time_settings, **kwargs):
         """POST /analytics/calls/v1/accounts/{accountId}/records/fetch"""
         if not self.token:
-            return {"error": "No analytics token provided to client."}
+            return {"error": "SESSION_EXPIRED", "message": "No token found."}
             
         payload = {
             "dimension": dimension,
@@ -22,13 +22,21 @@ class RCBusinessAnalytics:
         if kwargs.get('callFilters'):
             payload['callFilters'] = kwargs.get('callFilters')
         
-        # Explicitly pass the isolated token override to your rc_api_call utility
-        # Using raise_error=True so our route can catch and JSONify the error
-        return rc_api_call(
+        # Pass token override to rc_api_call. 
+        # We use return_response=True to manually handle the error body if it fails.
+        response = rc_api_call(
             f"{self.base_path}/records/fetch", 
             method='POST', 
             json=payload, 
             token=self.token,
-            raise_error=True,
+            return_response=True,
             **kwargs
         )
+        
+        if not response.ok:
+            try:
+                return response.json() # Return RC's specific error JSON
+            except:
+                return {"error": "API_ERROR", "message": response.text}
+                
+        return response.json()
