@@ -49,14 +49,13 @@ def analytics_callback():
 
 @analytics_bp.route('/api/analytics/test-connection')
 def test_connection():
-    """Returns the ENTIRE raw API response for burden of proof."""
+    """Returns the ENTIRE RAW V2 response."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
     if not token: return jsonify({"error": "No token"}), 401
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
-    # Return the entire JSON dump from RC
     return jsonify(rc.get_full_account_info())
 
 @analytics_bp.route('/api/analytics/logout')
