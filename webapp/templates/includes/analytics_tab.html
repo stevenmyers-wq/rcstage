@@ -29,7 +29,7 @@
         <div id="authGate">
             <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Identity Context</h3>
             <div class="space-y-4">
-                <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID">
+                <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID (e.g. 777100124)">
                 <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs transition-all">
                     IMPERSONATE & AUTHORIZE
                 </button>
@@ -38,17 +38,23 @@
         {% else %}
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Connected: {{ session.get('analytics_target_id') }}</span>
-                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
+                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Session Active: {{ session.get('analytics_target_id') }}</span>
+                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change Account</button>
             </div>
             
             <form id="analyticsForm" class="space-y-4">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase">Analysis Dimension</label>
                 <select id="dimension" class="w-full border rounded p-2 text-sm">
                     <option value="Users">Users</option>
                     <option value="Queues">Call Queues</option>
                 </select>
+                
+                <label class="block text-[10px] font-bold text-slate-400 uppercase">Start Date</label>
                 <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
+                
+                <label class="block text-[10px] font-bold text-slate-400 uppercase">End Date</label>
                 <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
+                
                 <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
                     RUN ANALYSIS
                 </button>
@@ -65,7 +71,7 @@
         {% else %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b">
-                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Admin Activity: {{ session.get('analytics_target_id') }}</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Admin Call Data: {{ session.get('analytics_target_id') }}</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left">
@@ -78,7 +84,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Ready. Fetching data for the identified Super Admin.</td></tr>
+                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Select parameters and run analysis.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -90,7 +96,10 @@
 <script>
     function startAnalyticsAuth() {
         const id = document.getElementById('targetAccountId').value.trim();
-        if (!id) return;
+        if (!id) {
+            alert("Please enter a Target Account ID");
+            return;
+        }
         window.location.href = `/api/analytics/auth?targetAccountId=${id}`;
     }
 
@@ -98,7 +107,10 @@
         e.preventDefault();
         const sBtn = document.getElementById('submitBtn');
         const tBody = document.getElementById('tableBody');
-        sBtn.disabled = true; sBtn.innerHTML = `<span>Fetching...</span>`;
+        
+        sBtn.disabled = true; 
+        sBtn.innerHTML = `<span>Fetching Data...</span>`;
+        tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-slate-400 animate-pulse">Querying RingCentral Analytics API...</td></tr>`;
 
         try {
             const r = await fetch('/api/analytics/records', {
@@ -118,37 +130,55 @@
         } catch(e) {
             tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
         } finally {
-            sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
+            sBtn.disabled = false; 
+            sBtn.innerText = 'RUN ANALYSIS';
         }
     });
 
     function renderTable(data) {
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
-        if (!data || !data.data || data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="4" class="py-20 text-center text-slate-400">No records found for identified Admin.</td></tr>';
+        
+        if (!data || !data.records || data.records.length === 0) {
+            body.innerHTML = '<tr><td colspan="4" class="py-20 text-center text-slate-400">No records found for the selected timeframe.</td></tr>';
             return;
         }
-        data.data.forEach((rec) => {
+
+        data.records.forEach((rec) => {
             const first = rec.hops[0];
             const last = rec.hops[rec.hops.length-1];
+            const durationSeconds = Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000);
+            
             body.innerHTML += `
                 <tr class="hover:bg-slate-50 border-b">
-                    <td class="px-6 py-4 italic">${new Date(first.startedAt).toLocaleString()}</td>
-                    <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                    <td class="px-6 py-4 text-center font-black uppercase text-slate-900">${last.result || 'Unknown'}</td>
-                    <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                    <td class="px-6 py-4 italic text-slate-500">${new Date(first.startedAt).toLocaleString()}</td>
+                    <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System / External'}</td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="px-2 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase text-slate-900">
+                            ${last.result || 'Disconnected'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-center font-bold text-slate-700">${durationSeconds}s</td>
                 </tr>`;
         });
     }
 
+    // Set default dates (Last 24 hours)
     (function() {
-        const now = new Date(); const start = new Date(); start.setHours(now.getHours() - 23);
+        const now = new Date(); 
+        const start = new Date(); 
+        start.setHours(now.getHours() - 24);
+        
         const fmt = (d) => {
             const tz = (new Date()).getTimezoneOffset() * 60000;
             return (new Date(d - tz)).toISOString().slice(0, 16);
         };
-        const fI = document.getElementById('timeFrom'); const tI = document.getElementById('timeTo');
-        if (fI && tI) { fI.value = fmt(start); tI.value = fmt(now); }
+        
+        const fI = document.getElementById('timeFrom'); 
+        const tI = document.getElementById('timeTo');
+        if (fI && tI) { 
+            fI.value = fmt(start); 
+            tI.value = fmt(now); 
+        }
     })();
 </script>
