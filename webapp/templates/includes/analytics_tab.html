@@ -1,6 +1,8 @@
 <style>
     .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .chevron { transition: transform 0.2s ease-in-out; }
+    .chevron.open { transform: rotate(90deg); }
 </style>
 
 <div class="mb-6">
@@ -9,16 +11,15 @@
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
-    
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         
         {% if not session.get('analytics_token') %}
         <div id="authGate">
-            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Identity Context</h3>
+            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Authenticate Target</h3>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-[10px] font-black text-slate-400 mb-1 uppercase">Target Account ID</label>
-                    <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm" placeholder="e.g. 758735...">
+                    <label class="block text-[10px] font-black text-slate-400 mb-1 uppercase">Account ID</label>
+                    <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm outline-none" placeholder="e.g. 758735...">
                 </div>
                 <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all shadow-sm">
                     LOG IN & AUTHORIZE
@@ -28,16 +29,16 @@
         {% else %}
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Authenticated: {{ session.get('analytics_target_id') }}</span>
-                <button onclick="window.location.href='/api/analytics/auth?targetAccountId=reset'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
+                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Connected: {{ session.get('analytics_target_id') }}</span>
+                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
             </div>
             
             <form id="analyticsForm" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">Dimension</label>
                     <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
-                        <option value="Queues">Call Queues</option>
                         <option value="Users">Users</option>
+                        <option value="Queues">Call Queues</option>
                     </select>
                 </div>
                 <div>
@@ -48,7 +49,7 @@
                     <label class="block text-xs font-bold text-slate-600 mb-1 uppercase">End Date</label>
                     <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
                 </div>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition shadow-sm">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
                     RUN ANALYSIS
                 </button>
             </form>
@@ -56,19 +57,19 @@
         {% endif %}
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 min-h-[500px]">
         {% if not session.get('analytics_token') %}
         <div class="p-24 text-center bg-slate-50/50">
-            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-            <p class="text-slate-400 font-medium italic">Enter Account ID to begin.</p>
+            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2-2V7a4 4 0 00-8 0v4h8z" /></svg>
+            <p class="text-slate-400 font-medium italic">Identify an account to begin.</p>
         </div>
         {% else %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b border-slate-200">
-                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest italic uppercase">Records for {{ session.get('analytics_target_id') }}</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic">Call Records: {{ session.get('analytics_target_id') }}</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
-                <table class="w-full text-sm text-left">
+                <table class="w-full text-sm text-left whitespace-nowrap">
                     <thead class="text-[10px] text-slate-500 uppercase bg-slate-100 border-b">
                         <tr>
                             <th class="px-6 py-3">Start Time</th>
@@ -79,7 +80,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="5" class="py-20 text-center text-slate-400 italic">Ready to run query.</td></tr>
+                        <tr><td colspan="5" class="py-20 text-center text-slate-400 italic">Ready. Adjust parameters and Run Analysis.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -89,6 +90,14 @@
 </div>
 
 <script>
+    // 1. REDIRECT FIX: Listen for URL hash changes to open this tab automatically
+    window.addEventListener('load', () => {
+        if (window.location.hash === '#business-analytics') {
+            // Trigger your dashboard's tab-switching logic here if it doesn't happen automatically
+            console.log("Analytics tab active via redirect");
+        }
+    });
+
     function startAnalyticsAuth() {
         const id = document.getElementById('targetAccountId').value.trim();
         if (!id) return;
@@ -108,27 +117,18 @@
                 body: JSON.stringify({
                     timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
                     timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
-                    dimension: document.getElementById('dimension').value,
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                    dimension: document.getElementById('dimension').value
                 })
             });
 
-            // CRITICAL CHECK: Ensure response is JSON
-            const contentType = r.headers.get("content-type");
-            if (!contentType || !contentType.includes("application/json")) {
-                const text = await r.text();
-                throw new Error("Server returned non-JSON response. This is likely a 500 error page.");
-            }
-
             const d = await r.json();
-            if (d.error === "AUTH_REQUIRED") { window.location.reload(); return; }
-            if (!r.ok) throw new Error(d.message || d.error || 'Fetch failed');
-            
+            if (!r.ok) {
+                // Now shows the specific error message instead of just 'SERVER_ERROR'
+                throw new Error(d.message || d.error || 'Fetch failed');
+            }
             renderTable(d);
         } catch(e) {
-            tBody.innerHTML = `<tr><td colspan="5" class="py-20 text-center text-red-500 font-bold italic">
-                Query Failed: ${e.message}
-            </td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="5" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
         } finally {
             sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
@@ -138,7 +138,7 @@
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
         if (!data || !data.data || data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400 italic">No records found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="py-20 text-center text-slate-400">No records found.</td></tr>';
             return;
         }
         data.data.forEach((rec) => {
@@ -147,18 +147,19 @@
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
             tr.innerHTML = `
-                <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
+                <td class="px-6 py-4 text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
                 <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-500 underline">${rec.hops.length}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-900 uppercase">${last.result || 'Unknown'}</td>
+                <td class="px-6 py-4 text-center text-slate-500 underline">${rec.hops.length}</td>
+                <td class="px-6 py-4 text-center font-black text-slate-900 uppercase">${last.result || 'Unknown'}</td>
                 <td class="px-6 py-4 text-center font-bold text-slate-700">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
             `;
             body.appendChild(tr);
         });
     }
 
+    // Default Date Range: Last 24 Hours (API limit for granular records)
     (function() {
-        const now = new Date(); const start = new Date(); start.setDate(now.getDate() - 1);
+        const now = new Date(); const start = new Date(); start.setHours(now.getHours() - 23);
         const fmt = (d) => {
             const tz = (new Date()).getTimezoneOffset() * 60000;
             return (new Date(d - tz)).toISOString().slice(0, 16);
