@@ -16,10 +16,11 @@ class RCBusinessAnalytics:
             "dimension": dimension,
             "timeSettings": time_settings
         }
+        # Add optional filters if provided
         if kwargs.get('callFilters'):
             payload['callFilters'] = kwargs.get('callFilters')
         
-        # We pass the token explicitly to the existing rc_api_call utility
+        # We pass the token explicitly to your provided rc_api_call utility
         return rc_api_call(
             f"{self.base_path}/records/fetch", 
             method='POST', 
