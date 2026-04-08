@@ -3,10 +3,6 @@
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
-    .journey-timeline::before {
-        content: ''; position: absolute; top: 0; bottom: 0; left: 20px;
-        width: 2px; background-color: #e2e8f0;
-    }
 </style>
 
 <div class="mb-6">
@@ -15,6 +11,7 @@
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+    
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         
         {% if not session.get('analytics_token') %}
@@ -40,11 +37,10 @@
             <form id="analyticsForm" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">DIMENSION</label>
-                    <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
+                    <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
                         <option value="Users">Users</option>
                         <option value="Queues">Call Queues</option>
                         <option value="Sites">Sites</option>
-                        <option value="IVRs">IVR Menus</option>
                     </select>
                 </div>
                 <div>
@@ -103,7 +99,7 @@
     function startAnalyticsAuth() {
         const id = document.getElementById('targetAccountId').value.trim();
         if (!id) return;
-        // This triggers the Step 1 Redirect
+        // Step 1 Redirect
         window.location.href = `/api/analytics/auth?targetAccountId=${id}`;
     }
 
@@ -125,12 +121,10 @@
                 })
             });
             const d = await r.json();
-            
             if (d.error === "AUTH_REQUIRED") {
                 location.reload(); return;
             }
             if (!r.ok) throw new Error(d.error || 'Fetch failed');
-            
             renderTable(d);
             document.getElementById('exportBtn').classList.remove('hidden');
         } catch(e) {
@@ -143,23 +137,21 @@
     function renderTable(data) {
         const body = document.getElementById('tableBody');
         body.innerHTML = '';
-        
         if (!data || !data.data || data.data.length === 0) {
-            body.innerHTML = '<tr><td colspan="7" class="py-20 text-center text-slate-400 italic font-medium">No records found for this timeframe.</td></tr>';
+            body.innerHTML = '<tr><td colspan="7" class="py-20 text-center text-slate-400 italic">No records found.</td></tr>';
             return;
         }
-
         data.data.forEach((rec, idx) => {
             const first = rec.hops[0];
             const last = rec.hops[rec.hops.length-1];
             const tr = document.createElement('tr');
-            tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors cursor-default";
+            tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
             tr.innerHTML = `
                 <td class="p-4"></td>
                 <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
                 <td class="px-6 py-4 font-mono text-[10px] text-slate-400">${rec.callId.substring(0,8)}...</td>
                 <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || first.from?.number || 'System'}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-500 underline">${rec.hops.length}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-500">${rec.hops.length}</td>
                 <td class="px-6 py-4 text-center font-bold text-slate-900">${last.result || 'Unknown'}</td>
                 <td class="px-6 py-4 text-center font-bold text-slate-700">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
             `;
