@@ -11,12 +11,12 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
-    """Step 1: Redirect to RC for Analytics impersonation."""
     target_id = request.args.get('targetAccountId')
-    if not target_id: return "Target ID required", 400
+    if not target_id: return "Target Account ID required", 400
     
     session['analytics_target_id'] = target_id
-    scopes = "Analytics ReadCallLog ReadAccounts"
+    # Added ReadExtensions so we can find the Super Admin ID
+    scopes = "Analytics ReadCallLog ReadAccounts ReadExtensions"
     
     rc_url = (
         f"https://platform.ringcentral.com/restapi/oauth/authorize"
@@ -27,7 +27,6 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
-    """Step 2: Exchange code and use the 'Correct' JS Redirect Bridge."""
     code = request.args.get('code')
     if not code: return "No code returned", 400
 
@@ -37,51 +36,47 @@ def analytics_callback():
     res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
     if res.ok:
         # Isolated token key
-        session['analytics_token_isolated'] = res.json().get('access_token')
+        session['analytics_access_token_v2'] = res.json().get('access_token')
         
-        # THE CORRECT REDIRECT: Uses JS to force the browser to the right tab
+        # JS Redirect Bridge: Confirmed working
         return render_template_string("""
-            <html><body>
-            <script>
-                window.location.href = "/?tab=analytics#business-analytics";
-            </script>
-            </body></html>
+            <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
     return f"Token Error: {res.text}", 400
 
-@analytics_bp.route('/api/analytics/logout')
-def analytics_logout():
-    """Drops ONLY the analytics session keys."""
-    session.pop('analytics_token_isolated', None)
-    session.pop('analytics_target_id', None)
-    return redirect("/?tab=analytics#business-analytics")
-
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """Step 3: Fetch data using browser-provided timezone to fix 'No Records'."""
-    try:
-        token = session.get('analytics_token_isolated')
-        target_id = session.get('analytics_target_id')
+    token = session.get('analytics_access_token_v2')
+    target_id = session.get('analytics_target_id')
+    
+    if not token or not target_id:
+        return jsonify({"error": "AUTH_REQUIRED"}), 401
+    
+    from webapp.analytics.utils import RCBusinessAnalytics
+    rc = RCBusinessAnalytics(account_id=target_id, token=token)
+    
+    # 1. IMPERSONATION STEP: Resolve the Super Admin Extension ID
+    admin_id = rc.get_super_admin_extension()
+    
+    # 2. FETCH STEP: Pull data for that specific admin context
+    data = request.json
+    result = rc.fetch_records(
+        dimension=data.get('dimension'),
+        time_settings={
+            "timeZone": data.get('timeZone', 'UTC'),
+            "timeRange": {"timeFrom": data.get('timeFrom'), "timeTo": data.get('timeTo')}
+        },
+        admin_extension_id=admin_id
+    )
+    
+    if isinstance(result, dict) and "error" in result:
+        return jsonify({"error": "PERMISSION_DENIED", "message": result.get('message', 'Forbidden')}), 403
         
-        if not token: 
-            return jsonify({"error": "AUTH_REQUIRED"}), 401
-        
-        from webapp.analytics.utils import RCBusinessAnalytics
-        rc = RCBusinessAnalytics(account_id=target_id, token=token)
-        
-        data = request.json
-        # The API is very picky about timeZone matching the timestamps
-        result = rc.fetch_records(
-            dimension=data.get('dimension', 'Queues'),
-            time_settings={
-                "timeZone": data.get('timeZone', 'UTC'),
-                "timeRange": {
-                    "timeFrom": data.get('timeFrom'), 
-                    "timeTo": data.get('timeTo')
-                }
-            }
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": "SERVER_ERROR", "message": str(e)}), 500
+    return jsonify(result)
+
+@analytics_bp.route('/api/analytics/logout')
+def analytics_logout():
+    session.pop('analytics_access_token_v2', None)
+    session.pop('analytics_target_id', None)
+    return redirect("/?tab=analytics#business-analytics")
