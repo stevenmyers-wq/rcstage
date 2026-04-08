@@ -14,23 +14,18 @@ analytics_bp = Blueprint('analytics', __name__)
 def analytics_authorize():
     target_id = request.args.get('targetAccountId')
     if not target_id: return "Target ID required", 400
-    
     session.pop('analytics_isolated_token_vfinal', None)
     session['analytics_target_id'] = target_id
     
-    scopes = "ReadAccounts ReadCallLog"
-    rc_url = (
-        f"https://platform.ringcentral.com/restapi/oauth/authorize"
-        f"?response_type=code&client_id={CLIENT_ID}"
-        f"&redirect_uri={REDIRECT_URI}&scope={scopes}"
-    )
+    # We add EditExtensions to the scope request
+    scopes = "ReadAccounts EditExtensions ReadCallLog"
+    rc_url = f"https://platform.ringcentral.com/restapi/oauth/authorize?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope={scopes}"
     return redirect(rc_url)
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
     code = request.args.get('code')
     target_id = session.get('analytics_target_id')
-    
     if not code: return "Auth Error", 400
 
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
@@ -42,21 +37,22 @@ def analytics_callback():
     
     if customer_token:
         session['analytics_isolated_token_vfinal'] = customer_token
-        return render_template_string("""
-            <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
-        """)
+        return render_template_string("<html><body><script>window.location.href = '/?tab=analytics#business-analytics';</script></body></html>")
     return "Bridge Failed", 403
 
-@analytics_bp.route('/api/analytics/test-connection')
-def test_connection():
-    """Returns the ENTIRE RAW V2 response."""
+@analytics_bp.route('/api/analytics/delete-test', methods=['POST'])
+def delete_extension_test():
+    """Route to trigger the operability delete test."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
+    ext_id = request.json.get('extensionId')
     
-    if not token: return jsonify({"error": "No token"}), 401
+    if not token or not ext_id:
+        return jsonify({"error": "Missing Token or Extension ID"}), 400
     
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
-    return jsonify(rc.get_full_account_info())
+    result = rc.delete_extension(ext_id)
+    return jsonify(result)
 
 @analytics_bp.route('/api/analytics/logout')
 def analytics_logout():
