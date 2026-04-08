@@ -11,12 +11,14 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
+    """Step 1: Redirect using ONLY confirmed scopes."""
     target_id = request.args.get('targetAccountId')
-    if not target_id: return "Target Account ID required", 400
+    if not target_id: return "Target ID required", 400
     
     session['analytics_target_id'] = target_id
-    # Added ReadExtensions so we can find the Super Admin ID
-    scopes = "Analytics ReadCallLog ReadAccounts ReadExtensions"
+    
+    # These three are confirmed enabled in your Dev Console screenshot
+    scopes = "Analytics ReadCallLog ReadAccounts"
     
     rc_url = (
         f"https://platform.ringcentral.com/restapi/oauth/authorize"
@@ -27,8 +29,11 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
+    """Step 2: Exchange code and return via the working JS Bridge."""
     code = request.args.get('code')
-    if not code: return "No code returned", 400
+    if not code:
+        err = request.args.get('error_description', 'Authorization Denied')
+        return f"Auth Error: {err}", 400
 
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
     data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
@@ -36,18 +41,19 @@ def analytics_callback():
     res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
     if res.ok:
         # Isolated token key
-        session['analytics_access_token_v2'] = res.json().get('access_token')
+        session['analytics_isolated_token_vfinal'] = res.json().get('access_token')
         
-        # JS Redirect Bridge: Confirmed working
+        # This Bridge forces the browser to the correct tab on arrival
         return render_template_string("""
             <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
-    return f"Token Error: {res.text}", 400
+    return f"Token Exchange Error: {res.text}", 400
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    token = session.get('analytics_access_token_v2')
+    """Step 3: Discover admin and query records."""
+    token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
     if not token or not target_id:
@@ -56,10 +62,9 @@ def get_call_records():
     from webapp.analytics.utils import RCBusinessAnalytics
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
     
-    # 1. IMPERSONATION STEP: Resolve the Super Admin Extension ID
+    # Discovery step using 'ReadAccounts' permission
     admin_id = rc.get_super_admin_extension()
     
-    # 2. FETCH STEP: Pull data for that specific admin context
     data = request.json
     result = rc.fetch_records(
         dimension=data.get('dimension'),
@@ -69,14 +74,10 @@ def get_call_records():
         },
         admin_extension_id=admin_id
     )
-    
-    if isinstance(result, dict) and "error" in result:
-        return jsonify({"error": "PERMISSION_DENIED", "message": result.get('message', 'Forbidden')}), 403
-        
     return jsonify(result)
 
 @analytics_bp.route('/api/analytics/logout')
 def analytics_logout():
-    session.pop('analytics_access_token_v2', None)
+    session.pop('analytics_isolated_token_vfinal', None)
     session.pop('analytics_target_id', None)
     return redirect("/?tab=analytics#business-analytics")
