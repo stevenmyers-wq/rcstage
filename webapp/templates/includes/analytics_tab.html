@@ -15,7 +15,7 @@
             <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Account Target</h3>
             <div class="space-y-4">
                 <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID">
-                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs transition-all">
+                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs">
                     IMPERSONATE & AUTHORIZE
                 </button>
             </div>
@@ -24,29 +24,36 @@
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b">
                 <span class="text-[10px] font-bold text-green-600 uppercase italic">● Session Active: {{ session.get('analytics_target_id') }}</span>
-                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change Account</button>
+                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change</button>
             </div>
             
-            <form id="analyticsForm" class="space-y-4">
+            <form id="analyticsForm" class="space-y-4 mb-6">
                 <select id="dimension" class="w-full border rounded p-2 text-sm">
                     <option value="Users">Users</option>
                     <option value="Queues">Call Queues</option>
                 </select>
                 <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
                 <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white font-bold py-2 rounded">
                     RUN ANALYSIS
                 </button>
             </form>
+
+            <div class="pt-4 border-t border-slate-100">
+                <button onclick="checkConnection()" class="w-full bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold py-2 rounded text-[10px] uppercase tracking-widest">
+                    Verify Account Connectivity
+                </button>
+                <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden"></div>
+            </div>
         </div>
         {% endif %}
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 min-h-[500px]">
         {% if session.get('analytics_isolated_token_vfinal') %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b">
-                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Call Records: {{ session.get('analytics_target_id') }}</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Call Records</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left">
@@ -59,14 +66,14 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Select a date range and click Run Analysis.</td></tr>
+                        <tr><td colspan="4" class="py-20 text-center text-slate-400 italic">Ready.</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
         {% else %}
-        <div class="p-24 text-center bg-slate-50/50">
-            <p class="text-slate-400 font-medium italic">Identification required for impersonation.</p>
+        <div class="p-24 text-center">
+            <p class="text-slate-400 italic">Identification required.</p>
         </div>
         {% endif %}
     </div>
@@ -77,6 +84,26 @@
         const id = document.getElementById('targetAccountId').value.trim();
         if (!id) return;
         window.location.href = `/api/analytics/auth?targetAccountId=${id}`;
+    }
+
+    async function checkConnection() {
+        const resDiv = document.getElementById('connResult');
+        resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
+        resDiv.innerText = "Checking...";
+
+        try {
+            const r = await fetch('/api/analytics/test-connection');
+            const d = await r.json();
+            if (d.status === 'success') {
+                resDiv.innerText = `CONNECTED: ${d.accountName}`;
+                resDiv.classList.add('text-green-600');
+            } else {
+                throw new Error("Invalid Response");
+            }
+        } catch (e) {
+            resDiv.innerText = "CONNECTION FAILED";
+            resDiv.classList.add('text-red-600');
+        }
     }
 
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
@@ -96,12 +123,11 @@
                     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                 })
             });
-
             const d = await r.json();
             if (!r.ok) throw new Error(d.message || d.error || 'Fetch failed');
             renderTable(d);
         } catch(e) {
-            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 font-bold italic">${e.message}</td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="4" class="py-20 text-center text-red-500 italic">${e.message}</td></tr>`;
         } finally {
             sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
@@ -122,8 +148,8 @@
                 <tr class="hover:bg-slate-50 border-b">
                     <td class="px-6 py-4 italic">${new Date(first.startedAt).toLocaleString()}</td>
                     <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                    <td class="px-6 py-4 text-center font-black uppercase text-slate-900">${last.result || 'Unknown'}</td>
-                    <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                    <td class="px-6 py-4 text-center uppercase font-black">${last.result || 'Unknown'}</td>
+                    <td class="px-6 py-4 text-center">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
                 </tr>`;
         });
     }
