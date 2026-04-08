@@ -12,10 +12,8 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
-    """Step 1: Redirect to RC SSO."""
     target_id = request.args.get('targetAccountId')
-    if not target_id: 
-        return "Target ID required", 400
+    if not target_id: return "Target ID required", 400
     
     session['analytics_target_id'] = target_id
     scopes = "Analytics ReadCallLog ReadAccounts"
@@ -29,14 +27,14 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
-    """Step 2: Initial Auth, then Contextual Token Exchange."""
     code = request.args.get('code')
     target_id = session.get('analytics_target_id')
     
     if not code:
-        return f"Auth Error: {request.args.get('error_description', 'Denied')}", 400
+        err = request.args.get('error_description', 'Authorization Denied')
+        return f"Auth Error: {err}", 400
 
-    # 1. Get the standard Employee Access Token
+    # 1. Get Employee Token
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
     auth_data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
     res = requests.post(token_url, data=auth_data, auth=(CLIENT_ID, CLIENT_SECRET))
@@ -46,22 +44,19 @@ def analytics_callback():
     
     employee_token = res.json().get('access_token')
 
-    # 2. THE FIX: Call the Bridge to get the Customer-scoped token
-    # This is the step that grants contextual permission for the target account
-    impersonated_token = get_impersonation_token(employee_token, target_id)
+    # 2. Exchange for Impersonation Token
+    customer_token = get_impersonation_token(employee_token, target_id)
     
-    if impersonated_token:
-        # We store the IMPERSONATED token to use for the actual data queries
-        session['analytics_isolated_token_vfinal'] = impersonated_token
+    if customer_token:
+        session['analytics_isolated_token_vfinal'] = customer_token
         return render_template_string("""
             <html><body><script>window.location.href = "/?tab=analytics#business-analytics";</script></body></html>
         """)
     
-    return "Impersonation failed. Your employee account may not have access to this account.", 403
+    return "Impersonation failed. Check GCP logs for BRIDGE ERROR (check appName).", 403
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """Step 3: Query using the exchanged token."""
     token = session.get('analytics_isolated_token_vfinal')
     target_id = session.get('analytics_target_id')
     
