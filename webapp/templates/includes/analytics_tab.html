@@ -1,324 +1,244 @@
 <style>
     .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
-    .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
-    
     .journey-timeline::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 20px;
-        width: 2px;
-        background-color: #e2e8f0;
+        content: ''; position: absolute; top: 0; bottom: 0; left: 20px;
+        width: 2px; background-color: #e2e8f0;
     }
 </style>
 
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Fetch granular, call-by-call logs to view end-to-end routing journeys.</p>
+    <p class="text-slate-500 text-sm italic">Secure Admin Impersonation Mode</p>
 </div>
-
-{% if session.get('impersonate_id') and session.get('impersonate_id') != '~' %}
-<div class="mb-6 p-4 bg-amber-50 border-l-4 border-amber-400 rounded shadow-sm flex items-center">
-    <div class="bg-amber-100 p-2 rounded-full mr-3 text-amber-600">
-        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"></path></svg>
-    </div>
-    <div>
-        <p class="text-sm font-bold text-amber-900 uppercase tracking-tight">Impersonation Active</p>
-        <p class="text-xs text-amber-700 font-medium">Context: Account <span class="font-mono bg-amber-100 px-1 rounded">{{ session.get('impersonate_id') }}</span></p>
-    </div>
-</div>
-{% endif %}
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
     
-    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
-        <h3 class="font-bold text-lg text-slate-800 mb-4">Report Parameters</h3>
+    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200">
         
-        <form id="analyticsForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Dimension</label>
-                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
-                    <option value="Queues">Call Queues</option>
-                    <option value="Users">Users</option>
-                    <option value="Sites">Sites</option>
-                    <option value="IVRs">IVR Menus</option>
-                </select>
+        <div id="authGate">
+            <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest">Identify Target</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 mb-1">RINGCENTRAL ACCOUNT ID</label>
+                    <input type="text" id="targetAccountId" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-black outline-none" placeholder="Enter ID (e.g. 8033...)">
+                </div>
+                <button type="button" id="connectBtn" onclick="runAuth()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded text-xs transition-all">
+                    VALIDATE & UNLOCK
+                </button>
             </div>
+        </div>
 
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Start Date & Time</label>
-                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
+        <div id="paramControls" style="display: none;">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+                <span class="text-[10px] font-bold text-green-600 uppercase">● Session Active</span>
+                <button onclick="location.reload()" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">RESET</button>
             </div>
-
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">End Date & Time</label>
-                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
-            </div>
-
-            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-150 ease-in-out mt-2">
-                Fetch Call Flow Records
-            </button>
             
-            <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
-        </form>
+            <form id="analyticsForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">DIMENSION</label>
+                    <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
+                        <option value="Queues">Call Queues</option>
+                        <option value="Users">Users</option>
+                        <option value="Sites">Sites</option>
+                        <option value="IVRs">IVR Menus</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">START DATE</label>
+                    <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">END DATE</label>
+                    <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                </div>
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
+                    FETCH ANALYTICS
+                </button>
+            </form>
+        </div>
+        <div id="sideError" class="hidden mt-4 p-2 text-[11px] bg-red-50 text-red-600 border border-red-100 rounded"></div>
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
-        <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <h3 class="font-bold text-slate-700">End-to-End Call Journeys</h3>
-            <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden transition-colors" id="exportBtn">
-                Export Summary CSV
-            </button>
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
+        <div id="uiLockout" class="p-20 text-center bg-slate-50/50">
+            <svg class="mx-auto h-12 w-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2-2V7a4 4 0 00-8 0v4h8z" /></svg>
+            <p class="text-slate-400 font-medium">Please authenticate a Target Account ID to view data.</p>
         </div>
-        
-        <div class="table-container overflow-x-auto w-full">
-            <table class="w-full text-sm text-left whitespace-nowrap">
-                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b border-slate-200">
-                    <tr>
-                        <th scope="col" class="px-4 py-3 w-8"></th>
-                        <th scope="col" class="px-6 py-3">Start Time</th>
-                        <th scope="col" class="px-6 py-3">Call ID</th>
-                        <th scope="col" class="px-6 py-3">Originator</th>
-                        <th scope="col" class="px-6 py-3 text-center">Hops</th>
-                        <th scope="col" class="px-6 py-3 text-center">Final Result</th>
-                        <th scope="col" class="px-6 py-3 text-center">Total Duration</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody" class="divide-y divide-slate-100">
-                    <tr>
-                        <td colspan="7" class="px-6 py-12 text-center text-slate-400">
-                            Select parameters and click "Fetch Call Flow Records" to view granular logs.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+
+        <div id="dataTable" class="hidden">
+            <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                <h3 id="tableTitle" class="font-bold text-slate-700 text-sm uppercase tracking-tight">Records</h3>
+                <button onclick="exportToCSV()" id="exportBtn" class="hidden bg-green-600 text-white text-[10px] font-bold py-1 px-3 rounded">EXPORT CSV</button>
+            </div>
+            <div class="table-container overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-[10px] text-slate-500 uppercase bg-slate-100 border-b">
+                        <tr>
+                            <th class="px-4 py-3"></th>
+                            <th class="px-6 py-3">Start Time</th>
+                            <th class="px-6 py-3">Call ID</th>
+                            <th class="px-6 py-3">Originator</th>
+                            <th class="px-6 py-3 text-center">Hops</th>
+                            <th class="px-6 py-3 text-center">Result</th>
+                            <th class="px-6 py-3 text-center">Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-    (function() {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - 1);
+    // 1. AUTHENTICATION LOGIC
+    async function runAuth() {
+        const id = document.getElementById('targetAccountId').value.trim();
+        const btn = document.getElementById('connectBtn');
+        const err = document.getElementById('sideError');
+        if(!id) return;
         
-        const formatDt = (d) => {
-            const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-            return (new Date(d - tzOffset)).toISOString().slice(0, 16);
-        };
+        btn.disabled = true; btn.innerText = 'Verifying...'; err.classList.add('hidden');
         
-        const fromInput = document.getElementById('timeFrom');
-        const toInput = document.getElementById('timeTo');
-        
-        if (fromInput && toInput) {
-            fromInput.value = formatDt(start);
-            toInput.value = formatDt(end);
-        }
-    })();
+        try {
+            const r = await fetch('/api/analytics/validate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({targetAccountId: id})
+            });
+            const d = await r.json();
+            if(!r.ok) throw new Error(d.error);
 
+            document.getElementById('authGate').style.display = 'none';
+            document.getElementById('paramControls').style.display = 'block';
+            document.getElementById('uiLockout').classList.add('hidden');
+            document.getElementById('dataTable').classList.remove('hidden');
+            document.getElementById('tableTitle').innerText = `Records for Account: ${id}`;
+            document.getElementById('tableBody').innerHTML = `<tr><td colspan="7" class="py-20 text-center text-slate-400">Ready to analyze. Select a timeframe.</td></tr>`;
+        } catch(e) {
+            err.innerText = e.message; err.classList.remove('hidden');
+        } finally {
+            btn.disabled = false; btn.innerText = 'VALIDATE & UNLOCK';
+        }
+    }
+
+    // 2. FETCH RECORDS LOGIC
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
-        const submitBtn = document.getElementById('submitBtn');
-        const tableBody = document.getElementById('tableBody');
-        const errorMsg = document.getElementById('errorMsg');
-        const exportBtn = document.getElementById('exportBtn');
-        
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `<span class="animate-pulse">Fetching...</span>`;
-        errorMsg.classList.add('hidden');
-        exportBtn.classList.add('hidden');
-        
-        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold italic">Querying RingCentral API...</td></tr>`;
+        const sBtn = document.getElementById('submitBtn');
+        const tBody = document.getElementById('tableBody');
+        sBtn.disabled = true; sBtn.innerText = 'Loading...';
 
-        const timeFrom = new Date(document.getElementById('timeFrom').value).toISOString();
-        const timeTo = new Date(document.getElementById('timeTo').value).toISOString();
-        const dimension = document.getElementById('dimension').value;
-        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const payload = {
+            targetAccountId: document.getElementById('targetAccountId').value,
+            timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
+            timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
+            dimension: document.getElementById('dimension').value,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        };
 
         try {
-            const response = await fetch('/api/analytics/records', {
+            const r = await fetch('/api/analytics/records', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ timeFrom, timeTo, dimension, timeZone })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
             });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data?.error || 'Failed to fetch call records.');
-
-            renderTable(data);
-            
-            if (data && data.data && data.data.length > 0) {
-                exportBtn.classList.remove('hidden');
-            }
-            
-        } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Failed to load records.</td></tr>`;
-            errorMsg.innerText = error.message;
-            errorMsg.classList.remove('hidden');
+            const d = await r.json();
+            if(!r.ok) throw new Error(d.error);
+            renderTable(d);
+            document.getElementById('exportBtn').classList.remove('hidden');
+        } catch(e) {
+            tBody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-red-400">${e.message}</td></tr>`;
         } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerText = 'Fetch Call Flow Records';
+            sBtn.disabled = false; sBtn.innerText = 'RUN ANALYSIS';
         }
     });
 
-    window.toggleDetails = function(rowId) {
-        const detailsRow = document.getElementById(`details-${rowId}`);
-        const chevron = document.getElementById(`chevron-${rowId}`);
-        if (detailsRow.classList.contains('hidden')) {
-            detailsRow.classList.remove('hidden');
-            chevron.classList.add('open');
-        } else {
-            detailsRow.classList.add('hidden');
-            chevron.classList.remove('open');
-        }
-    };
-
-    function getStatusConfig(result) {
-        const r = (result || '').toLowerCase();
-        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) {
-            return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
-        }
-        if (['missed', 'abandoned'].includes(r)) {
-            return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
-        }
-        if (['voicemail'].includes(r)) {
-            return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
-        }
-        if (['transferred', 'forwarded'].includes(r)) {
-            return { text: 'text-purple-700', bg: 'bg-purple-100', dot: 'bg-purple-500', border: 'border-purple-200' };
-        }
-        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
-    }
-
+    // 3. UI RENDERING HELPERS (Original logic preserved)
     function renderTable(data) {
-        const tableBody = document.getElementById('tableBody');
-        tableBody.innerHTML = '';
-
-        if (!data || !data.data || data.data.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">No calls found for this range.</td></tr>`;
+        const body = document.getElementById('tableBody');
+        body.innerHTML = '';
+        if(!data.data || data.data.length === 0) {
+            body.innerHTML = '<tr><td colspan="7" class="py-20 text-center text-slate-400">No records found for this period.</td></tr>';
             return;
         }
 
-        data.data.forEach((record, index) => {
-            const hops = record.hops || [];
-            if (hops.length === 0) return;
+        data.data.forEach((rec, idx) => {
+            const hops = rec.hops || [];
+            if(hops.length === 0) return;
+            const first = hops[0]; const last = hops[hops.length-1];
+            const result = last.result || 'Unknown';
+            const resCfg = getStatusConfig(result);
+            const dur = formatSeconds(hops.reduce((s, h) => s + (h.duration || 0), 0) / 1000);
 
-            const firstHop = hops[0];
-            const lastHop = hops[hops.length - 1];
-            
-            const startTime = new Date(firstHop.startedAt).toLocaleString();
-            const shortCallId = record.callId ? record.callId.substring(0, 11) + '...' : '-';
-            const originator = (firstHop.from && (firstHop.from.name || firstHop.from.number || firstHop.from.extensionNumber)) || 'Unknown';
-            
-            let finalResult = lastHop.result || firstHop.result || 'Unknown';
-            const wentToVm = hops.some(h => 
-                h.result === 'Voicemail' || 
-                (h.segmentsDuration && (h.segmentsDuration.voicemail > 0 || h.segmentsDuration.vmGreeting > 0))
-            );
-            if (wentToVm) finalResult = 'Voicemail';
-            
-            const totalDurationMs = hops.reduce((sum, h) => sum + (h.duration || 0), 0);
-            const totalDurationFmt = formatSeconds(totalDurationMs / 1000);
-
-            const resultConfig = getStatusConfig(finalResult);
-            const rowClass = index % 2 === 0 ? "bg-white" : "bg-slate-50/50";
-
-            const trMain = document.createElement('tr');
-            trMain.className = `${rowClass} hover:bg-blue-50 border-b border-slate-100 cursor-pointer transition-colors`;
-            trMain.setAttribute('onclick', `toggleDetails(${index})`);
-            trMain.innerHTML = `
-                <td class="px-4 py-4 text-slate-400">
-                    <svg id="chevron-${index}" class="chevron w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                </td>
-                <td class="px-6 py-4 font-medium text-slate-700">${startTime}</td>
-                <td class="px-6 py-4 text-slate-500 font-mono text-xs" title="${record.callId}">${shortCallId}</td>
-                <td class="px-6 py-4 font-semibold text-slate-800">${originator}</td>
-                <td class="px-6 py-4 text-center">
-                    <span class="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2.5 py-1 rounded-full">${hops.length}</span>
-                </td>
-                <td class="px-6 py-4 text-center">
-                    <span class="${resultConfig.bg} ${resultConfig.text} border ${resultConfig.border} text-xs font-bold px-2.5 py-1 rounded-full">${finalResult}</span>
-                </td>
-                <td class="px-6 py-4 text-center font-medium text-slate-700">${totalDurationFmt}</td>
+            const row = document.createElement('tr');
+            row.className = "hover:bg-slate-50 cursor-pointer border-b transition-colors";
+            row.onclick = () => toggleDetails(idx);
+            row.innerHTML = `
+                <td class="px-4 py-4"><svg id="chevron-${idx}" class="chevron w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
+                <td class="px-6 py-4 font-medium text-slate-600">${new Date(first.startedAt).toLocaleString()}</td>
+                <td class="px-6 py-4 font-mono text-[10px] text-slate-400">${rec.callId.substring(0,8)}...</td>
+                <td class="px-6 py-4 font-bold text-slate-700">${first.from?.name || first.from?.number || 'Unknown'}</td>
+                <td class="px-6 py-4 text-center"><span class="bg-slate-100 px-2 py-0.5 rounded-full text-[10px] font-bold">${hops.length}</span></td>
+                <td class="px-6 py-4 text-center"><span class="${resCfg.bg} ${resCfg.text} text-[10px] font-black px-2 py-0.5 rounded-full">${result}</span></td>
+                <td class="px-6 py-4 text-center font-bold text-slate-700">${dur}</td>
             `;
-            tableBody.appendChild(trMain);
+            body.appendChild(row);
 
-            const trDetails = document.createElement('tr');
-            trDetails.id = `details-${index}`;
-            trDetails.className = `hidden bg-slate-50 border-b-2 border-slate-200 shadow-inner`;
-            
-            let hopsHtml = `<div class="p-6 w-full max-w-5xl mx-auto relative journey-timeline">`;
-            
-            hops.forEach((hop, hIndex) => {
-                const hFrom = (hop.from && (hop.from.name || hop.from.number || hop.from.extensionNumber)) || 'Unknown';
-                const hTo = (hop.to && (hop.to.name || hop.to.number || hop.to.extensionNumber)) || 'Unknown';
-                const hType = hop.callType || 'Call';
-                const hResult = hop.result || 'Unknown';
-                const hDur = formatSeconds((hop.duration || 0) / 1000);
-                const hopConfig = getStatusConfig(hResult);
-                
-                hopsHtml += `
-                    <div class="relative pl-10 pb-6 last:pb-0">
-                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full ${hopConfig.dot} border-[3px] border-white shadow-sm z-10"></div>
-                        <div class="bg-white border ${hopConfig.border} rounded-lg p-4 shadow-sm">
-                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                                <div class="flex items-center gap-2">
-                                    <span class="bg-slate-100 text-slate-500 text-[10px] font-bold uppercase px-2 py-0.5 rounded">Hop ${hIndex + 1}</span>
-                                    <span class="font-bold text-slate-800">${hFrom}</span>
-                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                                    <span class="font-bold text-slate-800">${hTo}</span>
-                                </div>
-                                <div class="flex items-center gap-3">
-                                    <div class="text-right">
-                                        <p class="text-xs font-semibold text-slate-500 uppercase">${hType}</p>
-                                        <p class="text-sm font-bold ${hopConfig.text}">${hResult}</p>
-                                    </div>
-                                    <div class="bg-slate-50 border px-3 py-1.5 rounded text-sm font-medium text-slate-600 italic">⏱ ${hDur}</div>
-                                </div>
-                            </div>
+            const detailRow = document.createElement('tr');
+            detailRow.id = `details-${idx}`;
+            detailRow.className = "hidden bg-slate-50/50";
+            let hopList = '<td colspan="7" class="p-6 relative journey-timeline space-y-4">';
+            hops.forEach((h, hidx) => {
+                const hCfg = getStatusConfig(h.result);
+                hopList += `
+                    <div class="relative pl-8">
+                        <div class="absolute left-[14px] top-1.5 w-3 h-3 rounded-full ${hCfg.dot} border-2 border-white z-10"></div>
+                        <div class="bg-white border p-3 rounded-lg shadow-sm flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-700">Hop ${hidx+1}: ${h.from?.name || 'In'} ➔ ${h.to?.name || 'Out'}</span>
+                            <span class="text-[10px] font-bold ${hCfg.text}">${h.result} (${formatSeconds(h.duration/1000)})</span>
                         </div>
                     </div>`;
             });
-            
-            hopsHtml += `</div>`;
-            trDetails.innerHTML = `<td colspan="7" class="p-0">${hopsHtml}</td>`;
-            tableBody.appendChild(trDetails);
+            detailRow.innerHTML = hopList + '</td>';
+            body.appendChild(detailRow);
         });
     }
 
-    function formatSeconds(sec) {
-        if (!sec || sec <= 0) return "0s";
-        const m = Math.floor(sec / 60);
-        const s = Math.round(sec % 60);
-        return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    function toggleDetails(i) {
+        const d = document.getElementById(`details-${i}`);
+        const c = document.getElementById(`chevron-${i}`);
+        d.classList.toggle('hidden');
+        c.classList.toggle('open');
+    }
+
+    function getStatusConfig(r) {
+        const s = (r || '').toLowerCase();
+        if(['completed','answered','accepted'].includes(s)) return {text:'text-green-600', bg:'bg-green-50', dot:'bg-green-500'};
+        if(['missed','abandoned'].includes(s)) return {text:'text-red-600', bg:'bg-red-50', dot:'bg-red-500'};
+        return {text:'text-slate-500', bg:'bg-slate-50', dot:'bg-slate-400'};
+    }
+
+    function formatSeconds(s) {
+        if(!s || s<=0) return "0s";
+        const m = Math.floor(s/60); const sec = Math.round(s%60);
+        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
     }
 
     function exportToCSV() {
-        const rows = document.querySelectorAll("table tr.summary-row");
-        let csvContent = "Start Time,Call ID,Originator,Total Hops,Final Result,Total Duration\r\n";
-        
-        rows.forEach(row => {
-            const cols = row.querySelectorAll("td");
-            if (cols.length > 1) { 
-                const rowData = Array.from(cols).slice(1).map(col => `"${col.innerText.trim()}"`).join(",");
-                csvContent += rowData + "\r\n";
-            }
+        // Simple CSV implementation
+        const rows = document.querySelectorAll("#tableBody tr:not(.hidden)");
+        let csv = "Time,CallID,From,Hops,Result,Duration\n";
+        rows.forEach(r => {
+            const c = r.querySelectorAll('td');
+            if(c.length > 1) csv += `"${c[1].innerText}","${c[2].innerText}","${c[3].innerText}","${c[4].innerText}","${c[5].innerText}","${c[6].innerText}"\n`;
         });
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", "RC_CallFlow_Summary.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const blob = new Blob([csv], {type:'text/csv'});
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'analytics.csv'; a.click();
     }
 </script>
