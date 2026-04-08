@@ -33,14 +33,21 @@ class RCBusinessAnalytics:
 
     def get_full_account_info(self):
         """
-        Fetches the complete Account Resource.
-        Endpoint: /restapi/v1.0/account/~
+        FETCHING VIA V2 ENDPOINT
+        Endpoint: /restapi/v2/accounts/~
+        Using '~' ensures we see exactly who the token 'thinks' it is.
         """
-        url = "https://platform.ringcentral.com/restapi/v1.0/account/~"
+        url = "https://platform.ringcentral.com/restapi/v2/accounts/~"
         headers = {"Authorization": f"Bearer {self.token}"}
         
         response = requests.get(url, headers=headers)
         try:
+            # We return the whole thing so you can inspect the v2 structure
             return response.json()
         except:
-            return {"error": "Invalid JSON response", "status": response.status_code, "body": response.text}
+            return {
+                "error": "Invalid JSON response", 
+                "status": response.status_code, 
+                "body": response.text,
+                "url_queried": url
+            }
