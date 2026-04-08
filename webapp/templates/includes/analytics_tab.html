@@ -3,19 +3,6 @@
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 </style>
 
-<script>
-    (function() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('tab') === 'analytics' || window.location.hash === '#business-analytics') {
-            window.addEventListener('load', () => {
-                const btn = document.querySelector('a[href*="business-analytics"]') || 
-                            document.querySelector('[onclick*="business-analytics"]');
-                if (btn) btn.click();
-            });
-        }
-    })();
-</script>
-
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800">Business Analytics Records</h2>
     <p class="text-slate-500 text-sm italic font-bold">Impersonating Target Account Context</p>
@@ -28,7 +15,7 @@
             <h3 class="font-bold text-xs text-slate-800 mb-4 uppercase tracking-widest text-center">Account Target</h3>
             <div class="space-y-4">
                 <input type="text" id="targetAccountId" class="w-full border rounded p-2 text-sm" placeholder="Target Account ID">
-                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs">
+                <button type="button" onclick="startAnalyticsAuth()" class="w-full bg-slate-900 text-white font-bold py-2 rounded text-xs transition-all">
                     IMPERSONATE & AUTHORIZE
                 </button>
             </div>
@@ -36,9 +23,10 @@
         {% else %}
         <div id="paramControls">
             <div class="flex justify-between items-center mb-4 pb-2 border-b">
-                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Connected: {{ session.get('analytics_target_id') }}</span>
-                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">Change</button>
+                <span class="text-[10px] font-bold text-green-600 uppercase italic">● Session Active: {{ session.get('analytics_target_id') }}</span>
+                <button onclick="location.href='/api/analytics/logout'" class="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase">Change Account</button>
             </div>
+            
             <form id="analyticsForm" class="space-y-4">
                 <select id="dimension" class="w-full border rounded p-2 text-sm">
                     <option value="Users">Users</option>
@@ -46,7 +34,7 @@
                 </select>
                 <input type="datetime-local" id="timeFrom" class="w-full border rounded p-2 text-sm" required>
                 <input type="datetime-local" id="timeTo" class="w-full border rounded p-2 text-sm" required>
-                <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white font-bold py-2 rounded">
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow-sm transition">
                     RUN ANALYSIS
                 </button>
             </form>
@@ -108,6 +96,7 @@
                     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                 })
             });
+
             const d = await r.json();
             if (!r.ok) throw new Error(d.message || d.error || 'Fetch failed');
             renderTable(d);
@@ -133,8 +122,8 @@
                 <tr class="hover:bg-slate-50 border-b">
                     <td class="px-6 py-4 italic">${new Date(first.startedAt).toLocaleString()}</td>
                     <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                    <td class="px-6 py-4 text-center font-black uppercase">${last.result || 'Unknown'}</td>
-                    <td class="px-6 py-4 text-center">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
+                    <td class="px-6 py-4 text-center font-black uppercase text-slate-900">${last.result || 'Unknown'}</td>
+                    <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
                 </tr>`;
         });
     }
