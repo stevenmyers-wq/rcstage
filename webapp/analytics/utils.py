@@ -1,6 +1,10 @@
 from webapp.rc_api import rc_api_call
 
 class RCBusinessAnalytics:
+    """
+    Client for the Analytics API.
+    Identifies the Super Admin via the 'operator' field in Account info.
+    """
     def __init__(self, account_id, token):
         self.account_id = account_id
         self.token = token
@@ -8,31 +12,27 @@ class RCBusinessAnalytics:
 
     def get_super_admin_extension(self):
         """
-        Searches the target account for the default Super Admin.
-        Typically Extension 101 or the extension with the 'Admin' role.
+        Resolves the Operator extension ID for the account.
+        Requires 'ReadAccounts' scope.
         """
-        # Query extensions for the target account
-        # We look for extensionNumber '101' as the standard default
-        endpoint = f"/restapi/v1.0/account/{self.account_id}/extension"
-        params = {"extensionNumber": "101"} 
+        endpoint = f"/restapi/v1.0/account/{self.account_id}"
+        # We call the main account endpoint
+        res = rc_api_call(endpoint, token=self.token)
         
-        res = rc_api_call(endpoint, token=self.token, params=params)
+        # 'operator' is the RC technical term for the primary admin/extension
+        if res and 'operator' in res:
+            return res['operator'].get('id')
         
-        if res and 'records' in res and len(res['records']) > 0:
-            return res['records'][0]['id']
-        
-        # Fallback: Search for any extension with the 'Main' or 'Admin' status if 101 isn't found
         return None
 
     def fetch_records(self, dimension, time_settings, admin_extension_id=None, **kwargs):
-        """POST /analytics/calls/v1/accounts/{accountId}/records/fetch"""
+        """POST analytics query targeting the identified admin extension."""
         payload = {
             "dimension": dimension,
             "timeSettings": time_settings
         }
 
-        # If we found the Super Admin, we apply them as a filter to the query
-        # to ensure we are seeing data 'on behalf' of their routing.
+        # Impersonation: Restrict query to data 'seen' by the Super Admin
         if admin_extension_id:
             payload["callFilters"] = {
                 "extensionFilters": [
