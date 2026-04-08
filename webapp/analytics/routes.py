@@ -11,12 +11,11 @@ analytics_bp = Blueprint('analytics', __name__)
 
 @analytics_bp.route('/api/analytics/auth')
 def analytics_authorize():
-    """Step 1: Redirect to RingCentral login."""
+    """Step 1: Redirect to RingCentral for Analytics specifically."""
     target_id = request.args.get('targetAccountId')
     if not target_id: return "Target ID required", 400
     
     session['analytics_target_id'] = target_id
-    # Scopes required for analytics and ID validation
     scopes = "Analytics ReadCallLog ReadAccounts"
     
     rc_url = (
@@ -28,53 +27,47 @@ def analytics_authorize():
 
 @analytics_bp.route('/api/analytics/callback')
 def analytics_callback():
-    """Step 2: Exchange code and force redirect to Analytics tab."""
+    """Step 2: Exchange code and return to Analytics tab with query param."""
     code = request.args.get('code')
-    if not code: return "No code returned from RingCentral", 400
+    if not code: return "No code returned", 400
 
     token_url = "https://platform.ringcentral.com/restapi/oauth/token"
     data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
     
     res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
     if res.ok:
-        # Save to rc_access_token so the existing rc_api_call can find it
-        session['rc_access_token'] = res.json().get('access_token')
-        return redirect(f"{BASE_URL}/#business-analytics")
+        # USE UNIQUE SESSION KEY - DO NOT USE 'rc_access_token'
+        session['analytics_access_token'] = res.json().get('access_token')
+        # Redirect with query param for the frontend to handle
+        return redirect(f"{BASE_URL}/?tab=analytics#business-analytics")
     
     return f"Token Error: {res.text}", 400
 
 @analytics_bp.route('/api/analytics/logout')
 def analytics_logout():
-    """Drops the analytics authorization and target ID."""
-    session.pop('rc_access_token', None)
+    """Drops ONLY the analytics session."""
+    session.pop('analytics_access_token', None)
     session.pop('analytics_target_id', None)
-    return redirect(f"{BASE_URL}/#business-analytics")
+    return redirect(f"{BASE_URL}/?tab=analytics#business-analytics")
 
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
-    """Step 3: Run queries."""
-    token = session.get('rc_access_token')
+    """Step 3: Query using the isolated token."""
+    token = session.get('analytics_access_token')
     target_id = session.get('analytics_target_id')
     
     if not token or not target_id:
-        return jsonify({"error": "AUTH_REQUIRED", "message": "Please log in with an Account ID first."}), 401
+        return jsonify({"error": "AUTH_REQUIRED", "message": "Analytics authentication missing."}), 401
     
     from webapp.analytics.utils import RCBusinessAnalytics
     rc = RCBusinessAnalytics(account_id=target_id, token=token)
     
     data = request.json
     result = rc.fetch_records(
-        dimension=data.get('dimension', 'Queues'),
+        dimension=data.get('dimension'),
         time_settings={
             "timeZone": "UTC",
             "timeRange": {"timeFrom": data.get('timeFrom'), "timeTo": data.get('timeTo')}
         }
     )
-    
-    if "error" in result:
-        return jsonify({
-            "error": "RC_API_ERROR", 
-            "message": result.get('message', result.get('error_description', 'The API returned an error.'))
-        }), 400
-        
     return jsonify(result)
