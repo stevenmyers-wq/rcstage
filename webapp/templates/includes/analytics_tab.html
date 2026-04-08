@@ -41,7 +41,7 @@
 
             <div class="pt-4 border-t border-slate-100">
                 <button onclick="checkConnection()" class="w-full bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold py-2 rounded text-[10px] uppercase tracking-widest">
-                    Verify Account Name
+                    Verify Identity Proof
                 </button>
                 <div id="connResult" class="mt-2 text-[10px] font-bold text-center hidden"></div>
             </div>
@@ -53,7 +53,7 @@
         {% if session.get('analytics_isolated_token_vfinal') %}
         <div id="dataTable">
             <div class="p-4 bg-slate-50 border-b">
-                <h3 class="font-bold text-slate-700 text-xs uppercase tracking-widest">Call Records</h3>
+                <h3 class="font-bold text-slate-700 text-xs uppercase italic tracking-widest">Call Records</h3>
             </div>
             <div class="table-container overflow-x-auto w-full">
                 <table class="w-full text-sm text-left">
@@ -89,17 +89,18 @@
     async function checkConnection() {
         const resDiv = document.getElementById('connResult');
         resDiv.classList.remove('hidden', 'text-green-600', 'text-red-600');
-        resDiv.innerText = "Querying Account Info...";
+        resDiv.innerText = "Querying Account Identity...";
 
         try {
             const r = await fetch('/api/analytics/test-connection');
             const d = await r.json();
             if (d.status === 'success') {
-                // Returns the actual Company Name (e.g. "Acme Corp")
-                resDiv.innerText = `CONFIRMED: ${d.accountName}`;
+                // Returns the actual Legal Company Name
+                resDiv.innerText = `COMPANY: ${d.company}`;
                 resDiv.classList.add('text-green-600');
             } else {
-                throw new Error();
+                resDiv.innerText = "ERROR: " + (d.error?.error || "Invalid Token");
+                resDiv.classList.add('text-red-600');
             }
         } catch (e) {
             resDiv.innerText = "VERIFICATION FAILED";
@@ -147,9 +148,11 @@
             const last = rec.hops[rec.hops.length-1];
             body.innerHTML += `
                 <tr class="hover:bg-slate-50 border-b">
-                    <td class="px-6 py-4 italic">${new Date(first.startedAt).toLocaleString()}</td>
+                    <td class="px-6 py-4 italic text-slate-500">${new Date(first.startedAt).toLocaleString()}</td>
                     <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || 'System'}</td>
-                    <td class="px-6 py-4 text-center uppercase font-black text-slate-900">${last.result || 'Disconnected'}</td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="px-2 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase text-slate-900">${last.result || 'Disconnected'}</span>
+                    </td>
                     <td class="px-6 py-4 text-center font-bold">${Math.round(rec.hops.reduce((s,h) => s + (h.duration || 0), 0) / 1000)}s</td>
                 </tr>`;
         });
