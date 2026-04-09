@@ -4,7 +4,7 @@ import os
 def get_impersonation_token(employee_token, target_account_id):
     """
     Exchanges Employee token for Customer-scoped token.
-    Uses your custom App Name to force the bridge to grant the Analytics scope.
+    Uses the 'brd' profile which we know grants EditExtensions.
     """
     exchange_url = "https://auth.ps.ringcentral.com/jwks"
     headers = {
@@ -12,70 +12,54 @@ def get_impersonation_token(employee_token, target_account_id):
         "Content-Type": "application/json",
         "access_token": employee_token  
     }
-    
-    # Trying your specific App Names that own the Analytics scope
-    app_names = ["SM RC PS", "SM AU PS", "brd"]
-    
-    last_token = None
-    last_scopes = ""
-    last_profile = ""
+    # Using 'brd' as it is a whitelisted internal provisioning tool
+    payload = {"accountId": str(target_account_id), "appName": "brd"}
 
-    for app_name in app_names:
-        payload = {"accountId": str(target_account_id), "appName": app_name}
-        print(f"--- BRIDGE ATTEMPT: AppName='{app_name}' ---")
-        
-        try:
-            response = requests.post(exchange_url, json=payload, headers=headers)
-            if response.ok:
-                data = response.json()
-                scopes = data.get("scope", "")
-                print(f"--- BRIDGE SUCCESS ({app_name}): SCOPES={scopes} ---")
-                
-                last_token = data.get("access_token")
-                last_scopes = scopes
-                last_profile = app_name
-                
-                # If we successfully pulled the Analytics scope, break the loop!
-                if "Analytics" in scopes:
-                    return last_token, last_scopes, last_profile
-            else:
-                print(f"--- BRIDGE REJECTED ({app_name}): {response.status_code} ---")
-        except Exception as e:
-            print(f"--- BRIDGE EXCEPTION ({app_name}): {str(e)} ---")
-            
-    # Return whatever worked last, even if it failed the scope check
-    return last_token, last_scopes, last_profile
+    print(f"--- BRIDGE ATTEMPT: Target='{target_account_id}' Profile='brd' ---")
+    try:
+        response = requests.post(exchange_url, json=payload, headers=headers)
+        if response.ok:
+            data = response.json()
+            print(f"--- BRIDGE SUCCESS: OWNER={data.get('owner_id')} ---")
+            print(f"--- GRANTED SCOPES: {data.get('scope')} ---")
+            return data.get("access_token")
+        else:
+            print(f"--- BRIDGE FAILED: {response.status_code} {response.text} ---")
+            return None
+    except Exception as e:
+        print(f"--- BRIDGE EXCEPTION: {str(e)} ---")
+        return None
 
-class RCBusinessAnalytics:
-    def __init__(self, account_id, token):
-        self.account_id = account_id
+class RCOperabilityTest:
+    def __init__(self, token):
         self.token = token
         self.base_url = "https://platform.ringcentral.com"
 
-    def get_account_identity_v2(self):
-        """Proof of Identity via V2. Returns status code to catch 401s."""
-        url = f"{self.base_url}/restapi/v2/accounts/~"
-        headers = {"Authorization": f"Bearer {self.token}"}
-        res = requests.get(url, headers=headers)
-        return res.status_code, res.json()
-
-    def fetch_records(self, dimension, time_settings):
-        """POST analytics query using the ~ path bypass (Fixes ANL-102)."""
-        url = f"{self.base_url}/analytics/calls/v1/accounts/~/records/fetch"
+    def delete_extension(self, extension_id):
+        """
+        DESTRUCTIVE TEST: Deletes a specific extension.
+        API: DELETE /restapi/v1.0/account/~/extension/{extensionId}
+        """
+        # Using '~' for the account ID relies on the token's active impersonation context
+        url = f"{self.base_url}/restapi/v1.0/account/~/extension/{extension_id}"
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
+            "Accept": "application/json"
         }
-        payload = {
-            "dimension": dimension,
-            "timeSettings": time_settings
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
+        
+        print(f"--- EXECUTING DELETE: Ext={extension_id} ---")
+        response = requests.delete(url, headers=headers)
+        
+        # A successful DELETE usually returns 204 No Content (empty body)
         try:
             body = response.json()
-            if response.status_code == 401:
-                body['_status'] = 401
-            return body
         except:
-            return {"error": "Invalid API Response", "status": response.status_code, "raw": response.text}
+            body = {"info": "No JSON body returned"}
+            if response.text:
+                body["raw_text"] = response.text
+            
+        return {
+            "status_code": response.status_code,
+            "api_response": body,
+            "url_attempted": url
+        }
