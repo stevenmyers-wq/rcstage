@@ -1,7 +1,7 @@
 import os
 import requests
 from flask import Blueprint, request, jsonify, session, redirect, render_template_string
-from webapp.analytics.utils import RCBusinessAnalytics, get_impersonation_token
+from webapp.analytics.utils import RCOperabilityTest, get_impersonation_token
 
 CLIENT_ID = os.environ.get('SM_CLIENT_ID')
 CLIENT_SECRET = os.environ.get('SM_CLIENT_SECRET')
@@ -16,10 +16,10 @@ def analytics_authorize():
     if not target_id: return "Target ID required", 400
     
     session.pop('analytics_isolated_token_vfinal', None)
-    session.pop('analytics_bridge_scopes', None)
     session['analytics_target_id'] = target_id
     
-    scopes = "Analytics ReadAccounts ReadCallLog"
+    # CRITICAL: We must request EditExtensions at the front door
+    scopes = "ReadAccounts EditExtensions"
     rc_url = f"https://platform.ringcentral.com/restapi/oauth/authorize?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope={scopes}"
     return redirect(rc_url)
 
@@ -34,69 +34,28 @@ def analytics_callback():
     res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
     
     employee_token = res.json().get('access_token')
-    customer_token, scopes = get_impersonation_token(employee_token, target_id)
+    
+    # Swap for the customer-scoped token
+    customer_token = get_impersonation_token(employee_token, target_id)
     
     if customer_token:
         session['analytics_isolated_token_vfinal'] = customer_token
-        session['analytics_bridge_scopes'] = scopes
         return render_template_string("<html><body><script>window.location.href = '/?tab=analytics#business-analytics';</script></body></html>")
     
-    return "Bridge Failed. Check GCP Logs.", 403
+    return "Impersonation Bridge Failed. Check GCP Logs.", 403
 
-@analytics_bp.route('/api/analytics/records', methods=['POST'])
-def get_call_records():
+@analytics_bp.route('/api/analytics/execute-delete', methods=['POST'])
+def execute_delete():
     token = session.get('analytics_isolated_token_vfinal')
-    target_id = session.get('analytics_target_id')
+    ext_id = request.json.get('extensionId')
     
-    if not token or not target_id:
-        return jsonify({"error": "AUTH_REQUIRED"}), 401
+    if not token or not ext_id:
+        return jsonify({"error": "Unauthorized or missing Extension ID"}), 400
     
-    rc = RCBusinessAnalytics(account_id=target_id, token=token)
-    
-    data = request.json
-    result = rc.fetch_records(
-        dimension=data.get('dimension'),
-        time_settings={
-            "timeZone": data.get('timeZone', 'UTC'),
-            "timeRange": {"timeFrom": data.get('timeFrom'), "timeTo": data.get('timeTo')}
-        }
-    )
-    return jsonify(result)
-
-@analytics_bp.route('/api/analytics/test-connection')
-def test_connection():
-    """Diagnostic check using the V2 endpoint."""
-    token = session.get('analytics_isolated_token_vfinal')
-    target_id = session.get('analytics_target_id')
-    scopes = session.get('analytics_bridge_scopes', "")
-    
-    if not token: return jsonify({"error": "No token"}), 401
-    
-    rc = RCBusinessAnalytics(account_id=target_id, token=token)
-    status_code, info = rc.get_account_identity_v2()
-
-    # Explicitly catch the expired token
-    if status_code == 401:
-        return jsonify({"status": "expired"})
-    
-    # V2 Aggressive Name Extraction
-    company = (
-        info.get('name') or 
-        info.get('company') or 
-        info.get('contactInfo', {}).get('company') or 
-        info.get('serviceInfo', {}).get('brand', {}).get('name') or 
-        "No Company Name Set"
-    )
-        
-    return jsonify({
-        "status": "success" if status_code == 200 else "failed", 
-        "company": company, 
-        "rcId": info.get('id'),
-        "hasAnalytics": "Analytics" in scopes
-    })
+    tester = RCOperabilityTest(token=token)
+    return jsonify(tester.delete_extension(ext_id))
 
 @analytics_bp.route('/api/analytics/logout')
 def analytics_logout():
     session.pop('analytics_isolated_token_vfinal', None)
-    session.pop('analytics_bridge_scopes', None)
     return redirect("/?tab=analytics#business-analytics")
