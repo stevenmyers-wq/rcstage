@@ -114,6 +114,115 @@
             </div>
         </div>
     </div>
+
+    <!-- AUDIO ROUTING GUIDE SECTION -->
+    <div class="row mt-8">
+        <div class="col-12">
+            <div class="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                <div class="bg-gray-800 text-white px-4 py-3 font-semibold flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    How to Route Your Audio for a Flawless Demo
+                </div>
+                <div class="p-6 bg-gray-50 text-gray-800">
+                    <p class="mb-4">To run this 2-sided AI conversation perfectly—without echo, and without your real voice bleeding into the AI's phone call—you must route your audio carefully.</p>
+                    
+                    <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded text-sm">
+                        <h4 class="font-bold text-blue-800 mb-1">What is BlackHole / VB-Cable?</h4>
+                        <p class="text-blue-900">Because your browser is playing the AI's voice, you need a way to pipe that browser audio directly into the phone call as a "microphone."</p>
+                        <ul class="list-disc ml-5 mt-2 text-blue-900">
+                            <li><strong>Mac Users</strong> use a free app called <strong>BlackHole (2ch)</strong>.</li>
+                            <li><strong>Windows Users</strong> use a free app called <strong>VB-Audio Virtual Cable (VB-Cable)</strong>.</li>
+                        </ul>
+                        <p class="mt-2 text-blue-900 italic">Think of these as invisible audio cables inside your computer. They take the sound playing out of your system and plug it directly into the microphone input of your phone app.</p>
+                    </div>
+
+                    <h4 class="text-lg font-bold mb-3 text-gray-800 border-b pb-2">Step 1: Create the "Splitter" (Do this first)</h4>
+                    <p class="mb-3 text-sm">Before opening any apps, you must create an audio splitter so that the AI conversation plays out loud on your speakers <em>and</em> gets piped into the phone system.</p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white p-4 rounded border border-gray-200 shadow-sm">
+                            <h5 class="font-bold mb-2 flex items-center"><span class="text-xl mr-2">🍎</span> For Mac Users:</h5>
+                            <ol class="list-decimal ml-5 text-sm space-y-1">
+                                <li>Open your Mac's <strong>Audio MIDI Setup</strong> app.</li>
+                                <li>Click the <strong>+</strong> (bottom left) and select <strong>Create Multi-Output Device</strong>.</li>
+                                <li>Check <strong>both</strong> of these boxes in the list:
+                                    <ul class="list-disc ml-5 mt-1 text-gray-600 font-mono text-xs">
+                                        <li>BlackHole 2ch</li>
+                                        <li>MacBook Pro Speakers (or your external monitor)</li>
+                                    </ul>
+                                </li>
+                            </ol>
+                        </div>
+                        <div class="bg-white p-4 rounded border border-gray-200 shadow-sm">
+                            <h5 class="font-bold mb-2 flex items-center"><span class="text-xl mr-2">🪟</span> For Windows PC Users:</h5>
+                            <ol class="list-decimal ml-5 text-sm space-y-1">
+                                <li>Install <strong>VB-Cable</strong>.</li>
+                                <li>Open the <strong>Sound Control Panel</strong> &gt; <strong>Recording</strong> tab.</li>
+                                <li>Right-click <code>CABLE Output</code> and select <strong>Properties</strong>.</li>
+                                <li>Go to the <strong>Listen</strong> tab, check the <strong>"Listen to this device"</strong> box, and select your <code>System Speakers</code> from the dropdown. Click Apply.</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-bold mb-3 text-gray-800 border-b pb-2">Step 2: The Routing Checklist</h4>
+                    <p class="mb-3 text-sm">Set your computer and applications <strong>exactly</strong> like this before you start your screen share. If one of these is wrong, you will get echo or a broken transcript.</p>
+                    
+                    <div class="overflow-x-auto rounded-lg border border-gray-200 mb-6">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-4 py-3 text-left font-bold text-gray-700">Application / Setting</th>
+                                    <th scope="col" class="px-4 py-3 text-left font-bold text-gray-700">What to Select</th>
+                                    <th scope="col" class="px-4 py-3 text-left font-bold text-gray-700">Why you are doing it</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-900 bg-gray-50">Computer System Output</td>
+                                    <td class="px-4 py-3 font-mono text-xs text-blue-700">Mac: Multi-Output Device<br>PC: CABLE Input</td>
+                                    <td class="px-4 py-3 text-gray-600">So the AI Agent plays out loud <em>and</em> into the virtual cable simultaneously.</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-900 bg-purple-50">RC App (PWA - Tester)<br><span class="font-normal text-xs text-gray-500">Receiving the Call</span></td>
+                                    <td class="px-4 py-3"><strong>Microphone:</strong> <span class="font-mono text-xs text-blue-700">BlackHole / CABLE Output</span></td>
+                                    <td class="px-4 py-3 text-gray-600">So the phone <em>only</em> sucks up the AI Agent's voice, not your real voice.</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-900 bg-purple-50">RC App (PWA - Tester)<br><span class="font-normal text-xs text-gray-500">Receiving the Call</span></td>
+                                    <td class="px-4 py-3"><strong>Speaker:</strong> <span class="font-mono text-xs text-blue-700">System Speakers</span></td>
+                                    <td class="px-4 py-3 text-gray-600">So the AI Customer's voice plays out loud along with the Agent.</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-900 bg-blue-50">RC App (Corp Account)<br><span class="font-normal text-xs text-gray-500">The Video Meeting</span></td>
+                                    <td class="px-4 py-3"><strong>Microphone:</strong> <span class="font-mono text-xs text-blue-700">Your Physical Headset</span></td>
+                                    <td class="px-4 py-3 text-gray-600">So you can talk to your audience live without it bleeding into the phone call.</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-900 bg-blue-50">RC App (Corp Account)<br><span class="font-normal text-xs text-gray-500">The Video Meeting</span></td>
+                                    <td class="px-4 py-3"><strong>Speaker:</strong> <span class="font-mono text-xs text-blue-700">Your Physical Headset</span></td>
+                                    <td class="px-4 py-3 text-gray-600">So you hear the audience privately through your headset.</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-900 bg-blue-50">RC App (Corp Account)<br><span class="font-normal text-xs text-gray-500">The Video Meeting</span></td>
+                                    <td class="px-4 py-3"><strong>Screen Share:</strong> <span class="font-mono text-xs text-blue-700">Share System Audio</span></td>
+                                    <td class="px-4 py-3 text-gray-600">So the audience hears the AI Agent and the AI Customer exactly as you do.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                        <p class="text-sm text-yellow-800">
+                            <strong class="font-bold flex items-center"><svg class="w-4 h-4 mr-1 inline" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path></svg> The Golden Rule:</strong> 
+                            During this demo, your physical microphone is <strong>completely invisible</strong> to the phone call. The only people who can hear your real voice are the people on the RingCentral video meeting.
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <script src="{{ url_for('static', filename='js/ai_demo_calls.js') }}"></script>

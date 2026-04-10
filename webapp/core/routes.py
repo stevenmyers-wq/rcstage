@@ -15,6 +15,14 @@ core_bp = Blueprint('core', __name__)
 @core_bp.route('/')
 def index():
     """Serves the main application page."""
+    # --- DEVELOPMENT MODE BYPASS ---
+    if os.getenv('FLASK_ENV') == 'development' and not session.get('authenticated'):
+        session['authenticated'] = True
+        session['user_email'] = 'developer@local.test'
+        session['is_admin'] = True # Assume admin for local testing
+        session.modified = True
+    # --- END DEVELOPMENT MODE BYPASS ---
+    
     rc_redirect_uri_clean = os.getenv("RC_REDIRECT_URI", "http://localhost:8080/auth/callback").rstrip('/')
     return render_template(
         'index.html', 
