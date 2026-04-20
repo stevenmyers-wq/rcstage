@@ -8,18 +8,15 @@ presence_bp = Blueprint('presence', __name__)
 
 @presence_bp.route('/api/presence/users', methods=['GET'])
 def get_users():
-    """Populate the UI selection table."""
     try:
         manager = RCPresenceManager()
         users = manager.get_all_users()
         return jsonify({"status": "success", "users": users})
     except Exception as e:
-        logging.error(f"Error fetching users: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/audit', methods=['POST'])
 def generate_audit_report():
-    """Generate the horizontal XLSX report of current BLF keys."""
     try:
         data = request.json
         selected_users = data.get('users', [])
@@ -32,29 +29,34 @@ def generate_audit_report():
 
         for user in selected_users:
             ext_id = user.get('id')
-            row = {
-                "Extension Name": user.get('name', ''),
-                "Extension Number": user.get('extensionNumber', ''),
-                "Extension ID": ext_id
-            }
-
+            
+            # Fetch settings (toggles) and lines (buttons)
+            settings = manager.get_presence_settings(ext_id) or {}
             lines_response = manager.get_monitored_lines(ext_id)
             records = lines_response.get('records', [])
 
+            row = {
+                "Target Extension Name": user.get('name', ''),
+                "Target Extension Number": user.get('extensionNumber', ''),
+                "Target Extension ID": ext_id
+            }
+
+            # Add Line 1 to Line N
             for i, record in enumerate(records):
-                # API locks lines 1 & 2 to the user. We start mapping at Line 3.
-                if i < 2: continue 
-                
                 line_num = i + 1
-                ext_info = record.get('extension', {})
+                ext_obj = record.get('extension', {})
                 
-                # Check all button types: Try ID first, fallback to extensionNumber
-                val = ext_info.get('id') or ext_info.get('extensionNumber') or ''
-                row[f"Line {line_num}"] = val
+                # Fallback chain: Show Extension Number. If none (like some Speed Dials), show the ID.
+                val = ext_obj.get('extensionNumber') or ext_obj.get('id') or ''
+                row[f"Line {line_num}"] = str(val)
+
+            # Add the overarching Presence Toggles
+            row["Ring on Monitored Call"] = settings.get('ringOnMonitoredCall', False)
+            row["Enable Me to Pickup a Monitored Line"] = settings.get('pickUpCallsOnHold', False)
+            row["Allow other users to see my presence status"] = settings.get('allowSeeMyPresence', False)
                 
             audit_data.append(row)
         
-        # Create Excel file in memory
         df = pd.DataFrame(audit_data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -69,90 +71,114 @@ def generate_audit_report():
         )
 
     except Exception as e:
-        logging.error(f"Audit Generation Error: {str(e)}")
+        logging.error(f"Audit Error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/template', methods=['GET'])
 def download_template():
-    """Provide a blank example template matching the desired format."""
     try:
         df = pd.DataFrame({
-            "Extension Name": ["Steve Mobile", "Main Queue"],
-            "Extension Number": ["11134", "11135"],
-            "Extension ID": ["281658124", "281658125"],
-            "Line 3": ["11116", "249339004"],
+            "Target Extension Name": ["Steve Mobile", "Test Account"],
+            "Target Extension Number": ["11134", "11135"],
+            "Target Extension ID": ["281658124", "281658125"],
+            "Line 1": ["11134", "11135"],
+            "Line 2": ["11134", "11135"],
+            "Line 3": ["11116", "11116"],
             "Line 4": ["81827", ""],
-            "Line 5": ["", ""]
+            "Ring on Monitored Call": [False, True],
+            "Enable Me to Pickup a Monitored Line": [True, False],
+            "Allow other users to see my presence status": [True, True]
         })
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='BLF_Update_Template')
+            df.to_excel(writer, index=False, sheet_name='BLF_Template')
 
         output.seek(0)
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name='BLF_Update_Template.xlsx'
-        )
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Update_Template.xlsx')
     except Exception as e:
          return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
 def update_blf_from_file():
-    """Process the uploaded horizontal Excel file."""
     try:
-        if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file uploaded"}), 400
-            
+        if 'file' not in request.files: return jsonify({"status": "error", "message": "No file uploaded"}), 400
+        
         file = request.files['file']
         df = pd.read_excel(file)
         
-        if "Extension ID" not in df.columns:
-            return jsonify({"status": "error", "message": "Missing required column: Extension ID"}), 400
+        if "Target Extension ID" not in df.columns:
+            return jsonify({"status": "error", "message": "Missing column: Target Extension ID"}), 400
 
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # Identify dynamically added "Line X" columns
+        # 1. Build the Translator (Number -> ID)
+        all_exts = manager.get_all_extensions_raw()
+        ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
+        id_set = {str(e.get('id')) for e in all_exts}
+
+        # Get all dynamic Line columns
         line_cols = [c for c in df.columns if str(c).startswith("Line ")]
-        # Sort them numerically so Line 3 comes before Line 10
         line_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
 
         for index, row in df.iterrows():
-            target_id = str(row["Extension ID"]).split('.')[0].strip()
+            target_id = str(row["Target Extension ID"]).split('.')[0].strip()
             if not target_id or target_id.lower() == 'nan': continue
             
-            # Fetch current BLF lines to preserve the mandatory Lines 1 & 2
-            current_lines_resp = manager.get_monitored_lines(target_id)
-            current_records = current_lines_resp.get('records', [])
-            
-            new_records = []
-            if len(current_records) >= 1:
-                new_records.append({"extension": {"id": current_records[0].get('extension', {}).get('id')}})
-            if len(current_records) >= 2:
-                new_records.append({"extension": {"id": current_records[1].get('extension', {}).get('id')}})
+            # --- UPDATE SETTINGS TOGGLES ---
+            settings_payload = {}
+            if "Ring on Monitored Call" in row and pd.notna(row["Ring on Monitored Call"]):
+                settings_payload["ringOnMonitoredCall"] = bool(row["Ring on Monitored Call"])
+            if "Enable Me to Pickup a Monitored Line" in row and pd.notna(row["Enable Me to Pickup a Monitored Line"]):
+                settings_payload["pickUpCallsOnHold"] = bool(row["Enable Me to Pickup a Monitored Line"])
+            if "Allow other users to see my presence status" in row and pd.notna(row["Allow other users to see my presence status"]):
+                settings_payload["allowSeeMyPresence"] = bool(row["Allow other users to see my presence status"])
+                
+            if settings_payload:
+                try:
+                    manager.update_presence_settings(target_id, settings_payload)
+                except Exception as e:
+                    results["errors"].append(f"Ext {target_id}: Settings update failed - {str(e)}")
 
-            # Append the custom lines from the spreadsheet
+            # --- UPDATE BLF LINES ---
+            current_lines = manager.get_monitored_lines(target_id).get('records', [])
+            new_records = []
+            
+            # Preserve Line 1 & 2 as API dictates
+            if len(current_lines) > 0: new_records.append({"extension": {"id": current_lines[0].get('extension', {}).get('id')}})
+            if len(current_lines) > 1: new_records.append({"extension": {"id": current_lines[1].get('extension', {}).get('id')}})
+
             for col in line_cols:
+                line_num = int(col.split(' ')[1])
+                if line_num <= 2: continue # Ignore lines 1 & 2 from Excel, we already safely prepended them
+                
                 val = row[col]
                 if pd.notna(val) and str(val).strip() != "":
-                    monitored_id = str(val).split('.')[0].strip()
+                    raw_val = str(val).split('.')[0].strip()
+                    
+                    # Translator Engine: Is it an ID? Is it a Number?
+                    if raw_val in id_set:
+                        monitored_id = raw_val
+                    elif raw_val in ext_map:
+                        monitored_id = ext_map[raw_val]
+                    else:
+                        monitored_id = raw_val # Fallback
+                        
                     new_records.append({"extension": {"id": monitored_id}})
 
             try:
                 manager.update_monitored_lines(target_id, new_records)
                 results["success"] += 1
             except Exception as e:
-                results["errors"].append(f"Ext {target_id}: Update failed - {str(e)}")
+                results["errors"].append(f"Ext {target_id}: BLF lines update failed - {str(e)}")
 
         return jsonify({
             "status": "completed", 
-            "message": f"Successfully processed BLF updates for {results['success']} users.",
+            "message": f"Processed BLF updates for {results['success']} users.",
             "errors": results["errors"]
         })
 
     except Exception as e:
-        logging.error(f"Error processing BLF update: {str(e)}")
+        logging.error(f"Upload Error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
