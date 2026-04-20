@@ -41,19 +41,24 @@ def generate_audit_report():
                 "Target Extension ID": ext_id
             }
 
-            # Add Line 1 to Line N
+            # 1. Add the overarching Presence Toggles on the left
+            row["Ring on Monitored Call"] = settings.get('ringOnMonitoredCall', False)
+            row["Enable Me to Pickup a Monitored Line"] = settings.get('pickUpCallsOnHold', False)
+            row["Allow other users to see my presence status"] = settings.get('allowSeeMyPresence', False)
+
+            # 2. Add Line 1 to Line N (No skipping)
             for i, record in enumerate(records):
                 line_num = i + 1
                 ext_obj = record.get('extension', {})
                 
-                # Fallback chain: Show Extension Number. If none (like some Speed Dials), show the ID.
-                val = ext_obj.get('extensionNumber') or ext_obj.get('id') or ''
-                row[f"Line {line_num}"] = str(val)
-
-            # Add the overarching Presence Toggles
-            row["Ring on Monitored Call"] = settings.get('ringOnMonitoredCall', False)
-            row["Enable Me to Pickup a Monitored Line"] = settings.get('pickUpCallsOnHold', False)
-            row["Allow other users to see my presence status"] = settings.get('allowSeeMyPresence', False)
+                # Name fallback: name -> type -> 'Unknown'
+                name_val = ext_obj.get('name') or ext_obj.get('type') or 'Unknown'
+                
+                # Extension fallback: extensionNumber -> id (Crucial for Speed Dials)
+                ext_val = ext_obj.get('extensionNumber') or ext_obj.get('id') or ''
+                
+                row[f"Line {line_num} Name"] = str(name_val)
+                row[f"Line {line_num} Extension"] = str(ext_val)
                 
             audit_data.append(row)
         
@@ -81,13 +86,15 @@ def download_template():
             "Target Extension Name": ["Steve Mobile", "Test Account"],
             "Target Extension Number": ["11134", "11135"],
             "Target Extension ID": ["281658124", "281658125"],
-            "Line 1": ["11134", "11135"],
-            "Line 2": ["11134", "11135"],
-            "Line 3": ["11116", "11116"],
-            "Line 4": ["81827", ""],
             "Ring on Monitored Call": [False, True],
             "Enable Me to Pickup a Monitored Line": [True, False],
-            "Allow other users to see my presence status": [True, True]
+            "Allow other users to see my presence status": [True, True],
+            "Line 1 Name": ["Steve Mobile", "Test Account"],
+            "Line 1 Extension": ["11134", "11135"],
+            "Line 2 Name": ["Main Queue", "Steven Smyers"],
+            "Line 2 Extension": ["11135", "11116"],
+            "Line 3 Name": ["Speed Dial Mom", ""],
+            "Line 3 Extension": ["987654321", ""]
         })
         
         output = io.BytesIO()
@@ -113,14 +120,14 @@ def update_blf_from_file():
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # 1. Build the Translator (Number -> ID)
+        # Build the Translator (Number -> ID)
         all_exts = manager.get_all_extensions_raw()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
 
-        # Get all dynamic Line columns
-        line_cols = [c for c in df.columns if str(c).startswith("Line ")]
-        line_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
+        # Get all dynamic "Line X Extension" columns (we ignore the Name columns on upload)
+        line_ext_cols = [c for c in df.columns if str(c).startswith("Line ") and str(c).endswith("Extension")]
+        line_ext_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
 
         for index, row in df.iterrows():
             target_id = str(row["Target Extension ID"]).split('.')[0].strip()
@@ -142,17 +149,9 @@ def update_blf_from_file():
                     results["errors"].append(f"Ext {target_id}: Settings update failed - {str(e)}")
 
             # --- UPDATE BLF LINES ---
-            current_lines = manager.get_monitored_lines(target_id).get('records', [])
             new_records = []
-            
-            # Preserve Line 1 & 2 as API dictates
-            if len(current_lines) > 0: new_records.append({"extension": {"id": current_lines[0].get('extension', {}).get('id')}})
-            if len(current_lines) > 1: new_records.append({"extension": {"id": current_lines[1].get('extension', {}).get('id')}})
 
-            for col in line_cols:
-                line_num = int(col.split(' ')[1])
-                if line_num <= 2: continue # Ignore lines 1 & 2 from Excel, we already safely prepended them
-                
+            for col in line_ext_cols:
                 val = row[col]
                 if pd.notna(val) and str(val).strip() != "":
                     raw_val = str(val).split('.')[0].strip()
@@ -163,11 +162,12 @@ def update_blf_from_file():
                     elif raw_val in ext_map:
                         monitored_id = ext_map[raw_val]
                     else:
-                        monitored_id = raw_val # Fallback
+                        monitored_id = raw_val # Fallback (e.g., Speed Dial ID)
                         
                     new_records.append({"extension": {"id": monitored_id}})
 
             try:
+                # We submit exactly what the user provided, in the order provided.
                 manager.update_monitored_lines(target_id, new_records)
                 results["success"] += 1
             except Exception as e:
