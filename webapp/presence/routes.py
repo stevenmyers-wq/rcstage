@@ -25,6 +25,11 @@ def generate_audit_report():
             return jsonify({"status": "error", "message": "No users selected"}), 400
 
         manager = RCPresenceManager()
+        
+        # 1. Fetch a master list of ALL extensions to do a recursive Name lookup
+        all_exts = manager.get_all_extensions_raw()
+        id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
+
         audit_data = []
 
         for user in selected_users:
@@ -41,22 +46,32 @@ def generate_audit_report():
                 "Target Extension ID": ext_id
             }
 
-            # 1. Add the overarching Presence Toggles on the left
+            # Add the overarching Presence Toggles on the left
             row["Ring on Monitored Call"] = settings.get('ringOnMonitoredCall', False)
             row["Enable Me to Pickup a Monitored Line"] = settings.get('pickUpCallsOnHold', False)
             row["Allow other users to see my presence status"] = settings.get('allowSeeMyPresence', False)
 
-            # 2. Add Line 1 to Line N (No skipping)
+            # Add Line 1 to Line N (No skipping, no assumptions)
             for i, record in enumerate(records):
                 line_num = i + 1
                 ext_obj = record.get('extension', {})
                 
-                # Name fallback: name -> type -> 'Unknown'
-                name_val = ext_obj.get('name') or ext_obj.get('type') or 'Unknown'
+                monitored_ext_id = str(ext_obj.get('id', ''))
                 
-                # Extension fallback: extensionNumber -> id (Crucial for Speed Dials)
-                ext_val = ext_obj.get('extensionNumber') or ext_obj.get('id') or ''
-                
+                # Recursive Name Lookup: Try to find the actual name from our master list
+                if monitored_ext_id and monitored_ext_id in id_to_ext_map:
+                    master_ext = id_to_ext_map[monitored_ext_id]
+                    name_val = master_ext.get('name') or ext_obj.get('type') or 'Unknown'
+                    ext_val = master_ext.get('extensionNumber') or ext_obj.get('extensionNumber') or monitored_ext_id
+                else:
+                    # Fallback for speed dials, park locations, or detached numbers
+                    name_val = ext_obj.get('name') or ext_obj.get('type') or record.get('type') or 'Unknown'
+                    ext_val = ext_obj.get('extensionNumber') or monitored_ext_id or record.get('phoneNumber') or record.get('number') or ''
+                    
+                    # If it's a completely undocumented button type, dump the keys so we know it exists
+                    if not ext_val and name_val == 'Unknown':
+                        name_val = f"Custom Button: {list(record.keys())}"
+
                 row[f"Line {line_num} Name"] = str(name_val)
                 row[f"Line {line_num} Extension"] = str(ext_val)
                 
@@ -89,12 +104,12 @@ def download_template():
             "Ring on Monitored Call": [False, True],
             "Enable Me to Pickup a Monitored Line": [True, False],
             "Allow other users to see my presence status": [True, True],
-            "Line 1 Name": ["Steve Mobile", "Test Account"],
+            "Line 1 Name": ["Steve Mobile", "Main Queue"],
             "Line 1 Extension": ["11134", "11135"],
-            "Line 2 Name": ["Main Queue", "Steven Smyers"],
-            "Line 2 Extension": ["11135", "11116"],
-            "Line 3 Name": ["Speed Dial Mom", ""],
-            "Line 3 Extension": ["987654321", ""]
+            "Line 2 Name": ["Steven Smyers", "Speed Dial Mom"],
+            "Line 2 Extension": ["11116", "987654321"],
+            "Line 3 Name": ["Some Shared Line", ""],
+            "Line 3 Extension": ["81827", ""]
         })
         
         output = io.BytesIO()
@@ -120,7 +135,7 @@ def update_blf_from_file():
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # Build the Translator (Number -> ID)
+        # Build the Translator (Extension Number -> ID)
         all_exts = manager.get_all_extensions_raw()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
@@ -151,6 +166,8 @@ def update_blf_from_file():
             # --- UPDATE BLF LINES ---
             new_records = []
 
+            # We process ALL lines strictly as they are written in the spreadsheet. 
+            # No assumptions are made about lines 1 and 2.
             for col in line_ext_cols:
                 val = row[col]
                 if pd.notna(val) and str(val).strip() != "":
@@ -162,15 +179,15 @@ def update_blf_from_file():
                     elif raw_val in ext_map:
                         monitored_id = ext_map[raw_val]
                     else:
-                        monitored_id = raw_val # Fallback (e.g., Speed Dial ID)
+                        monitored_id = raw_val # Fallback (e.g., Speed Dial ID or arbitrary string)
                         
                     new_records.append({"extension": {"id": monitored_id}})
 
             try:
-                # We submit exactly what the user provided, in the order provided.
                 manager.update_monitored_lines(target_id, new_records)
                 results["success"] += 1
             except Exception as e:
+                # If RingCentral DOES reject altering line 1/2 for a specific user type, it will be caught here.
                 results["errors"].append(f"Ext {target_id}: BLF lines update failed - {str(e)}")
 
         return jsonify({
