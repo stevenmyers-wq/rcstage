@@ -22,11 +22,48 @@
                         <textarea id="scenario-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" rows="3" placeholder="e.g., A frustrated customer whose internet is down."></textarea>
                     </div>
                     
+                    <!-- Accent / Language Dropdown -->
                     <div>
-                        <label for="voice-prompt-input" class="block text-sm font-medium text-gray-700">Voice & Accent Style</label>
-                        <input type="text" id="voice-prompt-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" 
-                               value="Australian English" 
-                               placeholder="e.g., Australian English, Grumpy Scottish">
+                        <label for="voice-prompt-select" class="block text-sm font-medium text-gray-700">Accent & Language Style</label>
+                        <select id="voice-prompt-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white">
+                            <option value="Australian English">🇦🇺 Australian English</option>
+                            <option value="American English">🇺🇸 American English</option>
+                            <option value="British English">🇬🇧 British English</option>
+                        </select>
+                    </div>
+
+                    <!-- Voice Selection Row -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="agent-voice-select" class="block text-sm font-medium text-gray-700">Agent Voice</label>
+                            <select id="agent-voice-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white text-sm">
+                                <optgroup label="Female">
+                                    <option value="Kore" selected>Kore — firm &amp; professional</option>
+                                    <option value="Aoede">Aoede — warm &amp; natural</option>
+                                    <option value="Zephyr">Zephyr — bright &amp; friendly</option>
+                                </optgroup>
+                                <optgroup label="Male">
+                                    <option value="Charon">Charon — calm &amp; authoritative</option>
+                                    <option value="Puck">Puck — upbeat &amp; energetic</option>
+                                    <option value="Orus">Orus — firm &amp; decisive</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="customer-voice-select" class="block text-sm font-medium text-gray-700">Customer Voice</label>
+                            <select id="customer-voice-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white text-sm">
+                                <optgroup label="Female">
+                                    <option value="Kore">Kore — firm &amp; professional</option>
+                                    <option value="Aoede">Aoede — warm &amp; natural</option>
+                                    <option value="Zephyr">Zephyr — bright &amp; friendly</option>
+                                </optgroup>
+                                <optgroup label="Male">
+                                    <option value="Charon">Charon — calm &amp; authoritative</option>
+                                    <option value="Puck" selected>Puck — upbeat &amp; energetic</option>
+                                    <option value="Orus">Orus — firm &amp; decisive</option>
+                                </optgroup>
+                            </select>
+                        </div>
                     </div>
 
                     <button id="generate-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-150">
@@ -43,7 +80,7 @@
                     <p class="text-sm text-gray-600">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
                     
                     <!-- Region Selection Dropdown -->
-                    <div class="flex flex-col space-y-1 mb-4">
+                    <div class="flex flex-col space-y-1">
                         <label for="demo-region-select" class="text-sm font-bold text-gray-700">Dialer Persona (Region)</label>
                         <select id="demo-region-select" class="p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 bg-white">
                             <option value="AU" selected>Australia (AU Caller)</option>
@@ -67,7 +104,12 @@
                         </button>
                     </div>
 
-                    <div id="dtmf-keypad" class="hidden mt-4 bg-gray-100 p-4 rounded-xl border border-gray-300 w-64 mx-auto shadow-inner">
+                    <!-- Auto-Play button ABOVE the DTMF keypad -->
+                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition duration-150 hidden shadow-lg">
+                        <i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo
+                    </button>
+
+                    <div id="dtmf-keypad" class="hidden mt-2 bg-gray-100 p-4 rounded-xl border border-gray-300 w-64 mx-auto shadow-inner">
                         <div class="text-center text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">IVR Keypad</div>
                         <div class="grid grid-cols-3 gap-2">
                             <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="1">1</button>
@@ -88,22 +130,39 @@
                     <div id="call-status" class="mt-2 text-sm font-bold text-gray-700 bg-gray-100 p-2 rounded text-center border">
                         Status: Ready to provision
                     </div>
-                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition duration-150 hidden shadow-lg">
-                        <i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo
-                    </button>
                 </div>
             </div>
 
         </div>
         
-        <div class="w-full md:w-2/3">
-            <div id="loading-indicator" class="p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg hidden">
+        <div class="w-full md:w-2/3 flex flex-col">
+
+            <div id="loading-indicator" class="p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg hidden mb-3">
                 <div class="flex items-center">
                     <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <strong>Gemini is thinking...</strong>&nbsp;Writing the script and rendering expressive audio.
+                </div>
+            </div>
+
+            <!-- Sticky Playback Control Bar (hidden until content is loaded) -->
+            <div id="playback-control-bar" class="hidden bg-gray-800 text-white rounded-lg p-3 mb-3 flex items-center justify-between gap-3 shadow-lg sticky top-2 z-10">
+                <div class="flex items-center gap-2">
+                    <button id="playback-start-stop-btn" onclick="toggleAutoDemo()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition text-sm">
+                        <i class="fas fa-play-circle mr-1"></i>Start
+                    </button>
+                    <button id="playback-restart-btn" onclick="restartAutoDemo()" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded transition text-sm" title="Restart from beginning">
+                        <i class="fas fa-undo mr-1"></i>Restart
+                    </button>
+                </div>
+                <div id="playback-progress" class="text-sm text-gray-300 font-mono">
+                    Turn 0 of 0
+                </div>
+                <div class="flex items-center gap-1 text-xs text-gray-400">
+                    <span class="w-3 h-3 bg-green-400 rounded-sm inline-block"></span> Agent
+                    <span class="w-3 h-3 bg-blue-400 rounded-sm inline-block ml-2"></span> Customer
                 </div>
             </div>
 
