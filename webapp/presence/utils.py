@@ -6,13 +6,14 @@ class RCPresenceManager:
         self.base_path = f"/restapi/v1.0/account/{self.account_id}"
 
     def get_all_users(self):
-        """Fetches all user extensions in the account."""
+        """Fetches all user extensions in the account for the checkbox table."""
         endpoint = f"{self.base_path}/extension"
-        params = {"type": ["User"], "perPage": 1000} # Get Users only
+        # We fetch Users, but if you need to audit other types like Departments, add them here.
+        params = {"type": ["User"], "perPage": 1000} 
         
         users = []
         try:
-            response = rc_api_call(endpoint, params=params)
+            response = rc_api_call(endpoint, method="GET", params=params)
             if response and 'records' in response:
                 users.extend(response['records'])
             return users
@@ -20,19 +21,14 @@ class RCPresenceManager:
             raise Exception(f"Failed to fetch users: {str(e)}")
 
     def get_monitored_lines(self, extension_id):
-        """
-        GET /restapi/v1.0/account/{accountId}/extension/{extensionId}/presence/line
-        Returns the BLF lines for a specific extension.
-        """
+        """Returns the BLF lines for a specific extension."""
         try:
             return rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="GET")
         except Exception:
-            # If the user has no lines or an error occurs, return an empty structure
+            # Return an empty structure if the user has no lines or an error occurs
             return {"records": []}
 
     def update_monitored_lines(self, extension_id, line_records):
-        """
-        PUT /restapi/v1.0/account/{accountId}/extension/{extensionId}/presence/line
-        """
+        """Updates the array of BLF lines for the extension."""
         payload = {"records": line_records}
         return rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
