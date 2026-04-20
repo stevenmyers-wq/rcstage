@@ -3,6 +3,7 @@ import os
 import wave
 import io
 import base64
+import time
 import concurrent.futures
 import requests
 from google import genai
@@ -82,50 +83,71 @@ def _resolve_voice(voice_name, default):
     return default
 
 def _process_single_turn(index, turn, voice_prompt, client, agent_voice, customer_voice):
-    """Helper function to generate a single audio clip (used for parallel processing)."""
+    """Helper function to generate a single audio clip (used for parallel processing).
+
+    Retries up to 3 times with a short delay to handle Gemini TTS occasionally
+    returning text tokens instead of audio tokens (known preview-model behaviour).
+    """
     speaker = turn.get('speaker', 'Customer')
     text = turn.get('text', '')
     emotion = turn.get('emotion', 'Speak normally.')
-    
+
     # Use the caller-supplied voice names (already validated by generate_audio_for_script)
     voice_name = agent_voice if speaker.lower() == 'agent' else customer_voice
 
     tts_prompt = f"Voice instruction: You MUST speak with a clear, professional, and natural {voice_prompt} accent/style. Avoid overly exaggerated colloquialisms. Style instruction: {emotion}. \nText to speak: {text}"
-    
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-preview-tts',
-            contents=tts_prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=voice_name
+
+    max_attempts = 3
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash-preview-tts',
+                contents=tts_prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=voice_name
+                            )
                         )
                     )
                 )
             )
-        )
-        
-        audio_bytes = response.candidates[0].content.parts[0].inline_data.data
-        audio_data_uri = create_wave_base64(audio_bytes)
-        
-        return {
-            "turn": index,
-            "speaker": speaker,
-            "text": text,
-            "emotion": emotion,
-            "audio_url": audio_data_uri  
-        }
-    except Exception as e:
-        print(f"Failed to generate audio for turn {index}: {e}")
-        return {
-            "turn": index,
-            "speaker": speaker,
-            "text": text,
-            "error": str(e)
-        }
+
+            # This is the line that raises AttributeError when Gemini returns
+            # text tokens instead of audio — treat it as a retryable failure
+            audio_bytes = response.candidates[0].content.parts[0].inline_data.data
+
+            audio_data_uri = create_wave_base64(audio_bytes)
+
+            if attempt > 1:
+                print(f"Turn {index} succeeded on attempt {attempt}.")
+
+            return {
+                "turn": index,
+                "speaker": speaker,
+                "text": text,
+                "emotion": emotion,
+                "audio_url": audio_data_uri
+            }
+
+        except Exception as e:
+            last_error = e
+            print(f"Turn {index} attempt {attempt}/{max_attempts} failed: {e}")
+            if attempt < max_attempts:
+                time.sleep(2 * attempt)  # 2s before retry 2, 4s before retry 3
+
+    # All attempts exhausted
+    print(f"Turn {index} failed after {max_attempts} attempts. Giving up.")
+    return {
+        "turn": index,
+        "speaker": speaker,
+        "text": text,
+        "error": str(last_error)
+    }
 
 def generate_audio_for_script(script_array, template_id, voice_prompt, agent_voice=None, customer_voice=None):
     """Loops through the script and generates expressive audio Base64 strings concurrently."""
