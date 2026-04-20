@@ -1,161 +1,272 @@
-<div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800 mb-1">BLF & Presence Management</h2>
-    <p class="text-slate-500 text-sm">Audit and update monitored lines (BLF keys) for specific extensions.</p>
+<div class="mb-8 text-center">
+    <h2 class="text-3xl font-bold text-slate-800 mb-2">BLF & Presence Manager</h2>
+    <p class="text-slate-500">Audit, template, and bulk update Monitored Lines (BLF keys) for Users.</p>
 </div>
 
-<div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-6xl mx-auto">
     
-    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
-        <h3 class="font-bold text-lg text-slate-800 mb-4">Target User</h3>
-        <form id="presenceForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Extension ID</label>
-                <input type="text" id="targetExtId" placeholder="e.g. 12345678" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
-            </div>
-            <button type="submit" id="fetchPresenceBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-150 mt-2">
-                Audit BLF Keys
-            </button>
-            <div id="presenceError" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
-        </form>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center transition-shadow hover:shadow-md">
+        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-800 mb-2">Audit BLF Keys</h3>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Select users from the table below and generate an XLSX report of their current BLF configurations.</p>
+        <button onclick="generateAudit()" id="auditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-2.5 rounded-lg transition-colors" disabled>
+            Select Users Below
+        </button>
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
-        <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <h3 class="font-bold text-slate-700">Monitored Lines (BLF)</h3>
-            <button onclick="saveBLF()" id="saveBtn" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden transition-colors">
-                Save Changes
-            </button>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center transition-shadow hover:shadow-md">
+        <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
         </div>
+        <h3 class="text-lg font-bold text-slate-800 mb-2">Get Template</h3>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Download a blank XLSX template to format your new BLF assignments for bulk updating.</p>
+        <button onclick="downloadTemplate()" class="w-full bg-white border-2 border-green-600 text-green-600 hover:bg-green-50 font-bold py-2.5 rounded-lg transition-colors">
+            Download Template
+        </button>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center transition-shadow hover:shadow-md">
+        <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-800 mb-2">Update BLF</h3>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Upload your completed template. The system will process the file and overwrite the specified lines.</p>
         
-        <div class="p-4">
-            <div class="bg-blue-50 text-blue-800 text-xs p-3 rounded mb-4 border border-blue-100">
-                <b>Note:</b> According to the API, the first two lines always indicate the user's own extension and cannot be changed.
-            </div>
-            
-            <table class="w-full text-sm text-left">
-                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b">
-                    <tr>
-                        <th class="px-4 py-3 w-16 text-center">Line</th>
-                        <th class="px-4 py-3">Monitored Extension ID</th>
-                        <th class="px-4 py-3">Type</th>
-                        <th class="px-4 py-3 text-center">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="blfBody" class="divide-y divide-slate-100">
-                    <tr>
-                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">Enter an Extension ID and audit to view keys.</td>
-                    </tr>
-                </tbody>
-            </table>
-            
-            <button onclick="addBlfRow()" id="addBtn" class="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium hidden">
-                + Add Monitored Line
+        <input type="file" id="updateFile" class="hidden" accept=".xlsx" onchange="processUpload()">
+        <button onclick="document.getElementById('updateFile').click()" id="uploadBtn" class="w-full bg-white border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-bold py-2.5 rounded-lg transition-colors">
+            Upload to Update
+        </button>
+    </div>
+</div>
+
+<div id="actionStatus" class="hidden max-w-6xl mx-auto mb-8 p-4 rounded-lg"></div>
+
+<div class="max-w-6xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+        <h3 class="font-bold text-slate-700">Select Users for Audit</h3>
+        <div class="flex items-center gap-2">
+            <input type="text" id="userSearch" placeholder="Search name or ext..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64" onkeyup="filterUsers()">
+            <button onclick="fetchUsers()" id="loadUsersBtn" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 px-4 rounded transition-colors">
+                Load Users
             </button>
         </div>
+    </div>
+    
+    <div class="max-h-96 overflow-y-auto w-full">
+        <table class="w-full text-sm text-left">
+            <thead class="text-xs text-slate-600 uppercase bg-slate-100 sticky top-0 shadow-sm z-10">
+                <tr>
+                    <th class="px-4 py-3 w-12 text-center">
+                        <input type="checkbox" id="selectAll" class="rounded border-slate-300" onchange="toggleAll(this)">
+                    </th>
+                    <th class="px-6 py-3">Name</th>
+                    <th class="px-6 py-3">Extension</th>
+                    <th class="px-6 py-3">Extension ID</th>
+                </tr>
+            </thead>
+            <tbody id="userTableBody" class="divide-y divide-slate-100">
+                <tr>
+                    <td colspan="4" class="px-6 py-12 text-center text-slate-400">Click "Load Users" to begin.</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </div>
 
 <script>
-    let currentExtId = null;
+    let allUsers = [];
 
-    document.getElementById('presenceForm')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = document.getElementById('fetchPresenceBtn');
-        const err = document.getElementById('presenceError');
-        currentExtId = document.getElementById('targetExtId').value.trim();
+    // --- 1. User Loading & Filtering ---
+    async function fetchUsers() {
+        const btn = document.getElementById('loadUsersBtn');
+        const tbody = document.getElementById('userTableBody');
         
         btn.disabled = true;
-        btn.innerHTML = 'Fetching...';
-        err.classList.add('hidden');
+        btn.innerText = 'Loading...';
+        tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-blue-600 font-bold animate-pulse">Fetching users from RingCentral...</td></tr>`;
 
         try {
-            const res = await fetch(`/api/presence/${currentExtId}/lines`);
+            const res = await fetch('/api/presence/users');
             const data = await res.json();
             
-            if (!res.ok) throw new Error(data.error || 'Failed to fetch BLF lines');
+            if (data.status !== 'success') throw new Error(data.message);
             
-            renderBLF(data.records);
-            document.getElementById('saveBtn').classList.remove('hidden');
-            document.getElementById('addBtn').classList.remove('hidden');
+            allUsers = data.users;
+            renderUserTable(allUsers);
+            updateAuditButton();
             
-        } catch (error) {
-            err.innerText = error.message;
-            err.classList.remove('hidden');
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-red-500">Error: ${err.message}</td></tr>`;
         } finally {
             btn.disabled = false;
-            btn.innerText = 'Audit BLF Keys';
+            btn.innerText = 'Refresh Users';
         }
-    });
+    }
 
-    function renderBLF(records) {
-        const tbody = document.getElementById('blfBody');
+    function renderUserTable(users) {
+        const tbody = document.getElementById('userTableBody');
         tbody.innerHTML = '';
         
-        records.forEach((record, index) => {
-            const isLocked = index < 2; // API mandates lines 1 & 2 are locked
-            const extId = record.extension ? record.extension.id : '';
-            const type = record.extension ? record.extension.type : 'Unknown';
-            
+        if (users.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-slate-500">No users found.</td></tr>`;
+            return;
+        }
+
+        users.forEach(user => {
             const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50 transition-colors user-row";
             tr.innerHTML = `
-                <td class="px-4 py-3 text-center font-bold text-slate-500">${index + 1}</td>
-                <td class="px-4 py-3">
-                    <input type="text" class="blf-ext-input border border-slate-300 rounded p-1 text-sm w-full ${isLocked ? 'bg-slate-100' : ''}" 
-                           value="${extId}" ${isLocked ? 'disabled title="First two lines cannot be edited"' : ''} data-line-id="${record.id || ''}">
-                </td>
-                <td class="px-4 py-3 text-slate-500 text-xs">${type}</td>
                 <td class="px-4 py-3 text-center">
-                    ${!isLocked ? `<button onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 text-xs">Remove</button>` : `<span class="text-slate-300 text-xs">Locked</span>`}
+                    <input type="checkbox" class="user-checkbox rounded border-slate-300" value="${user.id}" onchange="updateAuditButton()">
                 </td>
+                <td class="px-6 py-3 font-medium text-slate-800">${user.name || 'Unknown'}</td>
+                <td class="px-6 py-3 text-slate-600 ext-num">${user.extensionNumber || '-'}</td>
+                <td class="px-6 py-3 text-xs font-mono text-slate-400">${user.id}</td>
             `;
             tbody.appendChild(tr);
         });
     }
 
-    function addBlfRow() {
-        const tbody = document.getElementById('blfBody');
-        const nextLine = tbody.children.length + 1;
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td class="px-4 py-3 text-center font-bold text-slate-500">${nextLine}</td>
-            <td class="px-4 py-3"><input type="text" class="blf-ext-input border border-slate-300 rounded p-1 text-sm w-full" placeholder="Enter Extension ID"></td>
-            <td class="px-4 py-3 text-slate-500 text-xs">New</td>
-            <td class="px-4 py-3 text-center"><button onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 text-xs">Remove</button></td>
-        `;
-        tbody.appendChild(tr);
+    function filterUsers() {
+        const search = document.getElementById('userSearch').value.toLowerCase();
+        const rows = document.querySelectorAll('.user-row');
+        
+        rows.forEach(row => {
+            const text = row.innerText.toLowerCase();
+            row.style.display = text.includes(search) ? '' : 'none';
+        });
     }
 
-    async function saveBLF() {
-        if (!currentExtId) return;
-        const btn = document.getElementById('saveBtn');
-        btn.innerText = 'Saving...';
-        btn.disabled = true;
-
-        const inputs = document.querySelectorAll('.blf-ext-input');
-        const records = [];
-        
-        inputs.forEach(input => {
-            if (input.value.trim() !== '') {
-                // The PUT payload requires an object with the extension ID
-                records.push({ extension: { id: input.value.trim() } });
+    function toggleAll(source) {
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+        // Only toggle visible rows
+        const rows = document.querySelectorAll('.user-row');
+        rows.forEach((row, i) => {
+            if (row.style.display !== 'none') {
+                checkboxes[i].checked = source.checked;
             }
         });
+        updateAuditButton();
+    }
+
+    function updateAuditButton() {
+        const checked = document.querySelectorAll('.user-checkbox:checked').length;
+        const btn = document.getElementById('auditBtn');
+        
+        if (checked > 0) {
+            btn.disabled = false;
+            btn.innerText = `Generate Report (${checked} Users)`;
+            btn.classList.replace('border-blue-600', 'bg-blue-600');
+            btn.classList.replace('text-blue-600', 'text-white');
+        } else {
+            btn.disabled = true;
+            btn.innerText = 'Select Users Below';
+            btn.classList.replace('bg-blue-600', 'border-blue-600');
+            btn.classList.replace('text-white', 'text-blue-600');
+        }
+    }
+
+    // --- 2. Audit & Template Actions ---
+    async function generateAudit() {
+        const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        const btn = document.getElementById('auditBtn');
+        const statusBox = document.getElementById('actionStatus');
+        
+        btn.innerText = 'Generating...';
+        btn.disabled = true;
+        statusBox.className = 'hidden';
 
         try {
-            const res = await fetch(`/api/presence/${currentExtId}/lines`, {
-                method: 'PUT',
+            const response = await fetch('/api/presence/audit', {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ records })
+                body: JSON.stringify({ extensions: ids })
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to update');
-            alert('BLF Keys updated successfully!');
-            renderBLF(data.records); // Re-render with updated data from server
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.message || 'Audit generation failed.');
+            }
+
+            // Handle the file download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'BLF_Presence_Audit.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            showStatus('success', 'Audit report generated successfully.');
         } catch (error) {
-            alert('Error updating BLF: ' + error.message);
+            showStatus('error', error.message);
         } finally {
-            btn.innerText = 'Save Changes';
-            btn.disabled = false;
+            updateAuditButton();
         }
+    }
+
+    function downloadTemplate() {
+        window.location.href = '/api/presence/template';
+    }
+
+    // --- 3. Upload Processing ---
+    async function processUpload() {
+        const fileInput = document.getElementById('updateFile');
+        if (!fileInput.files.length) return;
+
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const btn = document.getElementById('uploadBtn');
+        const statusBox = document.getElementById('actionStatus');
+        
+        btn.innerText = 'Uploading...';
+        btn.disabled = true;
+        statusBox.className = 'hidden';
+
+        try {
+            const response = await fetch('/api/presence/update', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'completed') {
+                let msg = data.message;
+                if (data.errors && data.errors.length > 0) {
+                    msg += `<br><br><b>Warnings/Errors:</b><br><ul class="list-disc pl-5 mt-2">`;
+                    data.errors.forEach(err => msg += `<li>${err}</li>`);
+                    msg += `</ul>`;
+                    showStatus('warning', msg);
+                } else {
+                    showStatus('success', msg);
+                }
+            } else {
+                throw new Error(data.message || 'Update failed.');
+            }
+        } catch (error) {
+            showStatus('error', error.message);
+        } finally {
+            btn.innerText = 'Upload to Update';
+            btn.disabled = false;
+            fileInput.value = ''; // Reset input
+        }
+    }
+
+    function showStatus(type, message) {
+        const box = document.getElementById('actionStatus');
+        box.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'bg-red-50', 'text-red-800', 'bg-yellow-50', 'text-yellow-800');
+        
+        if (type === 'success') box.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200');
+        if (type === 'error') box.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200');
+        if (type === 'warning') box.classList.add('bg-yellow-50', 'text-yellow-800', 'border', 'border-yellow-200');
+        
+        box.innerHTML = message;
     }
 </script>
