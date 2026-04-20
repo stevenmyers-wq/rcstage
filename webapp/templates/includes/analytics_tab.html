@@ -182,10 +182,10 @@
 
     function getStatusConfig(result) {
         const r = (result || '').toLowerCase();
-        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) {
+        if (['completed', 'accepted', 'answered', 'pickedup', 'connected'].includes(r)) {
             return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
         }
-        if (['missed', 'abandoned'].includes(r)) {
+        if (['missed', 'abandoned', 'notanswered'].includes(r)) {
             return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
         }
         if (['voicemail'].includes(r)) {
@@ -216,12 +216,16 @@
             
             const startTime = new Date(firstHop.startedAt).toLocaleString();
             const shortCallId = record.callId ? record.callId.substring(0, 11) + '...' : '-';
-            const originator = (firstHop.from && (firstHop.from.name || firstHop.from.number || firstHop.from.extensionNumber)) || 'Unknown';
             
-            // Forensic logic: If API says completed, but a VM segment exists anywhere, force it to Voicemail
-            let finalResult = lastHop.result || firstHop.result || 'Unknown';
+            // FIX: Check for phoneNumber (external calls) and name (internal endpoints)
+            const originator = (firstHop.from && (firstHop.from.name || firstHop.from.phoneNumber || firstHop.from.extensionNumber || firstHop.from.number)) || 'Unknown';
+            
+            // FIX: If 'result' is empty, fall back to 'response' (e.g. Connected, NotAnswered)
+            let finalResult = lastHop.result || lastHop.response || firstHop.result || firstHop.response || 'Unknown';
+            
+            // Forensic logic: Force Voicemail if detected in segments or response
             const wentToVm = hops.some(h => 
-                h.result === 'Voicemail' || 
+                h.result === 'Voicemail' || h.response === 'Voicemail' || 
                 (h.segmentsDuration && (h.segmentsDuration.voicemail > 0 || h.segmentsDuration.vmGreeting > 0))
             );
             if (wentToVm) finalResult = 'Voicemail';
@@ -261,11 +265,14 @@
             let hopsHtml = `<div class="p-6 w-full max-w-5xl mx-auto relative journey-timeline">`;
             
             hops.forEach((hop, hIndex) => {
-                const hFrom = (hop.from && (hop.from.name || hop.from.number || hop.from.extensionNumber)) || 'Unknown';
-                const hTo = (hop.to && (hop.to.name || hop.to.number || hop.to.extensionNumber)) || 'Unknown';
+                // FIX: Expanded fallbacks for internal/external hops
+                const hFrom = (hop.from && (hop.from.name || hop.from.phoneNumber || hop.from.extensionNumber || hop.from.number)) || 'Unknown';
+                const hTo = (hop.to && (hop.to.name || hop.to.phoneNumber || hop.to.extensionNumber || hop.to.number)) || 'Unknown';
+                
                 const hType = hop.callType || 'Call';
-                const hResult = hop.result || 'Unknown';
                 const hResponse = hop.response || 'Unknown';
+                // FIX: Map hop result properly
+                const hResult = hop.result || hop.response || 'Unknown';
                 const hDur = formatSeconds((hop.duration || 0) / 1000);
                 const hopConfig = getStatusConfig(hResult);
                 
