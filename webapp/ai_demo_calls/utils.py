@@ -35,7 +35,6 @@ def generate_script_with_gemini(scenario, voice_prompt):
     """
     
     try:
-        # CHANGED: Switched to flash for massive speed improvements
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -50,7 +49,7 @@ def generate_script_with_gemini(scenario, voice_prompt):
 
 def create_wave_base64(pcm_data):
     """Helper function to wrap raw PCM audio data into a playable in-memory .wav file and return as Base64."""
-    buffer = io.BytesIO() # Create a virtual file in RAM
+    buffer = io.BytesIO()
     
     with wave.open(buffer, "wb") as wf:
         wf.setnchannels(1)        # Mono
@@ -58,20 +57,39 @@ def create_wave_base64(pcm_data):
         wf.setframerate(24000)    # Gemini outputs audio at 24kHz
         wf.writeframes(pcm_data)
     
-    # Get the raw bytes from the RAM buffer
     wav_bytes = buffer.getvalue()
-    
-    # Encode to Base64 and create a Data URI
     b64_encoded = base64.b64encode(wav_bytes).decode('utf-8')
     return f"data:audio/wav;base64,{b64_encoded}"
 
-def _process_single_turn(index, turn, voice_prompt, client):
+# Whitelist of valid Gemini TTS voice names to prevent injection via user input
+VALID_VOICES = {
+    'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe',
+    'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux',
+    'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima',
+    'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel',
+    'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
+}
+
+DEFAULT_AGENT_VOICE = 'Kore'
+DEFAULT_CUSTOMER_VOICE = 'Puck'
+
+def _resolve_voice(voice_name, default):
+    """Returns the requested voice if it's in the whitelist, otherwise returns the default."""
+    if voice_name and voice_name in VALID_VOICES:
+        return voice_name
+    if voice_name:
+        print(f"Warning: '{voice_name}' is not a recognised Gemini TTS voice. Falling back to '{default}'.")
+    return default
+
+def _process_single_turn(index, turn, voice_prompt, client, agent_voice, customer_voice):
     """Helper function to generate a single audio clip (used for parallel processing)."""
     speaker = turn.get('speaker', 'Customer')
     text = turn.get('text', '')
     emotion = turn.get('emotion', 'Speak normally.')
     
-    voice_name = 'Aoede' if speaker.lower() == 'agent' else 'Puck'
+    # Use the caller-supplied voice names (already validated by generate_audio_for_script)
+    voice_name = agent_voice if speaker.lower() == 'agent' else customer_voice
+
     tts_prompt = f"Voice instruction: You MUST speak with a clear, professional, and natural {voice_prompt} accent/style. Avoid overly exaggerated colloquialisms. Style instruction: {emotion}. \nText to speak: {text}"
     
     try:
@@ -90,10 +108,7 @@ def _process_single_turn(index, turn, voice_prompt, client):
             )
         )
         
-        # Get raw PCM bytes
         audio_bytes = response.candidates[0].content.parts[0].inline_data.data
-        
-        # Convert directly to Base64 Data URI instead of saving to disk
         audio_data_uri = create_wave_base64(audio_bytes)
         
         return {
@@ -112,25 +127,31 @@ def _process_single_turn(index, turn, voice_prompt, client):
             "error": str(e)
         }
 
-def generate_audio_for_script(script_array, template_id, voice_prompt):
+def generate_audio_for_script(script_array, template_id, voice_prompt, agent_voice=None, customer_voice=None):
     """Loops through the script and generates expressive audio Base64 strings concurrently."""
     client = get_gemini_client()
+
+    # Validate voice names against the whitelist before spawning threads
+    resolved_agent_voice = _resolve_voice(agent_voice, DEFAULT_AGENT_VOICE)
+    resolved_customer_voice = _resolve_voice(customer_voice, DEFAULT_CUSTOMER_VOICE)
+
+    print(f"Generating audio — Agent: {resolved_agent_voice}, Customer: {resolved_customer_voice}, Accent: {voice_prompt}")
+
     generated_files = []
     
-    # CHANGED: Added ThreadPoolExecutor for Parallel Processing
-    # max_workers=10 means we process up to 10 audio requests at the exact same time
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # Submit all tasks to the executor
         futures = [
-            executor.submit(_process_single_turn, index, turn, voice_prompt, client) 
+            executor.submit(
+                _process_single_turn,
+                index, turn, voice_prompt, client,
+                resolved_agent_voice, resolved_customer_voice
+            ) 
             for index, turn in enumerate(script_array)
         ]
         
-        # Gather the results as they finish
         for future in concurrent.futures.as_completed(futures):
             generated_files.append(future.result())
             
-    # Because threads finish at random times, we must sort the final array back into the correct order
     generated_files.sort(key=lambda x: x["turn"])
             
     return generated_files
@@ -166,7 +187,6 @@ def get_demo_account_token(region="AU"):
     
     if not response.ok:
         error_data = response.json() if response.content else {}
-        # RingCentral returns 'invalid_grant' for expired or revoked JWTs
         if error_data.get("error") in ["invalid_grant", "invalid_client"]:
             raise ValueError(f"The JWT for the {region} region has expired or is invalid. Please generate a new one.")
         response.raise_for_status()
