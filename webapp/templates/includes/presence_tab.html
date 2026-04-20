@@ -1,6 +1,6 @@
 <div class="mb-8 text-center">
     <h2 class="text-3xl font-bold text-slate-800 mb-2">BLF & Presence Manager</h2>
-    <p class="text-slate-500">Audit, template, and bulk update Monitored Lines (BLF keys) across your organization.</p>
+    <p class="text-slate-500">Audit, template, and bulk update Monitored Lines and Presence Permissions.</p>
 </div>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-6xl mx-auto">
@@ -10,7 +10,7 @@
             <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-2">Audit BLF Keys</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Select users from the table below and generate a horizontal XLSX report of their BLF configurations.</p>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Generate a complete horizontal XLSX report including Lines 1-N, Pick-up toggles, and Ring settings.</p>
         <button onclick="generateAudit()" id="auditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-2.5 rounded-lg transition-colors" disabled>
             Select Users Below
         </button>
@@ -21,7 +21,7 @@
             <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-2">Get Template</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Download a blank XLSX template properly formatted with horizontal columns for bulk updating.</p>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Download a blank XLSX template to format your new BLF assignments and settings for bulk updating.</p>
         <button onclick="downloadTemplate()" class="w-full bg-white border-2 border-green-600 text-green-600 hover:bg-green-50 font-bold py-2.5 rounded-lg transition-colors">
             Download Template
         </button>
@@ -32,7 +32,7 @@
             <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-2">Update BLF</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Upload your completed template. The system will process the file and overwrite the specified lines.</p>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Upload your spreadsheet. The system automatically translates Extension Numbers to IDs.</p>
         
         <input type="file" id="updateFile" class="hidden" accept=".xlsx" onchange="processUpload()">
         <button onclick="document.getElementById('updateFile').click()" id="uploadBtn" class="w-full bg-white border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-bold py-2.5 rounded-lg transition-colors">
@@ -67,9 +67,7 @@
                 </tr>
             </thead>
             <tbody id="userTableBody" class="divide-y divide-slate-100">
-                <tr>
-                    <td colspan="4" class="px-6 py-12 text-center text-slate-400">Click "Load Users" to begin.</td>
-                </tr>
+                <tr><td colspan="4" class="px-6 py-12 text-center text-slate-400">Click "Load Users" to begin.</td></tr>
             </tbody>
         </table>
     </div>
@@ -78,7 +76,6 @@
 <script>
     let allUsers = [];
 
-    // --- 1. User Loading & Filtering ---
     async function fetchUsers() {
         const btn = document.getElementById('loadUsersBtn');
         const tbody = document.getElementById('userTableBody');
@@ -96,7 +93,6 @@
             allUsers = data.users;
             renderUserTable(allUsers);
             updateAuditButton();
-            
         } catch (err) {
             tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-red-500">Error: ${err.message}</td></tr>`;
         } finally {
@@ -143,9 +139,7 @@
         const checkboxes = document.querySelectorAll('.user-checkbox');
         const rows = document.querySelectorAll('.user-row');
         rows.forEach((row, i) => {
-            if (row.style.display !== 'none') {
-                checkboxes[i].checked = source.checked;
-            }
+            if (row.style.display !== 'none') checkboxes[i].checked = source.checked;
         });
         updateAuditButton();
     }
@@ -167,11 +161,9 @@
         }
     }
 
-    // --- 2. Audit & Template Actions ---
     async function generateAudit() {
         const checkboxes = document.querySelectorAll('.user-checkbox:checked');
         
-        // Build the object containing Name, Number, and ID for the Excel Sheet
         const usersToAudit = Array.from(checkboxes).map(cb => {
             const row = cb.closest('tr');
             return {
@@ -200,7 +192,6 @@
                 throw new Error(data.message || 'Audit generation failed.');
             }
 
-            // Handle the file download
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -222,14 +213,12 @@
         window.location.href = '/api/presence/template';
     }
 
-    // --- 3. Upload Processing ---
     async function processUpload() {
         const fileInput = document.getElementById('updateFile');
         if (!fileInput.files.length) return;
 
-        const file = fileInput.files[0];
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', fileInput.files[0]);
 
         const btn = document.getElementById('uploadBtn');
         const statusBox = document.getElementById('actionStatus');
@@ -264,7 +253,7 @@
         } finally {
             btn.innerText = 'Upload to Update';
             btn.disabled = false;
-            fileInput.value = ''; // Reset input
+            fileInput.value = ''; 
         }
     }
 
