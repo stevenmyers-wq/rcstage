@@ -16,7 +16,7 @@ class RCPresenceManager:
             raise Exception(f"Failed to fetch users: {str(e)}")
 
     def get_all_extensions_raw(self):
-        """Fetches ALL extensions (Queues, Park, Shared) to build the Number-to-ID Translator."""
+        """Fetches ALL extensions to build the Number-to-ID Translator."""
         endpoint = f"{self.base_path}/extension"
         params = {"perPage": 1000}
         try:
