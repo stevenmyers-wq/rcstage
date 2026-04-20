@@ -37,7 +37,13 @@ window.intentToDial = false;
 let activeSession = null;
 let audioCtx = null;
 let virtualMic = null;
-let customerMixer = null; 
+let customerMixer = null;
+
+// --- SEQUENCER STATE ---
+window.totalTurns = 0;
+window.currentTurnIndex = 0;
+let sequencerRunning = false;
+let sequencerAbortFlag = false;
 
 // --- 1. THE VIRTUAL MICROPHONE INTERCEPTOR ---
 function setupVirtualMicrophone() {
@@ -77,14 +83,97 @@ window.playTurnIntoCall = function(audioId) {
     audioEl.play();
 };
 
-// --- 3. AUTO-PLAY SEQUENCER ---
-window.totalTurns = 0; 
-window.currentTurnIndex = 0;
+// --- 3. PLAYBACK CONTROL BAR UPDATER ---
+function updatePlaybackBar() {
+    const progress = document.getElementById('playback-progress');
+    if (progress) {
+        progress.textContent = `Turn ${window.currentTurnIndex} of ${window.totalTurns}`;
+    }
+}
 
+function setPlaybackBarRunning(running) {
+    const btn = document.getElementById('playback-start-stop-btn');
+    if (!btn) return;
+    if (running) {
+        btn.innerHTML = '<i class="fas fa-stop-circle mr-1"></i>Stop';
+        btn.className = 'bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition text-sm';
+    } else {
+        btn.innerHTML = '<i class="fas fa-play-circle mr-1"></i>Start';
+        btn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition text-sm';
+    }
+}
+
+// Sync the sidebar auto-play button appearance too
+function syncSidebarAutoPlayBtn(running) {
+    const btn = document.getElementById('auto-play-btn');
+    if (!btn) return;
+    if (running) {
+        btn.innerHTML = '<i class="fas fa-stop-circle mr-2"></i>Stop Demo';
+        btn.onclick = stopAutoDemo;
+    } else {
+        btn.innerHTML = '<i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo';
+        btn.onclick = startAutoDemo;
+    }
+    btn.disabled = false;
+}
+
+// --- 4. STOP THE SEQUENCER CLEANLY ---
+window.stopAutoDemo = function() {
+    sequencerAbortFlag = true;
+    sequencerRunning = false;
+
+    // Pause all audio elements immediately
+    for (let i = 0; i < window.totalTurns; i++) {
+        const audioEl = document.getElementById(`audio-turn-${i}`);
+        if (audioEl) {
+            audioEl.pause();
+            audioEl.onended = null;
+        }
+    }
+
+    // Remove active highlight from all turn containers
+    document.querySelectorAll('.turn-container').forEach(el => {
+        el.classList.remove('ring-4', 'ring-purple-400', 'shadow-lg');
+    });
+
+    setPlaybackBarRunning(false);
+    syncSidebarAutoPlayBtn(false);
+    updatePlaybackBar();
+    console.log("Demo stopped.");
+};
+
+// --- 5. RESTART FROM THE BEGINNING ---
+window.restartAutoDemo = function() {
+    stopAutoDemo();
+    window.currentTurnIndex = 0;
+    updatePlaybackBar();
+    // Small delay to let the stop settle before re-starting
+    setTimeout(() => {
+        sequencerAbortFlag = false;
+        startAutoDemo();
+    }, 200);
+};
+
+// --- 6. TOGGLE START/STOP ---
+window.toggleAutoDemo = function() {
+    if (sequencerRunning) {
+        stopAutoDemo();
+    } else {
+        sequencerAbortFlag = false;
+        startAutoDemo();
+    }
+};
+
+// --- 7. AUTO-PLAY SEQUENCER ---
 window.startAutoDemo = function() {
-    document.getElementById('auto-play-btn').disabled = true;
-    document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Demo Running...';
-    
+    if (sequencerRunning) return;
+
+    sequencerAbortFlag = false;
+    sequencerRunning = true;
+
+    setPlaybackBarRunning(true);
+    syncSidebarAutoPlayBtn(true);
+
     if (window.currentTurnIndex >= window.totalTurns) {
         window.currentTurnIndex = 0;
     }
@@ -92,17 +181,44 @@ window.startAutoDemo = function() {
 };
 
 function playNextAutoTurn() {
+    // Check abort before each turn
+    if (sequencerAbortFlag) {
+        sequencerRunning = false;
+        setPlaybackBarRunning(false);
+        syncSidebarAutoPlayBtn(false);
+        return;
+    }
+
     if (window.currentTurnIndex >= window.totalTurns) {
-        console.log("Demo complete. Leaving call open.");
-        const btn = document.getElementById('auto-play-btn');
-        btn.innerHTML = '<i class="fas fa-redo mr-2"></i>Replay Sequence';
-        btn.disabled = false;
-        window.currentTurnIndex = 0; 
-        return; 
+        // Sequence complete
+        sequencerRunning = false;
+        setPlaybackBarRunning(false);
+        syncSidebarAutoPlayBtn(false);
+
+        const btn = document.getElementById('playback-start-stop-btn');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-redo mr-1"></i>Replay';
+            btn.className = 'bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition text-sm';
+        }
+        const sideBtn = document.getElementById('auto-play-btn');
+        if (sideBtn) {
+            sideBtn.innerHTML = '<i class="fas fa-redo mr-2"></i>Replay Sequence';
+            sideBtn.onclick = startAutoDemo;
+            sideBtn.disabled = false;
+        }
+
+        window.currentTurnIndex = 0;
+        updatePlaybackBar();
+        console.log("Demo sequence complete.");
+        return;
     }
 
     const audioEl = document.getElementById(`audio-turn-${window.currentTurnIndex}`);
-    if (!audioEl) return;
+    if (!audioEl) {
+        window.currentTurnIndex++;
+        playNextAutoTurn();
+        return;
+    }
 
     const isAgent = audioEl.dataset.speaker === 'agent';
 
@@ -110,7 +226,6 @@ function playNextAutoTurn() {
 
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
-        
         if (isAgent) {
             source.connect(audioCtx.destination);
         } else {
@@ -119,12 +234,27 @@ function playNextAutoTurn() {
         audioEl.isRouted = true;
     }
 
-    document.querySelectorAll('.turn-container').forEach(el => el.classList.remove('ring-4', 'ring-purple-400', 'shadow-lg'));
-    document.getElementById(`turn-container-${window.currentTurnIndex}`).classList.add('ring-4', 'ring-purple-400', 'shadow-lg');
+    // Highlight active turn
+    document.querySelectorAll('.turn-container').forEach(el => {
+        el.classList.remove('ring-4', 'ring-purple-400', 'shadow-lg');
+    });
+    const container = document.getElementById(`turn-container-${window.currentTurnIndex}`);
+    if (container) {
+        container.classList.add('ring-4', 'ring-purple-400', 'shadow-lg');
+        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Update progress bar
+    updatePlaybackBar();
+
+    // Rewind in case this turn was played before (e.g. after a stop/restart)
+    audioEl.currentTime = 0;
 
     audioEl.onended = () => {
+        if (sequencerAbortFlag) return;
         window.currentTurnIndex++;
-        setTimeout(playNextAutoTurn, 1000); 
+        updatePlaybackBar();
+        setTimeout(playNextAutoTurn, 1000);
     };
 
     audioEl.play();
@@ -142,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dialTargetInput = document.getElementById('dial-target');
     const callStatus = document.getElementById('call-status');
     const dtmfKeypad = document.getElementById('dtmf-keypad');
+    const playbackControlBar = document.getElementById('playback-control-bar');
 
     // --- DTMF KEYPAD LOGIC ---
     document.querySelectorAll('.dtmf-btn').forEach(btn => {
@@ -149,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const key = e.target.dataset.key;
             if (activeSession) {
                 console.log(`Sending DTMF Tone: ${key}`);
-                activeSession.dtmf(key); // This sends the tone down the active SIP line!
+                activeSession.dtmf(key);
             }
         });
     });
@@ -158,7 +289,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (generateBtn) {
         generateBtn.addEventListener('click', async () => {
             const scenario = scenarioInput.value.trim();
-            const voicePrompt = document.getElementById('voice-prompt-input').value.trim() || 'Australian English';
+            const voicePrompt = document.getElementById('voice-prompt-select').value;
+            const agentVoice = document.getElementById('agent-voice-select').value;
+            const customerVoice = document.getElementById('customer-voice-select').value;
 
             if (!scenario) return alert("Please enter a scenario.");
 
@@ -167,6 +300,11 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingIndicator.classList.remove('hidden');
             scriptDisplay.innerHTML = '';
             dialerSection.classList.add('hidden');
+            if (playbackControlBar) playbackControlBar.classList.add('hidden');
+
+            // Stop any in-progress demo
+            stopAutoDemo();
+            window.currentTurnIndex = 0;
 
             try {
                 const scriptRes = await fetch('/api/ai_demo_calls/generate-script', {
@@ -183,13 +321,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({ 
                         script: scriptData.script,
                         template_id: `demo_${Date.now()}`,
-                        voice_prompt: voicePrompt
+                        voice_prompt: voicePrompt,
+                        agent_voice: agentVoice,
+                        customer_voice: customerVoice
                     })
                 });
                 const audioData = await audioRes.json();
                 if (audioData.error) throw new Error(audioData.error);
 
-                // MASSIVE CACHE FIX: Saving to IndexedDB
+                // Save to IndexedDB cache
                 await saveToCache(audioData.files);
                 
                 renderScriptAndAudio(audioData.files);
@@ -224,11 +364,16 @@ document.addEventListener('DOMContentLoaded', () => {
             callStatus.className = "mt-2 text-sm font-bold text-green-700 bg-green-100 p-2 rounded text-center border border-green-300";
             callBtn.classList.add('hidden');
             hangupBtn.classList.remove('hidden');
-            document.getElementById('auto-play-btn').classList.remove('hidden');
-            document.getElementById('auto-play-btn').disabled = false;
-            document.getElementById('auto-play-btn').innerHTML = '<i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo';
+
+            // Show auto-play button in sidebar
+            const autoPlayBtn = document.getElementById('auto-play-btn');
+            if (autoPlayBtn) {
+                autoPlayBtn.classList.remove('hidden');
+                autoPlayBtn.disabled = false;
+                autoPlayBtn.innerHTML = '<i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo';
+                autoPlayBtn.onclick = startAutoDemo;
+            }
             
-            // Show the DTMF Keypad
             if (dtmfKeypad) dtmfKeypad.classList.remove('hidden'); 
         });
 
@@ -237,12 +382,17 @@ document.addEventListener('DOMContentLoaded', () => {
             callStatus.className = "mt-2 text-sm font-bold text-gray-700 bg-gray-100 p-2 rounded text-center border border-gray-300";
             hangupBtn.classList.add('hidden');
             callBtn.classList.remove('hidden');
-            document.getElementById('auto-play-btn').classList.add('hidden');
+
+            const autoPlayBtn = document.getElementById('auto-play-btn');
+            if (autoPlayBtn) autoPlayBtn.classList.add('hidden');
+
             callBtn.disabled = false;
             activeSession = null;
 
-            // Hide the DTMF Keypad
             if (dtmfKeypad) dtmfKeypad.classList.add('hidden');
+
+            // Stop sequencer if still running when call drops
+            if (sequencerRunning) stopAutoDemo();
         });
     }
 
@@ -330,12 +480,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let html = `
             <div class="flex items-center justify-between mb-2">
                 <h3 class="text-lg font-bold text-gray-800">Demo Conversation</h3>
-                <span class="text-xs text-gray-500">Only Customer turns have inject buttons</span>
+                <span class="text-xs text-gray-500">${turns.length} turns generated</span>
             </div>
-            <div class="bg-[#e5ddd5] p-4 rounded-xl h-[600px] overflow-y-auto flex flex-col space-y-4 shadow-inner">
+            <div class="bg-[#e5ddd5] p-4 rounded-xl h-[600px] overflow-y-auto flex flex-col space-y-4 shadow-inner" id="chat-scroll-area">
         `;
         
-        window.totalTurns = turns.length; 
+        window.totalTurns = turns.length;
+        window.currentTurnIndex = 0;
+        sequencerRunning = false;
+        sequencerAbortFlag = false;
 
         turns.forEach(turn => {
             const isAgent = turn.speaker.toLowerCase() === 'agent';
@@ -361,7 +514,23 @@ document.addEventListener('DOMContentLoaded', () => {
         
         html += '</div>';
         scriptDisplay.innerHTML = html;
-        if(dialerSection) dialerSection.classList.remove('hidden');
+
+        // Show the sticky playback control bar
+        if (playbackControlBar) {
+            playbackControlBar.classList.remove('hidden');
+            setPlaybackBarRunning(false);
+            updatePlaybackBar();
+
+            // Reset the start/stop button appearance cleanly
+            const btn = document.getElementById('playback-start-stop-btn');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-play-circle mr-1"></i>Start';
+                btn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition text-sm';
+                btn.onclick = toggleAutoDemo;
+            }
+        }
+
+        if (dialerSection) dialerSection.classList.remove('hidden');
     }
 
     // --- CACHE LOADER (INDEXEDDB) ---
