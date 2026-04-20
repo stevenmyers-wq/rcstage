@@ -7,7 +7,8 @@ class RCBusinessAnalytics:
 
     def fetch_records(self, dimension, time_settings, page=1, per_page=100):
         """
-        Standard fetch for call records.
+        POST /analytics/calls/v1/accounts/{accountId}/records/fetch
+        This endpoint provides the granular hop-by-hop data.
         """
         payload = {
             "dimension": dimension,
