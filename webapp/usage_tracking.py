@@ -1,7 +1,7 @@
 import os
 from functools import wraps
 from flask import session
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from google.cloud import firestore
 
 # Initialize Firestore lazily
@@ -65,33 +65,110 @@ def get_analytics_data():
         
     try:
         # Fetch up to last 1000 actions
-        docs = database.collection('tool_usage').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1000).stream()
-        
+        docs = list(
+            database.collection('tool_usage')
+            .order_by('timestamp', direction=firestore.Query.DESCENDING)
+            .limit(1000)
+            .stream()
+        )
+
         tool_counts = {}
         dates_counts = {}
         status_counts = {"success": 0, "error": 0}
-        
+        user_action_counts = {}      # email -> total action count
+        user_first_seen = {}         # email -> earliest timestamp seen in this dataset
+        tool_error_counts = {}       # tool -> error count
+        per_tool_user_sets = {}      # tool -> set of unique user emails
+
+        now = datetime.now(timezone.utc)
+        this_week_start = now - timedelta(days=7)
+        last_week_start = now - timedelta(days=14)
+        this_week_count = 0
+        last_week_count = 0
+
         for doc in docs:
             data = doc.to_dict()
             tool = data.get('tool_name', 'unknown')
             status = data.get('status', 'success')
             ts = data.get('timestamp')
-            
+            email = data.get('user_email', 'unknown')
+
+            # Tool popularity
             tool_counts[tool] = tool_counts.get(tool, 0) + 1
+
+            # Status overall
             status_counts[status] = status_counts.get(status, 0) + 1
-            
+
+            # Per-tool error counts
+            if status == 'error':
+                tool_error_counts[tool] = tool_error_counts.get(tool, 0) + 1
+
+            # Unique users per tool
+            if tool not in per_tool_user_sets:
+                per_tool_user_sets[tool] = set()
+            per_tool_user_sets[tool].add(email)
+
+            # User action counts (for leaderboard)
+            user_action_counts[email] = user_action_counts.get(email, 0) + 1
+
             if ts:
                 date_str = ts.strftime('%Y-%m-%d')
                 dates_counts[date_str] = dates_counts.get(date_str, 0) + 1
-                
+
+                # Week-on-week comparison
+                if ts >= this_week_start:
+                    this_week_count += 1
+                elif ts >= last_week_start:
+                    last_week_count += 1
+
+                # Track earliest timestamp seen per user (proxy for first use)
+                if email not in user_first_seen or ts < user_first_seen[email]:
+                    user_first_seen[email] = ts
+
+        # Sort dates for the activity chart
         sorted_dates = sorted(dates_counts.keys())
         activity_data = {d: dates_counts[d] for d in sorted_dates}
+
+        # Unique users total
+        unique_users = len(user_action_counts)
+
+        # Week-on-week change
+        wow_change = this_week_count - last_week_count
+        wow_pct = round((wow_change / last_week_count * 100) if last_week_count > 0 else 0)
+
+        # Top 10 users leaderboard
+        top_users = sorted(user_action_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        leaderboard = [{"email": email, "count": count} for email, count in top_users]
+
+        # Per-tool error rate (as a percentage, sorted by error count descending)
+        tool_error_rates = {}
+        for tool, total in tool_counts.items():
+            errors = tool_error_counts.get(tool, 0)
+            tool_error_rates[tool] = {
+                "errors": errors,
+                "total": total,
+                "error_pct": round((errors / total * 100) if total > 0 else 0)
+            }
+
+        # New users this week (first seen in the last 7 days)
+        new_users_this_week = sum(
+            1 for ts in user_first_seen.values() if ts >= this_week_start
+        )
 
         return {
             "tool_popularity": tool_counts,
             "activity_over_time": activity_data,
-            "status_ratio": status_counts
+            "status_ratio": status_counts,
+            "unique_users": unique_users,
+            "this_week_count": this_week_count,
+            "last_week_count": last_week_count,
+            "wow_change": wow_change,
+            "wow_pct": wow_pct,
+            "leaderboard": leaderboard,
+            "tool_error_rates": tool_error_rates,
+            "new_users_this_week": new_users_this_week,
         }
+
     except Exception as e:
         print(f"Error fetching analytics: {e}")
         return {"error": str(e)}
