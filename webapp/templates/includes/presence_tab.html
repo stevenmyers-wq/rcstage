@@ -1,0 +1,161 @@
+<div class="mb-6">
+    <h2 class="text-2xl font-bold text-slate-800 mb-1">BLF & Presence Management</h2>
+    <p class="text-slate-500 text-sm">Audit and update monitored lines (BLF keys) for specific extensions.</p>
+</div>
+
+<div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+    
+    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
+        <h3 class="font-bold text-lg text-slate-800 mb-4">Target User</h3>
+        <form id="presenceForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Extension ID</label>
+                <input type="text" id="targetExtId" placeholder="e.g. 12345678" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
+            </div>
+            <button type="submit" id="fetchPresenceBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-150 mt-2">
+                Audit BLF Keys
+            </button>
+            <div id="presenceError" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
+        </form>
+    </div>
+
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <h3 class="font-bold text-slate-700">Monitored Lines (BLF)</h3>
+            <button onclick="saveBLF()" id="saveBtn" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden transition-colors">
+                Save Changes
+            </button>
+        </div>
+        
+        <div class="p-4">
+            <div class="bg-blue-50 text-blue-800 text-xs p-3 rounded mb-4 border border-blue-100">
+                <b>Note:</b> According to the API, the first two lines always indicate the user's own extension and cannot be changed.
+            </div>
+            
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b">
+                    <tr>
+                        <th class="px-4 py-3 w-16 text-center">Line</th>
+                        <th class="px-4 py-3">Monitored Extension ID</th>
+                        <th class="px-4 py-3">Type</th>
+                        <th class="px-4 py-3 text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="blfBody" class="divide-y divide-slate-100">
+                    <tr>
+                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">Enter an Extension ID and audit to view keys.</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <button onclick="addBlfRow()" id="addBtn" class="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium hidden">
+                + Add Monitored Line
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentExtId = null;
+
+    document.getElementById('presenceForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('fetchPresenceBtn');
+        const err = document.getElementById('presenceError');
+        currentExtId = document.getElementById('targetExtId').value.trim();
+        
+        btn.disabled = true;
+        btn.innerHTML = 'Fetching...';
+        err.classList.add('hidden');
+
+        try {
+            const res = await fetch(`/api/presence/${currentExtId}/lines`);
+            const data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error || 'Failed to fetch BLF lines');
+            
+            renderBLF(data.records);
+            document.getElementById('saveBtn').classList.remove('hidden');
+            document.getElementById('addBtn').classList.remove('hidden');
+            
+        } catch (error) {
+            err.innerText = error.message;
+            err.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Audit BLF Keys';
+        }
+    });
+
+    function renderBLF(records) {
+        const tbody = document.getElementById('blfBody');
+        tbody.innerHTML = '';
+        
+        records.forEach((record, index) => {
+            const isLocked = index < 2; // API mandates lines 1 & 2 are locked
+            const extId = record.extension ? record.extension.id : '';
+            const type = record.extension ? record.extension.type : 'Unknown';
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="px-4 py-3 text-center font-bold text-slate-500">${index + 1}</td>
+                <td class="px-4 py-3">
+                    <input type="text" class="blf-ext-input border border-slate-300 rounded p-1 text-sm w-full ${isLocked ? 'bg-slate-100' : ''}" 
+                           value="${extId}" ${isLocked ? 'disabled title="First two lines cannot be edited"' : ''} data-line-id="${record.id || ''}">
+                </td>
+                <td class="px-4 py-3 text-slate-500 text-xs">${type}</td>
+                <td class="px-4 py-3 text-center">
+                    ${!isLocked ? `<button onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 text-xs">Remove</button>` : `<span class="text-slate-300 text-xs">Locked</span>`}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function addBlfRow() {
+        const tbody = document.getElementById('blfBody');
+        const nextLine = tbody.children.length + 1;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="px-4 py-3 text-center font-bold text-slate-500">${nextLine}</td>
+            <td class="px-4 py-3"><input type="text" class="blf-ext-input border border-slate-300 rounded p-1 text-sm w-full" placeholder="Enter Extension ID"></td>
+            <td class="px-4 py-3 text-slate-500 text-xs">New</td>
+            <td class="px-4 py-3 text-center"><button onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 text-xs">Remove</button></td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    async function saveBLF() {
+        if (!currentExtId) return;
+        const btn = document.getElementById('saveBtn');
+        btn.innerText = 'Saving...';
+        btn.disabled = true;
+
+        const inputs = document.querySelectorAll('.blf-ext-input');
+        const records = [];
+        
+        inputs.forEach(input => {
+            if (input.value.trim() !== '') {
+                // The PUT payload requires an object with the extension ID
+                records.push({ extension: { id: input.value.trim() } });
+            }
+        });
+
+        try {
+            const res = await fetch(`/api/presence/${currentExtId}/lines`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ records })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to update');
+            alert('BLF Keys updated successfully!');
+            renderBLF(data.records); // Re-render with updated data from server
+        } catch (error) {
+            alert('Error updating BLF: ' + error.message);
+        } finally {
+            btn.innerText = 'Save Changes';
+            btn.disabled = false;
+        }
+    }
+</script>
