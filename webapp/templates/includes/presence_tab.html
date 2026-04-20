@@ -1,6 +1,6 @@
 <div class="mb-8 text-center">
     <h2 class="text-3xl font-bold text-slate-800 mb-2">BLF & Presence Manager</h2>
-    <p class="text-slate-500">Audit, template, and bulk update Monitored Lines (BLF keys) for Users.</p>
+    <p class="text-slate-500">Audit, template, and bulk update Monitored Lines (BLF keys) across your organization.</p>
 </div>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-6xl mx-auto">
@@ -10,7 +10,7 @@
             <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-2">Audit BLF Keys</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Select users from the table below and generate an XLSX report of their current BLF configurations.</p>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Select users from the table below and generate a horizontal XLSX report of their BLF configurations.</p>
         <button onclick="generateAudit()" id="auditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-2.5 rounded-lg transition-colors" disabled>
             Select Users Below
         </button>
@@ -21,7 +21,7 @@
             <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-2">Get Template</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Download a blank XLSX template to format your new BLF assignments for bulk updating.</p>
+        <p class="text-sm text-slate-500 mb-6 flex-grow">Download a blank XLSX template properly formatted with horizontal columns for bulk updating.</p>
         <button onclick="downloadTemplate()" class="w-full bg-white border-2 border-green-600 text-green-600 hover:bg-green-50 font-bold py-2.5 rounded-lg transition-colors">
             Download Template
         </button>
@@ -121,7 +121,7 @@
                 <td class="px-4 py-3 text-center">
                     <input type="checkbox" class="user-checkbox rounded border-slate-300" value="${user.id}" onchange="updateAuditButton()">
                 </td>
-                <td class="px-6 py-3 font-medium text-slate-800">${user.name || 'Unknown'}</td>
+                <td class="px-6 py-3 font-medium text-slate-800 user-name">${user.name || 'Unknown'}</td>
                 <td class="px-6 py-3 text-slate-600 ext-num">${user.extensionNumber || '-'}</td>
                 <td class="px-6 py-3 text-xs font-mono text-slate-400">${user.id}</td>
             `;
@@ -141,7 +141,6 @@
 
     function toggleAll(source) {
         const checkboxes = document.querySelectorAll('.user-checkbox');
-        // Only toggle visible rows
         const rows = document.querySelectorAll('.user-row');
         rows.forEach((row, i) => {
             if (row.style.display !== 'none') {
@@ -171,7 +170,17 @@
     // --- 2. Audit & Template Actions ---
     async function generateAudit() {
         const checkboxes = document.querySelectorAll('.user-checkbox:checked');
-        const ids = Array.from(checkboxes).map(cb => cb.value);
+        
+        // Build the object containing Name, Number, and ID for the Excel Sheet
+        const usersToAudit = Array.from(checkboxes).map(cb => {
+            const row = cb.closest('tr');
+            return {
+                id: cb.value,
+                name: row.querySelector('.user-name').innerText,
+                extensionNumber: row.querySelector('.ext-num').innerText
+            };
+        });
+
         const btn = document.getElementById('auditBtn');
         const statusBox = document.getElementById('actionStatus');
         
@@ -183,7 +192,7 @@
             const response = await fetch('/api/presence/audit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ extensions: ids })
+                body: JSON.stringify({ users: usersToAudit })
             });
 
             if (!response.ok) {
