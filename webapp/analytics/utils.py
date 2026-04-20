@@ -1,257 +1,66 @@
-<style>
-    .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
-    .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
-    .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    .chevron { transition: transform 0.2s ease-in-out; }
-    .chevron.open { transform: rotate(90deg); }
-    .journey-timeline::before {
-        content: ''; position: absolute; top: 0; bottom: 0;
-        left: 20px; width: 2px; background-color: #e2e8f0;
-    }
-</style>
+from webapp.rc_api import rc_api_call
 
-<div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Forensic end-to-end journey tracking. Call sessions are stitched by Call ID.</p>
-</div>
-
-<div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+class RCBusinessAnalytics:
+    """
+    Python Client for the RingCentral Business Analytics API (Beta).
+    Based on OpenAPI Spec version 1.0.44.
+    """
     
-    <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
-        <h3 class="font-bold text-lg text-slate-800 mb-4">Filters</h3>
-        <form id="analyticsForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Dimension</label>
-                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500">
-                    <option value="Users">Users</option>
-                    <option value="Queues">Call Queues</option>
-                    <option value="Company">Entire Account</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
-                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm" required>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
-                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
-            </div>
-            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
-                Fetch Full Journeys
-            </button>
-            <div id="errorMsg" class="text-red-500 text-xs font-medium hidden mt-2 p-2 bg-red-50 rounded border border-red-100"></div>
-        </form>
+    def __init__(self, account_id="~"):
+        """
+        Initializes the Analytics client.
+        :param account_id: Internal RC account ID, defaults to "~" (current session account).
+        """
+        self.account_id = account_id
+        self.base_path = f"/analytics/calls/v1/accounts/{self.account_id}"
 
-        <div class="mt-8 pt-4 border-t border-slate-100">
-            <button onclick="document.getElementById('debugPanel').classList.toggle('hidden')" class="text-[10px] text-slate-400 hover:text-slate-600 uppercase font-bold tracking-widest">
-                Toggle Debug Panel
-            </button>
-        </div>
-    </div>
-
-    <div class="w-full xl:w-3/4 flex flex-col gap-4">
-        <div class="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
-            <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                <h3 class="font-bold text-slate-700">Unified Call Flow</h3>
-                <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden" id="exportBtn">Export Summary</button>
-            </div>
-            <div class="table-container overflow-x-auto w-full">
-                <table class="w-full text-sm text-left whitespace-nowrap">
-                    <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b">
-                        <tr>
-                            <th class="px-4 py-3 w-8"></th>
-                            <th class="px-6 py-3">Start Time</th>
-                            <th class="px-6 py-3">Call ID</th>
-                            <th class="px-6 py-3">Originator</th>
-                            <th class="px-6 py-3 text-center">Hops</th>
-                            <th class="px-6 py-3 text-center">Final Result</th>
-                            <th class="px-6 py-3 text-center">Total Duration</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody" class="divide-y divide-slate-100">
-                        <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Fetch records to begin.</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div id="debugPanel" class="hidden bg-slate-900 text-green-400 p-4 rounded font-mono text-xs overflow-auto max-h-64 shadow-inner">
-            <div class="mb-2 text-slate-500">// Raw API Data</div>
-            <pre id="debugContent">Waiting for query...</pre>
-        </div>
-    </div>
-</div>
-
-<script>
-    // 1. Init Dates
-    (function() {
-        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 1);
-        const formatDt = (d) => {
-            const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-            return (new Date(d - tzOffset)).toISOString().slice(0, 16);
-        };
-        document.getElementById('timeFrom').value = formatDt(start);
-        document.getElementById('timeTo').value = formatDt(end);
-    })();
-
-    // 2. Fetch Logic
-    document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const submitBtn = document.getElementById('submitBtn');
-        const tableBody = document.getElementById('tableBody');
-        const errorMsg = document.getElementById('errorMsg');
-        const debugContent = document.getElementById('debugContent');
-        
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `Querying...`;
-        errorMsg.classList.add('hidden');
-        
-        tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Reconstructing Call Journeys...</td></tr>`;
-
-        try {
-            const response = await fetch('/api/analytics/records', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
-                    timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
-                    dimension: document.getElementById('dimension').value,
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-                })
-            });
-
-            const data = await response.json();
-            debugContent.innerText = JSON.stringify(data, null, 2);
-
-            if (!response.ok) throw new Error(data?.error || 'Failed to fetch.');
-
-            renderTable(data);
-            if (data?.data?.length > 0) document.getElementById('exportBtn').classList.remove('hidden');
-            
-        } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">Request failed. Check Debug View.</td></tr>`;
-            errorMsg.innerText = error.message;
-            errorMsg.classList.remove('hidden');
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerText = 'Fetch Full Journeys';
+    def fetch_aggregation(self, grouping, time_settings, response_options, call_filters=None, page=1, per_page=200):
+        """
+        POST /analytics/calls/v1/accounts/{accountId}/aggregation/fetch
+        Returns call aggregations filtered by specified parameters.
+        """
+        payload = {
+            "grouping": grouping,
+            "timeSettings": time_settings,
+            "responseOptions": response_options
         }
-    });
-
-    // 3. Rendering Logic
-    function renderTable(payload) {
-        const tableBody = document.getElementById('tableBody');
-        tableBody.innerHTML = '';
-        
-        if (!payload?.data || payload.data.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-slate-500">
-                <b>No records found.</b><br>
-                <span class="text-xs">Note: Analytics data is typically delayed by 2-4 hours.</span>
-            </td></tr>`;
-            return;
-        }
-
-        const grouped = {};
-        payload.data.forEach(session => {
-            const cid = session?.callId;
-            if (!cid) return;
-            if (!grouped[cid]) grouped[cid] = { callId: cid, hops: [] };
-            if (session.hops) {
-                session.hops.forEach(h => {
-                    h.parentSid = session.sessionId || 'Unknown';
-                    grouped[cid].hops.push(h);
-                });
-            }
-        });
-
-        const journeys = Object.values(grouped).map(j => {
-            const uniqueMap = new Map();
-            j.hops.forEach(h => {
-                const k = `${h.startedAt}-${h.from?.number}-${h.to?.number}`;
-                if (!uniqueMap.has(k)) uniqueMap.set(k, h);
-            });
-            const sorted = Array.from(uniqueMap.values()).sort((a,b) => new Date(a.startedAt) - new Date(b.startedAt));
-            return { ...j, hops: sorted };
-        }).sort((a,b) => new Date(b.hops[0]?.startedAt) - new Date(a.hops[0]?.startedAt));
-
-        journeys.forEach((j, idx) => {
-            if (!j.hops.length) return;
-            const first = j.hops[0], last = j.hops[j.hops.length - 1];
-            let res = last.result || 'Unknown';
-            if (j.hops.some(h => h.result === 'Voicemail' || h.segmentsDuration?.voicemail > 0)) res = 'Voicemail';
+        if call_filters:
+            payload["callFilters"] = call_filters
             
-            const durMs = j.hops.reduce((s,h) => s + (h.duration || 0), 0);
-            const conf = getStatusConfig(res);
+        params = {"page": page, "perPage": per_page}
+        
+        return rc_api_call(f"{self.base_path}/aggregation/fetch", method="POST", json=payload, params=params)
 
-            const row = document.createElement('tr');
-            row.className = "hover:bg-blue-50 border-b cursor-pointer";
-            row.onclick = () => {
-                document.getElementById(`details-${idx}`).classList.toggle('hidden');
-                document.getElementById(`chevron-${idx}`).classList.toggle('open');
-            };
-            row.innerHTML = `
-                <td class="px-4 py-4"><svg id="chevron-${idx}" class="chevron w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
-                <td class="px-6 py-4 font-medium text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
-                <td class="px-6 py-4 text-xs font-mono text-slate-400">${j.callId.slice(0,8)}...</td>
-                <td class="px-6 py-4 font-bold text-slate-800">${first.from?.name || first.from?.number || 'Unknown'}</td>
-                <td class="px-6 py-4 text-center"><span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold border border-blue-100">${j.hops.length}</span></td>
-                <td class="px-6 py-4 text-center"><span class="${conf.bg} ${conf.text} px-2.5 py-1 rounded-full text-xs font-bold border">${res}</span></td>
-                <td class="px-6 py-4 text-center font-medium">${formatSeconds(durMs/1000)}</td>
-            `;
-            tableBody.appendChild(row);
+    def fetch_timeline(self, interval, grouping, time_settings, response_options, call_filters=None, page=1, per_page=20):
+        """
+        POST /analytics/calls/v1/accounts/{accountId}/timeline/fetch
+        Returns time-value data aggregations (time-series).
+        """
+        payload = {
+            "grouping": grouping,
+            "timeSettings": time_settings,
+            "responseOptions": response_options
+        }
+        if call_filters:
+            payload["callFilters"] = call_filters
+            
+        params = {"interval": interval, "page": page, "perPage": per_page}
+        
+        return rc_api_call(f"{self.base_path}/timeline/fetch", method="POST", json=payload, params=params)
 
-            const det = document.createElement('tr');
-            det.id = `details-${idx}`;
-            det.className = "hidden bg-slate-50 border-b-2 shadow-inner";
-            let timeline = `<div class="p-8 max-w-5xl mx-auto relative journey-timeline">`;
-            j.hops.forEach((h, hidx) => {
-                const hConf = getStatusConfig(h.result);
-                let segs = '';
-                const active = [{k:'ivrPrompt',l:'IVR'},{k:'ringing',l:'Ringing'},{k:'liveTalk',l:'Talk'},{k:'hold',l:'Hold'},{k:'vmGreeting',l:'VM'},{k:'voicemail',l:'Rec'}]
-                    .filter(o => h.segmentsDuration?.[o.k] > 0);
-                if (active.length) {
-                    segs = `<div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t">` + 
-                           active.map(a => `<span class="bg-white border text-[10px] px-2 py-1 rounded text-slate-600"><b>${a.l}:</b> ${formatSeconds(h.segmentsDuration[a.k]/1000)}</span>`).join(' ➔ ') + 
-                           `</div>`;
-                }
-                timeline += `
-                    <div class="relative pl-10 pb-8 last:pb-0">
-                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full ${hConf.dot} border-[3px] border-white z-10 shadow-sm"></div>
-                        <div class="bg-white border rounded-xl p-4 shadow-sm">
-                            <div class="flex justify-between items-start">
-                                <div class="flex flex-col gap-1">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-bold bg-slate-800 text-white px-2 py-0.5 rounded uppercase">HOP ${hidx+1}</span>
-                                        <span class="font-bold text-slate-900">${h.from?.number || 'Unknown'} ➔ ${h.to?.name || h.to?.number || 'Unknown'}</span>
-                                    </div>
-                                    <div class="text-[9px] text-slate-400">SID: ${h.parentSid.slice(0,10)}...</div>
-                                </div>
-                                <div class="text-right">
-                                    <div class="text-xs font-black ${hConf.text} uppercase">${h.result}</div>
-                                    <div class="text-[10px] text-slate-500">${h.callType} • ${formatSeconds(h.duration/1000)}</div>
-                                </div>
-                            </div>
-                            ${segs}
-                        </div>
-                    </div>`;
-            });
-            det.innerHTML = `<td colspan="7" class="p-0">${timeline}</div></td>`;
-            tableBody.appendChild(det);
-        });
-    }
-
-    function formatSeconds(s) {
-        if (!s || s <= 0) return "0s";
-        const m = Math.floor(s/60); const sec = Math.round(s%60);
-        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-    }
-
-    function getStatusConfig(res) {
-        const r = (res || '').toLowerCase();
-        if (['completed', 'accepted', 'answered', 'pickedup'].includes(r)) return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
-        if (['missed', 'abandoned'].includes(r)) return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
-        if (['voicemail'].includes(r)) return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
-        return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
-    }
-</script>
+    def fetch_records(self, dimension, time_settings, call_filters=None, ids=None, search_string=None, page=1, per_page=100):
+        """
+        POST /analytics/calls/v1/accounts/{accountId}/records/fetch
+        Returns raw, hop-by-hop call records data.
+        """
+        payload = {
+            "dimension": dimension,
+            "timeSettings": time_settings
+        }
+        if call_filters: payload["callFilters"] = call_filters
+        if ids: payload["ids"] = ids
+        if search_string: payload["searchString"] = search_string
+        
+        params = {"page": page, "perPage": per_page}
+        
+        return rc_api_call(f"{self.base_path}/records/fetch", method="POST", json=payload, params=params)
