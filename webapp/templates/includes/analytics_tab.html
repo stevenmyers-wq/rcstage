@@ -1,63 +1,74 @@
 <style>
-    .table-container::-webkit-scrollbar { height: 8px; }
+    .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
+    .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
     .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
-    .journey-timeline::before {
-        content: ''; position: absolute; top: 0; bottom: 0;
-        left: 20px; width: 2px; background-color: #e2e8f0;
-    }
 </style>
 
 <div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800">Business Analytics Records</h2>
-    <p class="text-slate-500 text-sm">Forensic session logs via standard PKCE authentication.</p>
+    <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
+    <p class="text-slate-500 text-sm">Direct session logs. Each row represents a single call leg as recorded by RingCentral.</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+    
     <div class="w-full xl:w-1/4 bg-white p-5 rounded shadow-sm border border-slate-200 flex-shrink-0">
         <h3 class="font-bold text-lg text-slate-800 mb-4">Filters</h3>
         <form id="analyticsForm" class="space-y-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Dimension</label>
-                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm">
+                <select id="dimension" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
                     <option value="Users">Users</option>
                     <option value="Queues">Call Queues</option>
                     <option value="Company">Entire Account</option>
                 </select>
             </div>
+
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
-                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                <input type="datetime-local" id="timeFrom" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
             </div>
+
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
-                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm" required>
+                <input type="datetime-local" id="timeTo" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500" required>
             </div>
-            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
+
+            <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-150 ease-in-out mt-2">
                 Fetch Records
             </button>
         </form>
     </div>
 
-    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-4 border-b border-slate-200 bg-slate-50">
-            <h3 class="font-bold text-slate-700">Call Journey Logs</h3>
+    <div class="w-full xl:w-3/4 bg-white rounded shadow-sm border border-slate-200 overflow-hidden min-w-0">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <h3 class="font-bold text-slate-700">Call Records</h3>
+            <button onclick="exportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded hidden transition-colors" id="exportBtn">
+                Export CSV
+            </button>
         </div>
+        
         <div class="table-container overflow-x-auto w-full">
-            <table class="w-full text-sm text-left">
-                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b">
+            <table class="w-full text-sm text-left whitespace-nowrap">
+                <thead class="text-xs text-slate-600 uppercase bg-slate-100 border-b border-slate-200">
                     <tr>
-                        <th class="px-4 py-3"></th>
-                        <th class="px-6 py-3">Start Time</th>
-                        <th class="px-6 py-3">Originator</th>
-                        <th class="px-6 py-3">Destination</th>
-                        <th class="px-6 py-3 text-center">Result</th>
-                        <th class="px-6 py-3 text-center">Duration</th>
+                        <th scope="col" class="px-4 py-3 w-8"></th>
+                        <th scope="col" class="px-6 py-3">Start Time</th>
+                        <th scope="col" class="px-6 py-3">Originator</th>
+                        <th scope="col" class="px-6 py-3">Destination</th>
+                        <th scope="col" class="px-6 py-3 text-center">Result</th>
+                        <th scope="col" class="px-6 py-3 text-center">Duration</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody" class="divide-y divide-slate-100">
-                    <tr><td colspan="6" class="px-6 py-12 text-center text-slate-400">Fetch records to begin.</td></tr>
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-slate-400">
+                            Select parameters and click "Fetch Records".
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -65,37 +76,41 @@
 </div>
 
 <script>
-    // Initialize dates to yesterday
+    // 1. Initial Dates
     (function() {
-        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 1);
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 1);
+        
         const formatDt = (d) => {
             const tzOffset = (new Date()).getTimezoneOffset() * 60000;
             return (new Date(d - tzOffset)).toISOString().slice(0, 16);
         };
+        
         document.getElementById('timeFrom').value = formatDt(start);
         document.getElementById('timeTo').value = formatDt(end);
     })();
 
+    // 2. Submit Logic
     document.getElementById('analyticsForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
         const submitBtn = document.getElementById('submitBtn');
         const tableBody = document.getElementById('tableBody');
+        const exportBtn = document.getElementById('exportBtn');
         
         submitBtn.disabled = true;
         submitBtn.innerHTML = `Loading...`;
-        tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Requesting from RingCentral...</td></tr>`;
+        
+        tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-12 text-center text-blue-600 font-semibold animate-pulse">Querying API...</td></tr>`;
 
         try {
-            // Precise ISO formatting for the API (stripping MS)
-            const tFrom = new Date(document.getElementById('timeFrom').value).toISOString().split('.')[0] + "Z";
-            const tTo = new Date(document.getElementById('timeTo').value).toISOString().split('.')[0] + "Z";
-
             const response = await fetch('/api/analytics/records', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    timeFrom: tFrom,
-                    timeTo: tTo,
+                    timeFrom: new Date(document.getElementById('timeFrom').value).toISOString(),
+                    timeTo: new Date(document.getElementById('timeTo').value).toISOString(),
                     dimension: document.getElementById('dimension').value,
                     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                 })
@@ -104,64 +119,82 @@
             const data = await response.json();
             renderTable(data);
             
+            if (data && data.data && data.data.length > 0) {
+                exportBtn.classList.remove('hidden');
+            }
+            
         } catch (error) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-12 text-center text-slate-400">Fetch failed.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-slate-400">Error loading data. Check filters.</td></tr>`;
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = 'Fetch Records';
         }
     });
 
+    // 3. Simple Render Function
     function renderTable(payload) {
         const tableBody = document.getElementById('tableBody');
         tableBody.innerHTML = '';
-        
-        if (!payload?.data?.length) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-12 text-center text-slate-500">No records found. Note: Analytics has a 2-4 hour delay.</td></tr>`;
+
+        if (!payload || !payload.data || payload.data.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-slate-400">No calls found for this range.</td></tr>`;
             return;
         }
 
-        payload.data.forEach((session, idx) => {
+        payload.data.forEach((session, index) => {
             const hops = session.hops || [];
-            if (!hops.length) return;
+            if (hops.length === 0) return;
 
-            const first = hops[0], last = hops[hops.length - 1];
-            const dur = Math.round(hops.reduce((s, h) => s + (h.duration || 0), 0) / 1000);
+            const firstHop = hops[0];
+            const lastHop = hops[hops.length - 1];
+            
+            const startTime = new Date(firstHop.startedAt).toLocaleString();
+            const from = firstHop.from?.name || firstHop.from?.number || 'Unknown';
+            const to = lastHop.to?.name || lastHop.to?.number || 'Unknown';
+            const result = lastHop.result || 'Completed';
+            const duration = formatSeconds(hops.reduce((s, h) => s + (h.duration || 0), 0) / 1000);
 
             const row = document.createElement('tr');
-            row.className = "hover:bg-blue-50 border-b cursor-pointer transition-colors";
-            row.onclick = () => {
-                document.getElementById(`details-${idx}`).classList.toggle('hidden');
-                document.getElementById(`chevron-${idx}`).classList.toggle('open');
-            };
+            row.className = "hover:bg-blue-50 border-b border-slate-100 transition-colors";
             row.innerHTML = `
-                <td class="px-4 py-4"><svg id="chevron-${idx}" class="chevron w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></td>
-                <td class="px-6 py-4 text-slate-700">${new Date(first.startedAt).toLocaleString()}</td>
-                <td class="px-6 py-4 font-bold text-slate-800">${first.from?.number || 'Unknown'}</td>
-                <td class="px-6 py-4 text-slate-600">${last.to?.name || last.to?.number || 'Unknown'}</td>
-                <td class="px-6 py-3 text-center"><span class="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-1 rounded border uppercase">${last.result || 'Done'}</span></td>
-                <td class="px-6 py-3 text-center font-medium">${dur}s</td>
+                <td class="px-4 py-4 text-slate-300">•</td>
+                <td class="px-6 py-4 font-medium text-slate-700">${startTime}</td>
+                <td class="px-6 py-4 font-bold text-slate-800">${from}</td>
+                <td class="px-6 py-4 text-slate-600">${to}</td>
+                <td class="px-6 py-4 text-center">
+                    <span class="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase border border-slate-200">${result}</span>
+                </td>
+                <td class="px-6 py-4 text-center font-medium">${duration}</td>
             `;
             tableBody.appendChild(row);
-
-            const det = document.createElement('tr');
-            det.id = `details-${idx}`;
-            det.className = "hidden bg-slate-50";
-            let timeline = `<div class="p-6 relative journey-timeline">`;
-            hops.forEach((h, hidx) => {
-                timeline += `
-                    <div class="relative pl-10 pb-4 last:pb-0">
-                        <div class="absolute left-[13px] top-1.5 w-4 h-4 rounded-full bg-blue-500 border-[3px] border-white z-10"></div>
-                        <div class="bg-white border rounded p-3 shadow-sm">
-                            <div class="flex justify-between text-xs">
-                                <span class="font-bold">Hop ${hidx+1}: ${h.from?.number} ➔ ${h.to?.number}</span>
-                                <span class="text-slate-400 uppercase font-black">${h.result}</span>
-                            </div>
-                        </div>
-                    </div>`;
-            });
-            det.innerHTML = `<td colspan="6" class="p-0">${timeline}</div></td>`;
-            tableBody.appendChild(det);
         });
+    }
+
+    function formatSeconds(sec) {
+        if (!sec || sec <= 0) return "0s";
+        const m = Math.floor(sec / 60);
+        const s = Math.round(sec % 60);
+        return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+
+    function exportToCSV() {
+        const rows = Array.from(document.querySelectorAll("table tr"));
+        let csvContent = "Start Time,Originator,Destination,Result,Duration\r\n";
+        
+        rows.slice(1).forEach(row => {
+            const cols = row.querySelectorAll("td");
+            if (cols.length > 1) { 
+                const rowData = [cols[1], cols[2], cols[3], cols[4], cols[5]]
+                    .map(c => `"${c.innerText.trim()}"`).join(",");
+                csvContent += rowData + "\r\n";
+            }
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "RC_Call_Records.csv";
+        link.click();
     }
 </script>
