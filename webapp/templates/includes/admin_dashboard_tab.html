@@ -7,29 +7,84 @@
         <p class="mt-4 text-gray-500">Loading analytics data...</p>
     </div>
 
-    <div id="analytics-content" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Tool Popularity (Bar Chart) -->
-        <div class="bg-white p-4 rounded-lg border shadow-sm">
-            <h3 class="text-lg font-semibold mb-4 text-gray-700">Tool Usage Popularity</h3>
-            <div class="relative h-64 w-full">
-                <canvas id="toolPopularityChart"></canvas>
+    <div id="analytics-content" class="hidden space-y-6">
+
+        <!-- KPI STAT CARDS -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Actions (Last 1000)</span>
+                <span id="stat-total" class="text-3xl font-bold text-gray-800">—</span>
+            </div>
+            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unique Users</span>
+                <span id="stat-unique-users" class="text-3xl font-bold text-blue-600">—</span>
+            </div>
+            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">This Week vs Last Week</span>
+                <span id="stat-wow" class="text-3xl font-bold text-gray-800">—</span>
+                <span id="stat-wow-sub" class="text-xs text-gray-500"></span>
+            </div>
+            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">New Users This Week</span>
+                <span id="stat-new-users" class="text-3xl font-bold text-green-600">—</span>
             </div>
         </div>
 
-        <!-- API Success vs Error (Doughnut) -->
-        <div class="bg-white p-4 rounded-lg border shadow-sm">
-            <h3 class="text-lg font-semibold mb-4 text-gray-700">API Actions Health</h3>
-            <div class="relative h-64 w-full">
-                <canvas id="statusRatioChart"></canvas>
+        <!-- CHARTS ROW 1 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Tool Popularity (Bar Chart) -->
+            <div class="bg-white p-4 rounded-lg border shadow-sm">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700">Tool Usage Popularity</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="toolPopularityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- API Success vs Error (Doughnut) -->
+            <div class="bg-white p-4 rounded-lg border shadow-sm">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700">API Actions Health</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="statusRatioChart"></canvas>
+                </div>
             </div>
         </div>
 
         <!-- Activity Over Time (Line Chart) -->
-        <div class="bg-white p-4 rounded-lg border shadow-sm lg:col-span-2">
+        <div class="bg-white p-4 rounded-lg border shadow-sm">
             <h3 class="text-lg font-semibold mb-4 text-gray-700">Activity Over Time (Last 1000 Actions)</h3>
             <div class="relative h-72 w-full">
                 <canvas id="activityChart"></canvas>
             </div>
+        </div>
+
+        <!-- CHARTS ROW 2 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Top Users Leaderboard -->
+            <div class="bg-white p-4 rounded-lg border shadow-sm">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700">Top Users</h3>
+                <div id="leaderboard-table" class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="border-b">
+                                <th class="text-left py-2 px-2 text-gray-500 font-medium">#</th>
+                                <th class="text-left py-2 px-2 text-gray-500 font-medium">User</th>
+                                <th class="text-right py-2 px-2 text-gray-500 font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Per-Tool Error Breakdown -->
+            <div class="bg-white p-4 rounded-lg border shadow-sm">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700">Error Rate by Tool</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="toolErrorChart"></canvas>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -45,8 +100,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             document.getElementById('analytics-content').classList.remove('hidden');
-            
-            // 1. Tool Popularity Bar Chart
+
+            // --- KPI STAT CARDS ---
+            const total = Object.values(data.tool_popularity).reduce((a, b) => a + b, 0);
+            document.getElementById('stat-total').textContent = total.toLocaleString();
+            document.getElementById('stat-unique-users').textContent = data.unique_users ?? '—';
+            document.getElementById('stat-new-users').textContent = data.new_users_this_week ?? '—';
+
+            // Week-on-week
+            const wowEl = document.getElementById('stat-wow');
+            const wowSub = document.getElementById('stat-wow-sub');
+            const wow = data.wow_change ?? 0;
+            const wowPct = data.wow_pct ?? 0;
+            wowEl.textContent = `${data.this_week_count ?? 0}`;
+            if (wow > 0) {
+                wowEl.className = 'text-3xl font-bold text-green-600';
+                wowSub.textContent = `▲ ${wow} (${wowPct}%) vs last week`;
+            } else if (wow < 0) {
+                wowEl.className = 'text-3xl font-bold text-red-500';
+                wowSub.textContent = `▼ ${Math.abs(wow)} (${Math.abs(wowPct)}%) vs last week`;
+            } else {
+                wowEl.className = 'text-3xl font-bold text-gray-800';
+                wowSub.textContent = 'No change vs last week';
+            }
+
+            // --- 1. Tool Popularity Bar Chart ---
             const tools = Object.keys(data.tool_popularity);
             const toolCounts = Object.values(data.tool_popularity);
             new Chart(document.getElementById('toolPopularityChart'), {
@@ -58,7 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
             });
 
-            // 2. Status Ratio Doughnut Chart
+            // --- 2. Status Ratio Doughnut Chart ---
             new Chart(document.getElementById('statusRatioChart'), {
                 type: 'doughnut',
                 data: {
@@ -68,7 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 options: { responsive: true, maintainAspectRatio: false }
             });
 
-            // 3. Activity Line Chart
+            // --- 3. Activity Line Chart ---
             const dates = Object.keys(data.activity_over_time);
             const dateCounts = Object.values(data.activity_over_time);
             new Chart(document.getElementById('activityChart'), {
@@ -79,6 +157,73 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 options: { responsive: true, maintainAspectRatio: false }
             });
-        }).catch(err => { document.getElementById('analytics-loading').innerHTML = '<p class="text-red-500">Failed to load data.</p>'; });
+
+            // --- 4. Top Users Leaderboard ---
+            const leaderboard = data.leaderboard || [];
+            const tbody = document.getElementById('leaderboard-body');
+            const medals = ['🥇', '🥈', '🥉'];
+            leaderboard.forEach((user, i) => {
+                const rank = medals[i] || `${i + 1}.`;
+                const row = document.createElement('tr');
+                row.className = 'border-b last:border-0 hover:bg-gray-50';
+                // Show first part of email only for readability
+                const displayEmail = user.email.replace('@ringcentral.com', '');
+                row.innerHTML = `
+                    <td class="py-2 px-2 text-gray-500">${rank}</td>
+                    <td class="py-2 px-2 font-medium text-gray-800">${displayEmail}</td>
+                    <td class="py-2 px-2 text-right font-bold text-blue-600">${user.count}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // --- 5. Per-Tool Error Rate Bar Chart ---
+            const errorRates = data.tool_error_rates || {};
+            // Only show tools that have at least 1 error, sorted by error count
+            const errorTools = Object.entries(errorRates)
+                .filter(([, v]) => v.errors > 0)
+                .sort((a, b) => b[1].errors - a[1].errors);
+
+            if (errorTools.length > 0) {
+                const errorLabels = errorTools.map(([tool]) => tool);
+                const errorPcts = errorTools.map(([, v]) => v.error_pct);
+                new Chart(document.getElementById('toolErrorChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: errorLabels,
+                        datasets: [{
+                            label: 'Error Rate (%)',
+                            data: errorPcts,
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                            borderColor: 'rgb(239, 68, 68)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { max: 100, ticks: { callback: v => v + '%' } }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: ctx => {
+                                        const tool = errorTools[ctx.dataIndex][1];
+                                        return `${tool.errors} errors out of ${tool.total} uses (${tool.error_pct}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                document.getElementById('toolErrorChart').parentElement.innerHTML =
+                    '<p class="text-sm text-green-600 font-medium flex items-center gap-2"><span>✅</span> No errors recorded in the last 1000 actions.</p>';
+            }
+
+        }).catch(err => {
+            document.getElementById('analytics-loading').innerHTML = '<p class="text-red-500">Failed to load data.</p>';
+        });
 });
 </script>
