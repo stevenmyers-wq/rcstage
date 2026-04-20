@@ -1,61 +1,51 @@
-import os
-import requests
-from flask import Blueprint, request, jsonify, session, redirect, render_template_string
-from webapp.analytics.utils import RCOperabilityTest, get_impersonation_token
-
-CLIENT_ID = os.environ.get('SM_CLIENT_ID')
-CLIENT_SECRET = os.environ.get('SM_CLIENT_SECRET')
-BASE_URL = "https://rcau-api-tools-396158962307.us-central1.run.app"
-REDIRECT_URI = f"{BASE_URL}/api/analytics/callback"
+from flask import Blueprint, request, jsonify
+from webapp.analytics.utils import RCBusinessAnalytics
+import logging
 
 analytics_bp = Blueprint('analytics', __name__)
 
-@analytics_bp.route('/api/analytics/auth')
-def analytics_authorize():
-    target_id = request.args.get('targetAccountId')
-    if not target_id: return "Target ID required", 400
-    
-    session.pop('analytics_isolated_token_vfinal', None)
-    session['analytics_target_id'] = target_id
-    
-    # CRITICAL: We must request EditExtensions at the front door
-    scopes = "ReadAccounts EditExtensions"
-    rc_url = f"https://platform.ringcentral.com/restapi/oauth/authorize?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope={scopes}"
-    return redirect(rc_url)
+@analytics_bp.route('/api/analytics/records', methods=['POST'])
+def get_call_records():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No payload provided."}), 400
 
-@analytics_bp.route('/api/analytics/callback')
-def analytics_callback():
-    code = request.args.get('code')
-    target_id = session.get('analytics_target_id')
-    if not code: return "Auth Error", 400
+        # Mapping UI labels to strict API dimension strings
+        dim_map = {
+            'Users': 'Extension',
+            'Queues': 'CallQueue',
+            'IVRs': 'IvrMenu',
+            'Sites': 'Site'
+        }
+        
+        ui_dimension = data.get('dimension', 'Users')
+        api_dimension = dim_map.get(ui_dimension, 'Extension')
+        
+        time_from = data.get('timeFrom')
+        time_to = data.get('timeTo')
+        time_zone = data.get('timeZone', 'UTC')
 
-    token_url = "https://platform.ringcentral.com/restapi/oauth/token"
-    data = {"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
-    res = requests.post(token_url, data=data, auth=(CLIENT_ID, CLIENT_SECRET))
-    
-    employee_token = res.json().get('access_token')
-    
-    # Swap for the customer-scoped token
-    customer_token = get_impersonation_token(employee_token, target_id)
-    
-    if customer_token:
-        session['analytics_isolated_token_vfinal'] = customer_token
-        return render_template_string("<html><body><script>window.location.href = '/?tab=analytics#business-analytics';</script></body></html>")
-    
-    return "Impersonation Bridge Failed. Check GCP Logs.", 403
+        rc_analytics = RCBusinessAnalytics()
 
-@analytics_bp.route('/api/analytics/execute-delete', methods=['POST'])
-def execute_delete():
-    token = session.get('analytics_isolated_token_vfinal')
-    ext_id = request.json.get('extensionId')
-    
-    if not token or not ext_id:
-        return jsonify({"error": "Unauthorized or missing Extension ID"}), 400
-    
-    tester = RCOperabilityTest(token=token)
-    return jsonify(tester.delete_extension(ext_id))
+        time_settings = {
+            "timeZone": time_zone,
+            "timeRange": {
+                "timeFrom": time_from,
+                "timeTo": time_to
+            }
+        }
 
-@analytics_bp.route('/api/analytics/logout')
-def analytics_logout():
-    session.pop('analytics_isolated_token_vfinal', None)
-    return redirect("/?tab=analytics#business-analytics")
+        # Fetch detailed records
+        result = rc_analytics.fetch_records(
+            dimension=api_dimension,
+            time_settings=time_settings,
+            page=1,
+            per_page=100 
+        )
+        
+        return jsonify(result if result else {"data": []})
+
+    except Exception as e:
+        logging.error(f"Analytics Route Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
