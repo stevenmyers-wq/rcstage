@@ -12,11 +12,12 @@ def get_call_records():
             return jsonify({"error": "No payload provided."}), 400
 
         # Mapping UI labels to strict API dimension strings
+        # 'Extension' is the key for Users; 'Account' is for Entire Company.
         dim_map = {
             'Users': 'Extension',
             'Queues': 'CallQueue',
             'IVRs': 'IvrMenu',
-            'Sites': 'Site'
+            'Company': 'Account'
         }
         
         ui_dimension = data.get('dimension', 'Users')
@@ -36,11 +37,9 @@ def get_call_records():
             }
         }
 
-        # Fetch detailed records
         result = rc_analytics.fetch_records(
             dimension=api_dimension,
             time_settings=time_settings,
-            page=1,
             per_page=100 
         )
         
