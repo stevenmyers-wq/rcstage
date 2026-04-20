@@ -148,12 +148,10 @@
 
             const data = await response.json();
 
-            // Use optional chaining to prevent null crashes if the API returns an error message
             if (!response.ok) throw new Error(data?.error || 'Failed to fetch call records.');
 
             renderTable(data);
             
-            // Only show export button if we actually have data records to export
             if (data && data.data && data.data.length > 0) {
                 exportBtn.classList.remove('hidden');
             }
@@ -185,23 +183,34 @@
         if (['completed', 'accepted', 'answered', 'pickedup', 'connected'].includes(r)) {
             return { text: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-500', border: 'border-green-200' };
         }
-        if (['missed', 'abandoned', 'notanswered'].includes(r)) {
+        if (['missed', 'abandoned', 'notanswered', 'stopped'].includes(r)) {
             return { text: 'text-red-700', bg: 'bg-red-100', dot: 'bg-red-500', border: 'border-red-200' };
         }
-        if (['voicemail'].includes(r)) {
+        if (['voicemail', 'callback'].includes(r)) {
             return { text: 'text-orange-700', bg: 'bg-orange-100', dot: 'bg-orange-500', border: 'border-orange-200' };
         }
-        if (['transferred', 'forwarded'].includes(r)) {
+        if (['transferred', 'forwarded', 'transfer'].includes(r)) {
             return { text: 'text-purple-700', bg: 'bg-purple-100', dot: 'bg-purple-500', border: 'border-purple-200' };
         }
         return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
+    }
+
+    // FORENSIC PARSER: Aggressively searches all possible RC keys for a name or number
+    function getPartyDetails(party) {
+        if (!party) return null;
+        const name = party.name || party.endpointName || party.extensionName;
+        const num = party.extensionNumber || party.phoneNumber || party.number;
+        
+        if (name && num && name !== num) return `${name} (${num})`;
+        if (name) return name;
+        if (num) return num;
+        return null;
     }
 
     function renderTable(data) {
         const tableBody = document.getElementById('tableBody');
         tableBody.innerHTML = '';
 
-        // Safeguard: Check if data is null OR if data.data is null/empty
         if (!data || !data.data || data.data.length === 0) {
             tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-slate-400">No calls found for this date range and dimension.</td></tr>`;
             return;
@@ -217,18 +226,19 @@
             const startTime = new Date(firstHop.startedAt).toLocaleString();
             const shortCallId = record.callId ? record.callId.substring(0, 11) + '...' : '-';
             
-            // FIX: Check for phoneNumber (external calls) and name (internal endpoints)
-            const originator = (firstHop.from && (firstHop.from.name || firstHop.from.phoneNumber || firstHop.from.extensionNumber || firstHop.from.number)) || 'Unknown';
+            // AGGRESSIVE EXTRACTION
+            const originator = getPartyDetails(firstHop.from) || getPartyDetails(firstHop.queue) || 'Unknown';
             
-            // FIX: If 'result' is empty, fall back to 'response' (e.g. Connected, NotAnswered)
-            let finalResult = lastHop.result || lastHop.response || firstHop.result || firstHop.response || 'Unknown';
+            // Pull result, response, or action to catch Callbacks and Transfers
+            let finalResult = lastHop.result || lastHop.response || lastHop.action || firstHop.result || firstHop.action || 'Unknown';
             
-            // Forensic logic: Force Voicemail if detected in segments or response
             const wentToVm = hops.some(h => 
-                h.result === 'Voicemail' || h.response === 'Voicemail' || 
+                h.result === 'Voicemail' || h.action === 'Voicemail' || 
                 (h.segmentsDuration && (h.segmentsDuration.voicemail > 0 || h.segmentsDuration.vmGreeting > 0))
             );
+            
             if (wentToVm) finalResult = 'Voicemail';
+            if (hops.some(h => (h.action || '').toLowerCase().includes('callback'))) finalResult = 'Callback Requested';
             
             const totalDurationMs = hops.reduce((sum, h) => sum + (h.duration || 0), 0);
             const totalDurationFmt = formatSeconds(totalDurationMs / 1000);
@@ -236,7 +246,6 @@
             const resultConfig = getStatusConfig(finalResult);
             const rowClass = index % 2 === 0 ? "bg-white" : "bg-slate-50/50";
 
-            // Main Row
             const trMain = document.createElement('tr');
             trMain.className = `${rowClass} hover:bg-blue-50 border-b border-slate-100 cursor-pointer summary-row transition-colors`;
             trMain.setAttribute('onclick', `toggleDetails(${index})`);
@@ -257,7 +266,6 @@
             `;
             tableBody.appendChild(trMain);
 
-            // Details Row
             const trDetails = document.createElement('tr');
             trDetails.id = `details-${index}`;
             trDetails.className = `hidden bg-slate-50 border-b-2 border-slate-200 shadow-inner`;
@@ -265,14 +273,15 @@
             let hopsHtml = `<div class="p-6 w-full max-w-5xl mx-auto relative journey-timeline">`;
             
             hops.forEach((hop, hIndex) => {
-                // FIX: Expanded fallbacks for internal/external hops
-                const hFrom = (hop.from && (hop.from.name || hop.from.phoneNumber || hop.from.extensionNumber || hop.from.number)) || 'Unknown';
-                const hTo = (hop.to && (hop.to.name || hop.to.phoneNumber || hop.to.extensionNumber || hop.to.number)) || 'Unknown';
+                // Aggressively search for destination across all possible RC objects
+                const hFrom = getPartyDetails(hop.from) || getPartyDetails(hop.queue) || 'Unknown';
+                let hTo = getPartyDetails(hop.to) || getPartyDetails(hop.queue) || getPartyDetails(hop.extension) || getPartyDetails(hop.transferredTo) || 'Unknown';
                 
                 const hType = hop.callType || 'Call';
-                const hResponse = hop.response || 'Unknown';
-                // FIX: Map hop result properly
-                const hResult = hop.result || hop.response || 'Unknown';
+                const hAction = hop.action ? `[${hop.action}]` : '';
+                const hReason = hop.reason ? `(${hop.reason})` : '';
+                const hResult = hop.result || hop.response || hop.action || 'Unknown';
+                
                 const hDur = formatSeconds((hop.duration || 0) / 1000);
                 const hopConfig = getStatusConfig(hResult);
                 
@@ -328,8 +337,8 @@
                                 
                                 <div class="flex items-center gap-3 text-right">
                                     <div class="flex flex-col items-end">
-                                        <span class="text-xs font-semibold text-slate-500">${hType} • ${hResponse}</span>
-                                        <span class="text-sm font-bold ${hopConfig.text}">${hResult}</span>
+                                        <span class="text-xs font-semibold text-slate-500">${hType} <span class="text-blue-500">${hAction}</span></span>
+                                        <span class="text-sm font-bold ${hopConfig.text}">${hResult} <span class="text-[10px] text-slate-400 font-normal">${hReason}</span></span>
                                     </div>
                                     <div class="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md text-sm font-medium text-slate-600">
                                         ⏱ ${hDur}
