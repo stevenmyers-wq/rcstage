@@ -7,28 +7,22 @@ analytics_bp = Blueprint('analytics', __name__)
 @analytics_bp.route('/api/analytics/records', methods=['POST'])
 def get_call_records():
     try:
-        data = request.json
-        if not data:
-            return jsonify({"error": "No payload provided."}), 400
+        data = request.json or {}
+        time_from = data.get('timeFrom')
+        time_to = data.get('timeTo')
+        ui_dimension = data.get('dimension', 'Users')
+        time_zone = data.get('timeZone', 'UTC')
 
-        # Mapping UI labels to strict API dimension strings
-        # 'Extension' is the key for Users; 'Account' is for Entire Company.
-        dim_map = {
+        # Stable API Mapping
+        dimension_map = {
             'Users': 'Extension',
             'Queues': 'CallQueue',
-            'IVRs': 'IvrMenu',
             'Company': 'Account'
         }
         
-        ui_dimension = data.get('dimension', 'Users')
-        api_dimension = dim_map.get(ui_dimension, 'Extension')
-        
-        time_from = data.get('timeFrom')
-        time_to = data.get('timeTo')
-        time_zone = data.get('timeZone', 'UTC')
+        api_dimension = dimension_map.get(ui_dimension, 'Extension')
 
         rc_analytics = RCBusinessAnalytics()
-
         time_settings = {
             "timeZone": time_zone,
             "timeRange": {
@@ -37,14 +31,15 @@ def get_call_records():
             }
         }
 
+        # Safe limit of 100 records
         result = rc_analytics.fetch_records(
-            dimension=api_dimension,
+            dimension=api_dimension, 
             time_settings=time_settings,
             per_page=100 
         )
-        
+
         return jsonify(result if result else {"data": []})
 
     except Exception as e:
-        logging.error(f"Analytics Route Error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        logging.error(f"Analytics API Error: {str(e)}")
+        return jsonify({"error": str(e), "data": []}), 500
