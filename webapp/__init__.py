@@ -74,4 +74,8 @@ def create_app():
         from .analytics import routes as analytics_routes
         app.register_blueprint(analytics_routes.analytics_bp)
 
+        # BLF & Presence routes
+        from .presence import routes as presence_routes
+        app.register_blueprint(presence_routes.presence_bp)
+
     return app
