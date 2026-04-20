@@ -195,11 +195,13 @@
         return { text: 'text-slate-700', bg: 'bg-slate-100', dot: 'bg-slate-400', border: 'border-slate-200' };
     }
 
-    // FORENSIC PARSER: Aggressively searches all possible RC keys for a name or number
+    // FORENSIC PARSER: Aggressively searches all possible RC keys
     function getPartyDetails(party) {
         if (!party) return null;
-        const name = party.name || party.endpointName || party.extensionName;
-        const num = party.extensionNumber || party.phoneNumber || party.number;
+        if (typeof party === 'string') return party;
+        
+        const name = party.name || party.endpointName || party.extensionName || party.agentName;
+        const num = party.extensionNumber || party.phoneNumber || party.number || party.target || party.dialedNumber || party.calledNumber || party.id;
         
         if (name && num && name !== num) return `${name} (${num})`;
         if (name) return name;
@@ -226,14 +228,13 @@
             const startTime = new Date(firstHop.startedAt).toLocaleString();
             const shortCallId = record.callId ? record.callId.substring(0, 11) + '...' : '-';
             
-            // AGGRESSIVE EXTRACTION
-            const originator = getPartyDetails(firstHop.from) || getPartyDetails(firstHop.queue) || 'Unknown';
+            // Determine Originator accurately
+            const originator = getPartyDetails(firstHop.from) || getPartyDetails(record.from) || getPartyDetails(firstHop.queue) || 'Unknown Caller';
             
-            // Pull result, response, or action to catch Callbacks and Transfers
+            // Result logic
             let finalResult = lastHop.result || lastHop.response || lastHop.action || firstHop.result || firstHop.action || 'Unknown';
-            
             const wentToVm = hops.some(h => 
-                h.result === 'Voicemail' || h.action === 'Voicemail' || 
+                h.result === 'Voicemail' || h.response === 'Voicemail' || h.action === 'Voicemail' || 
                 (h.segmentsDuration && (h.segmentsDuration.voicemail > 0 || h.segmentsDuration.vmGreeting > 0))
             );
             
@@ -246,6 +247,7 @@
             const resultConfig = getStatusConfig(finalResult);
             const rowClass = index % 2 === 0 ? "bg-white" : "bg-slate-50/50";
 
+            // Main Row
             const trMain = document.createElement('tr');
             trMain.className = `${rowClass} hover:bg-blue-50 border-b border-slate-100 cursor-pointer summary-row transition-colors`;
             trMain.setAttribute('onclick', `toggleDetails(${index})`);
@@ -266,16 +268,51 @@
             `;
             tableBody.appendChild(trMain);
 
+            // Details Row
             const trDetails = document.createElement('tr');
             trDetails.id = `details-${index}`;
             trDetails.className = `hidden bg-slate-50 border-b-2 border-slate-200 shadow-inner`;
             
             let hopsHtml = `<div class="p-6 w-full max-w-5xl mx-auto relative journey-timeline">`;
             
+            // SMART INHERITANCE TRACKERS
+            let lastKnownQueue = null;
+            let lastKnownTo = null;
+            
             hops.forEach((hop, hIndex) => {
-                // Aggressively search for destination across all possible RC objects
-                const hFrom = getPartyDetails(hop.from) || getPartyDetails(hop.queue) || 'Unknown';
-                let hTo = getPartyDetails(hop.to) || getPartyDetails(hop.queue) || getPartyDetails(hop.extension) || getPartyDetails(hop.transferredTo) || 'Unknown';
+                let extFrom = getPartyDetails(hop.from);
+                let extTo = getPartyDetails(hop.to);
+                let extQueue = getPartyDetails(hop.queue);
+                let extTransferred = getPartyDetails(hop.transferredTo);
+                
+                // Track the queue if the call enters one
+                if (extQueue) lastKnownQueue = extQueue;
+                
+                let hFrom = extFrom;
+                let hTo = extTo;
+                
+                // If 'From' is missing (common when a Queue rings an agent), inherit the Queue or previous To
+                if (!hFrom || hFrom === 'Unknown') {
+                    hFrom = lastKnownQueue || lastKnownTo || originator;
+                }
+                
+                // If 'To' is missing, check if it was transferred out or is a queue
+                if (!hTo || hTo === 'Unknown') {
+                    if (extQueue) {
+                        hTo = extQueue;
+                    } else if (extTransferred) {
+                        hTo = extTransferred;
+                    } else if (hop.segmentsDuration && hop.segmentsDuration.transfer > 0) {
+                        hTo = 'External/Blind Transfer';
+                    } else {
+                        hTo = 'Unknown Destination';
+                    }
+                }
+                
+                // Update tracker for next hop
+                if (hTo !== 'Unknown Destination' && hTo !== 'External/Blind Transfer') {
+                    lastKnownTo = hTo;
+                }
                 
                 const hType = hop.callType || 'Call';
                 const hAction = hop.action ? `[${hop.action}]` : '';
