@@ -7,7 +7,7 @@ import logging
 presence_bp = Blueprint('presence', __name__)
 
 def parse_bool(val):
-    """Safely converts Excel values to strict JSON booleans."""
+    """Safely converts Excel/CSV values to strict JSON booleans."""
     if pd.isna(val) or val == "": 
         return None
     if isinstance(val, bool): 
@@ -56,7 +56,6 @@ def generate_audit_report():
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
 
-            # Map the actual assigned lines
             assigned_lines = {}
             for record in records:
                 line_id_str = record.get('id')
@@ -110,20 +109,17 @@ def generate_audit_report():
 @presence_bp.route('/api/presence/template', methods=['GET'])
 def download_template():
     try:
-        # 1. Generate Base Columns
+        # Generate Base Columns
         cols = [
             "Target Extension Name", "Target Extension Number", "Target Extension ID",
             "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line", "Allow other users to see my presence status"
         ]
-        
-        # Extend to 100 lines
         for i in range(1, 101):
             cols.extend([f"Line {i} Name", f"Line {i} Extension"])
             
-        # Create Blank DataFrame for the active Input sheet
         df_blank = pd.DataFrame(columns=cols)
 
-        # 2. Generate the Example DataFrame
+        # Generate Example DataFrame
         example_data = {
             "Target Extension Name": ["Steve Mobile", "Test Account"],
             "Target Extension Number": ["11134", "11135"],
@@ -138,15 +134,12 @@ def download_template():
             "Line 3 Name": ["Some Shared Line", ""],
             "Line 3 Extension": ["81827", ""]
         }
-        
-        # Pad the example out to 100 columns with blanks so it shares the schema
         for i in range(4, 101):
             example_data[f"Line {i} Name"] = ["", ""]
             example_data[f"Line {i} Extension"] = ["", ""]
             
         df_example = pd.DataFrame(example_data)
         
-        # 3. Write Dual-Tab Excel File
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_blank.to_excel(writer, index=False, sheet_name='BLF_Update')
@@ -163,26 +156,32 @@ def update_blf_from_file():
         if 'file' not in request.files: return jsonify({"status": "error", "message": "No file uploaded"}), 400
         
         file = request.files['file']
-        df = pd.read_excel(file, sheet_name=0)
+        filename = file.filename.lower()
         
+        # Transparently handle both CSV and XLSX uploads
+        if filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file, sheet_name=0)
+            
         if "Target Extension ID" not in df.columns:
-            return jsonify({"status": "error", "message": "Missing column: Target Extension ID on the first sheet."}), 400
+            return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct sheet."}), 400
 
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # Build the Translator (Extension Number -> ID)
         all_exts = manager.get_all_extensions_raw()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
 
-        # Identify all Line Extension columns dynamically
         line_ext_cols = [c for c in df.columns if str(c).startswith("Line ") and str(c).endswith("Extension")]
         line_ext_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
 
         for index, row in df.iterrows():
             target_id = str(row.get("Target Extension ID", "")).split('.')[0].strip()
             if not target_id or target_id.lower() == 'nan': continue
+            
+            user_updated = False
             
             # --- 1. UPDATE SETTINGS TOGGLES ---
             settings_payload = {}
@@ -197,50 +196,58 @@ def update_blf_from_file():
             if settings_payload:
                 try:
                     manager.update_presence_settings(target_id, settings_payload)
+                    user_updated = True
                 except Exception as e:
                     results["errors"].append(f"Ext {target_id}: Settings update failed - {str(e)}")
 
             # --- 2. UPDATE BLF LINES ---
-            # Fetch current lines to identify which ones RingCentral strictly locks
             current_lines_resp = manager.get_monitored_lines(target_id)
             current_records = current_lines_resp.get('records', [])
             
-            # Identify locked lines (Usually "1" and "2", but dynamically checked)
-            locked_line_ids = [str(r.get('id')) for r in current_records if r.get('notEditableOnHud') is True]
-            if not locked_line_ids: locked_line_ids = ["1", "2"] # Safety fallback
+            # Build payload combining locked lines with the user's Excel lines
+            final_lines_to_send = {}
+            
+            for r in current_records:
+                l_id = str(r.get('id'))
+                # If API explicitly says it cannot be changed, preserve it
+                if r.get('notEditableOnHud') is True:
+                    final_lines_to_send[l_id] = str(r.get('extension', {}).get('id'))
 
-            new_records = []
-
+            excel_has_lines = False
             for col in line_ext_cols:
                 val = row.get(col)
                 if pd.notna(val) and str(val).strip() != "":
+                    excel_has_lines = True
                     line_num = str(col.split(' ')[1])
                     
-                    # CRITICAL FIX: Do not send lines that the API considers locked!
-                    if line_num in locked_line_ids:
-                        continue
+                    # Skip altering if the API rules locked this specific slot
+                    if line_num in final_lines_to_send: continue 
                         
                     raw_val = str(val).split('.')[0].strip()
                     
-                    # Translator Engine
                     if raw_val in id_set:
                         monitored_id = raw_val
                     elif raw_val in ext_map:
                         monitored_id = ext_map[raw_val]
                     else:
-                        monitored_id = raw_val # Fallback
+                        monitored_id = raw_val
                         
-                    new_records.append({
-                        "id": line_num, 
-                        "extension": {"id": monitored_id}
-                    })
+                    final_lines_to_send[line_num] = monitored_id
 
-            try:
-                # We upload ONLY the unlocked lines. RingCentral preserves the locked ones automatically.
-                manager.update_monitored_lines(target_id, new_records)
+            if excel_has_lines:
+                new_records = [{"id": l_id, "extension": {"id": final_lines_to_send[l_id]}} 
+                               for l_id in sorted(final_lines_to_send.keys(), key=lambda x: int(x))]
+                
+                try:
+                    # The first two lines always indicate the user's extension presence, they cannot be changed[cite: 25, 26, 38, 39].
+                    # By preserving `notEditableOnHud` records from above, we safely comply with this API rule.
+                    manager.update_monitored_lines(target_id, new_records)
+                    user_updated = True
+                except Exception as e:
+                    results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
+
+            if user_updated:
                 results["success"] += 1
-            except Exception as e:
-                results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
 
         return jsonify({
             "status": "completed", 
