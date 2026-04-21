@@ -1,270 +1,290 @@
-<div class="mb-8 text-center">
-    <h2 class="text-3xl font-bold text-slate-800 mb-2">BLF & Presence Manager</h2>
-    <p class="text-slate-500">Audit, template, and bulk update Monitored Lines and Presence Permissions.</p>
-</div>
+{% extends "base.html" %} {% block content %}
+<div class="container-fluid mt-4 px-4">
+    <h2 class="mb-4">BLF Presence Management</h2>
 
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-6xl mx-auto">
-    
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center transition-shadow hover:shadow-md">
-        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">1. Audit & Template</h5>
+                    <p class="card-text text-muted">Download a blank template or select users from the table below to generate a populated audit report for bulk editing.</p>
+                    <div class="d-flex gap-2">
+                        <a href="/api/presence/template" class="btn btn-outline-primary">Download Blank Template</a>
+                        <button id="generate-audit-btn" class="btn btn-primary">Generate Audit Report</button>
+                    </div>
+                </div>
+            </div>
         </div>
-        <h3 class="text-lg font-bold text-slate-800 mb-2">Audit BLF Keys</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Generate a complete horizontal XLSX report including Pick-up toggles, Ring settings, and all Line Keys (including Speed Dials).</p>
-        <button onclick="generateAudit()" id="auditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-bold py-2.5 rounded-lg transition-colors" disabled>
-            Select Users Below
-        </button>
+
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">2. Update BLF Configurations</h5>
+                    <p class="card-text text-muted">Upload your completed Excel file to push BLF updates to RingCentral.</p>
+                    <form id="upload-form" enctype="multipart/form-data">
+                        <div class="input-group">
+                            <input type="file" class="form-control" id="excel-file" accept=".xlsx" required>
+                            <button class="btn btn-success" type="submit" id="upload-btn">Update Users</button>
+                        </div>
+                    </form>
+                    <div id="upload-status" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center transition-shadow hover:shadow-md">
-        <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+    <div class="card shadow-sm">
+        <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+            <h5 class="mb-0">Select Users for Audit</h5>
+            <div class="d-flex align-items-center gap-2">
+                <select id="site-select" class="form-select form-select-sm w-auto">
+                    <option value="">All Sites</option>
+                </select>
+                
+                <input type="text" id="global-search" class="form-control form-control-sm w-auto" placeholder="Search name or ext...">
+                
+                <button id="refresh-users-btn" class="btn btn-dark btn-sm text-nowrap">Refresh Users</button>
+            </div>
         </div>
-        <h3 class="text-lg font-bold text-slate-800 mb-2">Get Template</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Download a blank XLSX template properly formatted with Name/Extension pair columns for bulk updating.</p>
-        <button onclick="downloadTemplate()" class="w-full bg-white border-2 border-green-600 text-green-600 hover:bg-green-50 font-bold py-2.5 rounded-lg transition-colors">
-            Download Template
-        </button>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center transition-shadow hover:shadow-md">
-        <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-        </div>
-        <h3 class="text-lg font-bold text-slate-800 mb-2">Update BLF</h3>
-        <p class="text-sm text-slate-500 mb-6 flex-grow">Upload your spreadsheet. The system automatically translates user-friendly Extension Numbers into exact IDs.</p>
         
-        <input type="file" id="updateFile" class="hidden" accept=".xlsx" onchange="processUpload()">
-        <button onclick="document.getElementById('updateFile').click()" id="uploadBtn" class="w-full bg-white border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-bold py-2.5 rounded-lg transition-colors">
-            Upload to Update
-        </button>
-    </div>
-</div>
-
-<div id="actionStatus" class="hidden max-w-6xl mx-auto mb-8 p-4 rounded-lg"></div>
-
-<div class="max-w-6xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-    <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-        <h3 class="font-bold text-slate-700">Select Users for Audit</h3>
-        <div class="flex items-center gap-2">
-            <input type="text" id="userSearch" placeholder="Search name or ext..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64" onkeyup="filterUsers()">
-            <button onclick="fetchUsers()" id="loadUsersBtn" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 px-4 rounded transition-colors">
-                Load Users
-            </button>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                <table class="table table-hover table-bordered mb-0" style="font-size: 0.9rem;">
+                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                        <tr>
+                            <th class="text-center" style="width: 50px; vertical-align: middle;">
+                                <input class="form-check-input" type="checkbox" id="select-all">
+                            </th>
+                            <th style="vertical-align: middle;">NAME</th>
+                            <th style="vertical-align: middle;">EXTENSION</th>
+                            <th style="vertical-align: middle;">EXTENSION ID</th>
+                            <th style="vertical-align: middle;">SITE</th>
+                        </tr>
+                        <tr class="bg-light">
+                            <th class="text-center">
+                                </th>
+                            <th><input type="text" class="form-control form-control-sm inline-filter" data-col="1" placeholder="&#x1F50D; Filter Name..."></th>
+                            <th><input type="text" class="form-control form-control-sm inline-filter" data-col="2" placeholder="&#x1F50D; Filter Ext..."></th>
+                            <th><input type="text" class="form-control form-control-sm inline-filter" data-col="3" placeholder="&#x1F50D; Filter ID..."></th>
+                            <th><input type="text" class="form-control form-control-sm inline-filter" data-col="4" placeholder="&#x1F50D; Filter Site..."></th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body">
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4">Loading users...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </div>
-    
-    <div class="max-h-96 overflow-y-auto w-full">
-        <table class="w-full text-sm text-left">
-            <thead class="text-xs text-slate-600 uppercase bg-slate-100 sticky top-0 shadow-sm z-10">
-                <tr>
-                    <th class="px-4 py-3 w-12 text-center">
-                        <input type="checkbox" id="selectAll" class="rounded border-slate-300" onchange="toggleAll(this)">
-                    </th>
-                    <th class="px-6 py-3">Name</th>
-                    <th class="px-6 py-3">Extension</th>
-                    <th class="px-6 py-3">Extension ID</th>
-                </tr>
-            </thead>
-            <tbody id="userTableBody" class="divide-y divide-slate-100">
-                <tr><td colspan="4" class="px-6 py-12 text-center text-slate-400">Click "Load Users" to begin.</td></tr>
-            </tbody>
-        </table>
     </div>
 </div>
 
 <script>
-    let allUsers = [];
+document.addEventListener('DOMContentLoaded', () => {
+    
+    const usersTableBody = document.getElementById('users-table-body');
+    const siteSelect = document.getElementById('site-select');
+    const globalSearch = document.getElementById('global-search');
+    const inlineFilters = document.querySelectorAll('.inline-filter');
+    const selectAllCheckbox = document.getElementById('select-all');
+    let allUsersData = [];
 
-    async function fetchUsers() {
-        const btn = document.getElementById('loadUsersBtn');
-        const tbody = document.getElementById('userTableBody');
-        
-        btn.disabled = true;
-        btn.innerText = 'Loading...';
-        tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-blue-600 font-bold animate-pulse">Fetching users from RingCentral...</td></tr>`;
-
+    // --- 1. Load Sites ---
+    async function loadSites() {
         try {
-            const res = await fetch('/api/presence/users');
-            const data = await res.json();
-            
-            if (data.status !== 'success') throw new Error(data.message);
-            
-            allUsers = data.users;
-            renderUserTable(allUsers);
-            updateAuditButton();
-        } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-red-500">Error: ${err.message}</td></tr>`;
-        } finally {
-            btn.disabled = false;
-            btn.innerText = 'Refresh Users';
+            const response = await fetch('/api/presence/sites');
+            const data = await response.json();
+            if (data.status === 'success') {
+                data.sites.forEach(site => {
+                    const option = document.createElement('option');
+                    option.value = site.id;
+                    option.textContent = site.name;
+                    siteSelect.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading sites:', error);
         }
     }
 
-    function renderUserTable(users) {
-        const tbody = document.getElementById('userTableBody');
-        tbody.innerHTML = '';
+    // --- 2. Fetch Users ---
+    async function fetchUsers() {
+        usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Loading users...</td></tr>';
         
-        if (users.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-slate-500">No users found.</td></tr>`;
+        const siteId = siteSelect.value;
+        const url = siteId ? `/api/presence/users?site_id=${siteId}` : '/api/presence/users';
+        
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                allUsersData = data.users;
+                renderTable();
+            } else {
+                usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">Error: ${data.message}</td></tr>`;
+            }
+        } catch (error) {
+            usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">Failed to fetch users.</td></tr>`;
+        }
+    }
+
+    // --- 3. Render Table & Apply Filters ---
+    function renderTable() {
+        usersTableBody.innerHTML = '';
+        
+        const globalTerm = globalSearch.value.toLowerCase();
+        
+        allUsersData.forEach(user => {
+            const name = (user.name || '').toLowerCase();
+            const ext = (user.extensionNumber || '').toLowerCase();
+            const id = String(user.id).toLowerCase();
+            const siteName = (user.site && user.site.name) ? user.site.name : 'Main Site';
+            const siteNameLower = siteName.toLowerCase();
+
+            // Check Global Search
+            if (globalTerm && !name.includes(globalTerm) && !ext.includes(globalTerm)) {
+                return; // Skip this row
+            }
+
+            // Check Inline Filters
+            let passesInline = true;
+            inlineFilters.forEach(input => {
+                const term = input.value.toLowerCase();
+                if (!term) return;
+                
+                const colIndex = parseInt(input.getAttribute('data-col'));
+                if (colIndex === 1 && !name.includes(term)) passesInline = false;
+                if (colIndex === 2 && !ext.includes(term)) passesInline = false;
+                if (colIndex === 3 && !id.includes(term)) passesInline = false;
+                if (colIndex === 4 && !siteNameLower.includes(term)) passesInline = false;
+            });
+
+            if (!passesInline) return; // Skip this row
+
+            // Render Row
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="text-center"><input class="form-check-input user-checkbox" type="checkbox" value='${JSON.stringify({
+                    id: user.id, 
+                    name: user.name, 
+                    extensionNumber: user.extensionNumber
+                })}'></td>
+                <td>${user.name || ''}</td>
+                <td>${user.extensionNumber || ''}</td>
+                <td>${user.id}</td>
+                <td>${siteName}</td>
+            `;
+            usersTableBody.appendChild(tr);
+        });
+
+        // Reset select all
+        selectAllCheckbox.checked = false;
+    }
+
+    // --- 4. Event Listeners ---
+    
+    // Load initial data
+    loadSites();
+    fetchUsers();
+
+    // Filtering triggers
+    globalSearch.addEventListener('input', renderTable);
+    inlineFilters.forEach(input => input.addEventListener('input', renderTable));
+    siteSelect.addEventListener('change', fetchUsers);
+    document.getElementById('refresh-users-btn').addEventListener('click', fetchUsers);
+
+    // Select All Logic
+    selectAllCheckbox.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+    });
+
+    // Generate Audit
+    document.getElementById('generate-audit-btn').addEventListener('click', async () => {
+        const selected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => JSON.parse(cb.value));
+        
+        if (selected.length === 0) {
+            alert("Please select at least one user to audit.");
             return;
         }
 
-        users.forEach(user => {
-            const tr = document.createElement('tr');
-            tr.className = "hover:bg-slate-50 transition-colors user-row";
-            tr.innerHTML = `
-                <td class="px-4 py-3 text-center">
-                    <input type="checkbox" class="user-checkbox rounded border-slate-300" value="${user.id}" onchange="updateAuditButton()">
-                </td>
-                <td class="px-6 py-3 font-medium text-slate-800 user-name">${user.name || 'Unknown'}</td>
-                <td class="px-6 py-3 text-slate-600 ext-num">${user.extensionNumber || '-'}</td>
-                <td class="px-6 py-3 text-xs font-mono text-slate-400">${user.id}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    function filterUsers() {
-        const search = document.getElementById('userSearch').value.toLowerCase();
-        const rows = document.querySelectorAll('.user-row');
-        
-        rows.forEach(row => {
-            const text = row.innerText.toLowerCase();
-            row.style.display = text.includes(search) ? '' : 'none';
-        });
-    }
-
-    function toggleAll(source) {
-        const checkboxes = document.querySelectorAll('.user-checkbox');
-        const rows = document.querySelectorAll('.user-row');
-        rows.forEach((row, i) => {
-            if (row.style.display !== 'none') checkboxes[i].checked = source.checked;
-        });
-        updateAuditButton();
-    }
-
-    function updateAuditButton() {
-        const checked = document.querySelectorAll('.user-checkbox:checked').length;
-        const btn = document.getElementById('auditBtn');
-        
-        if (checked > 0) {
-            btn.disabled = false;
-            btn.innerText = `Generate Report (${checked} Users)`;
-            btn.classList.replace('border-blue-600', 'bg-blue-600');
-            btn.classList.replace('text-blue-600', 'text-white');
-        } else {
-            btn.disabled = true;
-            btn.innerText = 'Select Users Below';
-            btn.classList.replace('bg-blue-600', 'border-blue-600');
-            btn.classList.replace('text-white', 'text-blue-600');
-        }
-    }
-
-    async function generateAudit() {
-        const checkboxes = document.querySelectorAll('.user-checkbox:checked');
-        
-        const usersToAudit = Array.from(checkboxes).map(cb => {
-            const row = cb.closest('tr');
-            return {
-                id: cb.value,
-                name: row.querySelector('.user-name').innerText,
-                extensionNumber: row.querySelector('.ext-num').innerText
-            };
-        });
-
-        const btn = document.getElementById('auditBtn');
-        const statusBox = document.getElementById('actionStatus');
-        
-        btn.innerText = 'Generating...';
+        const btn = document.getElementById('generate-audit-btn');
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
         btn.disabled = true;
-        statusBox.className = 'hidden';
 
         try {
             const response = await fetch('/api/presence/audit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ users: usersToAudit })
+                body: JSON.stringify({ users: selected })
             });
 
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.message || 'Audit generation failed.');
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'BLF_Audit_Detailed.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } else {
+                alert("Failed to generate audit.");
             }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'BLF_Presence_Audit.xlsx';
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-
-            showStatus('success', 'Audit report generated successfully.');
         } catch (error) {
-            showStatus('error', error.message);
+            console.error(error);
+            alert("An error occurred during audit generation.");
         } finally {
-            updateAuditButton();
+            btn.innerHTML = 'Generate Audit Report';
+            btn.disabled = false;
         }
-    }
+    });
 
-    function downloadTemplate() {
-        window.location.href = '/api/presence/template';
-    }
-
-    async function processUpload() {
-        const fileInput = document.getElementById('updateFile');
+    // Upload Update File
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('excel-file');
         if (!fileInput.files.length) return;
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
 
-        const btn = document.getElementById('uploadBtn');
-        const statusBox = document.getElementById('actionStatus');
+        const btn = document.getElementById('upload-btn');
+        const statusDiv = document.getElementById('upload-status');
         
-        btn.innerText = 'Uploading...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Updating...';
         btn.disabled = true;
-        statusBox.className = 'hidden';
+        statusDiv.innerHTML = '';
 
         try {
             const response = await fetch('/api/presence/update', {
                 method: 'POST',
                 body: formData
             });
-
             const data = await response.json();
 
             if (data.status === 'completed') {
-                let msg = data.message;
+                let html = `<div class="alert alert-success py-2 mb-2">${data.message}</div>`;
                 if (data.errors && data.errors.length > 0) {
-                    msg += `<br><br><b>Warnings/Errors:</b><br><ul class="list-disc pl-5 mt-2">`;
-                    data.errors.forEach(err => msg += `<li>${err}</li>`);
-                    msg += `</ul>`;
-                    showStatus('warning', msg);
-                } else {
-                    showStatus('success', msg);
+                    html += `<div class="alert alert-warning py-2 mb-0"><strong>Warnings/Errors:</strong><ul class="mb-0 ps-3">`;
+                    data.errors.forEach(err => html += `<li>${err}</li>`);
+                    html += `</ul></div>`;
                 }
+                statusDiv.innerHTML = html;
             } else {
-                throw new Error(data.message || 'Update failed.');
+                statusDiv.innerHTML = `<div class="alert alert-danger py-2">${data.message || 'Update failed'}</div>`;
             }
         } catch (error) {
-            showStatus('error', error.message);
+            statusDiv.innerHTML = `<div class="alert alert-danger py-2">System error occurred during upload.</div>`;
         } finally {
-            btn.innerText = 'Upload to Update';
+            btn.innerHTML = 'Update Users';
             btn.disabled = false;
-            fileInput.value = ''; 
+            fileInput.value = ''; // Reset file input
         }
-    }
-
-    function showStatus(type, message) {
-        const box = document.getElementById('actionStatus');
-        box.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'bg-red-50', 'text-red-800', 'bg-yellow-50', 'text-yellow-800');
-        
-        if (type === 'success') box.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200');
-        if (type === 'error') box.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200');
-        if (type === 'warning') box.classList.add('bg-yellow-50', 'text-yellow-800', 'border', 'border-yellow-200');
-        
-        box.innerHTML = message;
-    }
+    });
+});
 </script>
+{% endblock %}
