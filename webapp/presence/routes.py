@@ -114,7 +114,7 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # 2. Map existing active slots to their system IDs
+            # 2. Get Live Array
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             existing_slots = {i+1: r for i, r in enumerate(live_records)}
@@ -122,13 +122,13 @@ def update_blf():
             payload_records = []
             seen_extensions = set()
 
-            # 3. Build full 100-line state
+            # 3. Build Ordered Array for RingCentral
             for i in range(1, 101):
                 record = existing_slots.get(i)
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
-                # Rule A: Hardware Locked Lines (Primary Lines)
+                # Rule A: Hardware Locked Lines (Preserve ID and Extension)
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
@@ -136,20 +136,29 @@ def update_blf():
                         seen_extensions.add(str(ext_id))
                     continue
 
-                # Rule B: Clear Intent
+                # Rule B: Clear Intent (Skip appending to array = slot removed)
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
-                    continue
+                    continue 
 
                 # Rule C: Update with New Value
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
-                    mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                     
+                    # 1. Resolve to UUID
+                    mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
+                    
+                    # 2. STRICT VALIDATOR: Prevent CMN-101 Crashes
+                    if not mon_id:
+                        if len(val_str) >= 7 and val_str.isdigit():
+                            mon_id = val_str # Likely a manually typed UUID, accept it
+                        else:
+                            results["errors"].append(f"Ext {t_id}: Line {i} skipped. Could not resolve Ext '{val_str}' to a system UUID.")
+                            continue
+                            
                     if mon_id not in seen_extensions:
                         new_line = {"extension": {"id": mon_id}}
                         
-                        # THE FIX: If this slot already existed in RingCentral, attach its ID.
-                        # If it is a brand new slot, we intentionally DO NOT send an ID.
+                        # Apply Expert Solution: Provide 'id' if replacing an existing slot, OMIT if adding a new one.
                         if record and 'id' in record:
                             new_line["id"] = str(record['id'])
                             
@@ -157,14 +166,14 @@ def update_blf():
                         seen_extensions.add(mon_id)
                     continue
 
-                # Rule D: No spreadsheet value - preserve current setting if it exists
+                # Rule D: Spreadsheet is blank, preserve existing
                 if record:
                     curr_id = record.get('extension', {}).get('id')
                     if curr_id and str(curr_id) not in seen_extensions:
                         payload_records.append({"id": str(record.get('id')), "extension": {"id": str(curr_id)}})
                         seen_extensions.add(str(curr_id))
 
-            # 4. Fire Update
+            # 4. Fire the Update Array
             if payload_records:
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
@@ -174,7 +183,7 @@ def update_blf():
             elif toggles:
                 results["success"] += 1
 
-        return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
+        return jsonify({"status": "completed", "message": f"Processed {results['success']} users", "errors": results["errors"]})
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
