@@ -22,9 +22,7 @@ def get_sites():
 @presence_bp.route('/api/presence/users', methods=['GET'])
 def get_users():
     try:
-        # Grab the site_id from the query parameters (e.g., /api/presence/users?site_id=87654321)
         site_id = request.args.get('site_id')
-        
         manager = RCPresenceManager()
         users = manager.get_all_users(site_id=site_id)
         return jsonify({"status": "success", "users": users})
@@ -43,7 +41,9 @@ def get_template():
             "Allow other users to see my presence status"
         ]
         
+        # Add BOTH Name and Extension columns to match the Audit report perfectly
         for i in range(1, 101):
+            columns.append(f"Line {i} Name")
             columns.append(f"Line {i} Extension")
             
         df_template = pd.DataFrame(columns=columns)
@@ -56,10 +56,15 @@ def get_template():
         example_row["Ring on Monitored Call"] = "TRUE"
         example_row["Enable Me to Pickup a Monitored Line"] = "FALSE"
         example_row["Allow other users to see my presence status"] = "TRUE"
+        
+        example_row["Line 1 Name"] = "Jane Smith (Informational)"
         example_row["Line 1 Extension"] = "Leave blank if keeping existing/locked"
-        example_row["Line 2 Extension"] = "Leave blank if keeping existing/locked"
-        example_row["Line 3 Extension"] = "233306125 (Will assign this ext to Line 3)"
-        example_row["Line 4 Extension"] = "CLEAR (Will wipe the existing user on Line 4)"
+        
+        example_row["Line 2 Name"] = "New Hire (Informational)"
+        example_row["Line 2 Extension"] = "233306125 (Will assign this ext to Line 2)"
+        
+        example_row["Line 3 Name"] = "CLEAR"
+        example_row["Line 3 Extension"] = "CLEAR (Will wipe the existing user on Line 3)"
         
         df_examples = pd.DataFrame([example_row])
         
@@ -68,7 +73,7 @@ def get_template():
             df_template.to_excel(writer, sheet_name='Template', index=False)
             df_examples.to_excel(writer, sheet_name='Examples', index=False)
             
-            # Auto-widen columns on the Examples tab so it's readable
+            # Auto-widen columns on the Examples tab so it is readable
             worksheet = writer.sheets['Examples']
             for col in worksheet.columns:
                 max_length = 0
@@ -79,7 +84,6 @@ def get_template():
                             max_length = len(str(cell.value))
                     except:
                         pass
-                # Set width with a little padding
                 worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
                 
         output.seek(0)
