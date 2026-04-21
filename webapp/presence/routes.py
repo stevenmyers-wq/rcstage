@@ -9,6 +9,15 @@ def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
+@presence_bp.route('/api/presence/users', methods=['GET'])
+def get_users():
+    try:
+        manager = RCPresenceManager()
+        users = manager.get_all_users()
+        return jsonify({"status": "success", "users": users})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @presence_bp.route('/api/presence/audit', methods=['POST'])
 def generate_audit_report():
     try:
@@ -16,16 +25,16 @@ def generate_audit_report():
         selected_users = data.get('users', [])
         manager = RCPresenceManager()
         
-        # Pull master extension list to identify types like SharedLinesGroup [cite: 29]
-        all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
+        # Build a master map to resolve names and 'SharedLinesGroup' types
+        all_exts = manager.get_all_extensions_raw()
         id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
         
         audit_data = []
         for user in selected_users:
             ext_id = user.get('id')
             settings = manager.get_presence_settings(ext_id)
-            lines_resp = manager.get_monitored_lines(ext_id) # 
-            records = lines_resp.get('records') or [] # [cite: 24, 25]
+            lines_resp = manager.get_monitored_lines(ext_id)
+            records = lines_resp.get('records') or []
 
             row = {
                 "Target Extension Name": user.get('name', ''),
@@ -36,40 +45,30 @@ def generate_audit_report():
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
 
-            # Map existing lines 1-100 based on API response [cite: 30]
-            assigned_map = {str(r.get('id')): r for r in records}
-            
-            for i in range(1, 101):
-                record = assigned_map.get(str(i))
-                if record:
-                    ext_obj = record.get('extension') or {} # [cite: 32]
-                    m_id = str(ext_obj.get('id', ''))
-                    master = id_to_ext_map.get(m_id, {})
-                    
-                    # Identify the true type (User, SharedLinesGroup, etc.) [cite: 23, 29]
-                    type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
-                    name = master.get('name') or ext_obj.get('name') or type_label
-                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
-                    
-                    # Add 'Locked' prefix if notEditableOnHud is true 
-                    locked_prefix = "[LOCKED] " if record.get('notEditableOnHud') else ""
-                    
-                    row[f"Line {i} Name"] = f"{locked_prefix}{name} ({type_label})"
-                    row[f"Line {i} Extension"] = str(ext_num)
-                else:
-                    row[f"Line {i} Name"] = ""
-                    row[f"Line {i} Extension"] = ""
-            
-            audit_data.append(row)
-            
+            # Map existing lines 1-100
+            for record in records:
+                l_id = record.get('id')
+                ext_info = record.get('extension') or {}
+                m_id = str(ext_info.get('id', ''))
+                
+                # Cross-reference with master list to find true type (SharedLine, etc.)
+                master = id_to_ext_map.get(m_id, {})
+                name = master.get('name') or ext_info.get('name') or 'Unknown'
+                ext_num = master.get('extensionNumber') or ext_info.get('extensionNumber') or m_id
+                type_label = master.get('type') or ext_info.get('type') or "Unknown"
+                
+                lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
+                row[f"Line {l_id} Name"] = f"{lock_status}{name} ({type_label})"
+                row[f"Line {l_id} Extension"] = str(ext_num)
+
         df = pd.DataFrame(audit_data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit.xlsx')
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Audit Failed: {str(e)}"}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
 def update_blf():
@@ -79,8 +78,8 @@ def update_blf():
         df.columns = df.columns.str.strip()
         
         manager = RCPresenceManager()
-        all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
-        ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
+        all_exts = manager.get_all_extensions_raw()
+        ext_num_to_id = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         
         results = {"success": 0, "errors": []}
         line_cols = [c for c in df.columns if "Line" in c and "Extension" in c]
@@ -88,7 +87,7 @@ def update_blf():
         for _, row in df.iterrows():
             t_id = str(row["Target Extension ID"]).split('.')[0]
             
-            # Update Toggle Settings
+            # Step 1: Handle Toggles
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -97,50 +96,32 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # --- TWO-STEP MERGE START ---
-            # Fetch live records to detect hardware-locked lines (notEditableOnHud) 
-            live_lines = manager.get_monitored_lines(t_id).get('records', [])
+            # Step 2: Handle Monitored Lines (The 2-Step Process)
+            # Fetch current state to find hardware-locked lines
+            live_resp = manager.get_monitored_lines(t_id)
+            live_records = live_resp.get('records') or []
             
-            # Build current state dictionary: { line_id: { ext_id, is_locked } } [cite: 30, 31, 32]
-            live_state = {}
-            for r in live_lines:
-                l_id = str(r['id'])
-                e_id = r.get('extension', {}).get('id')
-                if e_id:
-                    live_state[l_id] = {
-                        "id": str(e_id),
-                        "locked": r.get('notEditableOnHud', False) # Critical check 
-                    }
+            # Build payload, DISREGARDING any spreadsheet changes for locked lines [cite: 31]
+            update_payload = []
+            locked_indices = {str(r['id']) for r in live_records if r.get('notEditableOnHud')}
 
-            # Process spreadsheet data slot-by-slot
             for col in line_cols:
-                line_idx = col.split(' ')[1]
+                l_idx = col.split(' ')[1]
                 
-                # If the API says this physical slot is locked, ignore the spreadsheet [cite: 26, 31, 39]
-                if live_state.get(line_idx, {}).get('locked'):
+                # If this slot is locked (Line 1/2 or other primary), ignore spreadsheet value
+                if l_idx in locked_indices:
                     continue
                 
-                new_val = str(row[col]).split('.')[0].strip() if pd.notna(row[col]) else ""
+                val = str(row[col]).split('.')[0].strip() if pd.notna(row[col]) else ""
+                if not val: continue # Skip empty cells
                 
-                if not new_val:
-                    # Remove line if editable and spreadsheet is blank
-                    if line_idx in live_state:
-                        del live_state[line_idx]
-                else:
-                    # Translate extension number to internal ID
-                    monitored_id = ext_map.get(new_val) or manager.get_extension_by_number(new_val) or new_val
-                    live_state[line_idx] = {"id": str(monitored_id), "locked": False}
-
-            # Reconstruct the sequential payload for PUT [cite: 7, 37]
-            # Use 'id' and 'extension: {id}' as required by schema [cite: 35]
-            final_records = [
-                {"id": k, "extension": {"id": v["id"]}} 
-                for k, v in sorted(live_state.items(), key=lambda x: int(x[0]))
-            ]
+                # Resolve internal ID
+                monitored_id = ext_num_to_id.get(val) or val
+                update_payload.append({"id": l_idx, "extension": {"id": monitored_id}})
 
             try:
-                if final_records:
-                    manager.update_monitored_lines(t_id, final_records)
+                if update_payload:
+                    manager.update_monitored_lines(t_id, update_payload)
                 results["success"] += 1
             except Exception as e:
                 results["errors"].append(f"Ext {t_id}: {str(e)}")
