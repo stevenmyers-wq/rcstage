@@ -90,7 +90,6 @@ def update_blf():
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         
         results = {"success": 0, "errors": []}
-        line_cols = [c for c in df.columns if "line" in c.lower() and "extension" in c.lower()]
 
         for _, row in df.iterrows():
             target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
@@ -108,141 +107,83 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # --- 2. LIVE STATE ---
+            # --- 2. FETCH LIVE STATE ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            final_lines = {}
+            current_state = {}
             locked_slots = set()
             
-            # Capture the current state precisely as the Echo Test did
             for r in live_records:
                 l_id = str(r.get('id'))
                 ext_id = r.get('extension', {}).get('id')
-                if ext_id:
-                    final_lines[l_id] = str(ext_id)
-                if r.get('notEditableOnHud'):
-                    locked_slots.add(l_id)
-
-            has_changes = False
+                if ext_id: current_state[l_id] = str(ext_id)
+                if r.get('notEditableOnHud'): locked_slots.add(l_id)
 
             # --- 3. OVERLAY SPREADSHEET ---
-            for col in line_cols:
-                match = re.search(r'\d+', col)
-                if not match: continue
-                l_idx = str(match.group())
+            ordered_extensions = []
+            seen_monitored = set()
+            
+            for i in range(1, 101):
+                l_idx = str(i)
+                sheet_col = f"Line {i} Extension"
                 
-                val = row.get(col)
-                if pd.isna(val) or str(val).strip() == "": continue 
-                
-                val_str = str(val).split('.')[0].strip()
-                
-                # CLEAR INTENT
-                if val_str.upper() == "CLEAR":
-                    if l_idx in locked_slots:
-                        results["errors"].append(f"Ext {t_id}: Cannot clear Line {l_idx} (Locked by RC).")
-                    elif l_idx in final_lines:
-                        del final_lines[l_idx]
-                        has_changes = True
-                    continue
-                
-                # UPDATE INTENT
+                # If it's locked, keep it exactly as is
                 if l_idx in locked_slots:
-                    results["errors"].append(f"Ext {t_id}: Cannot update Line {l_idx} (Locked by RC).")
+                    ordered_extensions.append(current_state[l_idx])
+                    seen_monitored.add(current_state[l_idx])
                     continue
                     
+                val = row.get(sheet_col) if sheet_col in df.columns else None
+                
+                # If Blank, keep what's there
+                if pd.isna(val) or str(val).strip() == "":
+                    if l_idx in current_state:
+                        # Prevent duplicate copying
+                        if current_state[l_idx] not in seen_monitored:
+                            ordered_extensions.append(current_state[l_idx])
+                            seen_monitored.add(current_state[l_idx])
+                    continue 
+                    
+                val_str = str(val).split('.')[0].strip()
+                
+                # "CLEAR" deletes it
+                if val_str.upper() == "CLEAR":
+                    continue 
+                    
+                # Find ID and Add
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 
-                if final_lines.get(l_idx) != monitored_id:
-                    final_lines[l_idx] = monitored_id
-                    has_changes = True
+                if monitored_id in seen_monitored:
+                    results["errors"].append(f"Ext {t_id}: Skipped duplicate extension {val_str} on Line {i}.")
+                    continue
+                    
+                ordered_extensions.append(monitored_id)
+                seen_monitored.add(monitored_id)
 
             # --- 4. BUILD PAYLOAD ---
+            payload_records = []
+            for index, ext_id in enumerate(ordered_extensions):
+                payload_records.append({
+                    "id": str(index + 1),
+                    "extension": {"id": ext_id}
+                })
+            
+            has_changes = (len(payload_records) != len(current_state)) or any(current_state.get(p["id"]) != p["extension"]["id"] for p in payload_records)
+
+            # --- 5. SEND TO RINGCENTRAL ---
             if has_changes:
-                payload_records = []
-                
-                # THE FIX: We MUST include the locked slots in the array exactly as they were.
-                # Sorting numerically ensures '10' comes after '9', preventing RingCentral array order errors.
-                for k in sorted(final_lines.keys(), key=lambda x: int(x)):
-                    payload_records.append({
-                        "id": str(k),
-                        "extension": {"id": final_lines[k]}
-                    })
-                
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
                 except Exception as e:
-                    error_msg = str(e)
-                    if "Presence-102" in error_msg:
-                        results["errors"].append(f"Ext {t_id}: HUD Limitation. The user's hardware doesn't support this configuration.")
-                    else:
-                        results["errors"].append(f"Ext {t_id}: {error_msg}")
+                    results["errors"].append(str(e))
             elif toggles:
                 results["success"] += 1
             else:
-                results["errors"].append(f"Ext {t_id}: No changes detected in the spreadsheet.")
+                results["errors"].append(f"Ext {t_id}: No changes detected.")
 
         return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
-@presence_bp.route('/api/presence/diagnose_add/<target_ext_id>/<new_ext_id>', methods=['GET'])
-def diagnose_add_blf(target_ext_id, new_ext_id):
-    """Diagnostic tool to forcibly add ONE line and capture the raw RingCentral response."""
-    from webapp.rc_api import rc_api_call
-    manager = RCPresenceManager()
-    
-    diagnostic_log = {
-        "1_Target_User": target_ext_id,
-        "2_Extension_To_Add": new_ext_id,
-        "3_Current_State": None,
-        "4_Payload_Sent_To_RC": None,
-        "5_RC_Response": None
-    }
-
-    try:
-        # 1. Fetch current state
-        current_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="GET")
-        current_records = current_data.get('records', [])
-        diagnostic_log["3_Current_State"] = current_records
-
-        # 2. Build the Payload: Keep existing lines exactly as they are
-        new_payload = []
-        highest_id = 0
-        
-        for r in current_records:
-            ext_id = r.get('extension', {}).get('id')
-            line_id = r.get('id')
-            if ext_id and line_id:
-                new_payload.append({
-                    "id": str(line_id),
-                    "extension": {"id": str(ext_id)}
-                })
-                # Track the highest line number so we know where to put the new one
-                if str(line_id).isdigit() and int(line_id) > highest_id:
-                    highest_id = int(line_id)
-        
-        # 3. Add the ONE new line directly after the highest current line
-        target_line_id = str(highest_id + 1)
-        new_payload.append({
-            "id": target_line_id,
-            "extension": {"id": str(new_ext_id)}
-        })
-        
-        diagnostic_log["4_Payload_Sent_To_RC"] = new_payload
-
-        # 4. Fire the PUT request
-        put_response = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="PUT", json={"records": new_payload})
-        diagnostic_log["5_RC_Response"] = "SUCCESS - Line Added!"
-
-        return jsonify({"status": "SUCCESS", "diagnostics": diagnostic_log})
-
-    except Exception as e:
-        # Catch the exact HTTP response body from RingCentral
-        if hasattr(e, 'response') and hasattr(e.response, 'text'):
-            diagnostic_log["5_RC_Response"] = e.response.text
-        else:
-            diagnostic_log["5_RC_Response"] = str(e)
-            
-        return jsonify({"status": "FAILED - 400 Bad Request", "diagnostics": diagnostic_log}), 400
