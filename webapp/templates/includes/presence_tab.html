@@ -1,7 +1,7 @@
 <div class="space-y-6 animate-fade-in p-4">
     <div class="text-center mb-8">
         <h2 class="text-3xl font-bold text-gray-800">BLF Presence Management</h2>
-        <p class="text-gray-600 mt-2">Audit, template, and bulk update Busy Lamp Field (BLF) configurations.</p>
+        <p class="text-gray-600 mt-2">Audit and bulk update Busy Lamp Field (BLF) configurations.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -10,7 +10,6 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit BLF</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">Generate a detailed Excel report of current BLF lines for selected users.</p>
             <button id="generate-audit-btn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">Generate Report</button>
         </div>
 
@@ -19,7 +18,6 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Get Template</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">Download the Excel template with formatting examples.</p>
             <a href="/api/presence/template" class="w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors block text-center">Download Template</a>
         </div>
 
@@ -28,7 +26,6 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Update Lines</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">Upload your Excel file to push configurations to the system.</p>
             <label id="upload-btn-label" class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer text-center">
                 Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">
             </label>
@@ -39,30 +36,28 @@
 
     <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden mt-8">
         <div class="bg-gray-50 px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-            <h3 class="text-lg font-bold text-gray-800 m-0">Select Users</h3>
             <div class="flex items-center gap-3 w-full md:w-auto">
-                <select id="site-select" class="rounded-lg text-sm border-gray-300 py-2 focus:ring-blue-500"><option value="">All Sites</option></select>
-                <input type="text" id="global-search" class="rounded-lg text-sm border-gray-300 py-2 px-3 w-full md:w-64 focus:ring-blue-500" placeholder="Search...">
+                <select id="site-select" class="rounded-lg text-sm border-gray-300 py-2"><option value="">All Sites</option></select>
+                <input type="text" id="global-search" class="rounded-lg text-sm border-gray-300 py-2 px-3 w-full md:w-64" placeholder="Search...">
                 <button id="refresh-users-btn" class="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700">Refresh</button>
             </div>
         </div>
-        
         <div class="overflow-x-auto max-h-[600px]">
-            <table class="min-w-full text-left text-sm text-gray-600 whitespace-nowrap">
+            <table class="min-w-full text-left text-sm text-gray-600">
                 <thead class="bg-gray-50 sticky top-0 z-10">
                     <tr>
-                        <th class="px-4 py-3 text-center border-b"><input type="checkbox" id="select-all" class="rounded text-blue-600"></th>
+                        <th class="px-4 py-3 text-center border-b"><input type="checkbox" id="select-all"></th>
                         <th class="px-4 py-3 font-bold border-b">NAME</th>
                         <th class="px-4 py-3 font-bold border-b">EXTENSION</th>
                         <th class="px-4 py-3 font-bold border-b">EXTENSION ID</th>
                         <th class="px-4 py-3 font-bold border-b">SITE</th>
                     </tr>
-                    <tr class="bg-white border-b shadow-sm">
+                    <tr class="bg-white">
                         <th></th>
-                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="1" placeholder="Filter..."></th>
-                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="2" placeholder="Filter..."></th>
-                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="3" placeholder="Filter..."></th>
-                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="4" placeholder="Filter..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="1" placeholder="Filter Name..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="2" placeholder="Filter Ext..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="3" placeholder="Filter ID..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="4" placeholder="Filter Site..."></th>
                     </tr>
                 </thead>
                 <tbody id="users-table-body" class="divide-y divide-gray-100"></tbody>
@@ -83,13 +78,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadSites() {
         const resp = await fetch('/api/presence/sites');
         const data = await resp.json();
-        if (data.status === 'success') {
-            data.sites.forEach(s => siteSelect.add(new Option(s.name, s.id)));
-        }
+        if (data.status === 'success') data.sites.forEach(s => siteSelect.add(new Option(s.name, s.id)));
     }
 
     async function fetchUsers() {
-        usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8">Loading...</td></tr>';
+        usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8">Loading users...</td></tr>';
         const resp = await fetch('/api/presence/users');
         const data = await resp.json();
         if (data.status === 'success') { allUsersData = data.users; renderTable(); }
@@ -115,11 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!match) return;
 
             const tr = document.createElement('tr');
-            tr.className = "hover:bg-gray-50";
-            tr.innerHTML = `<td class="px-4 py-3 text-center"><input type="checkbox" class="user-checkbox rounded" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
+            tr.innerHTML = `<td class="px-4 py-3 text-center"><input type="checkbox" class="user-checkbox" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
                             <td class="px-4 py-3 font-medium text-gray-800">${rowData[0]}</td>
                             <td class="px-4 py-3">${rowData[1]}</td>
-                            <td class="px-4 py-3 font-mono text-xs text-gray-500">${rowData[2]}</td>
+                            <td class="px-4 py-3 text-xs text-gray-500">${rowData[2]}</td>
                             <td class="px-4 py-3">${rowData[3]}</td>`;
             usersTableBody.appendChild(tr);
         });
@@ -142,10 +134,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('excel-file').onchange = async (e) => {
         const fd = new FormData(); fd.append('file', e.target.files[0]);
         const status = document.getElementById('upload-status');
+        const label = document.getElementById('upload-btn-label');
+        label.innerText = "Updating...";
         status.className = "p-4 rounded-lg text-sm border bg-blue-50 text-blue-800 border-blue-200 block";
-        status.innerText = "Updating...";
+        status.innerText = "Processing...";
         const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
         const data = await resp.json();
+        label.innerHTML = 'Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">';
         status.className = `p-4 rounded-lg text-sm border block ${data.status === 'completed' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`;
         status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
     };
