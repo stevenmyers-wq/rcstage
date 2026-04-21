@@ -225,60 +225,63 @@ def softphone_test():
 
     return jsonify(results)
 
-@presence_bp.route('/api/presence/inspect/<target_ext_id>', methods=['GET'])
-def inspect_portal_changes(target_ext_id):
-    """Fetches exactly what the RingCentral Portal saved behind the scenes."""
-    from webapp.rc_api import rc_api_call
+@presence_bp.route('/api/presence/pure_test', methods=['GET'])
+def pure_test():
+    import requests
+    import json
+    from flask import session
     from webapp.presence.utils import RCPresenceManager
-    manager = RCPresenceManager()
     
-    diagnostic_log = {
-        "Target_User": target_ext_id,
-        "1_Appearance_Lines_HUD_Endpoint": None,
-        "2_Permissions_Endpoint": None
+    manager = RCPresenceManager()
+    token = session.get('rc_access_token')
+    
+    if not token:
+        return jsonify({"error": "No token found in session. Please log in again."})
+
+    target_ext = "224995125"
+    new_ext = "233306125"
+    
+    url = f"https://platform.ringcentral.com/restapi/v1.0/account/~/extension/{target_ext}/presence/line"
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
-
-    try:
-        # Fetch what the portal saved for BLF Buttons
-        lines_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="GET")
-        diagnostic_log["1_Appearance_Lines_HUD_Endpoint"] = lines_data.get('records', [])
-    except Exception as e:
-        diagnostic_log["1_Appearance_Lines_HUD_Endpoint"] = f"ERROR: {str(e)}"
-        
-    try:
-        # Fetch what the portal saved for Monitoring Permissions
-        perms_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/permission", method="GET")
-        diagnostic_log["2_Permissions_Endpoint"] = perms_data.get('records', [])
-    except Exception as e:
-        diagnostic_log["2_Permissions_Endpoint"] = f"ERROR: {str(e)}"
-
-    return jsonify({"status": "SUCCESS - Portal Data Extracted", "data": diagnostic_log})
-
-@presence_bp.route('/api/presence/crack_softphone/<target_ext_id>', methods=['GET'])
-def crack_softphone(target_ext_id):
-    from webapp.rc_api import rc_api_call
-    from webapp.presence.utils import RCPresenceManager
-    manager = RCPresenceManager()
     
-    current_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="GET")
-    records = current_data.get('records', [])
-    
-    # We are taking the EXACT working data, but stripping the quotes off the IDs
-    # So "1" becomes 1, "2" becomes 2, etc.
-    integer_payload = {
+    # EXACTLY matching the structure from the RingCentral JS Docs
+    payload = {
         "records": [
             {
-                "id": int(r.get('id')), 
+                "id": "1",
                 "extension": {
-                    "id": str(r.get('extension', {}).get('id'))
+                    "id": target_ext
                 }
-            } for r in records if str(r.get('id')).isdigit()
+            },
+            {
+                "id": "2",
+                "extension": {
+                    "id": target_ext
+                }
+            },
+            {
+                "id": "3",
+                "extension": {
+                    "id": new_ext
+                }
+            }
         ]
     }
-
+    
     try:
-        resp = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="PUT", json=integer_payload, raise_error=True)
-        return jsonify({"status": "SUCCESS! The API documentation lied and it expects Integers."})
+        # Using data=json.dumps() guarantees the payload is a perfect JSON string, 
+        # bypassing any weird dictionary-to-kwargs translation bugs.
+        response = requests.put(url, headers=headers, data=json.dumps(payload))
+        
+        return jsonify({
+            "status_code": response.status_code,
+            "response_text": response.text,
+            "payload_sent": payload
+        })
     except Exception as e:
-        rc_error = e.response.text if hasattr(e, 'response') and e.response is not None else str(e)
-        return jsonify({"status": "FAILED: API is officially broken.", "error": rc_error, "payload_sent": integer_payload})
+        return jsonify({"error": str(e)})
