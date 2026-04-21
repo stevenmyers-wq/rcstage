@@ -8,10 +8,11 @@ presence_bp = Blueprint('presence', __name__)
 
 def parse_bool(val):
     """Safely converts Excel/CSV values to strict JSON booleans."""
-    if pd.isna(val) or val == "": 
+    if pd.isna(val) or str(val).strip() == "": 
         return None
     if isinstance(val, bool): 
         return val
+    # Handles strings like "FALSE", "0", "No", etc.
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
 @presence_bp.route('/api/presence/users', methods=['GET'])
@@ -65,13 +66,12 @@ def generate_audit_report():
                 ext_obj = record.get('extension', {})
                 monitored_ext_id = str(ext_obj.get('id', ''))
                 
-                # Recursive Name Lookup (Grabs the actual user name instead of "User")
+                # Recursive Name Lookup
                 if monitored_ext_id and monitored_ext_id in id_to_ext_map:
                     master_ext = id_to_ext_map[monitored_ext_id]
                     name_val = master_ext.get('name') or ext_obj.get('type') or 'Unknown'
                     ext_val = master_ext.get('extensionNumber') or ext_obj.get('extensionNumber') or monitored_ext_id
                 else:
-                    # Fallback for speed dials or external numbers
                     name_val = ext_obj.get('name') or ext_obj.get('type') or record.get('type') or 'Unknown'
                     ext_val = ext_obj.get('extensionNumber') or monitored_ext_id or record.get('phoneNumber') or record.get('number') or ''
                     if not ext_val and name_val == 'Unknown':
@@ -110,7 +110,15 @@ def generate_audit_report():
 @presence_bp.route('/api/presence/template', methods=['GET'])
 def download_template():
     try:
-        # Generate Example DataFrame as the ONLY tab so it cannot be exported blank
+        cols = [
+            "Target Extension Name", "Target Extension Number", "Target Extension ID",
+            "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line", "Allow other users to see my presence status"
+        ]
+        for i in range(1, 101):
+            cols.extend([f"Line {i} Name", f"Line {i} Extension"])
+            
+        df_blank = pd.DataFrame(columns=cols)
+
         example_data = {
             "Target Extension Name": ["Steve Mobile", "Test Account"],
             "Target Extension Number": ["11134", "11135"],
@@ -125,8 +133,6 @@ def download_template():
             "Line 3 Name": ["Some Shared Line", ""],
             "Line 3 Extension": ["81827", ""]
         }
-        
-        # Pad the example out to 100 columns
         for i in range(4, 101):
             example_data[f"Line {i} Name"] = ["", ""]
             example_data[f"Line {i} Extension"] = ["", ""]
@@ -135,7 +141,8 @@ def download_template():
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_example.to_excel(writer, index=False, sheet_name='BLF_Template')
+            df_blank.to_excel(writer, index=False, sheet_name='BLF_Update')
+            df_example.to_excel(writer, index=False, sheet_name='Examples')
 
         output.seek(0)
         return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Update_Template.xlsx')
@@ -155,15 +162,14 @@ def update_blf_from_file():
             df = pd.read_csv(file)
         else:
             df = pd.read_excel(file, sheet_name=0)
+            
+        # CRITICAL FIX: Aggressively strip hidden CSV BOMs and spaces
+        df.columns = df.columns.astype(str).str.replace('\ufeff', '').str.strip()
 
-        if df.empty:
-            return jsonify({"status": "error", "message": "The uploaded file contains no data rows. Ensure you have filled out the template."}), 400
-            
-        # Clean column headers (strips spaces and hidden CSV BOM characters)
-        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
-            
-        if "Target Extension ID" not in df.columns:
-            return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct template."}), 400
+        # Safely find columns ignoring case
+        target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
+        if not target_col:
+            return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct sheet."}), 400
 
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
@@ -173,90 +179,86 @@ def update_blf_from_file():
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
 
-        line_ext_cols = [c for c in df.columns if str(c).lower().startswith("line ") and str(c).lower().endswith("extension")]
-        line_ext_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
+        ring_col = next((c for c in df.columns if "ring on monitored" in c.lower()), None)
+        pickup_col = next((c for c in df.columns if "pickup a monitored" in c.lower()), None)
+        see_col = next((c for c in df.columns if "see my presence" in c.lower()), None)
+        line_ext_cols = [c for c in df.columns if c.lower().startswith("line ") and c.lower().endswith("extension")]
 
-        ring_col = next((c for c in df.columns if "ring on monitored" in str(c).lower()), None)
-        pickup_col = next((c for c in df.columns if "pickup a monitored" in str(c).lower()), None)
-        see_col = next((c for c in df.columns if "see my presence" in str(c).lower()), None)
+        # Use to_dict('records') for perfectly safe row iteration
+        records = df.to_dict('records')
 
-        for index, row in df.iterrows():
-            target_id = str(row.get("Target Extension ID", "")).split('.')[0].strip()
-            if not target_id or target_id.lower() == 'nan': continue
+        for row in records:
+            target_id = str(row.get(target_col, "")).split('.')[0].strip()
+            if not target_id or target_id.lower() == 'nan': 
+                continue
             
-            user_updated = False
+            updates_attempted = False
             
             # --- 1. UPDATE SETTINGS TOGGLES ---
             settings_payload = {}
-            if ring_col:
-                r_val = parse_bool(row.get(ring_col))
-                if r_val is not None: settings_payload["ringOnMonitoredCall"] = r_val
-            if pickup_col:
-                p_val = parse_bool(row.get(pickup_col))
-                if p_val is not None: settings_payload["pickUpCallsOnHold"] = p_val
-            if see_col:
-                s_val = parse_bool(row.get(see_col))
-                if s_val is not None: settings_payload["allowSeeMyPresence"] = s_val
+            if ring_col and pd.notna(row.get(ring_col)) and str(row.get(ring_col)).strip() != "":
+                settings_payload["ringOnMonitoredCall"] = parse_bool(row.get(ring_col))
+            if pickup_col and pd.notna(row.get(pickup_col)) and str(row.get(pickup_col)).strip() != "":
+                settings_payload["pickUpCallsOnHold"] = parse_bool(row.get(pickup_col))
+            if see_col and pd.notna(row.get(see_col)) and str(row.get(see_col)).strip() != "":
+                settings_payload["allowSeeMyPresence"] = parse_bool(row.get(see_col))
                 
             if settings_payload:
                 try:
                     manager.update_presence_settings(target_id, settings_payload)
-                    user_updated = True
+                    updates_attempted = True
                 except Exception as e:
                     results["errors"].append(f"Ext {target_id}: Settings update failed - {str(e)}")
 
-            # --- 2. UPDATE BLF LINES ---
-            if len(line_ext_cols) > 0:
+            # --- 2. SMART MERGE BLF LINES ---
+            if line_ext_cols:
                 try:
                     current_lines_resp = manager.get_monitored_lines(target_id)
                     current_records = current_lines_resp.get('records', [])
                     
-                    final_lines = {}
-                    locked_line_ids = set()
+                    # Pre-fill with current live configuration
+                    line_map = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in current_records}
+                    has_line_changes = False
 
-                    # Preserve the existing lines to respect the API contract
-                    for r in current_records:
-                        l_id = str(r.get('id'))
-                        ext_id = str(r.get('extension', {}).get('id'))
-                        final_lines[l_id] = ext_id
-                        
-                        # Dynamically identify locked lines to prevent 400 Bad Request
-                        if r.get('notEditableOnHud') is True or l_id in ["1", "2"]:
-                            locked_line_ids.add(l_id)
-
-                    excel_has_lines = False
-                    
-                    # Overlay the requested unlocked lines from the spreadsheet
                     for col in line_ext_cols:
+                        line_num = str(col).lower().replace('line', '').replace('extension', '').strip()
+                        
+                        # Local Guardrail: API forbids modifying slots 1 and 2 directly.
+                        if line_num in ["1", "2"]:
+                            continue
+                            
                         val = row.get(col)
-                        if pd.notna(val) and str(val).strip() != "":
-                            line_num = str(col).lower().replace('line', '').replace('extension', '').strip()
-                            
-                            # Skip if this line is locked by RingCentral
-                            if line_num in locked_line_ids:
-                                continue 
-                                
-                            excel_has_lines = True
+                        
+                        # If cell is cleared, remove the line
+                        if pd.isna(val) or str(val).strip() == "":
+                            if line_num in line_map:
+                                del line_map[line_num]
+                                has_line_changes = True
+                        else:
+                            # Cell has a value, apply translator engine
                             raw_val = str(val).split('.')[0].strip()
-                            
-                            # Translator Engine
+                            monitored_id = raw_val
                             if raw_val in id_set: monitored_id = raw_val
                             elif raw_val in ext_map: monitored_id = ext_map[raw_val]
-                            else: monitored_id = raw_val
-                                
-                            final_lines[line_num] = monitored_id
+                            
+                            if line_map.get(line_num) != monitored_id:
+                                line_map[line_num] = monitored_id
+                                has_line_changes = True
 
-                    if excel_has_lines:
-                        # Structure exactly as the API expects
-                        new_records = [{"id": str(k), "extension": {"id": str(v)}} for k, v in final_lines.items()]
+                    if has_line_changes:
+                        # Construct exact required RingCentral Array
+                        new_records = [{"id": str(k), "extension": {"id": str(v)}} for k, v in line_map.items()]
                         manager.update_monitored_lines(target_id, new_records)
-                        user_updated = True
+                        updates_attempted = True
                         
                 except Exception as e:
                     results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
 
-            if user_updated:
+            # --- 3. FINAL REPORTING ---
+            if updates_attempted:
                 results["success"] += 1
+            else:
+                results["errors"].append(f"Ext {target_id}: No changes detected in the uploaded file.")
 
         return jsonify({
             "status": "completed", 
