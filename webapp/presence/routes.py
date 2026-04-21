@@ -1,4 +1,5 @@
 import io
+import re
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
@@ -106,60 +107,62 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # --- 2. LIVE STATE ---
+            # --- 2. FETCH LIVE STATE ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            final_extensions = []
-            seen_ids = set()
+            final_ordered_extensions = []
+            seen_blf_ids = set()
             
-            # --- 3. OVERLAY SPREADSHEET ALIGNED TO SLOTS ---
+            # THE FIX: Extract locked lines first (Lines 1 & 2) and append them securely.
+            # Do NOT add them to the seen_blf_ids set, because they intentionally share an ID.
+            locked_lines = [r for r in live_records if r.get('notEditableOnHud')]
+            for r in locked_lines:
+                ext_id = str(r.get('extension', {}).get('id', ''))
+                if ext_id:
+                    final_ordered_extensions.append(ext_id)
+
+            # --- 3. OVERLAY SPREADSHEET (Editable slots only) ---
             for i in range(1, 101):
+                # If this physical slot is locked, we already processed it above. Skip.
+                existing_record = next((r for r in live_records if str(r.get('id')) == str(i)), None)
+                if existing_record and existing_record.get('notEditableOnHud'):
+                    continue 
+                
                 col_name = f"Line {i} Extension"
                 val = row.get(col_name) if col_name in df.columns else None
+                existing_ext = str(existing_record.get('extension', {}).get('id', '')) if existing_record else None
                 
-                is_locked = False
-                existing_ext = None
-                
-                # Check what RingCentral currently has on this exact physical slot
-                if i <= len(live_records):
-                    existing_record = live_records[i-1]
-                    existing_ext = str(existing_record.get('extension', {}).get('id', ''))
-                    is_locked = existing_record.get('notEditableOnHud', False)
-                
-                # Rule 1: If it is hardware-locked, keep it exactly as is
-                if is_locked and existing_ext:
-                    if existing_ext not in seen_ids:
-                        final_extensions.append(existing_ext)
-                        seen_ids.add(existing_ext)
-                    continue
-
-                # Rule 2: If the spreadsheet is blank, preserve the existing line
+                # Rule 1: Blank Spreadsheet = Keep Existing (If it's not a duplicate)
                 if pd.isna(val) or str(val).strip() == "":
-                    if existing_ext and existing_ext not in seen_ids:
-                        final_extensions.append(existing_ext)
-                        seen_ids.add(existing_ext)
+                    if existing_ext and existing_ext not in seen_blf_ids and existing_ext not in final_ordered_extensions:
+                        final_ordered_extensions.append(existing_ext)
+                        seen_blf_ids.add(existing_ext)
                     continue
                     
                 val_str = str(val).split('.')[0].strip()
                 
-                # Rule 3: Deletion
+                # Rule 2: "CLEAR"
                 if val_str.upper() == "CLEAR":
                     continue
                     
-                # Rule 4: Addition / Update
+                # Rule 3: Add / Update
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-                if monitored_id not in seen_ids:
-                    final_extensions.append(monitored_id)
-                    seen_ids.add(monitored_id)
+                
+                # Block duplicates only in the editable BLF range
+                if monitored_id in seen_blf_ids or monitored_id in final_ordered_extensions:
+                    continue
+                    
+                final_ordered_extensions.append(monitored_id)
+                seen_blf_ids.add(monitored_id)
 
             # --- 4. BUILD STRICTLY SEQUENTIAL PAYLOAD ---
-            payload_records = [{"id": str(idx + 1), "extension": {"id": ext}} for idx, ext in enumerate(final_extensions)]
+            # This generates the exact [{"id": "1"}, {"id": "2"}, {"id": "3"}] array to prevent gap errors.
+            payload_records = [{"id": str(idx + 1), "extension": {"id": ext}} for idx, ext in enumerate(final_ordered_extensions)]
             
             # Fast Check: Only send if the lists differ
             current_ids = [str(r.get('extension', {}).get('id')) for r in live_records if r.get('extension', {}).get('id')]
             payload_ids = [p['extension']['id'] for p in payload_records]
-            
             has_changes = (current_ids != payload_ids)
 
             # --- 5. SEND ---
