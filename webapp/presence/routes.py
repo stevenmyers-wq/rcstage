@@ -22,9 +22,8 @@ def get_sites():
 @presence_bp.route('/api/presence/users', methods=['GET'])
 def get_users():
     try:
-        site_id = request.args.get('site_id')
         manager = RCPresenceManager()
-        users = manager.get_all_users(site_id=site_id)
+        users = manager.get_all_users()
         return jsonify({"status": "success", "users": users})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -35,32 +34,15 @@ def get_template():
         columns = ["Target Extension Name", "Target Extension Number", "Target Extension ID", 
                    "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line", 
                    "Allow other users to see my presence status"]
-        
         for i in range(1, 101):
             columns.append(f"Line {i} Name")
             columns.append(f"Line {i} Extension")
-            
         df_template = pd.DataFrame(columns=columns)
-        
-        example_row = {col: "" for col in columns}
-        example_row["Target Extension Name"] = "John Doe (Example)"
-        example_row["Target Extension Number"] = "101"
-        example_row["Target Extension ID"] = "123456789"
-        example_row["Line 1 Name"] = "Jane Smith"
-        example_row["Line 1 Extension"] = "102"
-        example_row["Line 2 Name"] = "CLEAR"
-        example_row["Line 2 Extension"] = "CLEAR"
-        
-        df_examples = pd.DataFrame([example_row])
-        
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_template.to_excel(writer, sheet_name='Template', index=False)
-            df_examples.to_excel(writer, sheet_name='Examples', index=False)
+            df_template.to_excel(writer, index=False)
         output.seek(0)
-        
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-                         as_attachment=True, download_name='BLF_Update_Template.xlsx')
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='Template.xlsx')
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -70,7 +52,6 @@ def generate_audit_report():
         data = request.json
         selected_users = data.get('users', [])
         manager = RCPresenceManager()
-        
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
         
@@ -80,7 +61,6 @@ def generate_audit_report():
             settings = manager.get_presence_settings(ext_id)
             lines_resp = manager.get_monitored_lines(ext_id)
             records = lines_resp.get('records') or []
-
             row = {
                 "Target Extension Name": user.get('name', ''),
                 "Target Extension Number": user.get('extensionNumber', ''),
@@ -89,24 +69,20 @@ def generate_audit_report():
                 "Enable Me to Pickup a Monitored Line": settings.get('pickUpCallsOnHold', False),
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
-
             for i, record in enumerate(records):
                 line_idx = i + 1
                 ext_obj = record.get('extension') or {}
                 m_id = str(ext_obj.get('id', ''))
                 master = id_to_ext_map.get(m_id, {})
-                
                 row[f"Line {line_idx} Name"] = f"{'[LOCKED] ' if record.get('notEditableOnHud') else ''}{master.get('name') or ext_obj.get('name') or ''}"
                 row[f"Line {line_idx} Extension"] = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
-            
             audit_data.append(row)
-            
         df = pd.DataFrame(audit_data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='Audit.xlsx')
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -129,7 +105,7 @@ def update_blf():
             t_id = str(row.get(target_col, "")).split('.')[0].strip()
             if not t_id or t_id.lower() == 'nan': continue
             
-            # 1. Toggles
+            # 1. Toggles (Always Fire if present)
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -138,51 +114,69 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # 2. Smart Extension Logic (1-100)
+            # 2. Get Real Provisioned Slots
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
-            existing_slots = {i+1: r for i, r in enumerate(live_records)}
             
             payload_records = []
             seen_extensions = set()
+            skipped_slots = []
 
-            for i in range(1, 101):
-                record = existing_slots.get(i)
-                sheet_col = f"Line {i} Extension"
+            # We ONLY update what exists in live_records. 
+            # If RingCentral gives 4 records, we can only update 4 lines.
+            for i, record in enumerate(live_records):
+                line_num = i + 1
+                real_id = str(record.get('id'))
+                is_locked = record.get('notEditableOnHud', False)
+                
+                sheet_col = f"Line {line_num} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
-                
-                if record and record.get('notEditableOnHud'):
-                    ext_id = str(record.get('extension', {}).get('id', ''))
-                    if ext_id:
-                        payload_records.append({"id": str(record.get('id')), "extension": {"id": ext_id}})
-                        seen_extensions.add(ext_id)
+
+                # Keep locked lines exactly as they are
+                if is_locked:
+                    curr_id = record.get('extension', {}).get('id')
+                    if curr_id:
+                        payload_records.append({"id": real_id, "extension": {"id": str(curr_id)}})
+                        seen_extensions.add(str(curr_id))
                     continue
 
-                current_ext_id = str(record.get('extension', {}).get('id', '')) if record else None
+                # If spreadsheet is blank, keep current
                 if pd.isna(val) or str(val).strip() == "":
-                    if current_ext_id and current_ext_id not in seen_extensions:
-                        payload_records.append({"id": str(record.get('id')), "extension": {"id": current_ext_id}})
-                        seen_extensions.add(current_ext_id)
+                    curr_id = record.get('extension', {}).get('id')
+                    if curr_id and str(curr_id) not in seen_extensions:
+                        payload_records.append({"id": real_id, "extension": {"id": str(curr_id)}})
+                        seen_extensions.add(str(curr_id))
                     continue
-                
+
                 val_str = str(val).split('.')[0].strip()
                 if val_str.upper() == "CLEAR": continue
-                
+
+                # Map number to ID
                 mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-                if mon_id in seen_extensions: continue
-                
-                # Fallback to index if no System ID exists
-                final_id = str(record.get('id')) if record else str(i)
-                payload_records.append({"id": final_id, "extension": {"id": mon_id}})
-                seen_extensions.add(mon_id)
+                if mon_id not in seen_extensions:
+                    payload_records.append({"id": real_id, "extension": {"id": mon_id}})
+                    seen_extensions.add(mon_id)
 
-            # 3. Update
-            try:
-                manager.update_monitored_lines(t_id, payload_records)
+            # Check if user tried to fill lines the system doesn't have slots for
+            for i in range(len(live_records) + 1, 101):
+                col = f"Line {i} Extension"
+                if col in df.columns and not pd.isna(row.get(col)) and str(row.get(col)).strip() != "":
+                    skipped_slots.append(str(i))
+
+            if skipped_slots:
+                results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_slots)} ignored (system only has {len(live_records)} slots).")
+
+            # 3. FORCE THE UPDATE (No more "diff" check)
+            if payload_records:
+                try:
+                    manager.update_monitored_lines(t_id, payload_records)
+                    results["success"] += 1
+                except Exception as e:
+                    results["errors"].append(f"Ext {t_id}: {str(e)}")
+            elif toggles:
                 results["success"] += 1
-            except Exception as e:
-                results["errors"].append(f"Ext {t_id}: {str(e)}")
 
-        return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
+        return jsonify({"status": "completed", "message": f"Processed {results['success']} users", "errors": results["errors"]})
     except Exception as e:
+        logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
