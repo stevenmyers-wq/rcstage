@@ -7,10 +7,24 @@ class RCPresenceManager:
         self.account_id = account_id
         self.base_path = f"/restapi/v1.0/account/{self.account_id}"
 
-    def get_all_users(self):
+    def get_sites(self):
+        try:
+            # Fetches the list of sites for the UI dropdown filter
+            endpoint = f"{self.base_path}/sites"
+            response = rc_api_call(endpoint, method="GET")
+            return response.get('records', []) if response else []
+        except Exception as e:
+            logging.error(f"Failed to fetch sites: {e}")
+            return []
+
+    def get_all_users(self, site_id=None):
         try:
             endpoint = f"{self.base_path}/extension"
             params = {"type": ["User"], "perPage": 1000} 
+            # If the UI passes a site, append it to the API request
+            if site_id and str(site_id).strip() != "":
+                params["siteId"] = site_id
+                
             response = rc_api_call(endpoint, method="GET", params=params)
             return response.get('records', []) if response else []
         except Exception as e:
@@ -54,31 +68,4 @@ class RCPresenceManager:
 
     def update_monitored_lines(self, extension_id, line_records):
         payload = {"records": line_records}
-        payload_str = json.dumps(payload)
-        
-        # DEFINITIVE PROOF LOGGING: Print exactly what we are about to send to GCP
-        logging.warning(f"=== OUTGOING PAYLOAD FOR {extension_id} ===")
-        logging.warning(payload_str)
-        
-        try:
-            result = rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
-            
-            # If the wrapper swallowed a 400 and returned None
-            if result is None:
-                raise Exception(f"Your wrapper hid the error. Sent Payload: {payload_str}")
-                
-            return result
-            
-        except Exception as e:
-            # Attempt to rip the raw RingCentral error body out of the Exception object
-            rc_error_reason = "Could not extract raw RC body."
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    rc_error_reason = e.response.text
-                except:
-                    pass
-            
-            # Throw everything back to the UI so you can read it directly
-            definitive_error = f"SENT: {payload_str} || RC_RESPONSE: {rc_error_reason}"
-            logging.error(f"DEFINITIVE FAILURE: {definitive_error}")
-            raise Exception(definitive_error)
+        return rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
