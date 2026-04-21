@@ -1,4 +1,5 @@
 import io
+import json
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
@@ -9,6 +10,19 @@ presence_bp = Blueprint('presence', __name__)
 def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
+
+# ==========================================
+# NEW: DIAGNOSTIC ROUTE
+# Go to /api/presence/debug/224995125 in your browser
+# ==========================================
+@presence_bp.route('/api/presence/debug/<extension_id>', methods=['GET'])
+def debug_raw_lines(extension_id):
+    try:
+        manager = RCPresenceManager()
+        live_resp = manager.get_monitored_lines(extension_id)
+        return jsonify(live_resp)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @presence_bp.route('/api/presence/sites', methods=['GET'])
 def get_sites():
@@ -105,7 +119,6 @@ def update_blf():
             t_id = str(row.get(target_col, "")).split('.')[0].strip()
             if not t_id or t_id.lower() == 'nan': continue
             
-            # 1. Update Toggles
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -114,21 +127,23 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # 2. Get Live Array
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
-            existing_slots = {i+1: r for i, r in enumerate(live_records)}
             
+            # --- DIAGNOSTIC LOGGING ---
+            logging.info(f"========== EXTENSION {t_id} DIAGNOSTICS ==========")
+            logging.info("RAW GET RESPONSE FROM RC:")
+            logging.info(json.dumps(live_resp, indent=2))
+            
+            existing_slots = {i+1: r for i, r in enumerate(live_records)}
             payload_records = []
             seen_extensions = set()
 
-            # 3. Build Ordered Array for RingCentral
             for i in range(1, 101):
                 record = existing_slots.get(i)
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
-                # Rule A: Hardware Locked Lines (Preserve ID and Extension)
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
@@ -136,29 +151,22 @@ def update_blf():
                         seen_extensions.add(str(ext_id))
                     continue
 
-                # Rule B: Clear Intent (Skip appending to array = slot removed)
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
                     continue 
 
-                # Rule C: Update with New Value
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
-                    
-                    # 1. Resolve to UUID
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
                     
-                    # 2. STRICT VALIDATOR: Prevent CMN-101 Crashes
                     if not mon_id:
                         if len(val_str) >= 7 and val_str.isdigit():
-                            mon_id = val_str # Likely a manually typed UUID, accept it
+                            mon_id = val_str 
                         else:
                             results["errors"].append(f"Ext {t_id}: Line {i} skipped. Could not resolve Ext '{val_str}' to a system UUID.")
                             continue
                             
                     if mon_id not in seen_extensions:
                         new_line = {"extension": {"id": mon_id}}
-                        
-                        # Apply Expert Solution: Provide 'id' if replacing an existing slot, OMIT if adding a new one.
                         if record and 'id' in record:
                             new_line["id"] = str(record['id'])
                             
@@ -166,14 +174,18 @@ def update_blf():
                         seen_extensions.add(mon_id)
                     continue
 
-                # Rule D: Spreadsheet is blank, preserve existing
                 if record:
                     curr_id = record.get('extension', {}).get('id')
                     if curr_id and str(curr_id) not in seen_extensions:
                         payload_records.append({"id": str(record.get('id')), "extension": {"id": str(curr_id)}})
                         seen_extensions.add(str(curr_id))
 
-            # 4. Fire the Update Array
+            # --- DIAGNOSTIC LOGGING ---
+            final_payload = {"records": payload_records}
+            logging.info("PAYLOAD ABOUT TO BE SENT TO RC:")
+            logging.info(json.dumps(final_payload, indent=2))
+            logging.info("==================================================")
+
             if payload_records:
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
