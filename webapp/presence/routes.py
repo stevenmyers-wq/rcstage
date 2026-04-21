@@ -250,4 +250,37 @@ def update_blf_from_file():
 
                     if has_line_changes:
                         # Re-sort and build array INLCUDING locked lines.
-                        # We use enumerate to force a sequential 1, 2, 3, 4
+                        # We use enumerate to force a sequential 1, 2, 3, 4, 5 array to prevent gap errors.
+                        sorted_keys = sorted(final_lines.keys())
+                        new_records = []
+                        for i, k in enumerate(sorted_keys):
+                            new_records.append({
+                                "id": str(i + 1), 
+                                "extension": {"id": str(final_lines[k])}
+                            })
+                            
+                        print(f"\n{'='*50}\nDEBUG PAYLOAD (MERGED) FOR EXT {target_id}:\n{new_records}\n{'='*50}\n")
+                        manager.update_monitored_lines(target_id, new_records)
+                        updates_attempted = True
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if "Presence-102" in error_msg:
+                        results["errors"].append(f"Ext {target_id}: Update rejected (HUD Limitation). Ensure lines 1 and 2 are present and you have not exceeded phone button limits.")
+                    else:
+                        results["errors"].append(f"Ext {target_id}: BLF update failed - {error_msg}")
+
+            if updates_attempted:
+                results["success"] += 1
+            else:
+                results["errors"].append(f"Ext {target_id}: No valid line changes found.")
+
+        return jsonify({
+            "status": "completed", 
+            "message": f"Processed updates for {results['success']} users.",
+            "errors": results["errors"]
+        })
+
+    except Exception as e:
+        logging.error(f"Upload Error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
