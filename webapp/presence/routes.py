@@ -10,11 +10,23 @@ def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
+@presence_bp.route('/api/presence/sites', methods=['GET'])
+def get_sites():
+    try:
+        manager = RCPresenceManager()
+        sites = manager.get_sites()
+        return jsonify({"status": "success", "sites": sites})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @presence_bp.route('/api/presence/users', methods=['GET'])
 def get_users():
     try:
+        # Grab the site_id from the query parameters (e.g., /api/presence/users?site_id=87654321)
+        site_id = request.args.get('site_id')
+        
         manager = RCPresenceManager()
-        users = manager.get_all_users()
+        users = manager.get_all_users(site_id=site_id)
         return jsonify({"status": "success", "users": users})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -22,7 +34,6 @@ def get_users():
 @presence_bp.route('/api/presence/template', methods=['GET'])
 def get_template():
     try:
-        # Define the exact core columns expected by the update script
         columns = [
             "Target Extension Name",
             "Target Extension Number",
@@ -32,17 +43,45 @@ def get_template():
             "Allow other users to see my presence status"
         ]
         
-        # Dynamically append Line 1 through Line 100 columns
         for i in range(1, 101):
             columns.append(f"Line {i} Extension")
             
-        # Create an empty DataFrame with these columns
-        df = pd.DataFrame(columns=columns)
+        df_template = pd.DataFrame(columns=columns)
         
-        # Save to memory and send to user
+        # --- Build Example Row ---
+        example_row = {col: "" for col in columns}
+        example_row["Target Extension Name"] = "John Doe (Informational)"
+        example_row["Target Extension Number"] = "101 (Informational)"
+        example_row["Target Extension ID"] = "123456789 (REQUIRED)"
+        example_row["Ring on Monitored Call"] = "TRUE"
+        example_row["Enable Me to Pickup a Monitored Line"] = "FALSE"
+        example_row["Allow other users to see my presence status"] = "TRUE"
+        example_row["Line 1 Extension"] = "Leave blank if keeping existing/locked"
+        example_row["Line 2 Extension"] = "Leave blank if keeping existing/locked"
+        example_row["Line 3 Extension"] = "233306125 (Will assign this ext to Line 3)"
+        example_row["Line 4 Extension"] = "CLEAR (Will wipe the existing user on Line 4)"
+        
+        df_examples = pd.DataFrame([example_row])
+        
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
+            df_template.to_excel(writer, sheet_name='Template', index=False)
+            df_examples.to_excel(writer, sheet_name='Examples', index=False)
+            
+            # Auto-widen columns on the Examples tab so it's readable
+            worksheet = writer.sheets['Examples']
+            for col in worksheet.columns:
+                max_length = 0
+                column_letter = col[0].column_letter 
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                # Set width with a little padding
+                worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
+                
         output.seek(0)
         
         return send_file(
@@ -147,23 +186,19 @@ def update_blf():
 
             # --- 3. MAP SPREADSHEET TO EXISTING REAL IDs ---
             for i, record in enumerate(live_records):
-                # Extract the literal system identifier, whatever format it is
                 real_slot_id = str(record.get('id')) 
                 is_locked = record.get('notEditableOnHud', False)
                 current_ext_id = str(record.get('extension', {}).get('id', ''))
                 
-                # Look at the corresponding column in the spreadsheet
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # Rule 1: Hardware locked primary lines
                 if is_locked:
                     if current_ext_id:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
                         seen_extensions.add(current_ext_id)
                     continue
                 
-                # Rule 2: Blank spreadsheet cell -> keep existing configuration
                 if pd.isna(val) or str(val).strip() == "":
                     if current_ext_id and current_ext_id not in seen_extensions:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
@@ -172,23 +207,19 @@ def update_blf():
                 
                 val_str = str(val).split('.')[0].strip()
                 
-                # Rule 3: Clear intent
                 if val_str.upper() == "CLEAR":
-                    continue # Omitting the ID from the payload clears the slot
+                    continue 
                 
-                # Rule 4: Update with new extension
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 if monitored_id in seen_extensions:
-                    continue # Stop duplicates
+                    continue 
                 
-                # Build the minimal requested object using the REAL id
                 payload_records.append({
                     "id": real_slot_id,
                     "extension": {"id": monitored_id}
                 })
                 seen_extensions.add(monitored_id)
 
-            # Check if user tried to add lines beyond what the system has IDs for
             skipped_lines = []
             for i in range(len(live_records) + 1, 101):
                 sheet_col = f"Line {i} Extension"
