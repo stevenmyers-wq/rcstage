@@ -90,8 +90,6 @@ def update_blf():
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         
         results = {"success": 0, "errors": []}
-        
-        # Regex finds columns safely regardless of spaces
         line_cols = [c for c in df.columns if "line" in c.lower() and "extension" in c.lower()]
 
         for _, row in df.iterrows():
@@ -117,6 +115,7 @@ def update_blf():
             final_lines = {}
             locked_slots = set()
             
+            # Capture the current state precisely as the Echo Test did
             for r in live_records:
                 l_id = str(r.get('id'))
                 ext_id = r.get('extension', {}).get('id')
@@ -129,7 +128,6 @@ def update_blf():
 
             # --- 3. OVERLAY SPREADSHEET ---
             for col in line_cols:
-                # Safely extract line number using Regex
                 match = re.search(r'\d+', col)
                 if not match: continue
                 l_idx = str(match.group())
@@ -159,14 +157,17 @@ def update_blf():
                     final_lines[l_idx] = monitored_id
                     has_changes = True
 
-            # --- 4. BUILD PAYLOAD & STRIP LOCKED LINES ---
+            # --- 4. BUILD PAYLOAD ---
             if has_changes:
                 payload_records = []
-                for k, v in final_lines.items():
-                    # THE FIX: Completely exclude hardware-locked lines from the request
-                    if k in locked_slots:
-                        continue
-                    payload_records.append({"id": k, "extension": {"id": v}})
+                
+                # THE FIX: We MUST include the locked slots in the array exactly as they were.
+                # Sorting numerically ensures '10' comes after '9', preventing RingCentral array order errors.
+                for k in sorted(final_lines.keys(), key=lambda x: int(x)):
+                    payload_records.append({
+                        "id": str(k),
+                        "extension": {"id": final_lines[k]}
+                    })
                 
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
@@ -186,53 +187,3 @@ def update_blf():
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@presence_bp.route('/api/presence/diagnose/<target_ext_id>', methods=['GET'])
-def diagnose_blf(target_ext_id):
-    """Diagnostic tool to run the Echo Test and expose raw API responses."""
-    from webapp.rc_api import rc_api_call
-    manager = RCPresenceManager()
-    
-    diagnostic_log = {
-        "1_Target": target_ext_id,
-        "2_GET_Request": "Attempting to fetch current state...",
-        "3_Current_State": None,
-        "4_PUT_Request": "Attempting to echo exact state back...",
-        "5_PUT_Response": None,
-        "6_Error_Details": None
-    }
-
-    try:
-        # 1. Fetch current state
-        current_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="GET")
-        current_records = current_data.get('records', [])
-        diagnostic_log["3_Current_State"] = current_records
-
-        # 2. Build the Echo Payload (Exactly as the schema requests)
-        # We only pass 'id' and 'extension: {id}'
-        echo_records = []
-        for r in current_records:
-            ext_id = r.get('extension', {}).get('id')
-            if ext_id:
-                echo_records.append({
-                    "id": str(r.get('id')),
-                    "extension": {"id": str(ext_id)}
-                })
-        
-        diagnostic_log["4_PUT_Request"] = echo_records
-
-        # 3. Fire the PUT request
-        put_response = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="PUT", json={"records": echo_records})
-        diagnostic_log["5_PUT_Response"] = put_response
-
-        return jsonify({"status": "SUCCESS - Echo Test Passed", "diagnostics": diagnostic_log})
-
-    except Exception as e:
-        # Catch the exact HTTP response body from RingCentral
-        diagnostic_log["5_PUT_Response"] = "FAILED"
-        if hasattr(e, 'response') and hasattr(e.response, 'text'):
-            diagnostic_log["6_Error_Details"] = e.response.text
-        else:
-            diagnostic_log["6_Error_Details"] = str(e)
-            
-        return jsonify({"status": "FAILED - 400 Bad Request", "diagnostics": diagnostic_log}), 400
