@@ -12,7 +12,6 @@ def parse_bool(val):
         return None
     if isinstance(val, bool): 
         return val
-    # Handles strings like "FALSE", "0", "No", etc.
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
 @presence_bp.route('/api/presence/users', methods=['GET'])
@@ -163,18 +162,17 @@ def update_blf_from_file():
         else:
             df = pd.read_excel(file, sheet_name=0)
             
-        # CRITICAL FIX: Aggressively strip hidden CSV BOMs and spaces
+        # Clean headers
         df.columns = df.columns.astype(str).str.replace('\ufeff', '').str.strip()
 
-        # Safely find columns ignoring case
         target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
         if not target_col:
-            return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct sheet."}), 400
+            return jsonify({"status": "error", "message": "Missing column: Target Extension ID."}), 400
 
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # Build the Translator (Extension Number -> ID)
+        # Translators
         all_exts = manager.get_all_extensions_raw()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
@@ -184,7 +182,6 @@ def update_blf_from_file():
         see_col = next((c for c in df.columns if "see my presence" in c.lower()), None)
         line_ext_cols = [c for c in df.columns if c.lower().startswith("line ") and c.lower().endswith("extension")]
 
-        # Use to_dict('records') for perfectly safe row iteration
         records = df.to_dict('records')
 
         for row in records:
@@ -216,49 +213,77 @@ def update_blf_from_file():
                     current_lines_resp = manager.get_monitored_lines(target_id)
                     current_records = current_lines_resp.get('records', [])
                     
-                    # Pre-fill with current live configuration
-                    line_map = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in current_records}
+                    final_lines = {}
+                    locked_lines = set()
+
+                    # Pre-fill safe current records
+                    for r in current_records:
+                        l_id = str(r.get('id'))
+                        ext_id = r.get('extension', {}).get('id')
+                        
+                        # Prevent str(None) bug
+                        if ext_id:
+                            final_lines[int(l_id)] = str(ext_id)
+                            
+                        # If API explicitly locks it, mark it
+                        if r.get('notEditableOnHud') is True:
+                            locked_lines.add(int(l_id))
+
                     has_line_changes = False
 
+                    # Overlay spreadsheet data
                     for col in line_ext_cols:
-                        line_num = str(col).lower().replace('line', '').replace('extension', '').strip()
+                        val = row.get(col)
+                        line_num = int(str(col).lower().replace('line', '').replace('extension', '').strip())
                         
-                        # Local Guardrail: API forbids modifying slots 1 and 2 directly.
-                        if line_num in ["1", "2"]:
+                        # Skip if RingCentral strictly locked this slot
+                        if line_num in locked_lines:
                             continue
                             
-                        val = row.get(col)
-                        
-                        # If cell is cleared, remove the line
                         if pd.isna(val) or str(val).strip() == "":
-                            if line_num in line_map:
-                                del line_map[line_num]
+                            # Delete the line if it was cleared
+                            if line_num in final_lines:
+                                del final_lines[line_num]
                                 has_line_changes = True
                         else:
-                            # Cell has a value, apply translator engine
                             raw_val = str(val).split('.')[0].strip()
-                            monitored_id = raw_val
-                            if raw_val in id_set: monitored_id = raw_val
-                            elif raw_val in ext_map: monitored_id = ext_map[raw_val]
                             
-                            if line_map.get(line_num) != monitored_id:
-                                line_map[line_num] = monitored_id
+                            if raw_val in id_set: 
+                                monitored_id = raw_val
+                            elif raw_val in ext_map: 
+                                monitored_id = ext_map[raw_val]
+                            elif raw_val.isdigit() and len(raw_val) > 5:
+                                # Safe Fallback for Speed Dials not in ext_map
+                                monitored_id = raw_val
+                            else:
+                                results["errors"].append(f"Ext {target_id}: '{raw_val}' is an invalid ID/Number. Skipping Line {line_num}.")
+                                continue
+                                
+                            if final_lines.get(line_num) != monitored_id:
+                                final_lines[line_num] = monitored_id
                                 has_line_changes = True
 
                     if has_line_changes:
-                        # Construct exact required RingCentral Array
-                        new_records = [{"id": str(k), "extension": {"id": str(v)}} for k, v in line_map.items()]
+                        # Rebuild exactly sequential, 1-based array to prevent Gap 400s
+                        sorted_keys = sorted(final_lines.keys())
+                        new_records = []
+                        for i, k in enumerate(sorted_keys):
+                            new_records.append({
+                                "id": str(i + 1),
+                                "extension": {"id": final_lines[k]}
+                            })
+                            
                         manager.update_monitored_lines(target_id, new_records)
                         updates_attempted = True
                         
                 except Exception as e:
-                    results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
+                    results["errors"].append(f"Ext {target_id}: BLF lines update failed - {str(e)}")
 
             # --- 3. FINAL REPORTING ---
             if updates_attempted:
                 results["success"] += 1
             else:
-                results["errors"].append(f"Ext {target_id}: No changes detected in the uploaded file.")
+                results["errors"].append(f"Ext {target_id}: No changes detected (or lines were locked).")
 
         return jsonify({
             "status": "completed", 
