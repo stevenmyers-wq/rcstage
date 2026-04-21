@@ -34,15 +34,18 @@ def generate_audit_report():
 
         manager = RCPresenceManager()
         
-        all_exts = manager.get_all_extensions_raw() or []
-        id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
+        # Robust dictionary fetch with a guaranteed fallback
+        all_exts = manager.get_all_extensions_raw()
+        if not all_exts:
+            all_exts = manager.get_all_users() or []
+            
+        id_to_ext_map = {str(e.get('id')).strip(): e for e in all_exts if e.get('id')}
 
         audit_data = []
 
         for user in selected_users:
             ext_id = user.get('id')
             
-            # Use 'or {}' and 'or []' to prevent NoneType crashes from null API payloads
             settings = manager.get_presence_settings(ext_id) or {}
             lines_response = manager.get_monitored_lines(ext_id) or {}
             records = lines_response.get('records') or []
@@ -62,9 +65,8 @@ def generate_audit_report():
                 if not line_id_str or not str(line_id_str).isdigit(): continue
                 
                 line_num = int(line_id_str)
-                # Safely extract the extension object even if the API passes null
                 ext_obj = record.get('extension') or {}
-                monitored_ext_id = str(ext_obj.get('id', ''))
+                monitored_ext_id = str(ext_obj.get('id', '')).strip()
                 
                 # Recursive Name Lookup
                 if monitored_ext_id and monitored_ext_id in id_to_ext_map:
@@ -171,9 +173,18 @@ def update_blf_from_file():
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        all_exts = manager.get_all_extensions_raw() or []
-        ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
-        id_set = {str(e.get('id')) for e in all_exts}
+        # Robust dictionary fetch with guaranteed fallback
+        all_exts = manager.get_all_extensions_raw()
+        if not all_exts:
+            all_exts = manager.get_all_users() or []
+            
+        ext_map = {}
+        id_set = set()
+        for e in all_exts:
+            e_id = str(e.get('id')).strip()
+            e_num = str(e.get('extensionNumber', '')).strip()
+            if e_id: id_set.add(e_id)
+            if e_num: ext_map[e_num] = e_id
 
         ring_col = next((c for c in df.columns if "ring on monitored" in c.lower()), None)
         pickup_col = next((c for c in df.columns if "pickup a monitored" in c.lower()), None)
@@ -216,7 +227,6 @@ def update_blf_from_file():
 
                     for r in current_records:
                         l_id = str(r.get('id'))
-                        # Null-safe extraction for all object paths
                         ext_obj = r.get('extension') or {}
                         ext_id = ext_obj.get('id')
                         
@@ -242,11 +252,13 @@ def update_blf_from_file():
                         else:
                             raw_val = str(val).split('.')[0].strip()
                             
+                            # Translator Engine
                             if raw_val in id_set: 
                                 monitored_id = raw_val
                             elif raw_val in ext_map: 
                                 monitored_id = ext_map[raw_val]
                             elif raw_val.isdigit() and len(raw_val) > 5:
+                                # Safe bypass for Speed Dials which have long raw IDs
                                 monitored_id = raw_val
                             else:
                                 results["errors"].append(f"Ext {target_id}: '{raw_val}' is an invalid ID/Number. Skipping Line {line_num}.")
@@ -259,6 +271,7 @@ def update_blf_from_file():
                     if has_line_changes:
                         sorted_keys = sorted(final_lines.keys())
                         new_records = []
+                        # Compress gaps while retaining chronological order
                         for i, k in enumerate(sorted_keys):
                             new_records.append({
                                 "id": str(i + 1),
