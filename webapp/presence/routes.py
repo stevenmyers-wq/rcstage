@@ -219,24 +219,19 @@ def update_blf_from_file():
                             raw_val = str(val).split('.')[0].strip()
                             monitored_id = None
                             
-                            # 1. Check if it's already an ID
                             if raw_val in id_set: 
                                 monitored_id = raw_val
-                            # 2. Check the bulk dictionary map
                             elif raw_val in ext_map: 
                                 monitored_id = ext_map[raw_val]
                             else:
-                                # 3. TARGETED SEARCH: Direct API call if bulk map missed it
                                 direct_id = manager.get_extension_by_number(raw_val)
                                 if direct_id:
                                     monitored_id = direct_id
-                                    # Add to cache to save future calls
                                     ext_map[raw_val] = direct_id
                                     id_set.add(direct_id)
                                 elif raw_val.isdigit() and len(raw_val) > 5:
                                     monitored_id = raw_val
                             
-                            # FAILSAFE: Prevent 400 Bad Requests by dropping invalid IDs
                             if not monitored_id:
                                 results["errors"].append(f"Ext {target_id}: Cannot find internal ID for '{raw_val}'. Skipping Line {line_num}.")
                                 continue
@@ -246,13 +241,17 @@ def update_blf_from_file():
                                 has_line_changes = True
 
                     if has_line_changes:
-                        # Map directly to exact slots to prevent breaking existing assignments
-                        new_records = [{"id": str(k), "extension": {"id": str(v)}} for k, v in final_lines.items()]
+                        # Map directly to exact slots
+                        sorted_keys = sorted(final_lines.keys())
+                        new_records = [{"id": str(k), "extension": {"id": str(final_lines[k])}} for k in sorted_keys]
+                        
+                        # --- DEBUG TRAP: Print the Exact Payload ---
+                        print(f"\n{'='*50}\nDEBUG PAYLOAD FOR EXT {target_id}:\n{new_records}\n{'='*50}\n")
+                        
                         manager.update_monitored_lines(target_id, new_records)
                         updates_attempted = True
                         
                 except Exception as e:
-                    # Capture exact RingCentral error
                     results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
 
             if updates_attempted:
