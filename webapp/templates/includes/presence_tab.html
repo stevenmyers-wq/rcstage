@@ -196,8 +196,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Select All Logic
     selectAllCheckbox.addEventListener('change', (e) => {
-        const checkboxes = document.querySelectorAll('.user-checkbox');
-        checkboxes.forEach(cb => cb.checked = e.target.checked);
+        // Only select rows that are currently visible (not filtered out)
+        const rows = usersTableBody.querySelectorAll('tr');
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                const cb = row.querySelector('.user-checkbox');
+                if (cb) cb.checked = e.target.checked;
+            }
+        });
     });
 
     // Generate Audit
