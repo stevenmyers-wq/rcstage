@@ -65,12 +65,13 @@ def generate_audit_report():
                 ext_obj = record.get('extension', {})
                 monitored_ext_id = str(ext_obj.get('id', ''))
                 
-                # Recursive Name Lookup
+                # Recursive Name Lookup (Grabs the actual user name instead of "User")
                 if monitored_ext_id and monitored_ext_id in id_to_ext_map:
                     master_ext = id_to_ext_map[monitored_ext_id]
                     name_val = master_ext.get('name') or ext_obj.get('type') or 'Unknown'
                     ext_val = master_ext.get('extensionNumber') or ext_obj.get('extensionNumber') or monitored_ext_id
                 else:
+                    # Fallback for speed dials or external numbers
                     name_val = ext_obj.get('name') or ext_obj.get('type') or record.get('type') or 'Unknown'
                     ext_val = ext_obj.get('extensionNumber') or monitored_ext_id or record.get('phoneNumber') or record.get('number') or ''
                     if not ext_val and name_val == 'Unknown':
@@ -109,17 +110,7 @@ def generate_audit_report():
 @presence_bp.route('/api/presence/template', methods=['GET'])
 def download_template():
     try:
-        # Generate Base Columns
-        cols = [
-            "Target Extension Name", "Target Extension Number", "Target Extension ID",
-            "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line", "Allow other users to see my presence status"
-        ]
-        for i in range(1, 101):
-            cols.extend([f"Line {i} Name", f"Line {i} Extension"])
-            
-        df_blank = pd.DataFrame(columns=cols)
-
-        # Generate Example DataFrame
+        # Generate Example DataFrame as the ONLY tab so it cannot be exported blank
         example_data = {
             "Target Extension Name": ["Steve Mobile", "Test Account"],
             "Target Extension Number": ["11134", "11135"],
@@ -134,6 +125,8 @@ def download_template():
             "Line 3 Name": ["Some Shared Line", ""],
             "Line 3 Extension": ["81827", ""]
         }
+        
+        # Pad the example out to 100 columns
         for i in range(4, 101):
             example_data[f"Line {i} Name"] = ["", ""]
             example_data[f"Line {i} Extension"] = ["", ""]
@@ -142,8 +135,7 @@ def download_template():
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_blank.to_excel(writer, index=False, sheet_name='BLF_Update')
-            df_example.to_excel(writer, index=False, sheet_name='Examples')
+            df_example.to_excel(writer, index=False, sheet_name='BLF_Template')
 
         output.seek(0)
         return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Update_Template.xlsx')
@@ -163,22 +155,30 @@ def update_blf_from_file():
             df = pd.read_csv(file)
         else:
             df = pd.read_excel(file, sheet_name=0)
+
+        if df.empty:
+            return jsonify({"status": "error", "message": "The uploaded file contains no data rows. Ensure you have filled out the template."}), 400
             
-        # Clean column headers
-        df.columns = df.columns.str.strip()
+        # Clean column headers (strips spaces and hidden CSV BOM characters)
+        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
             
         if "Target Extension ID" not in df.columns:
-            return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct sheet."}), 400
+            return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct template."}), 400
 
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
+        # Build the Translator (Extension Number -> ID)
         all_exts = manager.get_all_extensions_raw()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
 
-        line_ext_cols = [c for c in df.columns if str(c).startswith("Line ") and str(c).endswith("Extension")]
+        line_ext_cols = [c for c in df.columns if str(c).lower().startswith("line ") and str(c).lower().endswith("extension")]
         line_ext_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
+
+        ring_col = next((c for c in df.columns if "ring on monitored" in str(c).lower()), None)
+        pickup_col = next((c for c in df.columns if "pickup a monitored" in str(c).lower()), None)
+        see_col = next((c for c in df.columns if "see my presence" in str(c).lower()), None)
 
         for index, row in df.iterrows():
             target_id = str(row.get("Target Extension ID", "")).split('.')[0].strip()
@@ -188,17 +188,15 @@ def update_blf_from_file():
             
             # --- 1. UPDATE SETTINGS TOGGLES ---
             settings_payload = {}
-            if "Ring on Monitored Call" in df.columns:
-                ring_val = parse_bool(row.get("Ring on Monitored Call"))
-                if ring_val is not None: settings_payload["ringOnMonitoredCall"] = ring_val
-                
-            if "Enable Me to Pickup a Monitored Line" in df.columns:
-                pickup_val = parse_bool(row.get("Enable Me to Pickup a Monitored Line"))
-                if pickup_val is not None: settings_payload["pickUpCallsOnHold"] = pickup_val
-                
-            if "Allow other users to see my presence status" in df.columns:
-                see_val = parse_bool(row.get("Allow other users to see my presence status"))
-                if see_val is not None: settings_payload["allowSeeMyPresence"] = see_val
+            if ring_col:
+                r_val = parse_bool(row.get(ring_col))
+                if r_val is not None: settings_payload["ringOnMonitoredCall"] = r_val
+            if pickup_col:
+                p_val = parse_bool(row.get(pickup_col))
+                if p_val is not None: settings_payload["pickUpCallsOnHold"] = p_val
+            if see_col:
+                s_val = parse_bool(row.get(see_col))
+                if s_val is not None: settings_payload["allowSeeMyPresence"] = s_val
                 
             if settings_payload:
                 try:
@@ -213,40 +211,47 @@ def update_blf_from_file():
                     current_lines_resp = manager.get_monitored_lines(target_id)
                     current_records = current_lines_resp.get('records', [])
                     
-                    # RingCentral rigidly enforces lines 1 & 2, omit them from the payload.
-                    locked_line_ids = ["1", "2"] 
-                    for r in current_records:
-                        if r.get('notEditableOnHud') is True:
-                            l_id = str(r.get('id'))
-                            if l_id not in locked_line_ids:
-                                locked_line_ids.append(l_id)
+                    final_lines = {}
+                    locked_line_ids = set()
 
-                    new_records = []
+                    # Preserve the existing lines to respect the API contract
+                    for r in current_records:
+                        l_id = str(r.get('id'))
+                        ext_id = str(r.get('extension', {}).get('id'))
+                        final_lines[l_id] = ext_id
+                        
+                        # Dynamically identify locked lines to prevent 400 Bad Request
+                        if r.get('notEditableOnHud') is True or l_id in ["1", "2"]:
+                            locked_line_ids.add(l_id)
+
+                    excel_has_lines = False
+                    
+                    # Overlay the requested unlocked lines from the spreadsheet
                     for col in line_ext_cols:
                         val = row.get(col)
                         if pd.notna(val) and str(val).strip() != "":
-                            line_num = str(col.split(' ')[1])
+                            line_num = str(col).lower().replace('line', '').replace('extension', '').strip()
                             
-                            # CRITICAL: Strip the locked lines from the payload to prevent 400 Errors
+                            # Skip if this line is locked by RingCentral
                             if line_num in locked_line_ids:
-                                continue
+                                continue 
                                 
+                            excel_has_lines = True
                             raw_val = str(val).split('.')[0].strip()
                             
-                            if raw_val in id_set:
-                                monitored_id = raw_val
-                            elif raw_val in ext_map:
-                                monitored_id = ext_map[raw_val]
-                            else:
-                                monitored_id = raw_val
+                            # Translator Engine
+                            if raw_val in id_set: monitored_id = raw_val
+                            elif raw_val in ext_map: monitored_id = ext_map[raw_val]
+                            else: monitored_id = raw_val
                                 
-                            new_records.append({
-                                "id": line_num, 
-                                "extension": {"id": monitored_id}
-                            })
-                            
-                    manager.update_monitored_lines(target_id, new_records)
-                    user_updated = True
+                            final_lines[line_num] = monitored_id
+
+                    if excel_has_lines:
+                        # Structure exactly as the API expects
+                        new_records = [{"id": str(k), "extension": {"id": str(v)}} for k, v in final_lines.items()]
+                        manager.update_monitored_lines(target_id, new_records)
+                        user_updated = True
+                        
                 except Exception as e:
                     results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
 
