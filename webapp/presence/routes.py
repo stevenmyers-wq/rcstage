@@ -153,16 +153,19 @@ def download_template():
 @presence_bp.route('/api/presence/update', methods=['POST'])
 def update_blf_from_file():
     try:
-        if 'file' not in request.files: return jsonify({"status": "error", "message": "No file uploaded"}), 400
+        if 'file' not in request.files: 
+            return jsonify({"status": "error", "message": "No file uploaded"}), 400
         
         file = request.files['file']
         filename = file.filename.lower()
         
-        # Transparently handle both CSV and XLSX uploads
         if filename.endswith('.csv'):
             df = pd.read_csv(file)
         else:
             df = pd.read_excel(file, sheet_name=0)
+            
+        # Clean column headers
+        df.columns = df.columns.str.strip()
             
         if "Target Extension ID" not in df.columns:
             return jsonify({"status": "error", "message": "Missing column: Target Extension ID. Ensure you are uploading the correct sheet."}), 400
@@ -185,13 +188,17 @@ def update_blf_from_file():
             
             # --- 1. UPDATE SETTINGS TOGGLES ---
             settings_payload = {}
-            ring_val = parse_bool(row.get("Ring on Monitored Call"))
-            pickup_val = parse_bool(row.get("Enable Me to Pickup a Monitored Line"))
-            see_val = parse_bool(row.get("Allow other users to see my presence status"))
-
-            if ring_val is not None: settings_payload["ringOnMonitoredCall"] = ring_val
-            if pickup_val is not None: settings_payload["pickUpCallsOnHold"] = pickup_val
-            if see_val is not None: settings_payload["allowSeeMyPresence"] = see_val
+            if "Ring on Monitored Call" in df.columns:
+                ring_val = parse_bool(row.get("Ring on Monitored Call"))
+                if ring_val is not None: settings_payload["ringOnMonitoredCall"] = ring_val
+                
+            if "Enable Me to Pickup a Monitored Line" in df.columns:
+                pickup_val = parse_bool(row.get("Enable Me to Pickup a Monitored Line"))
+                if pickup_val is not None: settings_payload["pickUpCallsOnHold"] = pickup_val
+                
+            if "Allow other users to see my presence status" in df.columns:
+                see_val = parse_bool(row.get("Allow other users to see my presence status"))
+                if see_val is not None: settings_payload["allowSeeMyPresence"] = see_val
                 
             if settings_payload:
                 try:
@@ -201,46 +208,43 @@ def update_blf_from_file():
                     results["errors"].append(f"Ext {target_id}: Settings update failed - {str(e)}")
 
             # --- 2. UPDATE BLF LINES ---
-            current_lines_resp = manager.get_monitored_lines(target_id)
-            current_records = current_lines_resp.get('records', [])
-            
-            # Build payload combining locked lines with the user's Excel lines
-            final_lines_to_send = {}
-            
-            for r in current_records:
-                l_id = str(r.get('id'))
-                # If API explicitly says it cannot be changed, preserve it
-                if r.get('notEditableOnHud') is True:
-                    final_lines_to_send[l_id] = str(r.get('extension', {}).get('id'))
-
-            excel_has_lines = False
-            for col in line_ext_cols:
-                val = row.get(col)
-                if pd.notna(val) and str(val).strip() != "":
-                    excel_has_lines = True
-                    line_num = str(col.split(' ')[1])
-                    
-                    # Skip altering if the API rules locked this specific slot
-                    if line_num in final_lines_to_send: continue 
-                        
-                    raw_val = str(val).split('.')[0].strip()
-                    
-                    if raw_val in id_set:
-                        monitored_id = raw_val
-                    elif raw_val in ext_map:
-                        monitored_id = ext_map[raw_val]
-                    else:
-                        monitored_id = raw_val
-                        
-                    final_lines_to_send[line_num] = monitored_id
-
-            if excel_has_lines:
-                new_records = [{"id": l_id, "extension": {"id": final_lines_to_send[l_id]}} 
-                               for l_id in sorted(final_lines_to_send.keys(), key=lambda x: int(x))]
-                
+            if len(line_ext_cols) > 0:
                 try:
-                    # The first two lines always indicate the user's extension presence, they cannot be changed[cite: 25, 26, 38, 39].
-                    # By preserving `notEditableOnHud` records from above, we safely comply with this API rule.
+                    current_lines_resp = manager.get_monitored_lines(target_id)
+                    current_records = current_lines_resp.get('records', [])
+                    
+                    # RingCentral rigidly enforces lines 1 & 2, omit them from the payload.
+                    locked_line_ids = ["1", "2"] 
+                    for r in current_records:
+                        if r.get('notEditableOnHud') is True:
+                            l_id = str(r.get('id'))
+                            if l_id not in locked_line_ids:
+                                locked_line_ids.append(l_id)
+
+                    new_records = []
+                    for col in line_ext_cols:
+                        val = row.get(col)
+                        if pd.notna(val) and str(val).strip() != "":
+                            line_num = str(col.split(' ')[1])
+                            
+                            # CRITICAL: Strip the locked lines from the payload to prevent 400 Errors
+                            if line_num in locked_line_ids:
+                                continue
+                                
+                            raw_val = str(val).split('.')[0].strip()
+                            
+                            if raw_val in id_set:
+                                monitored_id = raw_val
+                            elif raw_val in ext_map:
+                                monitored_id = ext_map[raw_val]
+                            else:
+                                monitored_id = raw_val
+                                
+                            new_records.append({
+                                "id": line_num, 
+                                "extension": {"id": monitored_id}
+                            })
+                            
                     manager.update_monitored_lines(target_id, new_records)
                     user_updated = True
                 except Exception as e:
