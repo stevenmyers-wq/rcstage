@@ -128,14 +128,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { console.error('Error loading sites:', error); }
     }
 
-    // --- 2. Fetch Users ---
+    // --- 2. Fetch Users (Fetch ALL once, filter in browser) ---
     async function fetchUsers() {
         usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500">Loading users...</td></tr>';
-        const siteId = siteSelect.value;
-        const url = siteId ? `/api/presence/users?site_id=${siteId}` : '/api/presence/users';
         
+        // Always fetch all to allow instant client-side filtering
         try {
-            const response = await fetch(url);
+            const response = await fetch('/api/presence/users');
             const data = await response.json();
             
             if (data.status === 'success') {
@@ -149,20 +148,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 3. Render Table & Apply Filters ---
+    // --- 3. Render Table & Apply All Filters ---
     function renderTable() {
         usersTableBody.innerHTML = '';
         const globalTerm = globalSearch.value.toLowerCase();
+        
+        // Get the actual text of the selected site (e.g., "Main Site")
+        const selectedSiteName = siteSelect.value ? siteSelect.options[siteSelect.selectedIndex].text.toLowerCase() : '';
         
         allUsersData.forEach(user => {
             const name = (user.name || '').toLowerCase();
             const ext = (user.extensionNumber || '').toLowerCase();
             const id = String(user.id).toLowerCase();
-            const siteName = (user.site && user.site.name) ? user.site.name : 'Main Site';
+            // RingCentral omits the site object for the default site, so we fallback to 'Main site'
+            const siteName = (user.site && user.site.name) ? user.site.name : 'Main site';
             const siteNameLower = siteName.toLowerCase();
 
+            // 1. Dropdown Site Filter
+            if (selectedSiteName && siteNameLower !== selectedSiteName) return;
+
+            // 2. Global Search Filter
             if (globalTerm && !name.includes(globalTerm) && !ext.includes(globalTerm)) return;
 
+            // 3. Inline Column Filters
             let passesInline = true;
             inlineFilters.forEach(input => {
                 const term = input.value.toLowerCase();
@@ -177,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!passesInline) return;
 
+            // Render Row
             const tr = document.createElement('tr');
             tr.className = "hover:bg-gray-50 transition-colors";
             tr.innerHTML = `
@@ -199,7 +208,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     globalSearch.addEventListener('input', renderTable);
     inlineFilters.forEach(input => input.addEventListener('input', renderTable));
-    siteSelect.addEventListener('change', fetchUsers);
+    
+    // CHANGED: Trigger renderTable instantly instead of hitting the API again
+    siteSelect.addEventListener('change', renderTable); 
+    
     document.getElementById('refresh-users-btn').addEventListener('click', fetchUsers);
 
     selectAllCheckbox.addEventListener('change', (e) => {
