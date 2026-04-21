@@ -1,5 +1,4 @@
 import io
-import re
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
@@ -48,23 +47,19 @@ def generate_audit_report():
 
             assigned_map = {str(r.get('id')): r for r in records}
             
-            for i in range(1, 101):
-                record = assigned_map.get(str(i))
-                if record:
-                    ext_obj = record.get('extension') or {}
-                    m_id = str(ext_obj.get('id', ''))
-                    
-                    master = id_to_ext_map.get(m_id, {})
-                    type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
-                    name = master.get('name') or ext_obj.get('name') or type_label
-                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
-                    
-                    lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
-                    row[f"Line {i} Name"] = f"{lock_status}{name} ({type_label})"
-                    row[f"Line {i} Extension"] = str(ext_num)
-                else:
-                    row[f"Line {i} Name"] = ""
-                    row[f"Line {i} Extension"] = ""
+            for i, record in enumerate(records):
+                line_idx = i + 1
+                ext_obj = record.get('extension') or {}
+                m_id = str(ext_obj.get('id', ''))
+                
+                master = id_to_ext_map.get(m_id, {})
+                type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
+                name = master.get('name') or ext_obj.get('name') or type_label
+                ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+                
+                lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
+                row[f"Line {line_idx} Name"] = f"{lock_status}{name} ({type_label})"
+                row[f"Line {line_idx} Extension"] = str(ext_num)
             
             audit_data.append(row)
             
@@ -107,66 +102,72 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # --- 2. FETCH LIVE STATE ---
+            # --- 2. GET CURRENT STATE (The Real IDs) ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            final_ordered_extensions = []
-            seen_blf_ids = set()
-            
-            # THE FIX: Extract locked lines first (Lines 1 & 2) and append them securely.
-            # Do NOT add them to the seen_blf_ids set, because they intentionally share an ID.
-            locked_lines = [r for r in live_records if r.get('notEditableOnHud')]
-            for r in locked_lines:
-                ext_id = str(r.get('extension', {}).get('id', ''))
-                if ext_id:
-                    final_ordered_extensions.append(ext_id)
+            payload_records = []
+            seen_extensions = set()
 
-            # --- 3. OVERLAY SPREADSHEET (Editable slots only) ---
-            for i in range(1, 101):
-                # If this physical slot is locked, we already processed it above. Skip.
-                existing_record = next((r for r in live_records if str(r.get('id')) == str(i)), None)
-                if existing_record and existing_record.get('notEditableOnHud'):
-                    continue 
+            # --- 3. MAP SPREADSHEET TO EXISTING REAL IDs ---
+            for i, record in enumerate(live_records):
+                # Extract the literal system identifier, whatever format it is
+                real_slot_id = str(record.get('id')) 
+                is_locked = record.get('notEditableOnHud', False)
+                current_ext_id = str(record.get('extension', {}).get('id', ''))
                 
-                col_name = f"Line {i} Extension"
-                val = row.get(col_name) if col_name in df.columns else None
-                existing_ext = str(existing_record.get('extension', {}).get('id', '')) if existing_record else None
+                # Look at the corresponding column in the spreadsheet
+                sheet_col = f"Line {i + 1} Extension"
+                val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # Rule 1: Blank Spreadsheet = Keep Existing (If it's not a duplicate)
-                if pd.isna(val) or str(val).strip() == "":
-                    if existing_ext and existing_ext not in seen_blf_ids and existing_ext not in final_ordered_extensions:
-                        final_ordered_extensions.append(existing_ext)
-                        seen_blf_ids.add(existing_ext)
+                # Rule 1: Hardware locked primary lines
+                if is_locked:
+                    if current_ext_id:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
                     continue
-                    
+                
+                # Rule 2: Blank spreadsheet cell -> keep existing configuration
+                if pd.isna(val) or str(val).strip() == "":
+                    if current_ext_id and current_ext_id not in seen_extensions:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
+                    continue
+                
                 val_str = str(val).split('.')[0].strip()
                 
-                # Rule 2: "CLEAR"
+                # Rule 3: Clear intent
                 if val_str.upper() == "CLEAR":
-                    continue
-                    
-                # Rule 3: Add / Update
-                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+                    continue # Omitting the ID from the payload clears the slot
                 
-                # Block duplicates only in the editable BLF range
-                if monitored_id in seen_blf_ids or monitored_id in final_ordered_extensions:
-                    continue
+                # Rule 4: Update with new extension
+                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+                if monitored_id in seen_extensions:
+                    continue # Stop duplicates
+                
+                # Build the minimal requested object using the REAL id
+                payload_records.append({
+                    "id": real_slot_id,
+                    "extension": {"id": monitored_id}
+                })
+                seen_extensions.add(monitored_id)
+
+            # Check if user tried to add lines beyond what the system has IDs for
+            skipped_lines = []
+            for i in range(len(live_records) + 1, 101):
+                sheet_col = f"Line {i} Extension"
+                val = row.get(sheet_col) if sheet_col in df.columns else None
+                if not pd.isna(val) and str(val).strip() != "" and str(val).strip().upper() != "CLEAR":
+                    skipped_lines.append(str(i))
                     
-                final_ordered_extensions.append(monitored_id)
-                seen_blf_ids.add(monitored_id)
+            if skipped_lines:
+                results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_lines)} were ignored because the system has no available internal IDs for those slots.")
 
-            # --- 4. BUILD STRICTLY SEQUENTIAL PAYLOAD ---
-            # This generates the exact [{"id": "1"}, {"id": "2"}, {"id": "3"}] array to prevent gap errors.
-            payload_records = [{"id": str(idx + 1), "extension": {"id": ext}} for idx, ext in enumerate(final_ordered_extensions)]
+            # --- 4. DIFF AND SEND ---
+            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
+            payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
-            # Fast Check: Only send if the lists differ
-            current_ids = [str(r.get('extension', {}).get('id')) for r in live_records if r.get('extension', {}).get('id')]
-            payload_ids = [p['extension']['id'] for p in payload_records]
-            has_changes = (current_ids != payload_ids)
-
-            # --- 5. SEND ---
-            if has_changes:
+            if current_state != payload_state:
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
@@ -181,107 +182,3 @@ def update_blf():
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@presence_bp.route('/api/presence/softphone_test', methods=['GET'])
-def softphone_test():
-    from webapp.rc_api import rc_api_call
-    manager = RCPresenceManager()
-    
-    t_id = "224995125" # Target Softphone User
-    new_ext = "233306125" # Extension to add to BLF
-    
-    payloads = {
-        "Test 1: No ID for the new line (Let RC auto-assign)": {
-            "records": [
-                {"id": "1", "extension": {"id": t_id}},
-                {"id": "2", "extension": {"id": t_id}},
-                {"extension": {"id": new_ext}}
-            ]
-        },
-        "Test 2: No IDs at all (Strict array order)": {
-            "records": [
-                {"extension": {"id": t_id}},
-                {"extension": {"id": t_id}},
-                {"extension": {"id": new_ext}}
-            ]
-        },
-        "Test 3: Omit the locked lines entirely": {
-            "records": [
-                {"extension": {"id": new_ext}}
-            ]
-        }
-    }
-
-    results = {}
-    for name, payload in payloads.items():
-        try:
-            # We use raise_error=True to trigger the exception block in your new wrapper if it fails
-            resp = rc_api_call(f"{manager.base_path}/extension/{t_id}/presence/line", method="PUT", json=payload, raise_error=True)
-            results[name] = "SUCCESS! This is the golden format."
-            break # Stop immediately if we find the winner
-        except Exception as e:
-            rc_error = e.response.text if hasattr(e, 'response') and e.response else str(e)
-            results[name] = f"FAILED: {rc_error}"
-
-    return jsonify(results)
-
-@presence_bp.route('/api/presence/pure_test', methods=['GET'])
-def pure_test():
-    import requests
-    import json
-    from flask import session
-    from webapp.presence.utils import RCPresenceManager
-    
-    manager = RCPresenceManager()
-    token = session.get('rc_access_token')
-    
-    if not token:
-        return jsonify({"error": "No token found in session. Please log in again."})
-
-    target_ext = "224995125"
-    new_ext = "233306125"
-    
-    url = f"https://platform.ringcentral.com/restapi/v1.0/account/~/extension/{target_ext}/presence/line"
-    
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-    
-    # EXACTLY matching the structure from the RingCentral JS Docs
-    payload = {
-        "records": [
-            {
-                "id": "1",
-                "extension": {
-                    "id": target_ext
-                }
-            },
-            {
-                "id": "2",
-                "extension": {
-                    "id": target_ext
-                }
-            },
-            {
-                "id": "3",
-                "extension": {
-                    "id": new_ext
-                }
-            }
-        ]
-    }
-    
-    try:
-        # Using data=json.dumps() guarantees the payload is a perfect JSON string, 
-        # bypassing any weird dictionary-to-kwargs translation bugs.
-        response = requests.put(url, headers=headers, data=json.dumps(payload))
-        
-        return jsonify({
-            "status_code": response.status_code,
-            "response_text": response.text,
-            "payload_sent": payload
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)})
