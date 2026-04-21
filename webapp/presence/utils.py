@@ -25,6 +25,19 @@ class RCPresenceManager:
         except Exception:
             return []
 
+    def get_extension_by_number(self, ext_number):
+        """Targeted lookup if the bulk dictionary misses an extension."""
+        endpoint = f"{self.base_path}/extension"
+        params = {"extensionNumber": ext_number}
+        try:
+            response = rc_api_call(endpoint, method="GET", params=params)
+            records = response.get('records', [])
+            if records:
+                return str(records[0].get('id'))
+        except Exception:
+            pass
+        return None
+
     # --- Presence Settings (The Toggles) ---
     def get_presence_settings(self, extension_id):
         try:
