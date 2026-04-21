@@ -9,7 +9,6 @@ class RCPresenceManager:
 
     def get_sites(self):
         try:
-            # Fetches the list of sites for the UI dropdown filter
             endpoint = f"{self.base_path}/sites"
             response = rc_api_call(endpoint, method="GET")
             return response.get('records', []) if response else []
@@ -21,7 +20,6 @@ class RCPresenceManager:
         try:
             endpoint = f"{self.base_path}/extension"
             params = {"type": ["User"], "perPage": 1000} 
-            # If the UI passes a site, append it to the API request
             if site_id and str(site_id).strip() != "":
                 params["siteId"] = site_id
                 
