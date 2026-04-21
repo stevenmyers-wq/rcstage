@@ -253,3 +253,65 @@ def inspect_portal_changes(target_ext_id):
         diagnostic_log["2_Permissions_Endpoint"] = f"ERROR: {str(e)}"
 
     return jsonify({"status": "SUCCESS - Portal Data Extracted", "data": diagnostic_log})
+
+@presence_bp.route('/api/presence/crack_softphone/<target_ext_id>', methods=['GET'])
+def crack_softphone(target_ext_id):
+    from webapp.rc_api import rc_api_call
+    from webapp.presence.utils import RCPresenceManager
+    manager = RCPresenceManager()
+    
+    # 1. Fetch the perfect state created by the Portal
+    current_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="GET")
+    records = current_data.get('records', [])
+    
+    if not records:
+        return jsonify({"error": "No records found. Please add a line via Portal first."})
+
+    payloads = {
+        "Test 1: Full Clone (Send exactly what the portal generated)": {
+            "records": records
+        },
+        "Test 2: Typed Minimal (Include the 'type' field)": {
+            "records": [
+                {
+                    "id": str(r.get('id')),
+                    "extension": {
+                        "id": str(r.get('extension', {}).get('id')),
+                        "type": str(r.get('extension', {}).get('type', 'User'))
+                    }
+                } for r in records
+            ]
+        },
+        "Test 3: Extension Number Instead of ID": {
+            "records": [
+                {
+                    "id": str(r.get('id')),
+                    "extension": {
+                        "extensionNumber": str(r.get('extension', {}).get('extensionNumber'))
+                    }
+                } for r in records
+            ]
+        },
+        "Test 4: Standard Minimal (What we sent before, just to prove it fails)": {
+             "records": [
+                {
+                    "id": str(r.get('id')),
+                    "extension": {
+                        "id": str(r.get('extension', {}).get('id'))
+                    }
+                } for r in records
+            ]
+        }
+    }
+
+    results = {}
+    for name, payload in payloads.items():
+        try:
+            resp = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="PUT", json=payload, raise_error=True)
+            results[name] = "SUCCESS! We found the golden format."
+            break # Stop immediately if we find the winner
+        except Exception as e:
+            rc_error = e.response.text if hasattr(e, 'response') and e.response is not None else str(e)
+            results[name] = f"FAILED: {rc_error}"
+
+    return jsonify({"target": target_ext_id, "results": results})
