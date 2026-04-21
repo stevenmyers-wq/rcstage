@@ -58,5 +58,5 @@ class RCPresenceManager:
         except Exception as e:
             if hasattr(e, 'response') and hasattr(e.response, 'text'):
                 logging.error(f"RC API 400 Detail: {e.response.text}")
-                raise Exception(e.response.text)
+                raise Exception(f"RingCentral API Error: {e.response.text}")
             raise e
