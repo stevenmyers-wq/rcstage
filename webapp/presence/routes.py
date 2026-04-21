@@ -194,14 +194,19 @@ def update_blf_from_file():
                     current_records = current_lines_resp.get('records') or []
                     
                     final_lines = {}
+                    locked_lines = set()
                     
-                    # Pre-fill current config to satisfy API constraints
+                    # Pre-fill current config
                     for r in current_records:
                         l_id = str(r.get('id'))
                         ext_obj = r.get('extension') or {}
                         ext_id = ext_obj.get('id')
                         if ext_id:
                             final_lines[int(l_id)] = str(ext_id)
+                            
+                        # Log locked lines so we can explicitly STRIP them from the PUT payload
+                        if r.get('notEditableOnHud') is True or l_id in ["1", "2"]:
+                            locked_lines.add(int(l_id))
 
                     has_line_changes = False
 
@@ -209,6 +214,10 @@ def update_blf_from_file():
                         val = row.get(col)
                         line_num = int(str(col).lower().replace('line', '').replace('extension', '').strip())
                         
+                        # Skip processing for locked slots entirely
+                        if line_num in locked_lines:
+                            continue
+                            
                         if pd.isna(val) or str(val).strip() == "":
                             # Deletion Intent
                             if line_num in final_lines:
@@ -233,7 +242,7 @@ def update_blf_from_file():
                                     monitored_id = raw_val
                             
                             if not monitored_id:
-                                results["errors"].append(f"Ext {target_id}: Cannot find internal ID for '{raw_val}'. Skipping Line {line_num}.")
+                                results["errors"].append(f"Ext {target_id}: Cannot find ID for '{raw_val}'. Skipping Line {line_num}.")
                                 continue
                                 
                             if final_lines.get(line_num) != monitored_id:
@@ -241,18 +250,30 @@ def update_blf_from_file():
                                 has_line_changes = True
 
                     if has_line_changes:
-                        # Map directly to exact slots
                         sorted_keys = sorted(final_lines.keys())
-                        new_records = [{"id": str(k), "extension": {"id": str(final_lines[k])}} for k in sorted_keys]
+                        new_records = []
                         
-                        # --- DEBUG TRAP: Print the Exact Payload ---
-                        print(f"\n{'='*50}\nDEBUG PAYLOAD FOR EXT {target_id}:\n{new_records}\n{'='*50}\n")
+                        # BUILD PAYLOAD: EXPLICITLY OMIT LOCKED LINES!
+                        for k in sorted_keys:
+                            if k in locked_lines:
+                                continue 
+                            new_records.append({
+                                "id": str(k),
+                                "extension": {"id": final_lines[k]}
+                            })
+                            
+                        print(f"\n{'='*50}\nDEBUG PAYLOAD (STRIPPED) FOR EXT {target_id}:\n{new_records}\n{'='*50}\n")
                         
                         manager.update_monitored_lines(target_id, new_records)
                         updates_attempted = True
                         
                 except Exception as e:
-                    results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
+                    error_msg = str(e)
+                    # Translate Presence-102 into Plain English
+                    if "Presence-102" in error_msg:
+                        results["errors"].append(f"Ext {target_id}: Update rejected (HUD Limitation). You either tried to assign a key past the user's physical phone limit, or assigned an invalid extension type.")
+                    else:
+                        results["errors"].append(f"Ext {target_id}: BLF update failed - {error_msg}")
 
             if updates_attempted:
                 results["success"] += 1
