@@ -105,7 +105,7 @@ def update_blf():
             t_id = str(row.get(target_col, "")).split('.')[0].strip()
             if not t_id or t_id.lower() == 'nan': continue
             
-            # 1. Toggles (Always Fire if present)
+            # 1. Update Toggles
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -114,59 +114,52 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # 2. Get Real Provisioned Slots
+            # 2. Map existing active slots to their system IDs
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
+            existing_slots = {i+1: r for i, r in enumerate(live_records)}
             
             payload_records = []
             seen_extensions = set()
-            skipped_slots = []
 
-            # We ONLY update what exists in live_records. 
-            # If RingCentral gives 4 records, we can only update 4 lines.
-            for i, record in enumerate(live_records):
-                line_num = i + 1
-                real_id = str(record.get('id'))
-                is_locked = record.get('notEditableOnHud', False)
+            # 3. Build full 100-line state
+            for i in range(1, 101):
+                record = existing_slots.get(i)
+                slot_id = str(record.get('id')) if record else str(i) # UUID if exists, else "4", "5", etc.
                 
-                sheet_col = f"Line {line_num} Extension"
+                sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
-                # Keep locked lines exactly as they are
-                if is_locked:
-                    curr_id = record.get('extension', {}).get('id')
-                    if curr_id:
-                        payload_records.append({"id": real_id, "extension": {"id": str(curr_id)}})
-                        seen_extensions.add(str(curr_id))
+                # Rule A: Hardware Locked Lines (Primary Lines)
+                if record and record.get('notEditableOnHud'):
+                    ext_id = record.get('extension', {}).get('id')
+                    if ext_id:
+                        payload_records.append({"id": slot_id, "extension": {"id": str(ext_id)}})
+                        seen_extensions.add(str(ext_id))
                     continue
 
-                # If spreadsheet is blank, keep current
-                if pd.isna(val) or str(val).strip() == "":
+                # Rule B: Clear Intent
+                if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
+                    continue
+
+                # Rule C: Update with New Value
+                if not pd.isna(val) and str(val).strip() != "":
+                    val_str = str(val).split('.')[0].strip()
+                    mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+                    
+                    if mon_id not in seen_extensions:
+                        payload_records.append({"id": slot_id, "extension": {"id": mon_id}})
+                        seen_extensions.add(mon_id)
+                    continue
+
+                # Rule D: No spreadsheet value - preserve current setting if it exists
+                if record:
                     curr_id = record.get('extension', {}).get('id')
                     if curr_id and str(curr_id) not in seen_extensions:
-                        payload_records.append({"id": real_id, "extension": {"id": str(curr_id)}})
+                        payload_records.append({"id": slot_id, "extension": {"id": str(curr_id)}})
                         seen_extensions.add(str(curr_id))
-                    continue
 
-                val_str = str(val).split('.')[0].strip()
-                if val_str.upper() == "CLEAR": continue
-
-                # Map number to ID
-                mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-                if mon_id not in seen_extensions:
-                    payload_records.append({"id": real_id, "extension": {"id": mon_id}})
-                    seen_extensions.add(mon_id)
-
-            # Check if user tried to fill lines the system doesn't have slots for
-            for i in range(len(live_records) + 1, 101):
-                col = f"Line {i} Extension"
-                if col in df.columns and not pd.isna(row.get(col)) and str(row.get(col)).strip() != "":
-                    skipped_slots.append(str(i))
-
-            if skipped_slots:
-                results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_slots)} ignored (system only has {len(live_records)} slots).")
-
-            # 3. FORCE THE UPDATE (No more "diff" check)
+            # 4. Fire Update
             if payload_records:
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
@@ -176,7 +169,7 @@ def update_blf():
             elif toggles:
                 results["success"] += 1
 
-        return jsonify({"status": "completed", "message": f"Processed {results['success']} users", "errors": results["errors"]})
+        return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
