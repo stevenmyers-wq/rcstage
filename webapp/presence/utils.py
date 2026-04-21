@@ -1,5 +1,6 @@
-from webapp.rc_api import rc_api_call
+import json
 import logging
+from webapp.rc_api import rc_api_call
 
 class RCPresenceManager:
     def __init__(self, account_id="~"):
@@ -53,9 +54,31 @@ class RCPresenceManager:
 
     def update_monitored_lines(self, extension_id, line_records):
         payload = {"records": line_records}
-        result = rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
+        payload_str = json.dumps(payload)
         
-        # If your wrapper caught a 400 and hid it by returning None, we force an error message here.
-        if result is None:
-            raise Exception("RingCentral rejected the update. (Reason: You likely exceeded the physical button limit of the user's desk phone, or assigned a duplicate).")
-        return result
+        # DEFINITIVE PROOF LOGGING: Print exactly what we are about to send to GCP
+        logging.warning(f"=== OUTGOING PAYLOAD FOR {extension_id} ===")
+        logging.warning(payload_str)
+        
+        try:
+            result = rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
+            
+            # If the wrapper swallowed a 400 and returned None
+            if result is None:
+                raise Exception(f"Your wrapper hid the error. Sent Payload: {payload_str}")
+                
+            return result
+            
+        except Exception as e:
+            # Attempt to rip the raw RingCentral error body out of the Exception object
+            rc_error_reason = "Could not extract raw RC body."
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    rc_error_reason = e.response.text
+                except:
+                    pass
+            
+            # Throw everything back to the UI so you can read it directly
+            definitive_error = f"SENT: {payload_str} || RC_RESPONSE: {rc_error_reason}"
+            logging.error(f"DEFINITIVE FAILURE: {definitive_error}")
+            raise Exception(definitive_error)
