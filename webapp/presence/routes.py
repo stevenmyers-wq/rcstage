@@ -34,8 +34,7 @@ def generate_audit_report():
 
         manager = RCPresenceManager()
         
-        # Fetch master list for recursive Name lookup
-        all_exts = manager.get_all_extensions_raw()
+        all_exts = manager.get_all_extensions_raw() or []
         id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
 
         audit_data = []
@@ -43,9 +42,10 @@ def generate_audit_report():
         for user in selected_users:
             ext_id = user.get('id')
             
+            # Use 'or {}' and 'or []' to prevent NoneType crashes from null API payloads
             settings = manager.get_presence_settings(ext_id) or {}
-            lines_response = manager.get_monitored_lines(ext_id)
-            records = lines_response.get('records', [])
+            lines_response = manager.get_monitored_lines(ext_id) or {}
+            records = lines_response.get('records') or []
 
             row = {
                 "Target Extension Name": user.get('name', ''),
@@ -62,7 +62,8 @@ def generate_audit_report():
                 if not line_id_str or not str(line_id_str).isdigit(): continue
                 
                 line_num = int(line_id_str)
-                ext_obj = record.get('extension', {})
+                # Safely extract the extension object even if the API passes null
+                ext_obj = record.get('extension') or {}
                 monitored_ext_id = str(ext_obj.get('id', ''))
                 
                 # Recursive Name Lookup
@@ -78,7 +79,6 @@ def generate_audit_report():
 
                 assigned_lines[line_num] = (name_val, ext_val)
 
-            # Pad out to 100 columns to match the template exactly
             for i in range(1, 101):
                 if i in assigned_lines:
                     row[f"Line {i} Name"] = str(assigned_lines[i][0])
@@ -162,7 +162,6 @@ def update_blf_from_file():
         else:
             df = pd.read_excel(file, sheet_name=0)
             
-        # Clean headers
         df.columns = df.columns.astype(str).str.replace('\ufeff', '').str.strip()
 
         target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
@@ -172,8 +171,7 @@ def update_blf_from_file():
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # Translators
-        all_exts = manager.get_all_extensions_raw()
+        all_exts = manager.get_all_extensions_raw() or []
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         id_set = {str(e.get('id')) for e in all_exts}
 
@@ -210,38 +208,34 @@ def update_blf_from_file():
             # --- 2. SMART MERGE BLF LINES ---
             if line_ext_cols:
                 try:
-                    current_lines_resp = manager.get_monitored_lines(target_id)
-                    current_records = current_lines_resp.get('records', [])
+                    current_lines_resp = manager.get_monitored_lines(target_id) or {}
+                    current_records = current_lines_resp.get('records') or []
                     
                     final_lines = {}
                     locked_lines = set()
 
-                    # Pre-fill safe current records
                     for r in current_records:
                         l_id = str(r.get('id'))
-                        ext_id = r.get('extension', {}).get('id')
+                        # Null-safe extraction for all object paths
+                        ext_obj = r.get('extension') or {}
+                        ext_id = ext_obj.get('id')
                         
-                        # Prevent str(None) bug
                         if ext_id:
                             final_lines[int(l_id)] = str(ext_id)
                             
-                        # If API explicitly locks it, mark it
                         if r.get('notEditableOnHud') is True:
                             locked_lines.add(int(l_id))
 
                     has_line_changes = False
 
-                    # Overlay spreadsheet data
                     for col in line_ext_cols:
                         val = row.get(col)
                         line_num = int(str(col).lower().replace('line', '').replace('extension', '').strip())
                         
-                        # Skip if RingCentral strictly locked this slot
                         if line_num in locked_lines:
                             continue
                             
                         if pd.isna(val) or str(val).strip() == "":
-                            # Delete the line if it was cleared
                             if line_num in final_lines:
                                 del final_lines[line_num]
                                 has_line_changes = True
@@ -253,7 +247,6 @@ def update_blf_from_file():
                             elif raw_val in ext_map: 
                                 monitored_id = ext_map[raw_val]
                             elif raw_val.isdigit() and len(raw_val) > 5:
-                                # Safe Fallback for Speed Dials not in ext_map
                                 monitored_id = raw_val
                             else:
                                 results["errors"].append(f"Ext {target_id}: '{raw_val}' is an invalid ID/Number. Skipping Line {line_num}.")
@@ -264,7 +257,6 @@ def update_blf_from_file():
                                 has_line_changes = True
 
                     if has_line_changes:
-                        # Rebuild exactly sequential, 1-based array to prevent Gap 400s
                         sorted_keys = sorted(final_lines.keys())
                         new_records = []
                         for i, k in enumerate(sorted_keys):
@@ -277,9 +269,8 @@ def update_blf_from_file():
                         updates_attempted = True
                         
                 except Exception as e:
-                    results["errors"].append(f"Ext {target_id}: BLF lines update failed - {str(e)}")
+                    results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
 
-            # --- 3. FINAL REPORTING ---
             if updates_attempted:
                 results["success"] += 1
             else:
