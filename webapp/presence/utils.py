@@ -1,4 +1,3 @@
-import json
 import logging
 from webapp.rc_api import rc_api_call
 
