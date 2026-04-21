@@ -181,3 +181,46 @@ def update_blf():
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@presence_bp.route('/api/presence/softphone_test', methods=['GET'])
+def softphone_test():
+    from webapp.rc_api import rc_api_call
+    manager = RCPresenceManager()
+    
+    t_id = "224995125" # Target Softphone User
+    new_ext = "233306125" # Extension to add to BLF
+    
+    payloads = {
+        "Test 1: No ID for the new line (Let RC auto-assign)": {
+            "records": [
+                {"id": "1", "extension": {"id": t_id}},
+                {"id": "2", "extension": {"id": t_id}},
+                {"extension": {"id": new_ext}}
+            ]
+        },
+        "Test 2: No IDs at all (Strict array order)": {
+            "records": [
+                {"extension": {"id": t_id}},
+                {"extension": {"id": t_id}},
+                {"extension": {"id": new_ext}}
+            ]
+        },
+        "Test 3: Omit the locked lines entirely": {
+            "records": [
+                {"extension": {"id": new_ext}}
+            ]
+        }
+    }
+
+    results = {}
+    for name, payload in payloads.items():
+        try:
+            # We use raise_error=True to trigger the exception block in your new wrapper if it fails
+            resp = rc_api_call(f"{manager.base_path}/extension/{t_id}/presence/line", method="PUT", json=payload, raise_error=True)
+            results[name] = "SUCCESS! This is the golden format."
+            break # Stop immediately if we find the winner
+        except Exception as e:
+            rc_error = e.response.text if hasattr(e, 'response') and e.response else str(e)
+            results[name] = f"FAILED: {rc_error}"
+
+    return jsonify(results)
