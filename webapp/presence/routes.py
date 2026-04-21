@@ -59,7 +59,6 @@ def generate_audit_report():
             # Map the actual assigned lines
             assigned_lines = {}
             for record in records:
-                # The API returns the line ID as a string number (e.g., "1", "2")
                 line_id_str = record.get('id')
                 if not line_id_str or not str(line_id_str).isdigit(): continue
                 
@@ -164,8 +163,6 @@ def update_blf_from_file():
         if 'file' not in request.files: return jsonify({"status": "error", "message": "No file uploaded"}), 400
         
         file = request.files['file']
-        
-        # Explicitly read the FIRST sheet (sheet_name=0) so the Example tab is ignored
         df = pd.read_excel(file, sheet_name=0)
         
         if "Target Extension ID" not in df.columns:
@@ -187,7 +184,7 @@ def update_blf_from_file():
             target_id = str(row.get("Target Extension ID", "")).split('.')[0].strip()
             if not target_id or target_id.lower() == 'nan': continue
             
-            # --- 1. UPDATE SETTINGS TOGGLES (Safely parsed as Booleans) ---
+            # --- 1. UPDATE SETTINGS TOGGLES ---
             settings_payload = {}
             ring_val = parse_bool(row.get("Ring on Monitored Call"))
             pickup_val = parse_bool(row.get("Enable Me to Pickup a Monitored Line"))
@@ -203,14 +200,26 @@ def update_blf_from_file():
                 except Exception as e:
                     results["errors"].append(f"Ext {target_id}: Settings update failed - {str(e)}")
 
-            # --- 2. UPDATE BLF LINES (Explicitly mapping the 'id' sequence) ---
+            # --- 2. UPDATE BLF LINES ---
+            # Fetch current lines to identify which ones RingCentral strictly locks
+            current_lines_resp = manager.get_monitored_lines(target_id)
+            current_records = current_lines_resp.get('records', [])
+            
+            # Identify locked lines (Usually "1" and "2", but dynamically checked)
+            locked_line_ids = [str(r.get('id')) for r in current_records if r.get('notEditableOnHud') is True]
+            if not locked_line_ids: locked_line_ids = ["1", "2"] # Safety fallback
+
             new_records = []
 
             for col in line_ext_cols:
                 val = row.get(col)
                 if pd.notna(val) and str(val).strip() != "":
-                    # Extract the Line sequence number (e.g. "Line 1 Extension" -> 1)
-                    line_num = int(col.split(' ')[1])
+                    line_num = str(col.split(' ')[1])
+                    
+                    # CRITICAL FIX: Do not send lines that the API considers locked!
+                    if line_num in locked_line_ids:
+                        continue
+                        
                     raw_val = str(val).split('.')[0].strip()
                     
                     # Translator Engine
@@ -219,20 +228,19 @@ def update_blf_from_file():
                     elif raw_val in ext_map:
                         monitored_id = ext_map[raw_val]
                     else:
-                        monitored_id = raw_val # Fallback (Speed Dials)
+                        monitored_id = raw_val # Fallback
                         
-                    # API requires the "id" parameter to bind to the specific line slot
                     new_records.append({
-                        "id": str(line_num), 
+                        "id": line_num, 
                         "extension": {"id": monitored_id}
                     })
 
-            if new_records:
-                try:
-                    manager.update_monitored_lines(target_id, new_records)
-                    results["success"] += 1
-                except Exception as e:
-                    results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
+            try:
+                # We upload ONLY the unlocked lines. RingCentral preserves the locked ones automatically.
+                manager.update_monitored_lines(target_id, new_records)
+                results["success"] += 1
+            except Exception as e:
+                results["errors"].append(f"Ext {target_id}: BLF update failed - {str(e)}")
 
         return jsonify({
             "status": "completed", 
