@@ -34,7 +34,7 @@ def generate_audit_report():
 
         manager = RCPresenceManager()
         
-        # Robust dictionary fetch with a guaranteed fallback
+        # Fetch master list for recursive Name lookup
         all_exts = manager.get_all_extensions_raw()
         if not all_exts:
             all_exts = manager.get_all_users() or []
@@ -68,7 +68,7 @@ def generate_audit_report():
                 ext_obj = record.get('extension') or {}
                 monitored_ext_id = str(ext_obj.get('id', '')).strip()
                 
-                # Recursive Name Lookup
+                # Recursive Name Lookup [cite: 27, 28]
                 if monitored_ext_id and monitored_ext_id in id_to_ext_map:
                     master_ext = id_to_ext_map[monitored_ext_id]
                     name_val = master_ext.get('name') or ext_obj.get('type') or 'Unknown'
@@ -173,7 +173,7 @@ def update_blf_from_file():
         manager = RCPresenceManager()
         results = {"success": 0, "errors": []}
 
-        # Robust dictionary fetch with guaranteed fallback
+        # Build robust directory map
         all_exts = manager.get_all_extensions_raw()
         if not all_exts:
             all_exts = manager.get_all_users() or []
@@ -181,7 +181,7 @@ def update_blf_from_file():
         ext_map = {}
         id_set = set()
         for e in all_exts:
-            e_id = str(e.get('id')).strip()
+            e_id = str(e.get('id', '')).strip()
             e_num = str(e.get('extensionNumber', '')).strip()
             if e_id: id_set.add(e_id)
             if e_num: ext_map[e_num] = e_id
@@ -225,32 +225,35 @@ def update_blf_from_file():
                     final_lines = {}
                     locked_lines = set()
 
+                    # Pre-fill live configuration [cite: 38]
                     for r in current_records:
                         l_id = str(r.get('id'))
                         ext_obj = r.get('extension') or {}
                         ext_id = ext_obj.get('id')
                         
                         if ext_id:
-                            final_lines[int(l_id)] = str(ext_id)
+                            final_lines[l_id] = str(ext_id)
                             
-                        if r.get('notEditableOnHud') is True:
-                            locked_lines.add(int(l_id))
+                        # API rigidly locks certain slots [cite: 31, 32]
+                        if r.get('notEditableOnHud') is True or l_id in ["1", "2"]:
+                            locked_lines.add(l_id)
 
                     has_line_changes = False
 
+                    # Overlay spreadsheet mappings directly onto physical slots
                     for col in line_ext_cols:
                         val = row.get(col)
-                        line_num = int(str(col).lower().replace('line', '').replace('extension', '').strip())
+                        line_num = str(col).lower().replace('line', '').replace('extension', '').strip()
                         
-                        if line_num in locked_lines:
-                            continue
-                            
                         if pd.isna(val) or str(val).strip() == "":
-                            if line_num in final_lines:
+                            # Deletion Intent
+                            if line_num in final_lines and line_num not in locked_lines:
                                 del final_lines[line_num]
                                 has_line_changes = True
                         else:
+                            # Add/Update Intent
                             raw_val = str(val).split('.')[0].strip()
+                            monitored_id = None
                             
                             # Translator Engine
                             if raw_val in id_set: 
@@ -258,10 +261,16 @@ def update_blf_from_file():
                             elif raw_val in ext_map: 
                                 monitored_id = ext_map[raw_val]
                             elif raw_val.isdigit() and len(raw_val) > 5:
-                                # Safe bypass for Speed Dials which have long raw IDs
-                                monitored_id = raw_val
-                            else:
-                                results["errors"].append(f"Ext {target_id}: '{raw_val}' is an invalid ID/Number. Skipping Line {line_num}.")
+                                monitored_id = raw_val # Safe fallback for obscure IDs
+                            
+                            # Verbose Error if translation completely fails
+                            if not monitored_id:
+                                results["errors"].append(f"Ext {target_id}: '{raw_val}' on {col} not found in directory. Skipping.")
+                                continue
+                                
+                            if line_num in locked_lines:
+                                if final_lines.get(line_num) != monitored_id:
+                                    results["errors"].append(f"Ext {target_id}: Skipped {col} because RingCentral physically locks this slot.")
                                 continue
                                 
                             if final_lines.get(line_num) != monitored_id:
@@ -269,15 +278,10 @@ def update_blf_from_file():
                                 has_line_changes = True
 
                     if has_line_changes:
-                        sorted_keys = sorted(final_lines.keys())
-                        new_records = []
-                        # Compress gaps while retaining chronological order
-                        for i, k in enumerate(sorted_keys):
-                            new_records.append({
-                                "id": str(i + 1),
-                                "extension": {"id": final_lines[k]}
-                            })
-                            
+                        # Construct 1-to-1 array payload mapping exact slot IDs [cite: 37]
+                        sorted_keys = sorted(final_lines.keys(), key=lambda x: int(x))
+                        new_records = [{"id": str(k), "extension": {"id": str(final_lines[k])}} for k in sorted_keys]
+                        
                         manager.update_monitored_lines(target_id, new_records)
                         updates_attempted = True
                         
@@ -287,7 +291,7 @@ def update_blf_from_file():
             if updates_attempted:
                 results["success"] += 1
             else:
-                results["errors"].append(f"Ext {target_id}: No changes detected (or lines were locked).")
+                results["errors"].append(f"Ext {target_id}: No changes applied (Lines were identical or locked).")
 
         return jsonify({
             "status": "completed", 
