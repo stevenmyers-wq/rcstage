@@ -125,8 +125,6 @@ def update_blf():
             # 3. Build full 100-line state
             for i in range(1, 101):
                 record = existing_slots.get(i)
-                slot_id = str(record.get('id')) if record else str(i) # UUID if exists, else "4", "5", etc.
-                
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
@@ -134,7 +132,7 @@ def update_blf():
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
-                        payload_records.append({"id": slot_id, "extension": {"id": str(ext_id)}})
+                        payload_records.append({"id": str(record.get('id')), "extension": {"id": str(ext_id)}})
                         seen_extensions.add(str(ext_id))
                     continue
 
@@ -148,7 +146,14 @@ def update_blf():
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                     
                     if mon_id not in seen_extensions:
-                        payload_records.append({"id": slot_id, "extension": {"id": mon_id}})
+                        new_line = {"extension": {"id": mon_id}}
+                        
+                        # THE FIX: If this slot already existed in RingCentral, attach its ID.
+                        # If it is a brand new slot, we intentionally DO NOT send an ID.
+                        if record and 'id' in record:
+                            new_line["id"] = str(record['id'])
+                            
+                        payload_records.append(new_line)
                         seen_extensions.add(mon_id)
                     continue
 
@@ -156,7 +161,7 @@ def update_blf():
                 if record:
                     curr_id = record.get('extension', {}).get('id')
                     if curr_id and str(curr_id) not in seen_extensions:
-                        payload_records.append({"id": slot_id, "extension": {"id": str(curr_id)}})
+                        payload_records.append({"id": str(record.get('id')), "extension": {"id": str(curr_id)}})
                         seen_extensions.add(str(curr_id))
 
             # 4. Fire Update
