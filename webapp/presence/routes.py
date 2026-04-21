@@ -1,5 +1,4 @@
 import io
-import re
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
@@ -107,77 +106,69 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # --- 2. FETCH LIVE STATE ---
+            # --- 2. LIVE STATE ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            current_state = {}
-            locked_slots = set()
+            final_extensions = []
+            seen_ids = set()
             
-            for r in live_records:
-                l_id = str(r.get('id'))
-                ext_id = r.get('extension', {}).get('id')
-                if ext_id: current_state[l_id] = str(ext_id)
-                if r.get('notEditableOnHud'): locked_slots.add(l_id)
-
-            # --- 3. OVERLAY SPREADSHEET ---
-            ordered_extensions = []
-            seen_monitored = set()
-            
+            # --- 3. OVERLAY SPREADSHEET ALIGNED TO SLOTS ---
             for i in range(1, 101):
-                l_idx = str(i)
-                sheet_col = f"Line {i} Extension"
+                col_name = f"Line {i} Extension"
+                val = row.get(col_name) if col_name in df.columns else None
                 
-                # If it's locked, keep it exactly as is
-                if l_idx in locked_slots:
-                    ordered_extensions.append(current_state[l_idx])
-                    seen_monitored.add(current_state[l_idx])
+                is_locked = False
+                existing_ext = None
+                
+                # Check what RingCentral currently has on this exact physical slot
+                if i <= len(live_records):
+                    existing_record = live_records[i-1]
+                    existing_ext = str(existing_record.get('extension', {}).get('id', ''))
+                    is_locked = existing_record.get('notEditableOnHud', False)
+                
+                # Rule 1: If it is hardware-locked, keep it exactly as is
+                if is_locked and existing_ext:
+                    if existing_ext not in seen_ids:
+                        final_extensions.append(existing_ext)
+                        seen_ids.add(existing_ext)
                     continue
-                    
-                val = row.get(sheet_col) if sheet_col in df.columns else None
-                
-                # If Blank, keep what's there
+
+                # Rule 2: If the spreadsheet is blank, preserve the existing line
                 if pd.isna(val) or str(val).strip() == "":
-                    if l_idx in current_state:
-                        # Prevent duplicate copying
-                        if current_state[l_idx] not in seen_monitored:
-                            ordered_extensions.append(current_state[l_idx])
-                            seen_monitored.add(current_state[l_idx])
-                    continue 
+                    if existing_ext and existing_ext not in seen_ids:
+                        final_extensions.append(existing_ext)
+                        seen_ids.add(existing_ext)
+                    continue
                     
                 val_str = str(val).split('.')[0].strip()
                 
-                # "CLEAR" deletes it
+                # Rule 3: Deletion
                 if val_str.upper() == "CLEAR":
-                    continue 
-                    
-                # Find ID and Add
-                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-                
-                if monitored_id in seen_monitored:
-                    results["errors"].append(f"Ext {t_id}: Skipped duplicate extension {val_str} on Line {i}.")
                     continue
                     
-                ordered_extensions.append(monitored_id)
-                seen_monitored.add(monitored_id)
+                # Rule 4: Addition / Update
+                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+                if monitored_id not in seen_ids:
+                    final_extensions.append(monitored_id)
+                    seen_ids.add(monitored_id)
 
-            # --- 4. BUILD PAYLOAD ---
-            payload_records = []
-            for index, ext_id in enumerate(ordered_extensions):
-                payload_records.append({
-                    "id": str(index + 1),
-                    "extension": {"id": ext_id}
-                })
+            # --- 4. BUILD STRICTLY SEQUENTIAL PAYLOAD ---
+            payload_records = [{"id": str(idx + 1), "extension": {"id": ext}} for idx, ext in enumerate(final_extensions)]
             
-            has_changes = (len(payload_records) != len(current_state)) or any(current_state.get(p["id"]) != p["extension"]["id"] for p in payload_records)
+            # Fast Check: Only send if the lists differ
+            current_ids = [str(r.get('extension', {}).get('id')) for r in live_records if r.get('extension', {}).get('id')]
+            payload_ids = [p['extension']['id'] for p in payload_records]
+            
+            has_changes = (current_ids != payload_ids)
 
-            # --- 5. SEND TO RINGCENTRAL ---
+            # --- 5. SEND ---
             if has_changes:
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
                 except Exception as e:
-                    results["errors"].append(str(e))
+                    results["errors"].append(f"Ext {t_id}: {str(e)}")
             elif toggles:
                 results["success"] += 1
             else:
