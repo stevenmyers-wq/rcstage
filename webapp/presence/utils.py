@@ -53,10 +53,11 @@ class RCPresenceManager:
 
     def update_monitored_lines(self, extension_id, line_records):
         payload = {"records": line_records}
-        try:
-            return rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
-        except Exception as e:
-            if hasattr(e, 'response') and hasattr(e.response, 'text'):
-                logging.error(f"RC API 400 Detail: {e.response.text}")
-                raise Exception(f"RingCentral API Error: {e.response.text}")
-            raise e
+        # Call your wrapper
+        result = rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
+        
+        # THE FIX: If your wrapper caught a 400 and returned None, we MUST raise an error so the UI knows it failed.
+        if result is None:
+            raise Exception("RingCentral API rejected the payload with a 400 Bad Request. Check GCP logs for exact reason (Duplicates or Hardware Limits).")
+        
+        return result
