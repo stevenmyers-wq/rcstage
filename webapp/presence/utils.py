@@ -53,11 +53,9 @@ class RCPresenceManager:
 
     def update_monitored_lines(self, extension_id, line_records):
         payload = {"records": line_records}
-        # Call your wrapper
         result = rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
         
-        # THE FIX: If your wrapper caught a 400 and returned None, we MUST raise an error so the UI knows it failed.
+        # If your wrapper caught a 400 and hid it by returning None, we force an error message here.
         if result is None:
-            raise Exception("RingCentral API rejected the payload with a 400 Bad Request. Check GCP logs for exact reason (Duplicates or Hardware Limits).")
-        
+            raise Exception("RingCentral rejected the update. (Reason: You likely exceeded the physical button limit of the user's desk phone, or assigned a duplicate).")
         return result
