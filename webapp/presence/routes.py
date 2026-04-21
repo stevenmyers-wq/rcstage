@@ -1,4 +1,5 @@
 import io
+import re
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
@@ -53,14 +54,12 @@ def generate_audit_report():
                     ext_obj = record.get('extension') or {}
                     m_id = str(ext_obj.get('id', ''))
                     
-                    # Cross-reference with directory to catch SharedLinesGroup, etc.
                     master = id_to_ext_map.get(m_id, {})
                     type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
                     name = master.get('name') or ext_obj.get('name') or type_label
                     ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
                     
                     lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
-                    
                     row[f"Line {i} Name"] = f"{lock_status}{name} ({type_label})"
                     row[f"Line {i} Extension"] = str(ext_num)
                 else:
@@ -76,7 +75,7 @@ def generate_audit_report():
         output.seek(0)
         return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
     except Exception as e:
-        logging.error(f"Audit Crash: {e}")
+        logging.exception("Audit Crash")
         return jsonify({"status": "error", "message": f"Audit Failed: {str(e)}"}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
@@ -91,12 +90,18 @@ def update_blf():
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         
         results = {"success": 0, "errors": []}
-        line_cols = [c for c in df.columns if "Line" in c and "Extension" in c]
+        
+        # Regex finds columns safely regardless of spaces
+        line_cols = [c for c in df.columns if "line" in c.lower() and "extension" in c.lower()]
 
         for _, row in df.iterrows():
-            t_id = str(row["Target Extension ID"]).split('.')[0]
-            if not t_id or t_id == 'nan': continue
+            target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
+            if not target_col: continue
             
+            t_id = str(row.get(target_col, "")).split('.')[0].strip()
+            if not t_id or t_id.lower() == 'nan': continue
+            
+            # --- 1. TOGGLES ---
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -105,16 +110,15 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # FETCH LIVE STATE
+            # --- 2. LIVE STATE ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
             final_lines = {}
             locked_slots = set()
             
-            # PRE-FILL CURRENT LINES (Protects Lines 1-4 if you only edit Line 5)
             for r in live_records:
-                l_id = str(r['id'])
+                l_id = str(r.get('id'))
                 ext_id = r.get('extension', {}).get('id')
                 if ext_id:
                     final_lines[l_id] = str(ext_id)
@@ -123,49 +127,54 @@ def update_blf():
 
             has_changes = False
 
-            # OVERLAY SPREADSHEET CHANGES
+            # --- 3. OVERLAY SPREADSHEET ---
             for col in line_cols:
-                l_idx = col.split(' ')[1]
-                val = row.get(col)
+                # Safely extract line number using Regex
+                match = re.search(r'\d+', col)
+                if not match: continue
+                l_idx = str(match.group())
                 
-                # BLANK = DO NOT CHANGE
-                if pd.isna(val) or str(val).strip() == "":
-                    continue 
+                val = row.get(col)
+                if pd.isna(val) or str(val).strip() == "": continue 
                 
                 val_str = str(val).split('.')[0].strip()
                 
-                # "CLEAR" = DELETE INTENT
+                # CLEAR INTENT
                 if val_str.upper() == "CLEAR":
-                    if l_idx in final_lines:
-                        if l_idx in locked_slots:
-                            results["errors"].append(f"Ext {t_id}: Cannot clear Line {l_idx} (Locked by RC).")
-                        else:
-                            del final_lines[l_idx]
-                            has_changes = True
+                    if l_idx in locked_slots:
+                        results["errors"].append(f"Ext {t_id}: Cannot clear Line {l_idx} (Locked by RC).")
+                    elif l_idx in final_lines:
+                        del final_lines[l_idx]
+                        has_changes = True
                     continue
                 
-                # ADD OR UPDATE INTENT
+                # UPDATE INTENT
                 if l_idx in locked_slots:
                     results["errors"].append(f"Ext {t_id}: Cannot update Line {l_idx} (Locked by RC).")
                     continue
                     
-                # Translate Number to ID
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 
                 if final_lines.get(l_idx) != monitored_id:
                     final_lines[l_idx] = monitored_id
                     has_changes = True
 
-            # BUILD FINAL PAYLOAD
+            # --- 4. BUILD PAYLOAD & STRIP LOCKED LINES ---
             if has_changes:
-                payload_records = [{"id": k, "extension": {"id": v}} for k, v in final_lines.items()]
+                payload_records = []
+                for k, v in final_lines.items():
+                    # THE FIX: Completely exclude hardware-locked lines from the request
+                    if k in locked_slots:
+                        continue
+                    payload_records.append({"id": k, "extension": {"id": v}})
+                
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
                 except Exception as e:
                     error_msg = str(e)
                     if "Presence-102" in error_msg:
-                        results["errors"].append(f"Ext {t_id}: HUD Limitation. The phone likely only supports {len(live_records)} lines, or the target slot is reserved for a Speed Dial hardware key.")
+                        results["errors"].append(f"Ext {t_id}: HUD Limitation. The user's hardware doesn't support this configuration.")
                     else:
                         results["errors"].append(f"Ext {t_id}: {error_msg}")
             elif toggles:
@@ -175,5 +184,5 @@ def update_blf():
 
         return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
     except Exception as e:
-        logging.error(f"Upload Error: {e}")
+        logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
