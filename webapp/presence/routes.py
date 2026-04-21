@@ -196,7 +196,7 @@ def update_blf_from_file():
                     final_lines = {}
                     locked_lines = set()
                     
-                    # Pre-fill current config
+                    # Pre-fill current config. We MUST retain lines 1 and 2 to satisfy the API.
                     for r in current_records:
                         l_id = str(r.get('id'))
                         ext_obj = r.get('extension') or {}
@@ -204,7 +204,7 @@ def update_blf_from_file():
                         if ext_id:
                             final_lines[int(l_id)] = str(ext_id)
                             
-                        # Log locked lines so we can explicitly STRIP them from the PUT payload
+                        # Mark strictly locked lines
                         if r.get('notEditableOnHud') is True or l_id in ["1", "2"]:
                             locked_lines.add(int(l_id))
 
@@ -214,7 +214,7 @@ def update_blf_from_file():
                         val = row.get(col)
                         line_num = int(str(col).lower().replace('line', '').replace('extension', '').strip())
                         
-                        # Skip processing for locked slots entirely
+                        # Skip processing for locked slots so we don't overwrite them
                         if line_num in locked_lines:
                             continue
                             
@@ -238,11 +238,10 @@ def update_blf_from_file():
                                     monitored_id = direct_id
                                     ext_map[raw_val] = direct_id
                                     id_set.add(direct_id)
-                                elif raw_val.isdigit() and len(raw_val) > 5:
-                                    monitored_id = raw_val
                             
+                            # Log warning but do not fail the whole row if translation misses
                             if not monitored_id:
-                                results["errors"].append(f"Ext {target_id}: Cannot find ID for '{raw_val}'. Skipping Line {line_num}.")
+                                results["errors"].append(f"Ext {target_id}: Could not resolve '{raw_val}' to an internal ID. Skipped Line {line_num}.")
                                 continue
                                 
                             if final_lines.get(line_num) != monitored_id:
@@ -250,42 +249,5 @@ def update_blf_from_file():
                                 has_line_changes = True
 
                     if has_line_changes:
-                        sorted_keys = sorted(final_lines.keys())
-                        new_records = []
-                        
-                        # BUILD PAYLOAD: EXPLICITLY OMIT LOCKED LINES!
-                        for k in sorted_keys:
-                            if k in locked_lines:
-                                continue 
-                            new_records.append({
-                                "id": str(k),
-                                "extension": {"id": final_lines[k]}
-                            })
-                            
-                        print(f"\n{'='*50}\nDEBUG PAYLOAD (STRIPPED) FOR EXT {target_id}:\n{new_records}\n{'='*50}\n")
-                        
-                        manager.update_monitored_lines(target_id, new_records)
-                        updates_attempted = True
-                        
-                except Exception as e:
-                    error_msg = str(e)
-                    # Translate Presence-102 into Plain English
-                    if "Presence-102" in error_msg:
-                        results["errors"].append(f"Ext {target_id}: Update rejected (HUD Limitation). You either tried to assign a key past the user's physical phone limit, or assigned an invalid extension type.")
-                    else:
-                        results["errors"].append(f"Ext {target_id}: BLF update failed - {error_msg}")
-
-            if updates_attempted:
-                results["success"] += 1
-            else:
-                results["errors"].append(f"Ext {target_id}: No changes applied (Data matched existing config).")
-
-        return jsonify({
-            "status": "completed", 
-            "message": f"Processed updates for {results['success']} users.",
-            "errors": results["errors"]
-        })
-
-    except Exception as e:
-        logging.error(f"Upload Error: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+                        # Re-sort and build array INLCUDING locked lines.
+                        # We use enumerate to force a sequential 1, 2, 3, 4
