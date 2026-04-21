@@ -19,6 +19,42 @@ def get_users():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@presence_bp.route('/api/presence/template', methods=['GET'])
+def get_template():
+    try:
+        # Define the exact core columns expected by the update script
+        columns = [
+            "Target Extension Name",
+            "Target Extension Number",
+            "Target Extension ID",
+            "Ring on Monitored Call",
+            "Enable Me to Pickup a Monitored Line",
+            "Allow other users to see my presence status"
+        ]
+        
+        # Dynamically append Line 1 through Line 100 columns
+        for i in range(1, 101):
+            columns.append(f"Line {i} Extension")
+            
+        # Create an empty DataFrame with these columns
+        df = pd.DataFrame(columns=columns)
+        
+        # Save to memory and send to user
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        output.seek(0)
+        
+        return send_file(
+            output, 
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+            as_attachment=True, 
+            download_name='BLF_Update_Template.xlsx'
+        )
+    except Exception as e:
+        logging.exception("Template Generation Crash")
+        return jsonify({"status": "error", "message": f"Failed to generate template: {str(e)}"}), 500
+
 @presence_bp.route('/api/presence/audit', methods=['POST'])
 def generate_audit_report():
     try:
