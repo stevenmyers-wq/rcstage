@@ -1,4 +1,5 @@
 from webapp.rc_api import rc_api_call
+import logging
 
 class RCPresenceManager:
     def __init__(self, account_id="~"):
@@ -57,4 +58,15 @@ class RCPresenceManager:
 
     def update_monitored_lines(self, extension_id, line_records):
         payload = {"records": line_records}
-        return rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
+        try:
+            return rc_api_call(f"{self.base_path}/extension/{extension_id}/presence/line", method="PUT", json=payload)
+        except Exception as e:
+            # --- DEBUG TRAP: Catch exact RC Error Body ---
+            error_details = str(e)
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                error_details += f" | RC API RESPONSE BODY: {e.response.text}"
+            
+            print(f"\n{'='*50}\nRC API ERROR DETECTED\nEndpoint: /presence/line\nDetails: {error_details}\n{'='*50}\n")
+            logging.error(f"RC API Error Details: {error_details}")
+            
+            raise Exception(error_details)
