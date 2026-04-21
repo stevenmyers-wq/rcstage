@@ -1,102 +1,71 @@
 <div class="space-y-6 animate-fade-in p-4">
-    
     <div class="text-center mb-8">
         <h2 class="text-3xl font-bold text-gray-800">BLF Presence Management</h2>
         <p class="text-gray-600 mt-2">Audit, template, and bulk update Busy Lamp Field (BLF) configurations.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Audit BLF Configs</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive Excel report mapping out all 100 BLF lines for the users selected in the table below.
-            </p>
-            <button id="generate-audit-btn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
-                Generate Audit Report
-            </button>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Audit BLF</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">Generate a detailed Excel report of current BLF lines for selected users.</p>
+            <button id="generate-audit-btn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">Generate Report</button>
         </div>
 
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Get Template</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Download a blank Excel template. Includes a secondary sheet with clear examples of how to format new extensions or clear slots.
-            </p>
-            <a href="/api/presence/template" class="w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors block text-center">
-                Download Blank Template
-            </a>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">Download the Excel template with formatting examples.</p>
+            <a href="/api/presence/template" class="w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors block text-center">Download Template</a>
         </div>
 
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Update BLF Lines</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Upload your completed Excel file to push configurations. Safely skips locked hardware lines and bypasses API limits.
-            </p>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Update Lines</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">Upload your Excel file to push configurations to the system.</p>
             <label id="upload-btn-label" class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer text-center">
-                Upload to Update
-                <input type="file" id="excel-file" class="hidden" accept=".xlsx">
+                Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">
             </label>
         </div>
-
     </div>
 
-    <div id="upload-status" class="hidden mt-2 p-4 rounded-lg text-sm shadow-sm border"></div>
+    <div id="upload-status" class="hidden mt-2 p-4 rounded-lg text-sm border shadow-sm"></div>
 
     <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden mt-8">
-        
         <div class="bg-gray-50 px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-            <h3 class="text-lg font-bold text-gray-800 m-0">Select Users for Audit</h3>
+            <h3 class="text-lg font-bold text-gray-800 m-0">Select Users</h3>
             <div class="flex items-center gap-3 w-full md:w-auto">
-                <select id="site-select" class="form-select border-gray-300 rounded-lg text-sm text-gray-700 py-2 pl-3 pr-8 focus:ring-blue-500 focus:border-blue-500">
-                    <option value="">All Sites</option>
-                </select>
-                <input type="text" id="global-search" class="form-input border-gray-300 rounded-lg text-sm text-gray-700 py-2 px-3 w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" placeholder="Search name or ext...">
-                <button id="refresh-users-btn" class="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 transition-colors whitespace-nowrap">
-                    Refresh
-                </button>
+                <select id="site-select" class="rounded-lg text-sm border-gray-300 py-2 focus:ring-blue-500"><option value="">All Sites</option></select>
+                <input type="text" id="global-search" class="rounded-lg text-sm border-gray-300 py-2 px-3 w-full md:w-64 focus:ring-blue-500" placeholder="Search...">
+                <button id="refresh-users-btn" class="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700">Refresh</button>
             </div>
         </div>
         
-        <div class="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <div class="overflow-x-auto max-h-[600px]">
             <table class="min-w-full text-left text-sm text-gray-600 whitespace-nowrap">
-                <thead class="bg-gray-50 text-gray-700 sticky top-0 z-10">
+                <thead class="bg-gray-50 sticky top-0 z-10">
                     <tr>
-                        <th class="px-4 py-3 text-center w-12 border-b border-gray-200">
-                            <input type="checkbox" id="select-all" class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer">
-                        </th>
-                        <th class="px-4 py-3 font-bold border-b border-gray-200">NAME</th>
-                        <th class="px-4 py-3 font-bold border-b border-gray-200">EXTENSION</th>
-                        <th class="px-4 py-3 font-bold border-b border-gray-200">EXTENSION ID</th>
-                        <th class="px-4 py-3 font-bold border-b border-gray-200">SITE</th>
+                        <th class="px-4 py-3 text-center border-b"><input type="checkbox" id="select-all" class="rounded text-blue-600"></th>
+                        <th class="px-4 py-3 font-bold border-b">NAME</th>
+                        <th class="px-4 py-3 font-bold border-b">EXTENSION</th>
+                        <th class="px-4 py-3 font-bold border-b">EXTENSION ID</th>
+                        <th class="px-4 py-3 font-bold border-b">SITE</th>
                     </tr>
-                    <tr class="bg-white border-b border-gray-200 shadow-sm">
-                        <th class="px-4 py-2 text-center bg-gray-50"></th>
-                        <th class="px-4 py-2 bg-gray-50"><input type="text" class="w-full px-2 py-1 border border-gray-300 rounded text-xs inline-filter focus:ring-blue-500 focus:border-blue-500" data-col="1" placeholder="&#x1F50D; Filter Name..."></th>
-                        <th class="px-4 py-2 bg-gray-50"><input type="text" class="w-full px-2 py-1 border border-gray-300 rounded text-xs inline-filter focus:ring-blue-500 focus:border-blue-500" data-col="2" placeholder="&#x1F50D; Filter Ext..."></th>
-                        <th class="px-4 py-2 bg-gray-50"><input type="text" class="w-full px-2 py-1 border border-gray-300 rounded text-xs inline-filter focus:ring-blue-500 focus:border-blue-500" data-col="3" placeholder="&#x1F50D; Filter ID..."></th>
-                        <th class="px-4 py-2 bg-gray-50"><input type="text" class="w-full px-2 py-1 border border-gray-300 rounded text-xs inline-filter focus:ring-blue-500 focus:border-blue-500" data-col="4" placeholder="&#x1F50D; Filter Site..."></th>
+                    <tr class="bg-white border-b shadow-sm">
+                        <th></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="1" placeholder="Filter..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="2" placeholder="Filter..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="3" placeholder="Filter..."></th>
+                        <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="4" placeholder="Filter..."></th>
                     </tr>
                 </thead>
-                <tbody id="users-table-body" class="divide-y divide-gray-100 bg-white">
-                    <tr>
-                        <td colspan="5" class="text-center py-8 text-gray-500">Loading users...</td>
-                    </tr>
-                </tbody>
+                <tbody id="users-table-body" class="divide-y divide-gray-100"></tbody>
             </table>
         </div>
     </div>
@@ -104,7 +73,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    
     const usersTableBody = document.getElementById('users-table-body');
     const siteSelect = document.getElementById('site-select');
     const globalSearch = document.getElementById('global-search');
@@ -112,202 +80,74 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectAllCheckbox = document.getElementById('select-all');
     let allUsersData = [];
 
-    // --- 1. Load Sites ---
     async function loadSites() {
-        try {
-            const response = await fetch('/api/presence/sites');
-            const data = await response.json();
-            if (data.status === 'success') {
-                data.sites.forEach(site => {
-                    const option = document.createElement('option');
-                    option.value = site.id;
-                    option.textContent = site.name;
-                    siteSelect.appendChild(option);
-                });
-            }
-        } catch (error) { console.error('Error loading sites:', error); }
-    }
-
-    // --- 2. Fetch Users (Fetch ALL once, filter in browser) ---
-    async function fetchUsers() {
-        usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500">Loading users...</td></tr>';
-        
-        // Always fetch all to allow instant client-side filtering
-        try {
-            const response = await fetch('/api/presence/users');
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                allUsersData = data.users;
-                renderTable();
-            } else {
-                usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-red-500">Error: ${data.message}</td></tr>`;
-            }
-        } catch (error) {
-            usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-red-500">Failed to fetch users.</td></tr>`;
+        const resp = await fetch('/api/presence/sites');
+        const data = await resp.json();
+        if (data.status === 'success') {
+            data.sites.forEach(s => siteSelect.add(new Option(s.name, s.id)));
         }
     }
 
-    // --- 3. Render Table & Apply All Filters ---
+    async function fetchUsers() {
+        usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8">Loading...</td></tr>';
+        const resp = await fetch('/api/presence/users');
+        const data = await resp.json();
+        if (data.status === 'success') { allUsersData = data.users; renderTable(); }
+    }
+
     function renderTable() {
         usersTableBody.innerHTML = '';
         const globalTerm = globalSearch.value.toLowerCase();
+        const selectedSite = siteSelect.value ? siteSelect.options[siteSelect.selectedIndex].text.toLowerCase() : '';
         
-        // Get the actual text of the selected site (e.g., "Main Site")
-        const selectedSiteName = siteSelect.value ? siteSelect.options[siteSelect.selectedIndex].text.toLowerCase() : '';
-        
-        allUsersData.forEach(user => {
-            const name = (user.name || '').toLowerCase();
-            const ext = (user.extensionNumber || '').toLowerCase();
-            const id = String(user.id).toLowerCase();
-            // RingCentral omits the site object for the default site, so we fallback to 'Main site'
-            const siteName = (user.site && user.site.name) ? user.site.name : 'Main site';
-            const siteNameLower = siteName.toLowerCase();
-
-            // 1. Dropdown Site Filter
-            if (selectedSiteName && siteNameLower !== selectedSiteName) return;
-
-            // 2. Global Search Filter
-            if (globalTerm && !name.includes(globalTerm) && !ext.includes(globalTerm)) return;
-
-            // 3. Inline Column Filters
-            let passesInline = true;
-            inlineFilters.forEach(input => {
-                const term = input.value.toLowerCase();
-                if (!term) return;
-                
-                const colIndex = parseInt(input.getAttribute('data-col'));
-                if (colIndex === 1 && !name.includes(term)) passesInline = false;
-                if (colIndex === 2 && !ext.includes(term)) passesInline = false;
-                if (colIndex === 3 && !id.includes(term)) passesInline = false;
-                if (colIndex === 4 && !siteNameLower.includes(term)) passesInline = false;
+        allUsersData.forEach(u => {
+            const site = (u.site && u.site.name) ? u.site.name : 'Main site';
+            const rowData = [u.name || '', u.extensionNumber || '', String(u.id), site];
+            
+            if (selectedSite && site.toLowerCase() !== selectedSite) return;
+            if (globalTerm && !rowData[0].toLowerCase().includes(globalTerm) && !rowData[1].toLowerCase().includes(globalTerm)) return;
+            
+            let match = true;
+            inlineFilters.forEach(f => {
+                const term = f.value.toLowerCase();
+                if (term && !rowData[parseInt(f.dataset.col)-1].toLowerCase().includes(term)) match = false;
             });
+            if (!match) return;
 
-            if (!passesInline) return;
-
-            // Render Row
             const tr = document.createElement('tr');
-            tr.className = "hover:bg-gray-50 transition-colors";
-            tr.innerHTML = `
-                <td class="px-4 py-3 text-center">
-                    <input type="checkbox" class="user-checkbox rounded text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer" value='${JSON.stringify({id: user.id, name: user.name, extensionNumber: user.extensionNumber})}'>
-                </td>
-                <td class="px-4 py-3 font-medium text-gray-800">${user.name || ''}</td>
-                <td class="px-4 py-3">${user.extensionNumber || ''}</td>
-                <td class="px-4 py-3 font-mono text-xs text-gray-500">${user.id}</td>
-                <td class="px-4 py-3">${siteName}</td>
-            `;
+            tr.className = "hover:bg-gray-50";
+            tr.innerHTML = `<td class="px-4 py-3 text-center"><input type="checkbox" class="user-checkbox rounded" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
+                            <td class="px-4 py-3 font-medium text-gray-800">${rowData[0]}</td>
+                            <td class="px-4 py-3">${rowData[1]}</td>
+                            <td class="px-4 py-3 font-mono text-xs text-gray-500">${rowData[2]}</td>
+                            <td class="px-4 py-3">${rowData[3]}</td>`;
             usersTableBody.appendChild(tr);
         });
-        selectAllCheckbox.checked = false;
     }
 
-    // --- 4. Event Listeners ---
-    loadSites();
-    fetchUsers();
+    loadSites(); fetchUsers();
+    globalSearch.oninput = renderTable;
+    siteSelect.onchange = renderTable;
+    inlineFilters.forEach(f => f.oninput = renderTable);
+    selectAllCheckbox.onchange = (e) => document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
+    document.getElementById('refresh-users-btn').onclick = fetchUsers;
 
-    globalSearch.addEventListener('input', renderTable);
-    inlineFilters.forEach(input => input.addEventListener('input', renderTable));
-    
-    // CHANGED: Trigger renderTable instantly instead of hitting the API again
-    siteSelect.addEventListener('change', renderTable); 
-    
-    document.getElementById('refresh-users-btn').addEventListener('click', fetchUsers);
+    document.getElementById('generate-audit-btn').onclick = async () => {
+        const sel = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => JSON.parse(cb.value));
+        if (!sel.length) return alert("Select users first.");
+        const resp = await fetch('/api/presence/audit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({users: sel})});
+        if (resp.ok) { const b = await resp.blob(); const url = URL.createObjectURL(b); const a = document.createElement('a'); a.href = url; a.download = 'Audit.xlsx'; a.click(); }
+    };
 
-    selectAllCheckbox.addEventListener('change', (e) => {
-        const rows = usersTableBody.querySelectorAll('tr');
-        rows.forEach(row => {
-            if (row.style.display !== 'none') {
-                const cb = row.querySelector('.user-checkbox');
-                if (cb) cb.checked = e.target.checked;
-            }
-        });
-    });
-
-    // --- 5. Generate Audit ---
-    document.getElementById('generate-audit-btn').addEventListener('click', async () => {
-        const selected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => JSON.parse(cb.value));
-        if (selected.length === 0) return alert("Please select at least one user to audit.");
-
-        const btn = document.getElementById('generate-audit-btn');
-        btn.innerHTML = '<span class="inline-block animate-spin mr-2">&#9203;</span> Generating...';
-        btn.disabled = true;
-
-        try {
-            const response = await fetch('/api/presence/audit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ users: selected })
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'BLF_Audit_Detailed.xlsx';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } else {
-                alert("Failed to generate audit.");
-            }
-        } catch (error) {
-            console.error(error);
-            alert("An error occurred during audit generation.");
-        } finally {
-            btn.innerHTML = 'Generate Audit Report';
-            btn.disabled = false;
-        }
-    });
-
-    // --- 6. Auto-Upload on File Selection ---
-    document.getElementById('excel-file').addEventListener('change', async (e) => {
-        const fileInput = e.target;
-        if (!fileInput.files.length) return;
-
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-
-        const label = document.getElementById('upload-btn-label');
-        const statusDiv = document.getElementById('upload-status');
-        
-        label.innerHTML = '<span class="inline-block animate-spin mr-2">&#9203;</span> Updating...';
-        label.classList.add('opacity-50', 'cursor-not-allowed');
-        
-        statusDiv.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border-green-200', 'bg-red-50', 'text-red-800', 'border-red-200');
-        statusDiv.innerHTML = '';
-
-        try {
-            const response = await fetch('/api/presence/update', {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-
-            statusDiv.classList.remove('hidden');
-            if (data.status === 'completed') {
-                statusDiv.classList.add('bg-green-50', 'text-green-800', 'border-green-200');
-                let html = `<div class="font-bold mb-1">${data.message}</div>`;
-                if (data.errors && data.errors.length > 0) {
-                    html += `<div class="mt-2 text-yellow-700"><strong>Warnings/Skipped:</strong><ul class="list-disc pl-5 mt-1 space-y-1">`;
-                    data.errors.forEach(err => html += `<li>${err}</li>`);
-                    html += `</ul></div>`;
-                }
-                statusDiv.innerHTML = html;
-            } else {
-                statusDiv.classList.add('bg-red-50', 'text-red-800', 'border-red-200');
-                statusDiv.innerHTML = `<strong>Update failed:</strong> ${data.message}`;
-            }
-        } catch (error) {
-            statusDiv.classList.remove('hidden');
-            statusDiv.classList.add('bg-red-50', 'text-red-800', 'border-red-200');
-            statusDiv.innerHTML = `<strong>System error occurred during upload.</strong>`;
-        } finally {
-            label.innerHTML = 'Upload to Update <input type="file" id="excel-file" class="hidden" accept=".xlsx">';
-            label.classList.remove('opacity-50', 'cursor-not-allowed');
-            fileInput.value = ''; 
-        }
-    });
+    document.getElementById('excel-file').onchange = async (e) => {
+        const fd = new FormData(); fd.append('file', e.target.files[0]);
+        const status = document.getElementById('upload-status');
+        status.className = "p-4 rounded-lg text-sm border bg-blue-50 text-blue-800 border-blue-200 block";
+        status.innerText = "Updating...";
+        const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
+        const data = await resp.json();
+        status.className = `p-4 rounded-lg text-sm border block ${data.status === 'completed' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`;
+        status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
+    };
 });
 </script>
