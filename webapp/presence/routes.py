@@ -224,3 +224,32 @@ def softphone_test():
             results[name] = f"FAILED: {rc_error}"
 
     return jsonify(results)
+
+@presence_bp.route('/api/presence/inspect/<target_ext_id>', methods=['GET'])
+def inspect_portal_changes(target_ext_id):
+    """Fetches exactly what the RingCentral Portal saved behind the scenes."""
+    from webapp.rc_api import rc_api_call
+    from webapp.presence.utils import RCPresenceManager
+    manager = RCPresenceManager()
+    
+    diagnostic_log = {
+        "Target_User": target_ext_id,
+        "1_Appearance_Lines_HUD_Endpoint": None,
+        "2_Permissions_Endpoint": None
+    }
+
+    try:
+        # Fetch what the portal saved for BLF Buttons
+        lines_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/line", method="GET")
+        diagnostic_log["1_Appearance_Lines_HUD_Endpoint"] = lines_data.get('records', [])
+    except Exception as e:
+        diagnostic_log["1_Appearance_Lines_HUD_Endpoint"] = f"ERROR: {str(e)}"
+        
+    try:
+        # Fetch what the portal saved for Monitoring Permissions
+        perms_data = rc_api_call(f"{manager.base_path}/extension/{target_ext_id}/presence/permission", method="GET")
+        diagnostic_log["2_Permissions_Endpoint"] = perms_data.get('records', [])
+    except Exception as e:
+        diagnostic_log["2_Permissions_Endpoint"] = f"ERROR: {str(e)}"
+
+    return jsonify({"status": "SUCCESS - Portal Data Extracted", "data": diagnostic_log})
