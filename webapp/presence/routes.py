@@ -2,6 +2,7 @@ import io
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
+import logging
 
 presence_bp = Blueprint('presence', __name__)
 
@@ -25,8 +26,7 @@ def generate_audit_report():
         selected_users = data.get('users', [])
         manager = RCPresenceManager()
         
-        # Build a master map to resolve names and 'SharedLinesGroup' types
-        all_exts = manager.get_all_extensions_raw()
+        all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
         
         audit_data = []
@@ -45,30 +45,39 @@ def generate_audit_report():
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
 
-            # Map existing lines 1-100
-            for record in records:
-                l_id = record.get('id')
-                ext_info = record.get('extension') or {}
-                m_id = str(ext_info.get('id', ''))
-                
-                # Cross-reference with master list to find true type (SharedLine, etc.)
-                master = id_to_ext_map.get(m_id, {})
-                name = master.get('name') or ext_info.get('name') or 'Unknown'
-                ext_num = master.get('extensionNumber') or ext_info.get('extensionNumber') or m_id
-                type_label = master.get('type') or ext_info.get('type') or "Unknown"
-                
-                lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
-                row[f"Line {l_id} Name"] = f"{lock_status}{name} ({type_label})"
-                row[f"Line {l_id} Extension"] = str(ext_num)
-
+            assigned_map = {str(r.get('id')): r for r in records}
+            
+            for i in range(1, 101):
+                record = assigned_map.get(str(i))
+                if record:
+                    ext_obj = record.get('extension') or {}
+                    m_id = str(ext_obj.get('id', ''))
+                    
+                    # Cross-reference with directory to catch SharedLinesGroup, etc.
+                    master = id_to_ext_map.get(m_id, {})
+                    type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
+                    name = master.get('name') or ext_obj.get('name') or type_label
+                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+                    
+                    lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
+                    
+                    row[f"Line {i} Name"] = f"{lock_status}{name} ({type_label})"
+                    row[f"Line {i} Extension"] = str(ext_num)
+                else:
+                    row[f"Line {i} Name"] = ""
+                    row[f"Line {i} Extension"] = ""
+            
+            audit_data.append(row)
+            
         df = pd.DataFrame(audit_data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit.xlsx')
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logging.error(f"Audit Crash: {e}")
+        return jsonify({"status": "error", "message": f"Audit Failed: {str(e)}"}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
 def update_blf():
@@ -78,16 +87,16 @@ def update_blf():
         df.columns = df.columns.str.strip()
         
         manager = RCPresenceManager()
-        all_exts = manager.get_all_extensions_raw()
-        ext_num_to_id = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
+        all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
+        ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         
         results = {"success": 0, "errors": []}
         line_cols = [c for c in df.columns if "Line" in c and "Extension" in c]
 
         for _, row in df.iterrows():
             t_id = str(row["Target Extension ID"]).split('.')[0]
+            if not t_id or t_id == 'nan': continue
             
-            # Step 1: Handle Toggles
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -96,36 +105,75 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # Step 2: Handle Monitored Lines (The 2-Step Process)
-            # Fetch current state to find hardware-locked lines
+            # FETCH LIVE STATE
             live_resp = manager.get_monitored_lines(t_id)
-            live_records = live_resp.get('records') or []
+            live_records = live_resp.get('records', [])
             
-            # Build payload, DISREGARDING any spreadsheet changes for locked lines [cite: 31]
-            update_payload = []
-            locked_indices = {str(r['id']) for r in live_records if r.get('notEditableOnHud')}
+            final_lines = {}
+            locked_slots = set()
+            
+            # PRE-FILL CURRENT LINES (Protects Lines 1-4 if you only edit Line 5)
+            for r in live_records:
+                l_id = str(r['id'])
+                ext_id = r.get('extension', {}).get('id')
+                if ext_id:
+                    final_lines[l_id] = str(ext_id)
+                if r.get('notEditableOnHud'):
+                    locked_slots.add(l_id)
 
+            has_changes = False
+
+            # OVERLAY SPREADSHEET CHANGES
             for col in line_cols:
                 l_idx = col.split(' ')[1]
+                val = row.get(col)
                 
-                # If this slot is locked (Line 1/2 or other primary), ignore spreadsheet value
-                if l_idx in locked_indices:
+                # BLANK = DO NOT CHANGE
+                if pd.isna(val) or str(val).strip() == "":
+                    continue 
+                
+                val_str = str(val).split('.')[0].strip()
+                
+                # "CLEAR" = DELETE INTENT
+                if val_str.upper() == "CLEAR":
+                    if l_idx in final_lines:
+                        if l_idx in locked_slots:
+                            results["errors"].append(f"Ext {t_id}: Cannot clear Line {l_idx} (Locked by RC).")
+                        else:
+                            del final_lines[l_idx]
+                            has_changes = True
                     continue
                 
-                val = str(row[col]).split('.')[0].strip() if pd.notna(row[col]) else ""
-                if not val: continue # Skip empty cells
+                # ADD OR UPDATE INTENT
+                if l_idx in locked_slots:
+                    results["errors"].append(f"Ext {t_id}: Cannot update Line {l_idx} (Locked by RC).")
+                    continue
+                    
+                # Translate Number to ID
+                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 
-                # Resolve internal ID
-                monitored_id = ext_num_to_id.get(val) or val
-                update_payload.append({"id": l_idx, "extension": {"id": monitored_id}})
+                if final_lines.get(l_idx) != monitored_id:
+                    final_lines[l_idx] = monitored_id
+                    has_changes = True
 
-            try:
-                if update_payload:
-                    manager.update_monitored_lines(t_id, update_payload)
+            # BUILD FINAL PAYLOAD
+            if has_changes:
+                payload_records = [{"id": k, "extension": {"id": v}} for k, v in final_lines.items()]
+                try:
+                    manager.update_monitored_lines(t_id, payload_records)
+                    results["success"] += 1
+                except Exception as e:
+                    error_msg = str(e)
+                    if "Presence-102" in error_msg:
+                        results["errors"].append(f"Ext {t_id}: HUD Limitation. The phone likely only supports {len(live_records)} lines, or the target slot is reserved for a Speed Dial hardware key.")
+                    else:
+                        results["errors"].append(f"Ext {t_id}: {error_msg}")
+            elif toggles:
                 results["success"] += 1
-            except Exception as e:
-                results["errors"].append(f"Ext {t_id}: {str(e)}")
+            else:
+                results["errors"].append(f"Ext {t_id}: No changes detected in the spreadsheet.")
 
         return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
     except Exception as e:
+        logging.error(f"Upload Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
