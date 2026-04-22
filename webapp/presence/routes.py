@@ -121,7 +121,6 @@ def update_blf():
             t_id = str(row.get(target_col, "")).split('.')[0].strip()
             if not t_id or t_id.lower() == 'nan': continue
             
-            # --- 1. TOGGLES ---
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -130,7 +129,6 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
-            # --- 2. GET CURRENT STATE (The Real IDs) ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
@@ -141,7 +139,6 @@ def update_blf():
             payload_records = []
             seen_extensions = set()
 
-            # --- 3. MAP SPREADSHEET TO EXISTING REAL IDs ---
             for i, record in enumerate(live_records):
                 real_slot_id = str(record.get('id')) 
                 is_locked = record.get('notEditableOnHud', False)
@@ -150,14 +147,12 @@ def update_blf():
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # Rule 1: Hardware locked primary lines
                 if is_locked:
                     if current_ext_id:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
                         seen_extensions.add(current_ext_id)
                     continue
                 
-                # Rule 2: Blank spreadsheet cell -> keep existing configuration
                 if pd.isna(val) or str(val).strip() == "":
                     if current_ext_id and current_ext_id not in seen_extensions:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
@@ -166,25 +161,20 @@ def update_blf():
                 
                 val_str = str(val).split('.')[0].strip()
                 
-                # Rule 3: Clear intent
                 if val_str.upper() == "CLEAR":
-                    continue # Omitting the ID from the payload clears the slot
+                    continue 
                 
-                # Rule 4: Update with new extension
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 if monitored_id in seen_extensions:
-                    continue # Stop duplicates
+                    continue 
                 
-                new_line = {"extension": {"id": monitored_id}}
-                
-                # CRITICAL FIX: Only attach the ID if the target extension is perfectly identical.
-                if current_ext_id == str(monitored_id):
-                    new_line["id"] = real_slot_id
-                    
-                payload_records.append(new_line)
+                # RESTORED: ALWAYS pass the ID when mapping a new extension to an existing slot
+                payload_records.append({
+                    "id": real_slot_id,
+                    "extension": {"id": monitored_id}
+                })
                 seen_extensions.add(monitored_id)
 
-            # Check if user tried to add lines beyond what the system has IDs for
             skipped_lines = []
             for i in range(len(live_records) + 1, 101):
                 sheet_col = f"Line {i} Extension"
@@ -200,9 +190,8 @@ def update_blf():
             print(json.dumps(final_payload, indent=2), flush=True)
             print("==================================================\n", flush=True)
 
-            # --- 4. DIFF AND SEND ---
             current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
-            payload_state = {p.get('id', 'new'): p['extension']['id'] for p in payload_records}
+            payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
             if current_state != payload_state:
                 try:
