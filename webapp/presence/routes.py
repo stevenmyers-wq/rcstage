@@ -134,7 +134,6 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            # ---> DIAGNOSTIC LOGGING INJECTED HERE <---
             print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
@@ -144,12 +143,10 @@ def update_blf():
 
             # --- 3. MAP SPREADSHEET TO EXISTING REAL IDs ---
             for i, record in enumerate(live_records):
-                # Extract the literal system identifier, whatever format it is
                 real_slot_id = str(record.get('id')) 
                 is_locked = record.get('notEditableOnHud', False)
                 current_ext_id = str(record.get('extension', {}).get('id', ''))
                 
-                # Look at the corresponding column in the spreadsheet
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
@@ -178,11 +175,13 @@ def update_blf():
                 if monitored_id in seen_extensions:
                     continue # Stop duplicates
                 
-                # Build the minimal requested object using the REAL id
-                payload_records.append({
-                    "id": real_slot_id,
-                    "extension": {"id": monitored_id}
-                })
+                new_line = {"extension": {"id": monitored_id}}
+                
+                # CRITICAL FIX: Only attach the ID if the target extension is perfectly identical.
+                if current_ext_id == str(monitored_id):
+                    new_line["id"] = real_slot_id
+                    
+                payload_records.append(new_line)
                 seen_extensions.add(monitored_id)
 
             # Check if user tried to add lines beyond what the system has IDs for
@@ -196,7 +195,6 @@ def update_blf():
             if skipped_lines:
                 results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_lines)} were ignored because the system has no available internal IDs for those slots.")
 
-            # ---> DIAGNOSTIC LOGGING INJECTED HERE <---
             final_payload = {"records": payload_records}
             print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
             print(json.dumps(final_payload, indent=2), flush=True)
@@ -204,7 +202,7 @@ def update_blf():
 
             # --- 4. DIFF AND SEND ---
             current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
-            payload_state = {p['id']: p['extension']['id'] for p in payload_records}
+            payload_state = {p.get('id', 'new'): p['extension']['id'] for p in payload_records}
             
             if current_state != payload_state:
                 try:
