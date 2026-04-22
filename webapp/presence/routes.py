@@ -84,7 +84,6 @@ def generate_audit_report():
                 row[f"Line {i} Name"] = ""
                 row[f"Line {i} Extension"] = ""
                 
-            # Use array index mapping for safe audit extraction
             for i, record in enumerate(records):
                 line_idx = i + 1
                 if line_idx > 100: break
@@ -141,9 +140,7 @@ def update_blf():
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
             
-            # --- THE FIX: Revert to Safe Array Order Mapping ---
             existing_slots = {i+1: r for i, r in enumerate(live_records)}
-            
             payload_records = []
             seen_extensions = set()
 
@@ -156,7 +153,12 @@ def update_blf():
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
-                        payload_records.append({"id": str(record.get('id')), "extension": {"id": str(ext_id)}})
+                        # FIX: Inject the type parameter into locked lines
+                        ext_type = record.get('extension', {}).get('type', 'User')
+                        payload_records.append({
+                            "id": str(record.get('id')), 
+                            "extension": {"id": str(ext_id), "type": ext_type}
+                        })
                         seen_extensions.add(str(ext_id))
                     continue
 
@@ -178,7 +180,6 @@ def update_blf():
                             
                     if mon_id not in seen_extensions:
                         ext_type = id_obj_map.get(mon_id, {}).get('type', 'User')
-                        
                         new_line = {"extension": {"id": mon_id, "type": ext_type}}
                         if record and 'id' in record:
                             new_line["id"] = str(record['id'])
