@@ -70,6 +70,7 @@ def generate_audit_report():
             settings = manager.get_presence_settings(ext_id)
             lines_resp = manager.get_monitored_lines(ext_id)
             records = lines_resp.get('records') or []
+            
             row = {
                 "Target Extension Name": user.get('name', ''),
                 "Target Extension Number": user.get('extensionNumber', ''),
@@ -78,14 +79,30 @@ def generate_audit_report():
                 "Enable Me to Pickup a Monitored Line": settings.get('pickUpCallsOnHold', False),
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
-            for i, record in enumerate(records):
-                line_idx = i + 1
+            
+            # Pre-fill to guarantee column order and existence
+            for i in range(1, 101):
+                row[f"Line {i} Name"] = ""
+                row[f"Line {i} Extension"] = ""
+                
+            # STRICT ID MAPPING FOR AUDITS (Fixes array indexing bugs)
+            for record in records:
+                try:
+                    line_idx = int(record.get('id', 0))
+                except ValueError:
+                    continue
+                    
+                if not (1 <= line_idx <= 100):
+                    continue
+                    
                 ext_obj = record.get('extension') or {}
                 m_id = str(ext_obj.get('id', ''))
                 master = id_to_ext_map.get(m_id, {})
                 row[f"Line {line_idx} Name"] = f"{'[LOCKED] ' if record.get('notEditableOnHud') else ''}{master.get('name') or ext_obj.get('name') or ''}"
                 row[f"Line {line_idx} Extension"] = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+            
             audit_data.append(row)
+            
         df = pd.DataFrame(audit_data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -106,6 +123,9 @@ def update_blf():
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         
+        # Build a lookup dictionary to grab the "type" parameter later
+        id_obj_map = {str(e.get('id')): e for e in all_exts} 
+        
         results = {"success": 0, "errors": []}
 
         for _, row in df.iterrows():
@@ -125,12 +145,16 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            # --- FORCE PRINT DIAGNOSTICS TO GCP ---
             print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
             
-            existing_slots = {i+1: r for i, r in enumerate(live_records)}
+            # --- THE CRITICAL FIX: MAP BY REAL ID, NOT ARRAY INDEX ---
+            existing_slots = {}
+            for r in live_records:
+                if 'id' in r and str(r['id']).isdigit():
+                    existing_slots[int(r['id'])] = r
+            
             payload_records = []
             seen_extensions = set()
 
@@ -161,7 +185,10 @@ def update_blf():
                             continue
                             
                     if mon_id not in seen_extensions:
-                        new_line = {"extension": {"id": mon_id}}
+                        # Extract the true "type" (e.g. User, ParkLocation) as spotted by the user
+                        ext_type = id_obj_map.get(mon_id, {}).get('type', 'User')
+                        
+                        new_line = {"extension": {"id": mon_id, "type": ext_type}}
                         if record and 'id' in record:
                             new_line["id"] = str(record['id'])
                             
@@ -177,7 +204,6 @@ def update_blf():
 
             final_payload = {"records": payload_records}
             
-            # --- FORCE PRINT DIAGNOSTICS TO GCP ---
             print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
             print(json.dumps(final_payload, indent=2), flush=True)
             print("==================================================\n", flush=True)
