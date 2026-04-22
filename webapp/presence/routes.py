@@ -139,67 +139,55 @@ def update_blf():
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
             
-            existing_slots = {i+1: r for i, r in enumerate(live_records)}
-            
             payload_records = []
-            seen_extensions = set()
 
-            for i in range(1, 101):
-                record = existing_slots.get(i)
-                sheet_col = f"Line {i} Extension"
-                val = row.get(sheet_col) if sheet_col in df.columns else None
+            # Loop precisely through the 100 possible columns
+            for i in range(100):
+                sheet_col = f"Line {i+1} Extension"
+                if sheet_col not in df.columns:
+                    break
+                    
+                val = row.get(sheet_col)
+                existing_record = live_records[i] if i < len(live_records) else None
 
-                # Rule A: Hardware Locked Lines (Preserved exactly as-is)
-                if record and record.get('notEditableOnHud'):
-                    ext_id = record.get('extension', {}).get('id')
+                # Rule 1: Hardware Locked lines must be preserved exactly as bare minimum
+                if existing_record and existing_record.get('notEditableOnHud'):
+                    ext_id = existing_record.get('extension', {}).get('id')
                     if ext_id:
-                        payload_records.append({
-                            "id": str(record.get('id')), 
-                            "extension": {"id": str(ext_id)}
-                        })
-                        seen_extensions.add(str(ext_id))
+                        payload_records.append({"id": str(existing_record['id']), "extension": {"id": str(ext_id)}})
                     continue
 
-                # Rule B: Clear Intent
+                # Rule 2: Explicit CLEAR
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
-                    continue 
+                    continue
 
-                # Rule C: Update with New Value
+                # Rule 3: Spreadsheet has a new target extension
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
                     
-                    if not mon_id:
-                        if len(val_str) >= 7 and val_str.isdigit():
-                            mon_id = val_str 
-                        else:
-                            results["errors"].append(f"Ext {t_id}: Line {i} skipped. Could not resolve Ext '{val_str}' to a system UUID.")
-                            continue
-                            
-                    # Protect against self-monitoring
-                    if mon_id == t_id:
-                        continue
-                            
-                    if mon_id not in seen_extensions:
-                        new_line = {"extension": {"id": mon_id}}
+                    if not mon_id and len(val_str) >= 7 and val_str.isdigit():
+                        mon_id = val_str
                         
-                        # Apply ID if overwriting an existing slot
-                        if record and 'id' in record:
-                            new_line["id"] = str(record['id'])
-                            
+                    if mon_id:
+                        new_line = {}
+                        # Crucial API Fix: 'id' must be the first key evaluated by the parser
+                        if existing_record and 'id' in existing_record:
+                            new_line["id"] = str(existing_record['id'])
+                        new_line["extension"] = {"id": str(mon_id)}
                         payload_records.append(new_line)
-                        seen_extensions.add(mon_id)
+                    else:
+                        results["errors"].append(f"Ext {t_id}: Line {i+1} skipped. Could not resolve Ext '{val_str}'.")
                     continue
 
-                # Rule D: Spreadsheet is blank, preserve existing line exactly
-                if record:
-                    curr_id = str(record.get('extension', {}).get('id', ''))
-                    if curr_id and curr_id != t_id and curr_id not in seen_extensions:
+                # Rule 4: Spreadsheet is blank, preserve existing line
+                if existing_record:
+                    curr_id = existing_record.get('extension', {}).get('id')
+                    if curr_id:
                         payload_records.append({
-                            "id": str(record.get('id')), 
-                            "extension": {"id": curr_id}
+                            "id": str(existing_record['id']),
+                            "extension": {"id": str(curr_id)}
                         })
-                        seen_extensions.add(curr_id)
 
             final_payload = {"records": payload_records}
             
