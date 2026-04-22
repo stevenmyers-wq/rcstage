@@ -132,6 +132,10 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
+            print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
+            print("RAW GET RESPONSE FROM RC:", flush=True)
+            print(json.dumps(live_resp, indent=2), flush=True)
+            
             payload_records = []
             seen_extensions = set()
 
@@ -143,12 +147,14 @@ def update_blf():
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
+                # Rule 1: Hardware locked primary lines MUST be included to satisfy the API
                 if is_locked:
                     if current_ext_id:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
                         seen_extensions.add(current_ext_id)
                     continue
                 
+                # Rule 2: Blank spreadsheet cell -> keep existing configuration
                 if pd.isna(val) or str(val).strip() == "":
                     if current_ext_id and current_ext_id not in seen_extensions:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
@@ -157,9 +163,11 @@ def update_blf():
                 
                 val_str = str(val).split('.')[0].strip()
                 
+                # Rule 3: Clear intent
                 if val_str.upper() == "CLEAR":
                     continue 
                 
+                # Rule 4: Update with new extension
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 if monitored_id in seen_extensions:
                     continue 
@@ -182,13 +190,17 @@ def update_blf():
 
             # --- WRAP THE LIST IN THE DICT ---
             final_payload = {"records": payload_records}
+            print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
+            print(json.dumps(final_payload, indent=2), flush=True)
+            print("==================================================\n", flush=True)
 
+            # --- 4. DIFF AND SEND ---
             current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
             payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
             if current_state != payload_state:
                 try:
-                    # CRITICAL FIX: Pass the dict (final_payload), NOT the list (payload_records)
+                    # Send the dict (final_payload) so the API doesn't crash with Parameter []
                     manager.update_monitored_lines(t_id, final_payload)
                     results["success"] += 1
                 except Exception as e:
