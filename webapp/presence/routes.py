@@ -139,7 +139,6 @@ def update_blf():
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
             
-            # Map by exact array order (crucial for physical hardphones vs softphones)
             existing_slots = {i+1: r for i, r in enumerate(live_records)}
             
             payload_records = []
@@ -150,22 +149,11 @@ def update_blf():
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
-                # Rule A: Hardware Locked Lines
-                if record and record.get('notEditableOnHud'):
-                    ext_id = record.get('extension', {}).get('id')
-                    if ext_id:
-                        payload_records.append({
-                            "id": str(record.get('id')), 
-                            "extension": {"id": str(ext_id)}
-                        })
-                        seen_extensions.add(str(ext_id))
-                    continue
-
-                # Rule B: Clear Intent
+                # Rule A: Clear Intent
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
                     continue 
 
-                # Rule C: Update with New Value
+                # Rule B: Update with New Value
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
@@ -177,6 +165,10 @@ def update_blf():
                             results["errors"].append(f"Ext {t_id}: Line {i} skipped. Could not resolve Ext '{val_str}' to a system UUID.")
                             continue
                             
+                    # CRITICAL FIX: Do not send self-references
+                    if mon_id == t_id:
+                        continue
+                            
                     if mon_id not in seen_extensions:
                         new_line = {"extension": {"id": mon_id}}
                         if record and 'id' in record:
@@ -186,15 +178,17 @@ def update_blf():
                         seen_extensions.add(mon_id)
                     continue
 
-                # Rule D: Spreadsheet is blank, preserve existing line
+                # Rule C: Spreadsheet is blank, preserve existing line
                 if record:
-                    curr_id = record.get('extension', {}).get('id')
-                    if curr_id and str(curr_id) not in seen_extensions:
+                    curr_id = str(record.get('extension', {}).get('id', ''))
+                    
+                    # CRITICAL FIX: Do not send self-references
+                    if curr_id and curr_id != t_id and curr_id not in seen_extensions:
                         payload_records.append({
                             "id": str(record.get('id')), 
-                            "extension": {"id": str(curr_id)}
+                            "extension": {"id": curr_id}
                         })
-                        seen_extensions.add(str(curr_id))
+                        seen_extensions.add(curr_id)
 
             final_payload = {"records": payload_records}
             
