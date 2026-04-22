@@ -1,4 +1,5 @@
 import io
+import json
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
@@ -133,6 +134,11 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
+            # ---> DIAGNOSTIC LOGGING INJECTED HERE <---
+            print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
+            print("RAW GET RESPONSE FROM RC:", flush=True)
+            print(json.dumps(live_resp, indent=2), flush=True)
+            
             payload_records = []
             seen_extensions = set()
 
@@ -190,6 +196,12 @@ def update_blf():
             if skipped_lines:
                 results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_lines)} were ignored because the system has no available internal IDs for those slots.")
 
+            # ---> DIAGNOSTIC LOGGING INJECTED HERE <---
+            final_payload = {"records": payload_records}
+            print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
+            print(json.dumps(final_payload, indent=2), flush=True)
+            print("==================================================\n", flush=True)
+
             # --- 4. DIFF AND SEND ---
             current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
             payload_state = {p['id']: p['extension']['id'] for p in payload_records}
@@ -200,6 +212,7 @@ def update_blf():
                     results["success"] += 1
                 except Exception as e:
                     results["errors"].append(f"Ext {t_id}: {str(e)}")
+                    logging.exception(f"RC API Error during update for {t_id}")
             elif toggles:
                 results["success"] += 1
             else:
