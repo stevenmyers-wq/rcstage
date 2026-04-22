@@ -3,7 +3,6 @@ import json
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
-import logging
 
 presence_bp = Blueprint('presence', __name__)
 
@@ -11,10 +10,6 @@ def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
-# ==========================================
-# NEW: DIAGNOSTIC ROUTE
-# Go to /api/presence/debug/224995125 in your browser
-# ==========================================
 @presence_bp.route('/api/presence/debug/<extension_id>', methods=['GET'])
 def debug_raw_lines(extension_id):
     try:
@@ -130,10 +125,10 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            # --- DIAGNOSTIC LOGGING ---
-            logging.info(f"========== EXTENSION {t_id} DIAGNOSTICS ==========")
-            logging.info("RAW GET RESPONSE FROM RC:")
-            logging.info(json.dumps(live_resp, indent=2))
+            # --- FORCE PRINT DIAGNOSTICS TO GCP ---
+            print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
+            print("RAW GET RESPONSE FROM RC:", flush=True)
+            print(json.dumps(live_resp, indent=2), flush=True)
             
             existing_slots = {i+1: r for i, r in enumerate(live_records)}
             payload_records = []
@@ -180,11 +175,12 @@ def update_blf():
                         payload_records.append({"id": str(record.get('id')), "extension": {"id": str(curr_id)}})
                         seen_extensions.add(str(curr_id))
 
-            # --- DIAGNOSTIC LOGGING ---
             final_payload = {"records": payload_records}
-            logging.info("PAYLOAD ABOUT TO BE SENT TO RC:")
-            logging.info(json.dumps(final_payload, indent=2))
-            logging.info("==================================================")
+            
+            # --- FORCE PRINT DIAGNOSTICS TO GCP ---
+            print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
+            print(json.dumps(final_payload, indent=2), flush=True)
+            print("==================================================\n", flush=True)
 
             if payload_records:
                 try:
@@ -197,5 +193,5 @@ def update_blf():
 
         return jsonify({"status": "completed", "message": f"Processed {results['success']} users", "errors": results["errors"]})
     except Exception as e:
-        logging.exception("Upload Crash")
+        print(f"CRITICAL UPLOAD CRASH: {str(e)}", flush=True)
         return jsonify({"status": "error", "message": str(e)}), 500
