@@ -115,6 +115,7 @@ def update_blf():
         manager = RCPresenceManager()
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
+        id_obj_map = {str(e.get('id')): e for e in all_exts} 
         
         results = {"success": 0, "errors": []}
 
@@ -149,11 +150,19 @@ def update_blf():
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
-                # Rule A: Clear Intent
+                # Rule A: Hardware Locked Lines (Echo the EXACT dictionary RingCentral gave us)
+                if record and record.get('notEditableOnHud'):
+                    payload_records.append(record)
+                    ext_id = record.get('extension', {}).get('id')
+                    if ext_id:
+                        seen_extensions.add(str(ext_id))
+                    continue
+
+                # Rule B: Clear Intent
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
                     continue 
 
-                # Rule B: Update with New Value
+                # Rule C: Update with New Value
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
@@ -165,12 +174,11 @@ def update_blf():
                             results["errors"].append(f"Ext {t_id}: Line {i} skipped. Could not resolve Ext '{val_str}' to a system UUID.")
                             continue
                             
-                    # CRITICAL FIX: Do not send self-references
-                    if mon_id == t_id:
-                        continue
-                            
                     if mon_id not in seen_extensions:
-                        new_line = {"extension": {"id": mon_id}}
+                        ext_type = id_obj_map.get(mon_id, {}).get('type', 'User')
+                        new_line = {"extension": {"id": mon_id, "type": ext_type}}
+                        
+                        # Add ID if it's an existing slot being overwritten
                         if record and 'id' in record:
                             new_line["id"] = str(record['id'])
                             
@@ -178,16 +186,11 @@ def update_blf():
                         seen_extensions.add(mon_id)
                     continue
 
-                # Rule C: Spreadsheet is blank, preserve existing line
+                # Rule D: Spreadsheet is blank, preserve existing line (Echo EXACT dictionary)
                 if record:
                     curr_id = str(record.get('extension', {}).get('id', ''))
-                    
-                    # CRITICAL FIX: Do not send self-references
-                    if curr_id and curr_id != t_id and curr_id not in seen_extensions:
-                        payload_records.append({
-                            "id": str(record.get('id')), 
-                            "extension": {"id": curr_id}
-                        })
+                    if curr_id and curr_id not in seen_extensions:
+                        payload_records.append(record)
                         seen_extensions.add(curr_id)
 
             final_payload = {"records": payload_records}
