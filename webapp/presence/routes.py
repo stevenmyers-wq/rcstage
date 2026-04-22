@@ -153,8 +153,11 @@ def update_blf():
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # CRITICAL FIX 1: Strip ALL locked lines from the payload
+                # CRITICAL FIX 1: We MUST include the locked lines so the API knows we aren't deleting them
                 if is_locked:
+                    if current_ext_id:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
                     continue
                 
                 if pd.isna(val) or str(val).strip() == "":
@@ -192,8 +195,7 @@ def update_blf():
             print(json.dumps(payload_records, indent=2), flush=True)
             print("==================================================\n", flush=True)
 
-            # Exclude locked lines from the diff checker so it accurately detects changes
-            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records if not r.get('notEditableOnHud')}
+            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
             payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
             if current_state != payload_state:
