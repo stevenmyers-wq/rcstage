@@ -139,72 +139,74 @@ def update_blf():
             payload_records = []
             seen_extensions = set()
 
-            # Pre-load locked extensions so we never accidentally assign them elsewhere
-            for record in live_records:
-                if record.get('notEditableOnHud'):
-                    ext_id = str(record.get('extension', {}).get('id', ''))
-                    if ext_id:
-                        seen_extensions.add(ext_id)
-
-            # Map the exact spreadsheet lines
-            for i in range(100):
-                line_num = i + 1
-                sheet_col = f"Line {line_num} Extension"
-                if sheet_col not in df.columns:
-                    break
+            for i, record in enumerate(live_records):
+                real_slot_id = str(record.get('id')) 
+                is_locked = record.get('notEditableOnHud', False)
+                current_ext_id = str(record.get('extension', {}).get('id', ''))
                 
-                existing_record = live_records[i] if i < len(live_records) else None
+                sheet_col = f"Line {i + 1} Extension"
+                val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # CRITICAL RULE 1: Never include locked lines in the payload
-                if existing_record and existing_record.get('notEditableOnHud'):
-                    continue 
+                # Rule 1: Always preserve locked lines exactly as they are
+                if is_locked:
+                    if current_ext_id:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
+                    continue
                 
-                val = row.get(sheet_col)
-                
+                # Rule 2: Preserve existing config if spreadsheet cell is blank
                 if pd.isna(val) or str(val).strip() == "":
-                    # Keep existing configuration if there was one
-                    if existing_record:
-                        curr_ext_id = str(existing_record.get('extension', {}).get('id', ''))
-                        if curr_ext_id and curr_ext_id not in seen_extensions:
-                            payload_records.append({
-                                "id": str(existing_record['id']),
-                                "extension": {"id": curr_ext_id}
-                            })
-                            seen_extensions.add(curr_ext_id)
+                    if current_ext_id and current_ext_id not in seen_extensions:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
                     continue
                 
                 val_str = str(val).split('.')[0].strip()
                 
+                # Rule 3: Clear intent
                 if val_str.upper() == "CLEAR":
                     continue 
                 
+                # Rule 4: Update with new extension mapping to the existing ID
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 if monitored_id in seen_extensions:
                     continue 
                 
-                # CRITICAL RULE 2: Only pass the ID if the extension is identical. If it changes, drop the ID!
-                if existing_record and str(existing_record.get('extension', {}).get('id', '')) == str(monitored_id):
-                    payload_records.append({
-                        "id": str(existing_record['id']),
-                        "extension": {"id": monitored_id}
-                    })
-                else:
-                    payload_records.append({
-                        "extension": {"id": monitored_id}
-                    })
+                payload_records.append({
+                    "id": real_slot_id,
+                    "extension": {"id": monitored_id}
+                })
+                seen_extensions.add(monitored_id)
+
+            # Rule 5: Append brand new lines if spreadsheet dictates it
+            for i in range(len(live_records), 100):
+                sheet_col = f"Line {i + 1} Extension"
+                val = row.get(sheet_col) if sheet_col in df.columns else None
+                
+                if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
+                    continue
                     
+                val_str = str(val).split('.')[0].strip()
+                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+                
+                if monitored_id in seen_extensions:
+                    continue
+                    
+                payload_records.append({
+                    "extension": {"id": monitored_id}
+                })
                 seen_extensions.add(monitored_id)
 
             print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
             print(json.dumps(payload_records, indent=2), flush=True)
             print("==================================================\n", flush=True)
 
-            # Compare ONLY the editable extensions to see if anything actually changed
-            current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records if not r.get('notEditableOnHud')]
-            payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
+            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
+            payload_state = {p.get('id', 'new'): p['extension']['id'] for p in payload_records}
             
-            if current_exts != payload_exts:
+            if current_state != payload_state:
                 try:
+                    # Pass the exact list structure expected by utils.py
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
                 except Exception as e:
@@ -219,19 +221,3 @@ def update_blf():
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@presence_bp.route('/api/presence/sandbox/<extension_id>', methods=['POST'])
-def presence_sandbox(extension_id):
-    try:
-        # We take the exact JSON from the frontend and send it raw
-        raw_payload = request.json 
-        manager = RCPresenceManager()
-        
-        # Bypass the wrapper in utils.py and hit the API directly
-        from webapp.rc_api import rc_api_call
-        endpoint = f"{manager.base_path}/extension/{extension_id}/presence/line"
-        
-        response = rc_api_call(endpoint, method="PUT", json=raw_payload)
-        return jsonify({"status": "success", "data": response})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
