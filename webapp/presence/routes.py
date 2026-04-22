@@ -219,3 +219,19 @@ def update_blf():
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@presence_bp.route('/api/presence/sandbox/<extension_id>', methods=['POST'])
+def presence_sandbox(extension_id):
+    try:
+        # We take the exact JSON from the frontend and send it raw
+        raw_payload = request.json 
+        manager = RCPresenceManager()
+        
+        # Bypass the wrapper in utils.py and hit the API directly
+        from webapp.rc_api import rc_api_call
+        endpoint = f"{manager.base_path}/extension/{extension_id}/presence/line"
+        
+        response = rc_api_call(endpoint, method="PUT", json=raw_payload)
+        return jsonify({"status": "success", "data": response})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
