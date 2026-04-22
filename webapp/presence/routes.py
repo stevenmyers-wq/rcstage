@@ -80,20 +80,14 @@ def generate_audit_report():
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
             
-            # Pre-fill to guarantee column order and existence
             for i in range(1, 101):
                 row[f"Line {i} Name"] = ""
                 row[f"Line {i} Extension"] = ""
                 
-            # STRICT ID MAPPING FOR AUDITS (Fixes array indexing bugs)
-            for record in records:
-                try:
-                    line_idx = int(record.get('id', 0))
-                except ValueError:
-                    continue
-                    
-                if not (1 <= line_idx <= 100):
-                    continue
+            # Use array index mapping for safe audit extraction
+            for i, record in enumerate(records):
+                line_idx = i + 1
+                if line_idx > 100: break
                     
                 ext_obj = record.get('extension') or {}
                 m_id = str(ext_obj.get('id', ''))
@@ -122,8 +116,6 @@ def update_blf():
         manager = RCPresenceManager()
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
-        
-        # Build a lookup dictionary to grab the "type" parameter later
         id_obj_map = {str(e.get('id')): e for e in all_exts} 
         
         results = {"success": 0, "errors": []}
@@ -149,11 +141,8 @@ def update_blf():
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
             
-            # --- THE CRITICAL FIX: MAP BY REAL ID, NOT ARRAY INDEX ---
-            existing_slots = {}
-            for r in live_records:
-                if 'id' in r and str(r['id']).isdigit():
-                    existing_slots[int(r['id'])] = r
+            # --- THE FIX: Revert to Safe Array Order Mapping ---
+            existing_slots = {i+1: r for i, r in enumerate(live_records)}
             
             payload_records = []
             seen_extensions = set()
@@ -163,6 +152,7 @@ def update_blf():
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
+                # Rule A: Hardware Locked Lines
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
@@ -170,9 +160,11 @@ def update_blf():
                         seen_extensions.add(str(ext_id))
                     continue
 
+                # Rule B: Clear Intent
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
                     continue 
 
+                # Rule C: Update with New Value
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
@@ -185,7 +177,6 @@ def update_blf():
                             continue
                             
                     if mon_id not in seen_extensions:
-                        # Extract the true "type" (e.g. User, ParkLocation) as spotted by the user
                         ext_type = id_obj_map.get(mon_id, {}).get('type', 'User')
                         
                         new_line = {"extension": {"id": mon_id, "type": ext_type}}
@@ -196,10 +187,15 @@ def update_blf():
                         seen_extensions.add(mon_id)
                     continue
 
+                # Rule D: Spreadsheet is blank, preserve existing line
                 if record:
                     curr_id = record.get('extension', {}).get('id')
                     if curr_id and str(curr_id) not in seen_extensions:
-                        payload_records.append({"id": str(record.get('id')), "extension": {"id": str(curr_id)}})
+                        curr_type = record.get('extension', {}).get('type', 'User')
+                        payload_records.append({
+                            "id": str(record.get('id')), 
+                            "extension": {"id": str(curr_id), "type": curr_type}
+                        })
                         seen_extensions.add(str(curr_id))
 
             final_payload = {"records": payload_records}
