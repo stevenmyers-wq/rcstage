@@ -139,6 +139,12 @@ def update_blf():
             payload_records = []
             seen_extensions = set()
 
+            # Pre-load locked extensions so we never accidentally assign them elsewhere
+            for record in live_records:
+                if record.get('notEditableOnHud'):
+                    if record.get('extension', {}).get('id'):
+                        seen_extensions.add(str(record['extension']['id']))
+
             for i, record in enumerate(live_records):
                 real_slot_id = str(record.get('id')) 
                 is_locked = record.get('notEditableOnHud', False)
@@ -147,10 +153,8 @@ def update_blf():
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
+                # CRITICAL FIX: Strip all locked lines from the PUT payload entirely.
                 if is_locked:
-                    if current_ext_id:
-                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
-                        seen_extensions.add(current_ext_id)
                     continue
                 
                 if pd.isna(val) or str(val).strip() == "":
@@ -168,7 +172,6 @@ def update_blf():
                 if monitored_id in seen_extensions:
                     continue 
                 
-                # RESTORED: ALWAYS pass the ID when mapping a new extension to an existing slot
                 payload_records.append({
                     "id": real_slot_id,
                     "extension": {"id": monitored_id}
@@ -190,7 +193,9 @@ def update_blf():
             print(json.dumps(final_payload, indent=2), flush=True)
             print("==================================================\n", flush=True)
 
-            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
+            # --- 4. DIFF AND SEND ---
+            # Exclude locked lines from the diff checker so it doesn't think data is missing
+            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records if not r.get('notEditableOnHud')}
             payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
             if current_state != payload_state:
