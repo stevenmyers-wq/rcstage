@@ -1,8 +1,8 @@
 import io
-import json
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager
+import logging
 
 presence_bp = Blueprint('presence', __name__)
 
@@ -10,30 +10,13 @@ def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
-@presence_bp.route('/api/presence/debug/<extension_id>', methods=['GET'])
-def debug_raw_lines(extension_id):
-    try:
-        manager = RCPresenceManager()
-        live_resp = manager.get_monitored_lines(extension_id)
-        return jsonify(live_resp)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+# --- RESTORED ENDPOINTS FOR UI INTEGRATION ---
 @presence_bp.route('/api/presence/sites', methods=['GET'])
 def get_sites():
     try:
         manager = RCPresenceManager()
         sites = manager.get_sites()
         return jsonify({"status": "success", "sites": sites})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@presence_bp.route('/api/presence/users', methods=['GET'])
-def get_users():
-    try:
-        manager = RCPresenceManager()
-        users = manager.get_all_users()
-        return jsonify({"status": "success", "users": users})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -54,6 +37,16 @@ def get_template():
         return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='Template.xlsx')
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+# ---------------------------------------------
+
+@presence_bp.route('/api/presence/users', methods=['GET'])
+def get_users():
+    try:
+        manager = RCPresenceManager()
+        users = manager.get_all_users()
+        return jsonify({"status": "success", "users": users})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/audit', methods=['POST'])
 def generate_audit_report():
@@ -61,6 +54,7 @@ def generate_audit_report():
         data = request.json
         selected_users = data.get('users', [])
         manager = RCPresenceManager()
+        
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
         
@@ -70,7 +64,7 @@ def generate_audit_report():
             settings = manager.get_presence_settings(ext_id)
             lines_resp = manager.get_monitored_lines(ext_id)
             records = lines_resp.get('records') or []
-            
+
             row = {
                 "Target Extension Name": user.get('name', ''),
                 "Target Extension Number": user.get('extensionNumber', ''),
@@ -79,20 +73,22 @@ def generate_audit_report():
                 "Enable Me to Pickup a Monitored Line": settings.get('pickUpCallsOnHold', False),
                 "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
             }
+
+            assigned_map = {str(r.get('id')): r for r in records}
             
-            for i in range(1, 101):
-                row[f"Line {i} Name"] = ""
-                row[f"Line {i} Extension"] = ""
-                
             for i, record in enumerate(records):
                 line_idx = i + 1
-                if line_idx > 100: break
-                    
                 ext_obj = record.get('extension') or {}
                 m_id = str(ext_obj.get('id', ''))
+                
                 master = id_to_ext_map.get(m_id, {})
-                row[f"Line {line_idx} Name"] = f"{'[LOCKED] ' if record.get('notEditableOnHud') else ''}{master.get('name') or ext_obj.get('name') or ''}"
-                row[f"Line {line_idx} Extension"] = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+                type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
+                name = master.get('name') or ext_obj.get('name') or type_label
+                ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+                
+                lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
+                row[f"Line {line_idx} Name"] = f"{lock_status}{name} ({type_label})"
+                row[f"Line {line_idx} Extension"] = str(ext_num)
             
             audit_data.append(row)
             
@@ -101,9 +97,10 @@ def generate_audit_report():
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='Audit.xlsx')
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logging.exception("Audit Crash")
+        return jsonify({"status": "error", "message": f"Audit Failed: {str(e)}"}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
 def update_blf():
@@ -121,9 +118,11 @@ def update_blf():
         for _, row in df.iterrows():
             target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
             if not target_col: continue
+            
             t_id = str(row.get(target_col, "")).split('.')[0].strip()
             if not t_id or t_id.lower() == 'nan': continue
             
+            # --- 1. TOGGLES ---
             toggles = {}
             for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
                                ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -132,71 +131,72 @@ def update_blf():
                 if val is not None: toggles[field] = val
             if toggles: manager.update_presence_settings(t_id, toggles)
 
+            # --- 2. GET CURRENT STATE (The Real IDs) ---
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
-            print("RAW GET RESPONSE FROM RC:", flush=True)
-            print(json.dumps(live_resp, indent=2), flush=True)
-            
             payload_records = []
+            seen_extensions = set()
 
-            for i in range(100):
-                sheet_col = f"Line {i+1} Extension"
-                if sheet_col not in df.columns:
-                    break
+            # --- 3. MAP SPREADSHEET TO EXISTING REAL IDs ---
+            for i, record in enumerate(live_records):
+                # Extract the literal system identifier, whatever format it is
+                real_slot_id = str(record.get('id')) 
+                is_locked = record.get('notEditableOnHud', False)
+                current_ext_id = str(record.get('extension', {}).get('id', ''))
+                
+                # Look at the corresponding column in the spreadsheet
+                sheet_col = f"Line {i + 1} Extension"
+                val = row.get(sheet_col) if sheet_col in df.columns else None
+                
+                # Rule 1: Hardware locked primary lines
+                if is_locked:
+                    if current_ext_id:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
+                    continue
+                
+                # Rule 2: Blank spreadsheet cell -> keep existing configuration
+                if pd.isna(val) or str(val).strip() == "":
+                    if current_ext_id and current_ext_id not in seen_extensions:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
+                    continue
+                
+                val_str = str(val).split('.')[0].strip()
+                
+                # Rule 3: Clear intent
+                if val_str.upper() == "CLEAR":
+                    continue # Omitting the ID from the payload clears the slot
+                
+                # Rule 4: Update with new extension
+                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+                if monitored_id in seen_extensions:
+                    continue # Stop duplicates
+                
+                # Build the minimal requested object using the REAL id
+                payload_records.append({
+                    "id": real_slot_id,
+                    "extension": {"id": monitored_id}
+                })
+                seen_extensions.add(monitored_id)
+
+            # Check if user tried to add lines beyond what the system has IDs for
+            skipped_lines = []
+            for i in range(len(live_records) + 1, 101):
+                sheet_col = f"Line {i} Extension"
+                val = row.get(sheet_col) if sheet_col in df.columns else None
+                if not pd.isna(val) and str(val).strip() != "" and str(val).strip().upper() != "CLEAR":
+                    skipped_lines.append(str(i))
                     
-                val = row.get(sheet_col)
-                existing_record = live_records[i] if i < len(live_records) else None
+            if skipped_lines:
+                results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_lines)} were ignored because the system has no available internal IDs for those slots.")
 
-                # Rule 1: Hardware Locked lines preserved exactly as bare minimum
-                if existing_record and existing_record.get('notEditableOnHud'):
-                    ext_id = existing_record.get('extension', {}).get('id')
-                    if ext_id:
-                        payload_records.append({"id": str(existing_record['id']), "extension": {"id": str(ext_id)}})
-                    continue
-
-                # Rule 2: Explicit CLEAR
-                if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
-                    continue
-
-                # Rule 3: Spreadsheet has a target extension
-                if not pd.isna(val) and str(val).strip() != "":
-                    val_str = str(val).split('.')[0].strip()
-                    mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
-                    
-                    if not mon_id and len(val_str) >= 7 and val_str.isdigit():
-                        mon_id = val_str
-                        
-                    if mon_id:
-                        new_line = {}
-                        
-                        # KEEP THE ID if the slot exists (This guarantees id is first in the JSON)
-                        if existing_record and 'id' in existing_record:
-                            new_line["id"] = str(existing_record['id'])
-                        
-                        new_line["extension"] = {"id": str(mon_id)}
-                        payload_records.append(new_line)
-                    else:
-                        results["errors"].append(f"Ext {t_id}: Line {i+1} skipped. Could not resolve Ext '{val_str}'.")
-                    continue
-
-                # Rule 4: Spreadsheet is blank, preserve existing line
-                if existing_record:
-                    curr_id = existing_record.get('extension', {}).get('id')
-                    if curr_id:
-                        payload_records.append({
-                            "id": str(existing_record['id']),
-                            "extension": {"id": str(curr_id)}
-                        })
-
-            final_payload = {"records": payload_records}
+            # --- 4. DIFF AND SEND ---
+            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
+            payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
-            print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
-            print(json.dumps(final_payload, indent=2), flush=True)
-            print("==================================================\n", flush=True)
-
-            if payload_records:
+            if current_state != payload_state:
                 try:
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
@@ -204,8 +204,10 @@ def update_blf():
                     results["errors"].append(f"Ext {t_id}: {str(e)}")
             elif toggles:
                 results["success"] += 1
+            else:
+                results["errors"].append(f"Ext {t_id}: No changes detected.")
 
-        return jsonify({"status": "completed", "message": f"Processed {results['success']} users", "errors": results["errors"]})
+        return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
     except Exception as e:
-        print(f"CRITICAL UPLOAD CRASH: {str(e)}", flush=True)
+        logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
