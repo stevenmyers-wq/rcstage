@@ -171,12 +171,9 @@ def update_blf():
                     if mon_id:
                         new_line = {}
                         
-                        # THE ACTUAL FIX: Only pass 'id' if the target extension is identical.
-                        # If the extension is changing, omit the 'id' completely.
+                        # KEEP THE ID if the slot exists (This guarantees id is first in the JSON)
                         if existing_record and 'id' in existing_record:
-                            curr_ext_id = str(existing_record.get('extension', {}).get('id', ''))
-                            if curr_ext_id == str(mon_id):
-                                new_line["id"] = str(existing_record['id'])
+                            new_line["id"] = str(existing_record['id'])
                         
                         new_line["extension"] = {"id": str(mon_id)}
                         payload_records.append(new_line)
