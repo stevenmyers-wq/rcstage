@@ -115,7 +115,6 @@ def update_blf():
         manager = RCPresenceManager()
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
-        id_obj_map = {str(e.get('id')): e for e in all_exts} 
         
         results = {"success": 0, "errors": []}
 
@@ -140,7 +139,9 @@ def update_blf():
             print("RAW GET RESPONSE FROM RC:", flush=True)
             print(json.dumps(live_resp, indent=2), flush=True)
             
+            # Map by exact array order (crucial for physical hardphones vs softphones)
             existing_slots = {i+1: r for i, r in enumerate(live_records)}
+            
             payload_records = []
             seen_extensions = set()
 
@@ -153,11 +154,9 @@ def update_blf():
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
-                        # FIX: Inject the type parameter into locked lines
-                        ext_type = record.get('extension', {}).get('type', 'User')
                         payload_records.append({
                             "id": str(record.get('id')), 
-                            "extension": {"id": str(ext_id), "type": ext_type}
+                            "extension": {"id": str(ext_id)}
                         })
                         seen_extensions.add(str(ext_id))
                     continue
@@ -179,8 +178,7 @@ def update_blf():
                             continue
                             
                     if mon_id not in seen_extensions:
-                        ext_type = id_obj_map.get(mon_id, {}).get('type', 'User')
-                        new_line = {"extension": {"id": mon_id, "type": ext_type}}
+                        new_line = {"extension": {"id": mon_id}}
                         if record and 'id' in record:
                             new_line["id"] = str(record['id'])
                             
@@ -192,10 +190,9 @@ def update_blf():
                 if record:
                     curr_id = record.get('extension', {}).get('id')
                     if curr_id and str(curr_id) not in seen_extensions:
-                        curr_type = record.get('extension', {}).get('type', 'User')
                         payload_records.append({
                             "id": str(record.get('id')), 
-                            "extension": {"id": str(curr_id), "type": curr_type}
+                            "extension": {"id": str(curr_id)}
                         })
                         seen_extensions.add(str(curr_id))
 
