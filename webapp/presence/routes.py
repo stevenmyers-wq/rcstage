@@ -10,35 +10,6 @@ def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
-# --- RESTORED ENDPOINTS FOR UI INTEGRATION ---
-@presence_bp.route('/api/presence/sites', methods=['GET'])
-def get_sites():
-    try:
-        manager = RCPresenceManager()
-        sites = manager.get_sites()
-        return jsonify({"status": "success", "sites": sites})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@presence_bp.route('/api/presence/template', methods=['GET'])
-def get_template():
-    try:
-        columns = ["Target Extension Name", "Target Extension Number", "Target Extension ID", 
-                   "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line", 
-                   "Allow other users to see my presence status"]
-        for i in range(1, 101):
-            columns.append(f"Line {i} Name")
-            columns.append(f"Line {i} Extension")
-        df_template = pd.DataFrame(columns=columns)
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_template.to_excel(writer, index=False)
-        output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='Template.xlsx')
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-# ---------------------------------------------
-
 @presence_bp.route('/api/presence/users', methods=['GET'])
 def get_users():
     try:
