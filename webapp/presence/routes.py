@@ -149,11 +149,10 @@ def update_blf():
                 sheet_col = f"Line {i} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
 
-                # Rule A: Hardware Locked Lines
+                # Rule A: Hardware Locked Lines (Always preserved as-is)
                 if record and record.get('notEditableOnHud'):
                     ext_id = record.get('extension', {}).get('id')
                     if ext_id:
-                        # BARE MINIMUM PAYLOAD: NO URI, NO FLAGS
                         payload_records.append({
                             "id": str(record.get('id')), 
                             "extension": {"id": str(ext_id)}
@@ -178,22 +177,23 @@ def update_blf():
                             continue
                             
                     if mon_id not in seen_extensions:
-                        # BARE MINIMUM PAYLOAD
                         new_line = {"extension": {"id": mon_id}}
                         
-                        # Apply ID only if overwriting an existing slot
+                        # CRITICAL FIX: Only pass the ID if we are keeping the target exactly the same.
+                        # If the target changed, omit the ID so RC provisions a new slot.
                         if record and 'id' in record:
-                            new_line["id"] = str(record['id'])
+                            curr_id = str(record.get('extension', {}).get('id', ''))
+                            if curr_id == mon_id:
+                                new_line["id"] = str(record['id'])
                             
                         payload_records.append(new_line)
                         seen_extensions.add(mon_id)
                     continue
 
-                # Rule D: Spreadsheet is blank, preserve existing line
+                # Rule D: Spreadsheet is blank, preserve existing line exactly
                 if record:
                     curr_id = str(record.get('extension', {}).get('id', ''))
                     if curr_id and curr_id not in seen_extensions:
-                        # BARE MINIMUM PAYLOAD
                         payload_records.append({
                             "id": str(record.get('id')), 
                             "extension": {"id": curr_id}
