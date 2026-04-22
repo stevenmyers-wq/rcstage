@@ -132,18 +132,8 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
-            print("RAW GET RESPONSE FROM RC:", flush=True)
-            print(json.dumps(live_resp, indent=2), flush=True)
-            
             payload_records = []
             seen_extensions = set()
-
-            # Pre-load locked extensions so we never accidentally assign them elsewhere
-            for record in live_records:
-                if record.get('notEditableOnHud'):
-                    if record.get('extension', {}).get('id'):
-                        seen_extensions.add(str(record['extension']['id']))
 
             for i, record in enumerate(live_records):
                 real_slot_id = str(record.get('id')) 
@@ -153,8 +143,10 @@ def update_blf():
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # CRITICAL FIX: Strip all locked lines from the PUT payload entirely.
                 if is_locked:
+                    if current_ext_id:
+                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                        seen_extensions.add(current_ext_id)
                     continue
                 
                 if pd.isna(val) or str(val).strip() == "":
@@ -188,19 +180,16 @@ def update_blf():
             if skipped_lines:
                 results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_lines)} were ignored because the system has no available internal IDs for those slots.")
 
+            # --- WRAP THE LIST IN THE DICT ---
             final_payload = {"records": payload_records}
-            print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
-            print(json.dumps(final_payload, indent=2), flush=True)
-            print("==================================================\n", flush=True)
 
-            # --- 4. DIFF AND SEND ---
-            # Exclude locked lines from the diff checker so it doesn't think data is missing
-            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records if not r.get('notEditableOnHud')}
+            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
             payload_state = {p['id']: p['extension']['id'] for p in payload_records}
             
             if current_state != payload_state:
                 try:
-                    manager.update_monitored_lines(t_id, payload_records)
+                    # CRITICAL FIX: Pass the dict (final_payload), NOT the list (payload_records)
+                    manager.update_monitored_lines(t_id, final_payload)
                     results["success"] += 1
                 except Exception as e:
                     results["errors"].append(f"Ext {t_id}: {str(e)}")
