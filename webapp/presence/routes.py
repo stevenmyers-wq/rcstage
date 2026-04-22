@@ -142,28 +142,35 @@ def update_blf():
             # Pre-load locked extensions so we never accidentally assign them elsewhere
             for record in live_records:
                 if record.get('notEditableOnHud'):
-                    if record.get('extension', {}).get('id'):
-                        seen_extensions.add(str(record['extension']['id']))
+                    ext_id = str(record.get('extension', {}).get('id', ''))
+                    if ext_id:
+                        seen_extensions.add(ext_id)
 
-            for i, record in enumerate(live_records):
-                real_slot_id = str(record.get('id')) 
-                is_locked = record.get('notEditableOnHud', False)
-                current_ext_id = str(record.get('extension', {}).get('id', ''))
+            # Map the exact spreadsheet lines
+            for i in range(100):
+                line_num = i + 1
+                sheet_col = f"Line {line_num} Extension"
+                if sheet_col not in df.columns:
+                    break
                 
-                sheet_col = f"Line {i + 1} Extension"
-                val = row.get(sheet_col) if sheet_col in df.columns else None
+                existing_record = live_records[i] if i < len(live_records) else None
                 
-                # CRITICAL FIX 1: We MUST include the locked lines so the API knows we aren't deleting them
-                if is_locked:
-                    if current_ext_id:
-                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
-                        seen_extensions.add(current_ext_id)
-                    continue
+                # CRITICAL RULE 1: Never include locked lines in the payload
+                if existing_record and existing_record.get('notEditableOnHud'):
+                    continue 
+                
+                val = row.get(sheet_col)
                 
                 if pd.isna(val) or str(val).strip() == "":
-                    if current_ext_id and current_ext_id not in seen_extensions:
-                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
-                        seen_extensions.add(current_ext_id)
+                    # Keep existing configuration if there was one
+                    if existing_record:
+                        curr_ext_id = str(existing_record.get('extension', {}).get('id', ''))
+                        if curr_ext_id and curr_ext_id not in seen_extensions:
+                            payload_records.append({
+                                "id": str(existing_record['id']),
+                                "extension": {"id": curr_ext_id}
+                            })
+                            seen_extensions.add(curr_ext_id)
                     continue
                 
                 val_str = str(val).split('.')[0].strip()
@@ -175,32 +182,29 @@ def update_blf():
                 if monitored_id in seen_extensions:
                     continue 
                 
-                payload_records.append({
-                    "id": real_slot_id,
-                    "extension": {"id": monitored_id}
-                })
-                seen_extensions.add(monitored_id)
-
-            skipped_lines = []
-            for i in range(len(live_records) + 1, 101):
-                sheet_col = f"Line {i} Extension"
-                val = row.get(sheet_col) if sheet_col in df.columns else None
-                if not pd.isna(val) and str(val).strip() != "" and str(val).strip().upper() != "CLEAR":
-                    skipped_lines.append(str(i))
+                # CRITICAL RULE 2: Only pass the ID if the extension is identical. If it changes, drop the ID!
+                if existing_record and str(existing_record.get('extension', {}).get('id', '')) == str(monitored_id):
+                    payload_records.append({
+                        "id": str(existing_record['id']),
+                        "extension": {"id": monitored_id}
+                    })
+                else:
+                    payload_records.append({
+                        "extension": {"id": monitored_id}
+                    })
                     
-            if skipped_lines:
-                results["errors"].append(f"Ext {t_id}: Lines {', '.join(skipped_lines)} were ignored because the system has no available internal IDs for those slots.")
+                seen_extensions.add(monitored_id)
 
             print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
             print(json.dumps(payload_records, indent=2), flush=True)
             print("==================================================\n", flush=True)
 
-            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
-            payload_state = {p['id']: p['extension']['id'] for p in payload_records}
+            # Compare ONLY the editable extensions to see if anything actually changed
+            current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records if not r.get('notEditableOnHud')]
+            payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
             
-            if current_state != payload_state:
+            if current_exts != payload_exts:
                 try:
-                    # CRITICAL FIX 2: Pass the raw list! utils.py will correctly format it to {"records": [...]}
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
                 except Exception as e:
