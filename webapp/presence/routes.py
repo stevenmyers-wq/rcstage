@@ -141,7 +141,6 @@ def update_blf():
             
             payload_records = []
 
-            # Loop precisely through the 100 possible columns
             for i in range(100):
                 sheet_col = f"Line {i+1} Extension"
                 if sheet_col not in df.columns:
@@ -150,7 +149,7 @@ def update_blf():
                 val = row.get(sheet_col)
                 existing_record = live_records[i] if i < len(live_records) else None
 
-                # Rule 1: Hardware Locked lines must be preserved exactly as bare minimum
+                # Rule 1: Hardware Locked lines preserved exactly as bare minimum
                 if existing_record and existing_record.get('notEditableOnHud'):
                     ext_id = existing_record.get('extension', {}).get('id')
                     if ext_id:
@@ -161,7 +160,7 @@ def update_blf():
                 if not pd.isna(val) and str(val).strip().upper() == "CLEAR":
                     continue
 
-                # Rule 3: Spreadsheet has a new target extension
+                # Rule 3: Spreadsheet has a target extension
                 if not pd.isna(val) and str(val).strip() != "":
                     val_str = str(val).split('.')[0].strip()
                     mon_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str)
@@ -171,9 +170,14 @@ def update_blf():
                         
                     if mon_id:
                         new_line = {}
-                        # Crucial API Fix: 'id' must be the first key evaluated by the parser
+                        
+                        # THE ACTUAL FIX: Only pass 'id' if the target extension is identical.
+                        # If the extension is changing, omit the 'id' completely.
                         if existing_record and 'id' in existing_record:
-                            new_line["id"] = str(existing_record['id'])
+                            curr_ext_id = str(existing_record.get('extension', {}).get('id', ''))
+                            if curr_ext_id == str(mon_id):
+                                new_line["id"] = str(existing_record['id'])
+                        
                         new_line["extension"] = {"id": str(mon_id)}
                         payload_records.append(new_line)
                     else:
