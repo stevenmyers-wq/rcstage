@@ -139,6 +139,12 @@ def update_blf():
             payload_records = []
             seen_extensions = set()
 
+            # Pre-load locked extensions so we never accidentally assign them elsewhere
+            for record in live_records:
+                if record.get('notEditableOnHud'):
+                    if record.get('extension', {}).get('id'):
+                        seen_extensions.add(str(record['extension']['id']))
+
             for i, record in enumerate(live_records):
                 real_slot_id = str(record.get('id')) 
                 is_locked = record.get('notEditableOnHud', False)
@@ -147,14 +153,12 @@ def update_blf():
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
                 
-                # Rule 1: Always preserve locked lines exactly as they are
                 if is_locked:
                     if current_ext_id:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
                         seen_extensions.add(current_ext_id)
                     continue
                 
-                # Rule 2: Preserve existing config if spreadsheet cell is blank
                 if pd.isna(val) or str(val).strip() == "":
                     if current_ext_id and current_ext_id not in seen_extensions:
                         payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
@@ -163,22 +167,26 @@ def update_blf():
                 
                 val_str = str(val).split('.')[0].strip()
                 
-                # Rule 3: Clear intent
                 if val_str.upper() == "CLEAR":
                     continue 
                 
-                # Rule 4: Update with new extension mapping to the existing ID
                 monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
                 if monitored_id in seen_extensions:
                     continue 
                 
-                payload_records.append({
-                    "id": real_slot_id,
-                    "extension": {"id": monitored_id}
-                })
+                # CRITICAL FIX: If the extension matches what is already there, preserve the ID.
+                # If we are changing it to a new extension, DROP the ID so RingCentral can provision it.
+                if current_ext_id == str(monitored_id):
+                    payload_records.append({
+                        "id": real_slot_id,
+                        "extension": {"id": monitored_id}
+                    })
+                else:
+                    payload_records.append({
+                        "extension": {"id": monitored_id}
+                    })
                 seen_extensions.add(monitored_id)
 
-            # Rule 5: Append brand new lines if spreadsheet dictates it
             for i in range(len(live_records), 100):
                 sheet_col = f"Line {i + 1} Extension"
                 val = row.get(sheet_col) if sheet_col in df.columns else None
@@ -201,12 +209,11 @@ def update_blf():
             print(json.dumps(payload_records, indent=2), flush=True)
             print("==================================================\n", flush=True)
 
-            current_state = {str(r.get('id')): str(r.get('extension', {}).get('id')) for r in live_records}
-            payload_state = {p.get('id', 'new'): p['extension']['id'] for p in payload_records}
+            current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
+            payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
             
-            if current_state != payload_state:
+            if current_exts != payload_exts:
                 try:
-                    # Pass the exact list structure expected by utils.py
                     manager.update_monitored_lines(t_id, payload_records)
                     results["success"] += 1
                 except Exception as e:
