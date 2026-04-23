@@ -10,3 +10,7 @@ venv/
 
 webapp/static/audio/*
 !webapp/static/audio/.gitkeep
+.DS_Store
+**/.DS_Store
+.DS_Store
+**/.DS_Store

@@ -107,7 +107,8 @@
                             ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'),
                             ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'),
                             ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'),
-                            ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions')
+                            ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'),
+                            ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap')
                         ] %}
                         
                         {% for tab_id, tab_name, tab_desc in tabs %}
@@ -173,6 +174,8 @@
                             {% include 'includes/analytics_tab.html' %}
                         {% elif current_tab == 'presence' %}
                             {% include 'includes/presence_tab.html' %}
+                        {% elif current_tab == 'account_discovery' %}
+        					{% include 'includes/account_health_tab.html' %}
                         {% elif current_tab == 'admin_dashboard' and USER_ROLE == 'Admin' %}
                             {% include 'includes/admin_dashboard_tab.html' %}
                         {% else %}

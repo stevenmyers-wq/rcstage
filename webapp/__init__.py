@@ -77,5 +77,9 @@ def create_app():
         # BLF & Presence routes
         from .presence import routes as presence_routes
         app.register_blueprint(presence_routes.presence_bp)
+        
+        # Account Discovery routes
+        from .account_health import routes as account_health_routes
+        app.register_blueprint(account_health_routes.account_health_bp)
 
     return app
