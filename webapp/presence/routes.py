@@ -132,18 +132,8 @@ def update_blf():
             live_resp = manager.get_monitored_lines(t_id)
             live_records = live_resp.get('records', [])
             
-            print(f"\n========== EXTENSION {t_id} DIAGNOSTICS ==========", flush=True)
-            print("RAW GET RESPONSE FROM RC:", flush=True)
-            print(json.dumps(live_resp, indent=2), flush=True)
-            
             payload_records = []
             seen_extensions = set()
-
-            # Pre-load locked extensions so we never accidentally assign them elsewhere
-            for record in live_records:
-                if record.get('notEditableOnHud'):
-                    if record.get('extension', {}).get('id'):
-                        seen_extensions.add(str(record['extension']['id']))
 
             for i, record in enumerate(live_records):
                 real_slot_id = str(record.get('id')) 
@@ -174,17 +164,10 @@ def update_blf():
                 if monitored_id in seen_extensions:
                     continue 
                 
-                # CRITICAL FIX: If the extension matches what is already there, preserve the ID.
-                # If we are changing it to a new extension, DROP the ID so RingCentral can provision it.
-                if current_ext_id == str(monitored_id):
-                    payload_records.append({
-                        "id": real_slot_id,
-                        "extension": {"id": monitored_id}
-                    })
-                else:
-                    payload_records.append({
-                        "extension": {"id": monitored_id}
-                    })
+                payload_records.append({
+                    "id": real_slot_id,
+                    "extension": {"id": monitored_id}
+                })
                 seen_extensions.add(monitored_id)
 
             for i in range(len(live_records), 100):
@@ -205,10 +188,6 @@ def update_blf():
                 })
                 seen_extensions.add(monitored_id)
 
-            print("PAYLOAD ABOUT TO BE SENT TO RC (PUT):", flush=True)
-            print(json.dumps(payload_records, indent=2), flush=True)
-            print("==================================================\n", flush=True)
-
             current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
             payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
             
@@ -228,3 +207,22 @@ def update_blf():
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ==========================================
+# THE DIAGNOSTICS SANDBOX BACKDOOR
+# ==========================================
+@presence_bp.route('/api/presence/sandbox/<extension_id>', methods=['POST'])
+def presence_sandbox(extension_id):
+    try:
+        raw_payload = request.json 
+        manager = RCPresenceManager()
+        
+        from webapp.rc_api import rc_api_call
+        endpoint = f"{manager.base_path}/extension/{extension_id}/presence/line"
+        
+        # Fires the exact payload you paste in directly at RC
+        response = rc_api_call(endpoint, method="PUT", json=raw_payload)
+        return jsonify({"status": "success", "data": response})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
