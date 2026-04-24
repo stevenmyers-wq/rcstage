@@ -108,7 +108,8 @@
                             ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'),
                             ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'),
                             ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'),
-                            ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap')
+                            ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'),
+							('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts via Gemini')
                         ] %}
                         
                         {% for tab_id, tab_name, tab_desc in tabs %}
@@ -178,6 +179,8 @@
         					{% include 'includes/account_health_tab.html' %}
                         {% elif current_tab == 'admin_dashboard' and USER_ROLE == 'Admin' %}
                             {% include 'includes/admin_dashboard_tab.html' %}
+						{% elif current_tab == 'cxone_script_analyzer' %}
+                            {% include 'includes/cxone_script_analyzer_tab.html' %}
                         {% else %}
                             <div class="card text-center py-12">
                                 <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
