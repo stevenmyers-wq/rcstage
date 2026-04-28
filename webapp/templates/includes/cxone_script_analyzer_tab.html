@@ -1,92 +1,270 @@
-<script src="{{ url_for('static', filename='js/cxone_script_analyzer.js') }}" defer></script>
+<script
+  src="{{ url_for('static', filename='js/cxone_script_analyzer.js') }}"
+  defer
+></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+<style>
+  /* Mirror the PDF output styling for the CXone Script Analyzer */
+  #cx-markdown-display {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #333;
+  }
+  #cx-markdown-display h1,
+  #cx-markdown-display h2,
+  #cx-markdown-display h3 {
+    color: #1f497d;
+    margin-top: 15px;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  #cx-markdown-display h3 {
+    border-bottom: 2px solid #1f497d;
+    padding-bottom: 5px;
+  }
+  #cx-markdown-display code {
+    background-color: #f4f4f4;
+    padding: 2px 4px;
+    font-family: monospace;
+    font-size: 11px;
+    border-radius: 3px;
+  }
+  #cx-markdown-display pre {
+    background-color: #f4f4f4;
+    padding: 10px;
+    border-left: 3px solid #ccc;
+    overflow-x: auto;
+  }
+  #cx-markdown-display pre code {
+    background-color: transparent;
+    padding: 0;
+    font-size: 12px;
+  }
+  #cx-markdown-display table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 10px;
+    margin-bottom: 20px;
+  }
+  #cx-markdown-display th,
+  #cx-markdown-display td {
+    border: 1px solid #ddd;
+    padding: 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  #cx-markdown-display th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    color: #1f497d;
+  }
+  #cx-markdown-display ul {
+    margin-top: 5px;
+    margin-bottom: 5px;
+    padding-left: 20px;
+    list-style-type: disc;
+  }
+  #cx-markdown-display li {
+    margin-bottom: 3px;
+  }
+</style>
+
 <div class="space-y-6">
-    <h3 class="text-xl font-bold text-blue-700">NICE CXone Script Analyzer</h3>
-    <p class="text-gray-600 text-sm">Connect to your CXone tenant to generate changelogs and as-built documents via Google Gemini.</p>
+  <h3 class="text-xl font-bold text-blue-700">NICE CXone Script Analyzer</h3>
+  <p class="text-gray-600 text-sm">
+    Connect to your CXone tenant to generate changelogs and as-built documents
+    via Google Gemini.
+  </p>
 
+  <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+    <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">1. Configuration</h4>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase"
+          >Region</label
+        >
+        <select id="cx-region" class="w-full p-2 border rounded mt-1">
+          <option value="au1">au1</option>
+          <option value="na1">na1</option>
+          <option value="na2">na2</option>
+          <option value="eu1">eu1</option>
+          <option value="uk1">uk1</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase"
+          >Access Key ID</label
+        >
+        <input
+          type="password"
+          id="cx-access"
+          class="w-full p-2 border rounded mt-1"
+          placeholder="Enter Access Key"
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase"
+          >Secret Access Key</label
+        >
+        <input
+          type="password"
+          id="cx-secret"
+          class="w-full p-2 border rounded mt-1"
+          placeholder="Enter Secret Key"
+        />
+      </div>
+    </div>
+    <button
+      id="cx-connect-btn"
+      class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition"
+    >
+      Connect to CXone
+    </button>
+    <span id="cx-auth-status" class="ml-3 text-sm font-semibold"></span>
+  </div>
+
+  <div id="cx-workspace" class="hidden space-y-6">
     <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-        <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">1. Configuration</h4>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase">Region</label>
-                <select id="cx-region" class="w-full p-2 border rounded mt-1">
-                    <option value="au1">au1</option>
-                    <option value="na1">na1</option>
-                    <option value="na2">na2</option>
-                    <option value="eu1">eu1</option>
-                    <option value="uk1">uk1</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase">Access Key ID</label>
-                <input type="password" id="cx-access" class="w-full p-2 border rounded mt-1" placeholder="Enter Access Key">
-            </div>
-            <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase">Secret Access Key</label>
-                <input type="password" id="cx-secret" class="w-full p-2 border rounded mt-1" placeholder="Enter Secret Key">
-            </div>
+      <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">
+        2. Select Target
+      </h4>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-bold text-gray-500 uppercase"
+            >Folder</label
+          >
+          <select id="cx-folder" class="w-full p-2 border rounded mt-1">
+            <option>Loading...</option>
+          </select>
         </div>
-        <button id="cx-connect-btn" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition">Connect to CXone</button>
-        <span id="cx-auth-status" class="ml-3 text-sm font-semibold"></span>
+        <div>
+          <label class="block text-xs font-bold text-gray-500 uppercase"
+            >Script(s)</label
+          >
+          <select
+            id="cx-script"
+            class="w-full p-2 border rounded mt-1"
+            multiple
+            size="4"
+          ></select>
+          <p class="text-xs text-gray-400 mt-1">
+            Hold Ctrl/Cmd to select multiple for As-Built docs.
+          </p>
+        </div>
+      </div>
     </div>
 
-    <div id="cx-workspace" class="hidden space-y-6">
-        <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-            <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">2. Select Target</h4>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase">Folder</label>
-                    <select id="cx-folder" class="w-full p-2 border rounded mt-1"><option>Loading...</option></select>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase">Script(s)</label>
-                    <select id="cx-script" class="w-full p-2 border rounded mt-1" multiple size="4"></select>
-                    <p class="text-xs text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple for As-Built docs.</p>
-                </div>
+    <div
+      class="card p-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden"
+    >
+      <div class="flex border-b bg-gray-50">
+        <button
+          class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-blue-600 text-blue-600 transition"
+          data-target="pane-compare"
+        >
+          Compare Two Versions
+        </button>
+        <button
+          class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          data-target="pane-history"
+        >
+          Full History Changelog
+        </button>
+        <button
+          class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          data-target="pane-asbuilt"
+        >
+          Generate As-Built Docs
+        </button>
+      </div>
+
+      <div class="p-6">
+        <div id="pane-compare" class="cx-pane">
+          <p class="text-sm text-gray-600 mb-4">
+            Select exactly <strong>one</strong> script above to compare two
+            historical versions.
+          </p>
+          <button
+            id="cx-load-history-btn"
+            class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded text-sm mb-4 transition"
+          >
+            Load Versions for Selected Script
+          </button>
+
+          <div
+            id="compare-selectors"
+            class="hidden grid grid-cols-2 gap-4 mb-4"
+          >
+            <div>
+              <label class="text-xs font-bold text-gray-500 uppercase"
+                >Previous Version</label
+              ><select
+                id="cx-prev-ver"
+                class="w-full p-2 border rounded mt-1"
+              ></select>
             </div>
+            <div>
+              <label class="text-xs font-bold text-gray-500 uppercase"
+                >Current Version</label
+              ><select
+                id="cx-curr-ver"
+                class="w-full p-2 border rounded mt-1"
+              ></select>
+            </div>
+          </div>
+
+          <button
+            id="cx-run-compare-btn"
+            class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded hidden transition"
+          >
+            Run Comparison
+          </button>
         </div>
 
-        <div class="card p-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-            <div class="flex border-b bg-gray-50">
-                <button class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-blue-600 text-blue-600 transition" data-target="pane-compare">Compare Two Versions</button>
-                <button class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition" data-target="pane-history">Full History Changelog</button>
-                <button class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition" data-target="pane-asbuilt">Generate As-Built Docs</button>
-            </div>
-            
-            <div class="p-6">
-                <div id="pane-compare" class="cx-pane">
-                    <p class="text-sm text-gray-600 mb-4">Select exactly <strong>one</strong> script above to compare two historical versions.</p>
-                    <button id="cx-load-history-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded text-sm mb-4 transition">Load Versions for Selected Script</button>
-                    
-                    <div id="compare-selectors" class="hidden grid grid-cols-2 gap-4 mb-4">
-                        <div><label class="text-xs font-bold text-gray-500 uppercase">Previous Version</label><select id="cx-prev-ver" class="w-full p-2 border rounded mt-1"></select></div>
-                        <div><label class="text-xs font-bold text-gray-500 uppercase">Current Version</label><select id="cx-curr-ver" class="w-full p-2 border rounded mt-1"></select></div>
-                    </div>
-                    
-                    <button id="cx-run-compare-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded hidden transition">Run Comparison</button>
-                </div>
-
-                <div id="pane-history" class="cx-pane hidden">
-                    <p class="text-sm text-gray-600 mb-4">Select exactly <strong>one</strong> script above. This will analyze the differences between every consecutive version.</p>
-                    <button id="cx-run-history-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition">Generate Full Changelog</button>
-                </div>
-
-                <div id="pane-asbuilt" class="cx-pane hidden">
-                    <p class="text-sm text-gray-600 mb-4">Select <strong>one or more</strong> scripts above. This will generate documentation based on the latest version of each.</p>
-                    <button id="cx-run-asbuilt-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition">Generate As-Built Docs</button>
-                </div>
-            </div>
+        <div id="pane-history" class="cx-pane hidden">
+          <p class="text-sm text-gray-600 mb-4">
+            Select exactly <strong>one</strong> script above. This will analyze
+            the differences between every consecutive version.
+          </p>
+          <button
+            id="cx-run-history-btn"
+            class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition"
+          >
+            Generate Full Changelog
+          </button>
         </div>
 
-        <div id="cx-output-area" class="hidden card p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h4 class="font-bold text-gray-800 text-lg">Analysis Result</h4>
-                <button id="cx-download-pdf-btn" class="bg-red-600 hover:bg-red-700 text-white py-1.5 px-4 rounded text-sm font-bold flex items-center gap-2 transition">
-                    📄 Download PDF
-                </button>
-            </div>
-            <div id="cx-markdown-display" class="prose max-w-none text-sm text-gray-800"></div>
+        <div id="pane-asbuilt" class="cx-pane hidden">
+          <p class="text-sm text-gray-600 mb-4">
+            Select <strong>one or more</strong> scripts above. This will
+            generate documentation based on the latest version of each.
+          </p>
+          <button
+            id="cx-run-asbuilt-btn"
+            class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition"
+          >
+            Generate As-Built Docs
+          </button>
         </div>
+      </div>
     </div>
+
+    <div
+      id="cx-output-area"
+      class="hidden card p-6 bg-white border border-gray-200 rounded-lg shadow-sm"
+    >
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <h4 class="font-bold text-gray-800 text-lg">Analysis Result</h4>
+        <button
+          id="cx-download-pdf-btn"
+          class="bg-red-600 hover:bg-red-700 text-white py-1.5 px-4 rounded text-sm font-bold flex items-center gap-2 transition"
+        >
+          📄 Download PDF
+        </button>
+      </div>
+      <div id="cx-markdown-display"></div>
+    </div>
+  </div>
 </div>

@@ -118,7 +118,27 @@ def create_pdf(md_text):
     return pdf_buffer.getvalue()
 
 def build_analysis_prompt(current_script, previous_script):
-    return f"""You are an expert NICE CXone contact center architect... (Include your full prompt here)
+    return f"""You are an expert NICE CXone contact center architect with deep knowledge of Studio scripting, routing logic, and action configuration.
+
+Compare the two JSON versions of a CXone Studio Script provided below and produce a detailed, evidence-based changelog of all **functional differences** between them. Your audience is contact center developers and Studio script builders, as well as technically familiar IT managers and project leads.
+
+Focus exclusively on:
+
+1. **Studio Actions** — any actions that were added, removed, or modified (e.g., `SNIPPET`, `MENU`, `REQAGENT`, `PLAYLOG`, `ASSIGN`, etc.), including changes to action properties or parameters
+2. **Routing branches and connection paths** — changes to how actions connect, branch conditions, success/failure paths, or call flow sequencing
+3. **Variables and Snippet logic** — new, removed, or altered variable declarations, assignments, and any code-level changes within Snippet blocks
+
+**Critical constraint:** Ignore all visual/cosmetic metadata — canvas coordinates (X, Y), position offsets, z-order, UI labels unrelated to logic, or any other purely presentational property. If a change has no functional impact on script behavior, exclude it entirely.
+
+## Analysis Requirements
+
+For each identified change, provide a **per-action breakdown** that includes:
+- The specific action name or identifier affected
+- What changed (property, parameter, connection, logic)
+- The before and after values or behavior, cited directly from the JSON (evidence)
+- The functional impact on script behavior
+
+Structure the output as a professional changelog using clear headings and bullet points. Do not include a main title — begin directly with the analysis. Each entry should be specific enough that a Studio developer could locate and understand the change without opening the files.
 --- PREVIOUS VERSION (JSON) ---
 {previous_script}
 --- CURRENT VERSION (JSON) ---
@@ -126,7 +146,16 @@ def build_analysis_prompt(current_script, previous_script):
 """
 
 def build_as_built_prompt(script_json):
-    return f"""You are an expert NICE CXone contact center architect... (Include your full prompt here)
+    return f"""You are an expert NICE CXone contact center architect. 
+Analyze this CXone Studio Script JSON and generate a comprehensive "As-Built" documentation guide.
+
+Please evaluate the logic and focus on:
+1. Primary Purpose: What is the high-level function of this script based on its actions?
+2. Key Routing Functions: Identify menus, hours of operation checks, and skill routing branches.
+3. Integrations & Complex Logic: Detail any SNIPPETs, API calls (e.g., REST), database queries, or external integrations. Do not make assumptions as to what a snippet may do, rely only on the information available in the snippet
+4. Variables: List the key variables identified and their apparent purpose.
+
+Output the result as a professional document using clear headings and bullet points. Do not include a main title, just start directly with the analysis.
 --- SCRIPT VERSION (JSON) ---
 {script_json}
 """
