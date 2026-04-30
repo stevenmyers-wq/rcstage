@@ -25,14 +25,14 @@ def generate_script_with_gemini(scenario, voice_prompt):
     You are an expert contact center script writer. 
     Write a realistic phone conversation based on this scenario: {scenario}
     
-    CRITICAL INSTRUCTION: The characters MUST speak using {voice_prompt} vocabulary and phrasing. However, the tone MUST be highly professional, polite, and corporate. DO NOT use heavy regional slang or overly casual colloquialisms.
+    CRITICAL INSTRUCTION: The characters MUST speak in {voice_prompt}. Write all dialogue entirely in that language, using natural vocabulary and phrasing appropriate to that region. The tone MUST be highly professional, polite, and corporate. DO NOT use heavy regional slang or overly casual colloquialisms.
 
     
     Output strictly as a JSON array of objects, with no markdown formatting.
     Each object must have:
     - "speaker": Either "Customer" or "Agent".
-    - "text": The exact words they say.
-    - "emotion": A natural language instruction for the voice actor (e.g., "Speak very quickly and sound furiously angry").
+    - "text": The exact words they say (written in {voice_prompt}).
+    - "emotion": A natural language instruction for the voice actor in English (e.g., "Speak very quickly and sound furiously angry").
     """
     
     try:
