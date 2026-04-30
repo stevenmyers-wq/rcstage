@@ -1,3 +1,7 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
 <script
   src="{{ url_for('static', filename='js/cxone_script_analyzer.js') }}"
   defer
@@ -5,77 +9,25 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <style>
-  /* Mirror the PDF output styling for the CXone Script Analyzer */
-  #cx-markdown-display {
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 13px;
-    line-height: 1.6;
-    color: #333;
+  @keyframes progress-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(200%);
+    }
   }
-  #cx-markdown-display h1,
-  #cx-markdown-display h2,
-  #cx-markdown-display h3 {
-    color: #1f497d;
-    margin-top: 15px;
-    margin-bottom: 10px;
-    font-weight: 700;
-  }
-  #cx-markdown-display h3 {
-    border-bottom: 2px solid #1f497d;
-    padding-bottom: 5px;
-  }
-  #cx-markdown-display code {
-    background-color: #f4f4f4;
-    padding: 2px 4px;
-    font-family: monospace;
-    font-size: 11px;
-    border-radius: 3px;
-  }
-  #cx-markdown-display pre {
-    background-color: #f4f4f4;
-    padding: 10px;
-    border-left: 3px solid #ccc;
-    overflow-x: auto;
-  }
-  #cx-markdown-display pre code {
-    background-color: transparent;
-    padding: 0;
-    font-size: 12px;
-  }
-  #cx-markdown-display table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-top: 10px;
-    margin-bottom: 20px;
-  }
-  #cx-markdown-display th,
-  #cx-markdown-display td {
-    border: 1px solid #ddd;
-    padding: 10px;
-    text-align: left;
-    vertical-align: top;
-  }
-  #cx-markdown-display th {
-    background-color: #f8f9fa;
-    font-weight: bold;
-    color: #1f497d;
-  }
-  #cx-markdown-display ul {
-    margin-top: 5px;
-    margin-bottom: 5px;
-    padding-left: 20px;
-    list-style-type: disc;
-  }
-  #cx-markdown-display li {
-    margin-bottom: 3px;
+  .cx-progress-bar {
+    animation: progress-indeterminate 1.5s infinite linear;
+    width: 50%;
   }
 </style>
 
 <div class="space-y-6">
   <h3 class="text-xl font-bold text-blue-700">NICE CXone Script Analyzer</h3>
   <p class="text-gray-600 text-sm">
-    Connect to your CXone tenant to generate changelogs and as-built documents
-    via Google Gemini.
+    Connect to your CXone tenant to generate changelogs, as-built documents, and
+    dynamic flowchart diagrams.
   </p>
 
   <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
@@ -125,6 +77,42 @@
     <span id="cx-auth-status" class="ml-3 text-sm font-semibold"></span>
   </div>
 
+  <div
+    id="cx-global-loader"
+    class="hidden p-4 border border-blue-200 bg-blue-50 rounded-lg shadow-sm"
+  >
+    <div class="flex items-center space-x-3 mb-3">
+      <svg
+        class="animate-spin h-5 w-5 text-blue-600"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          class="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          stroke-width="4"
+        ></circle>
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
+      <span id="cx-loading-text" class="text-sm font-bold text-blue-800"
+        >Processing...</span
+      >
+    </div>
+    <div class="w-full bg-blue-200 rounded-full h-2 overflow-hidden relative">
+      <div
+        class="bg-blue-600 h-2 rounded-full absolute left-0 top-0 cx-progress-bar"
+      ></div>
+    </div>
+  </div>
+
   <div id="cx-workspace" class="hidden space-y-6">
     <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
       <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">
@@ -161,22 +149,28 @@
     >
       <div class="flex border-b bg-gray-50">
         <button
-          class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-blue-600 text-blue-600 transition"
+          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-blue-600 text-blue-600 transition"
           data-target="pane-compare"
         >
-          Compare Two Versions
+          Compare Versions
         </button>
         <button
-          class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
           data-target="pane-history"
         >
-          Full History Changelog
+          Full History
         </button>
         <button
-          class="cx-tab-btn flex-1 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
           data-target="pane-asbuilt"
         >
-          Generate As-Built Docs
+          As-Built Docs
+        </button>
+        <button
+          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          data-target="pane-visualize"
+        >
+          Visualize Script
         </button>
       </div>
 
@@ -248,6 +242,43 @@
             Generate As-Built Docs
           </button>
         </div>
+
+        <div id="pane-visualize" class="cx-pane hidden">
+          <p class="text-sm text-gray-600 mb-4">
+            Select exactly <strong>one</strong> script above to visualize its
+            action logic flow.
+          </p>
+          <button
+            id="cx-run-visualize-btn"
+            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition"
+          >
+            Generate Diagram
+          </button>
+
+          <div
+            id="cx-diagram-wrapper"
+            class="hidden mt-6 relative border border-gray-200 rounded-lg bg-slate-50 h-[600px] overflow-hidden shadow-inner"
+          >
+            <div id="cx-diagram-canvas" class="w-full h-full"></div>
+            <div class="absolute bottom-4 right-4 flex gap-2 z-10">
+              <button
+                id="cx-diagram-png-btn"
+                class="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 text-sm font-bold rounded shadow hover:bg-gray-100 transition"
+              >
+                💾 Download PNG
+              </button>
+            </div>
+          </div>
+
+          <div id="cx-debug-wrapper" class="hidden mt-6">
+            <h5 class="font-bold text-gray-700 mb-2">Debug: Raw JSON Data</h5>
+            <textarea
+              id="cx-debug-json"
+              class="w-full h-96 p-4 font-mono text-xs text-gray-800 bg-gray-100 border border-gray-300 rounded shadow-inner"
+              readonly
+            ></textarea>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -264,7 +295,10 @@
           📄 Download PDF
         </button>
       </div>
-      <div id="cx-markdown-display"></div>
+      <div
+        id="cx-markdown-display"
+        class="prose max-w-none text-sm text-gray-800"
+      ></div>
     </div>
   </div>
 </div>

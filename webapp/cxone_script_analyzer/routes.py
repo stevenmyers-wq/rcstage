@@ -15,8 +15,20 @@ def auth():
         return jsonify({"error": "No data provided"}), 400
         
     try:
+        # Step 1: Attempt to acquire the token
         token, base_uri = utils.get_cxone_token(data.get('access_key'), data.get('secret_key'), data.get('region'))
+        
+        # Step 2: STRICT REGION VALIDATION
+        # Even if the global auth server accepted the keys, we must verify that 
+        # the resulting token actually has access to this specific region's API endpoint.
+        try:
+            utils.fetch_cxone_folders(base_uri, token)
+        except Exception:
+            raise Exception(f"Authentication rejected for region '{data.get('region')}'. Please double-check your Region selection.")
+
+        # If it survives the test call, we are truly connected.
         return jsonify({"success": True, "token": token, "base_uri": base_uri})
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 401
 
@@ -44,6 +56,21 @@ def get_history():
     try:
         history = utils.fetch_script_history(data['base_uri'], data['token'], data['script_path'])
         return jsonify({"success": True, "history": history})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@cxone_script_analyzer_bp.route('/visualize', methods=['POST'])
+@track_usage('CXone Script Analyzer - Visualize')
+def visualize():
+    data = request.get_json()
+    base_uri = data.get('base_uri')
+    token = data.get('token')
+    script_id = data.get('script_id')
+    
+    try:
+        script_json_str = utils.fetch_script_content(base_uri, token, script_id)
+        graph_data = utils.generate_script_graph(script_json_str)
+        return jsonify({"success": True, "graph": graph_data})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
