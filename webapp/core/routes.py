@@ -97,3 +97,8 @@ def admin_analytics():
         
     data = get_analytics_data()
     return jsonify(data), 200
+
+# suppress favicon errors
+@core_bp.route('/favicon.ico')
+def favicon():
+    return '', 204
