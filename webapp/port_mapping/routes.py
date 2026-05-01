@@ -1,6 +1,11 @@
 import re
-from flask import request
+import traceback
+from flask import Blueprint, jsonify, request, send_file
+from webapp.auth_utils import require_rc_token
+from webapp.usage_tracking import track_usage
 from . import utils
+
+port_mapping_bp = Blueprint('port_mapping_bp', __name__, url_prefix='/api/port_mapping')
 
 @port_mapping_bp.route('/process', methods=['POST'])
 @require_rc_token
@@ -26,7 +31,6 @@ def process_mapping():
     file_id = match.group(1)
 
     try:
-        # Pass the file_id to the utils function instead of the raw file
         output_buffer = utils.process_port_mapping(loa_file.read(), file_id)
         return send_file(
             output_buffer,
@@ -35,6 +39,5 @@ def process_mapping():
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
     except Exception as e:
-        import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
