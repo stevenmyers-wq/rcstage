@@ -109,7 +109,8 @@
                             ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'),
                             ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'),
                             ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'),
-							('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts via Gemini')
+							('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts via Gemini'),
+							('port_mapping', 'Port Mapping', 'Upload LOA and BRD to extract and map phone numbers')
                         ] %}
                         
                         {% for tab_id, tab_name, tab_desc in tabs %}
@@ -181,6 +182,8 @@
                             {% include 'includes/admin_dashboard_tab.html' %}
 						{% elif current_tab == 'cxone_script_analyzer' %}
                             {% include 'includes/cxone_script_analyzer_tab.html' %}
+						{% elif current_tab == 'port_mapping' %}
+							{% include 'includes/port_mapping_tab.html' %}
                         {% else %}
                             <div class="card text-center py-12">
                                 <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
