@@ -2,7 +2,7 @@
     <div class="flex justify-between items-center mb-8">
         <div>
             <h2 class="text-3xl font-bold text-gray-800">Port Mapping</h2>
-            <p class="text-gray-600 mt-2">Upload the LOA (PDF) and BRD (Excel) to extract porting numbers and map them against live RingCentral tenancy numbers.</p>
+            <p class="text-gray-600 mt-2">Upload the LOA (PDF) and provide a link to the BRD to extract porting numbers and map them against live RingCentral tenancy numbers.</p>
         </div>
     </div>
 
@@ -20,13 +20,12 @@
             </div>
 
             <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-                <div class="text-green-500 mb-2 text-3xl">📊</div>
-                <label class="cursor-pointer block">
-                    <span class="text-green-600 font-bold hover:underline">Upload BRD (Excel)</span>
-                    <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
+                <div class="text-green-500 mb-2 text-3xl">🔗</div>
+                <label class="block">
+                    <span class="text-green-600 font-bold">Paste BRD Google Drive Link</span>
+                    <input type="url" id="brd-url" class="w-full mt-3 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
                 </label>
-                <p id="brd-filename" class="text-xs text-gray-500 mt-2 font-mono">No file selected</p>
-                <p class="text-xs text-gray-400 mt-2 text-left">Must contain tabs: Port Mapping, Users, Call Queues, IVR. <br/><em>Note: Tenancy numbers are fetched live via API, the "All Phone Numbers" tab is no longer required.</em></p>
+                <p class="text-xs text-gray-400 mt-2 text-left">Link must be set to "Anyone with the link can view".<br/>Must contain tabs: Port Mapping, Users, Call Queues, IVR.</p>
             </div>
             
         </div>
@@ -42,12 +41,12 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const loaInput = document.getElementById('loa-file');
-    const brdInput = document.getElementById('brd-file');
+    const brdInput = document.getElementById('brd-url');
     const submitBtn = document.getElementById('pm-submit-btn');
     const statusDiv = document.getElementById('pm-status');
 
     function checkInputs() {
-        submitBtn.disabled = !(loaInput.files.length > 0 && brdInput.files.length > 0);
+        submitBtn.disabled = !(loaInput.files.length > 0 && brdInput.value.trim().length > 0);
     }
 
     loaInput.addEventListener('change', (e) => {
@@ -55,15 +54,12 @@ document.addEventListener('DOMContentLoaded', () => {
         checkInputs();
     });
 
-    brdInput.addEventListener('change', (e) => {
-        document.getElementById('brd-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
-        checkInputs();
-    });
+    brdInput.addEventListener('input', checkInputs);
 
     submitBtn.addEventListener('click', async () => {
         const formData = new FormData();
         formData.append('loa_file', loaInput.files[0]);
-        formData.append('brd_file', brdInput.files[0]);
+        formData.append('brd_url', brdInput.value.trim());
 
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
