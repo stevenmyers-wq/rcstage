@@ -7,23 +7,23 @@ from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call
 
-def download_public_drive_file(file_id):
-    """Downloads a publicly accessible Google Sheet as an Excel file."""
-    # Attempt 1: Download assuming it's a Google Sheet document
-    url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
-    response = requests.get(url)
-    
-    if response.status_code == 200:
-        return response.content
-        
-    # Attempt 2: Download assuming it's an uploaded .xlsx file sitting in Drive
+def download_public_drive_file(file_id, is_pdf=False):
+    """Downloads a publicly accessible Google Drive file."""
+    if not is_pdf:
+        # Attempt 1: Download assuming it's a Google Sheet document
+        url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.content
+            
+    # Attempt 2: Direct download (for .xlsx or .pdf files hosted in Drive)
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
     response = requests.get(url)
     
     if response.status_code == 200:
         return response.content
         
-    raise Exception(f"Failed to download file from Google Drive. Ensure the sharing setting is 'Anyone with the link can view'. HTTP {response.status_code}")
+    raise Exception(f"Failed to download file from Google Drive (ID: {file_id}). Ensure the sharing setting is 'Anyone with the link can view'. HTTP {response.status_code}")
 
 # --- Formatters & Helpers ---
 def normalize_number(txt):
@@ -188,7 +188,20 @@ def extract_loa_numbers_with_gemini(pdf_bytes):
     return response.text.strip()
 
 # --- Main Processor ---
-def process_port_mapping(loa_bytes, brd_file_id):
+def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_file_id=None):
+    # Retrieve bytes from Drive if URLs were provided
+    if not loa_bytes and loa_file_id:
+        try:
+            loa_bytes = download_public_drive_file(loa_file_id, is_pdf=True)
+        except Exception as e:
+            raise ValueError(f"LOA Download Error: {str(e)}")
+
+    if not brd_bytes and brd_file_id:
+        try:
+            brd_bytes = download_public_drive_file(brd_file_id, is_pdf=False)
+        except Exception as e:
+            raise ValueError(f"BRD Download Error: {str(e)}")
+
     # 1. AI Extraction of LOA
     extracted_csv = extract_loa_numbers_with_gemini(loa_bytes)
     loa_numbers = set()
@@ -213,12 +226,6 @@ def process_port_mapping(loa_bytes, brd_file_id):
         if phone:
             if ext_num: ext_num_to_phones.setdefault(ext_num, []).append(phone)
             if ext_name: ext_name_to_phones.setdefault(ext_name, []).append(phone)
-
-    # NEW: Download the BRD file from the public link into memory
-    try:
-        brd_bytes = download_public_drive_file(brd_file_id)
-    except Exception as e:
-        raise ValueError(str(e))
 
     # 3. Universal BRD Parsing
     brd = pd.ExcelFile(io.BytesIO(brd_bytes))
