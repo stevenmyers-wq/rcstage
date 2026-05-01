@@ -86,4 +86,8 @@ def create_app():
         from .cxone_script_analyzer import routes as cxone_script_analyzer_routes
         app.register_blueprint(cxone_script_analyzer_routes.cxone_script_analyzer_bp)
 
+        # Port Mapping routes
+        from .port_mapping import routes as port_mapping_routes
+        app.register_blueprint(port_mapping_routes.port_mapping_bp)
+
     return app
