@@ -1,0 +1,106 @@
+<div class="space-y-6 animate-fade-in p-4">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h2 class="text-3xl font-bold text-gray-800">Port Mapping</h2>
+            <p class="text-gray-600 mt-2">Upload the LOA (PDF) and BRD (Excel) to extract porting numbers and map them against live RingCentral tenancy numbers.</p>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+        <h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Configuration Files</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            
+            <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+                <div class="text-blue-500 mb-2 text-3xl">📄</div>
+                <label class="cursor-pointer block">
+                    <span class="text-blue-600 font-bold hover:underline">Upload LOA (PDF)</span>
+                    <input type="file" id="loa-file" class="hidden" accept="application/pdf">
+                </label>
+                <p id="loa-filename" class="text-xs text-gray-500 mt-2 font-mono">No file selected</p>
+            </div>
+
+            <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+                <div class="text-green-500 mb-2 text-3xl">📊</div>
+                <label class="cursor-pointer block">
+                    <span class="text-green-600 font-bold hover:underline">Upload BRD (Excel)</span>
+                    <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
+                </label>
+                <p id="brd-filename" class="text-xs text-gray-500 mt-2 font-mono">No file selected</p>
+                <p class="text-xs text-gray-400 mt-2 text-left">Must contain tabs: Port Mapping, Users, Call Queues, IVR. <br/><em>Note: Tenancy numbers are fetched live via API, the "All Phone Numbers" tab is no longer required.</em></p>
+            </div>
+            
+        </div>
+        
+        <button id="pm-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            Submit & Process Files
+        </button>
+        
+        <div id="pm-status" class="hidden mt-4 p-4 rounded-lg text-sm border shadow-sm text-center"></div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const loaInput = document.getElementById('loa-file');
+    const brdInput = document.getElementById('brd-file');
+    const submitBtn = document.getElementById('pm-submit-btn');
+    const statusDiv = document.getElementById('pm-status');
+
+    function checkInputs() {
+        submitBtn.disabled = !(loaInput.files.length > 0 && brdInput.files.length > 0);
+    }
+
+    loaInput.addEventListener('change', (e) => {
+        document.getElementById('loa-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
+        checkInputs();
+    });
+
+    brdInput.addEventListener('change', (e) => {
+        document.getElementById('brd-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
+        checkInputs();
+    });
+
+    submitBtn.addEventListener('click', async () => {
+        const formData = new FormData();
+        formData.append('loa_file', loaInput.files[0]);
+        formData.append('brd_file', brdInput.files[0]);
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
+        
+        statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-blue-50 text-blue-800 border-blue-200 block";
+        statusDiv.innerHTML = "Processing files, extracting numbers with Gemini, and querying live RingCentral API...";
+
+        try {
+            const response = await fetch('/api/port_mapping/process', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `Processed_Port_Mapping_${new Date().getTime()}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                
+                statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-green-50 text-green-800 border-green-200 block";
+                statusDiv.innerHTML = "<strong>✅ Mapping Complete!</strong> File downloaded successfully.";
+            } else {
+                const data = await response.json();
+                throw new Error(data.error || "An unknown error occurred.");
+            }
+        } catch (err) {
+            statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-red-50 text-red-800 border-red-200 block";
+            statusDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+        } finally {
+            submitBtn.innerHTML = 'Submit & Process Files';
+            checkInputs(); 
+        }
+    });
+});
+</script>
