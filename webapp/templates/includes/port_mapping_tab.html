@@ -2,7 +2,7 @@
     <div class="flex justify-between items-center mb-8">
         <div>
             <h2 class="text-3xl font-bold text-gray-800">Port Mapping</h2>
-            <p class="text-gray-600 mt-2">Upload the LOA (PDF) and provide a link to the BRD to extract porting numbers and map them against live RingCentral tenancy numbers.</p>
+            <p class="text-gray-600 mt-2">Provide the LOA (PDF) and BRD (Excel) via file upload or public Google Drive link to extract and map phone numbers.</p>
         </div>
     </div>
 
@@ -12,20 +12,46 @@
             
             <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
                 <div class="text-blue-500 mb-2 text-3xl">📄</div>
-                <label class="cursor-pointer block">
-                    <span class="text-blue-600 font-bold hover:underline">Upload LOA (PDF)</span>
+                <h4 class="font-bold text-gray-700 mb-3">LOA (PDF)</h4>
+                
+                <label class="cursor-pointer block mb-3">
+                    <span class="text-blue-600 font-bold hover:underline bg-blue-50 px-4 py-2 rounded-full border border-blue-200 inline-block">Upload LOA File</span>
                     <input type="file" id="loa-file" class="hidden" accept="application/pdf">
                 </label>
-                <p id="loa-filename" class="text-xs text-gray-500 mt-2 font-mono">No file selected</p>
+                <p id="loa-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
+                
+                <div class="flex items-center justify-center gap-2 mb-4">
+                    <hr class="w-1/4 border-gray-300">
+                    <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
+                    <hr class="w-1/4 border-gray-300">
+                </div>
+
+                <label class="block text-left">
+                    <span class="text-blue-600 font-bold text-sm">Paste Google Drive Link</span>
+                    <input type="url" id="loa-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://drive.google.com/file/d/...">
+                </label>
             </div>
 
             <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-                <div class="text-green-500 mb-2 text-3xl">🔗</div>
-                <label class="block">
-                    <span class="text-green-600 font-bold">Paste BRD Google Drive Link</span>
-                    <input type="url" id="brd-url" class="w-full mt-3 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+                <div class="text-green-500 mb-2 text-3xl">📊</div>
+                <h4 class="font-bold text-gray-700 mb-3">BRD (Excel)</h4>
+                
+                <label class="cursor-pointer block mb-3">
+                    <span class="text-green-600 font-bold hover:underline bg-green-50 px-4 py-2 rounded-full border border-green-200 inline-block">Upload BRD File</span>
+                    <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
                 </label>
-                <p class="text-xs text-gray-400 mt-2 text-left">Link must be set to "Anyone with the link can view".<br/>Must contain tabs: Port Mapping, Users, Call Queues, IVR.</p>
+                <p id="brd-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
+
+                <div class="flex items-center justify-center gap-2 mb-4">
+                    <hr class="w-1/4 border-gray-300">
+                    <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
+                    <hr class="w-1/4 border-gray-300">
+                </div>
+
+                <label class="block text-left">
+                    <span class="text-green-600 font-bold text-sm">Paste Google Drive Link</span>
+                    <input type="url" id="brd-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://docs.google.com/spreadsheets/d/...">
+                </label>
             </div>
             
         </div>
@@ -41,25 +67,54 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const loaInput = document.getElementById('loa-file');
-    const brdInput = document.getElementById('brd-url');
+    const loaUrl = document.getElementById('loa-url');
+    const brdInput = document.getElementById('brd-file');
+    const brdUrl = document.getElementById('brd-url');
     const submitBtn = document.getElementById('pm-submit-btn');
     const statusDiv = document.getElementById('pm-status');
 
     function checkInputs() {
-        submitBtn.disabled = !(loaInput.files.length > 0 && brdInput.value.trim().length > 0);
+        const hasLoa = loaInput.files.length > 0 || loaUrl.value.trim().length > 0;
+        const hasBrd = brdInput.files.length > 0 || brdUrl.value.trim().length > 0;
+        submitBtn.disabled = !(hasLoa && hasBrd);
     }
 
+    // Mutually exclusive inputs for LOA
     loaInput.addEventListener('change', (e) => {
         document.getElementById('loa-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
+        if (e.target.files.length > 0) loaUrl.value = ""; 
+        checkInputs();
+    });
+    loaUrl.addEventListener('input', () => {
+        if (loaUrl.value.trim().length > 0) { 
+            loaInput.value = ""; 
+            document.getElementById('loa-filename').textContent = "No file selected"; 
+        }
         checkInputs();
     });
 
-    brdInput.addEventListener('input', checkInputs);
+    // Mutually exclusive inputs for BRD
+    brdInput.addEventListener('change', (e) => {
+        document.getElementById('brd-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
+        if (e.target.files.length > 0) brdUrl.value = "";
+        checkInputs();
+    });
+    brdUrl.addEventListener('input', () => {
+        if (brdUrl.value.trim().length > 0) { 
+            brdInput.value = ""; 
+            document.getElementById('brd-filename').textContent = "No file selected"; 
+        }
+        checkInputs();
+    });
 
     submitBtn.addEventListener('click', async () => {
         const formData = new FormData();
-        formData.append('loa_file', loaInput.files[0]);
-        formData.append('brd_url', brdInput.value.trim());
+        
+        if (loaInput.files.length > 0) formData.append('loa_file', loaInput.files[0]);
+        if (loaUrl.value.trim()) formData.append('loa_url', loaUrl.value.trim());
+        
+        if (brdInput.files.length > 0) formData.append('brd_file', brdInput.files[0]);
+        if (brdUrl.value.trim()) formData.append('brd_url', brdUrl.value.trim());
 
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
