@@ -1,0 +1,77 @@
+<div class="space-y-4">
+  <h3 class="text-xl font-bold mb-2 text-blue-700">
+    RCCC (CXone) Authentication
+  </h3>
+  <div
+    class="card p-4 bg-gray-50 border-l-4 border-blue-500 text-sm text-gray-700"
+  >
+    <p class="font-bold mb-2">Instructions:</p>
+    <ul class="list-disc list-inside space-y-2">
+      <li>Select your CXone Region.</li>
+      <li>Enter your Userhub Access Key ID and Secret Access Key.</li>
+      <li>Click Connect to store credentials securely in your session.</li>
+    </ul>
+  </div>
+
+  <div id="cxone-auth-card" class="card">
+    <h2 class="text-xl font-semibold mb-4 rc-panel-title">
+      CXone Connection Form
+    </h2>
+    <form id="cxone-connect-form" class="space-y-4 mt-4">
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase"
+          >Region</label
+        >
+        <select
+          id="cx-region"
+          class="w-full p-3 border border-gray-300 rounded-lg bg-white"
+        >
+          <option value="au1">au1</option>
+          <option value="na1">na1</option>
+          <option value="na2">na2</option>
+          <option value="eu1">eu1</option>
+          <option value="uk1">uk1</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase"
+          >Access Key ID</label
+        >
+        <input
+          type="password"
+          id="cx-access"
+          class="w-full p-3 border border-gray-300 rounded-lg"
+          required
+          placeholder="Enter Access Key"
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase"
+          >Secret Access Key</label
+        >
+        <input
+          type="password"
+          id="cx-secret"
+          class="w-full p-3 border border-gray-300 rounded-lg"
+          required
+          placeholder="Enter Secret Key"
+        />
+      </div>
+      <button
+        type="submit"
+        id="cxone-connect-button"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-150"
+      >
+        Connect to CXone
+      </button>
+      <button
+        type="button"
+        id="cxone-disconnect-button"
+        style="display: none"
+        class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition duration-150"
+      >
+        Disconnect CXone
+      </button>
+    </form>
+  </div>
+</div>

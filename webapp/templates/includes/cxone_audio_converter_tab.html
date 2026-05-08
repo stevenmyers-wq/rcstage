@@ -1,0 +1,345 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script
+  src="{{ url_for('static', filename='js/cxone_audio_converter.js') }}"
+  defer
+></script>
+
+<div class="space-y-5 max-w-2xl">
+  <h3 class="text-xl font-bold text-blue-700">CXone Audio Converter</h3>
+
+  <!-- ── Step indicator ────────────────────────────────────────────────── -->
+  <div class="flex items-center">
+    <div class="flex items-center gap-2">
+      <span
+        id="ind-circle-1"
+        class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-blue-600 text-white transition-colors duration-200"
+        >1</span
+      >
+      <span
+        id="ind-label-1"
+        class="text-sm font-semibold text-gray-700 transition-colors duration-200"
+        >Source</span
+      >
+    </div>
+    <div
+      id="ind-line-1"
+      class="flex-1 h-0.5 mx-3 bg-gray-200 transition-colors duration-200"
+    ></div>
+    <div class="flex items-center gap-2">
+      <span
+        id="ind-circle-2"
+        class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-gray-200 text-gray-400 transition-colors duration-200"
+        >2</span
+      >
+      <span
+        id="ind-label-2"
+        class="text-sm font-semibold text-gray-400 transition-colors duration-200"
+        >Output</span
+      >
+    </div>
+    <div
+      id="ind-line-2"
+      class="flex-1 h-0.5 mx-3 bg-gray-200 transition-colors duration-200"
+    ></div>
+    <div class="flex items-center gap-2">
+      <span
+        id="ind-circle-3"
+        class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-gray-200 text-gray-400 transition-colors duration-200"
+        >3</span
+      >
+      <span
+        id="ind-label-3"
+        class="text-sm font-semibold text-gray-400 transition-colors duration-200"
+        >Start</span
+      >
+    </div>
+  </div>
+
+  <!-- ── Step 1: Source ────────────────────────────────────────────────── -->
+  <div
+    id="step-1"
+    class="card p-6 bg-white border border-gray-200 rounded-lg shadow-sm"
+  >
+    <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3">
+      Step 1 — Source
+    </p>
+
+    <!-- Source type toggle -->
+    <div
+      class="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium mb-5"
+    >
+      <button
+        id="src-convert"
+        data-src="convert"
+        class="src-btn flex-1 py-2.5 px-4 bg-blue-600 text-white transition-colors duration-150"
+      >
+        Convert Files
+      </button>
+      <button
+        id="src-generate"
+        data-src="generate"
+        class="src-btn flex-1 py-2.5 px-4 bg-white text-gray-600 hover:bg-gray-50 transition-colors duration-150"
+      >
+        Generate from CSV
+      </button>
+    </div>
+
+    <!-- Convert panel -->
+    <div id="src-convert-panel">
+      <label
+        for="convert-file-input"
+        class="block text-sm font-medium text-gray-700 mb-1"
+        >Upload Audio Files</label
+      >
+      <p class="text-xs text-gray-400 mb-2">
+        MP3 or WAV — multiple files accepted
+      </p>
+      <input
+        type="file"
+        id="convert-file-input"
+        accept=".mp3,.wav"
+        multiple
+        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+      />
+    </div>
+
+    <!-- Generate panel -->
+    <div id="src-generate-panel" class="hidden">
+      <div class="flex items-center justify-between mb-1">
+        <label
+          for="gen-file-input"
+          class="block text-sm font-medium text-gray-700"
+          >Upload CSV or XLSX</label
+        >
+        <button
+          id="template-btn"
+          class="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+            />
+          </svg>
+          Download template
+        </button>
+      </div>
+      <p class="text-xs text-gray-400 mb-2">
+        Columns:
+        <code class="font-mono bg-gray-100 px-1 rounded">filename</code>,
+        <code class="font-mono bg-gray-100 px-1 rounded">text</code>, optional
+        <code class="font-mono bg-gray-100 px-1 rounded">voice</code> &amp;
+        <code class="font-mono bg-gray-100 px-1 rounded">accent</code>. Max 50
+        rows.
+      </p>
+      <input
+        type="file"
+        id="gen-file-input"
+        accept=".csv,.xlsx"
+        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer mb-4"
+      />
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label
+            for="gen-voice"
+            class="block text-xs font-medium text-gray-600 mb-1"
+            >Default Voice</label
+          >
+          <select
+            id="gen-voice"
+            class="block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="Achernar">Achernar — Soft</option>
+            <option value="Achird">Achird — Friendly</option>
+            <option value="Algenib">Algenib — Gravelly</option>
+            <option value="Algieba">Algieba — Smooth</option>
+            <option value="Alnilam">Alnilam — Firm</option>
+            <option value="Aoede">Aoede — Breezy</option>
+            <option value="Autonoe">Autonoe — Bright</option>
+            <option value="Callirrhoe">Callirrhoe — Easy-going</option>
+            <option value="Charon">Charon — Informative</option>
+            <option value="Despina">Despina — Smooth</option>
+            <option value="Enceladus">Enceladus — Breathy</option>
+            <option value="Erinome">Erinome — Clear</option>
+            <option value="Fenrir">Fenrir — Excitable</option>
+            <option value="Gacrux">Gacrux — Mature</option>
+            <option value="Iapetus">Iapetus — Clear</option>
+            <option value="Kore" selected>Kore — Firm (default)</option>
+            <option value="Laomedeia">Laomedeia — Upbeat</option>
+            <option value="Leda">Leda — Youthful</option>
+            <option value="Orus">Orus — Firm</option>
+            <option value="Puck">Puck — Upbeat</option>
+            <option value="Pulcherrima">Pulcherrima — Forward</option>
+            <option value="Rasalgethi">Rasalgethi — Informative</option>
+            <option value="Sadachbia">Sadachbia — Lively</option>
+            <option value="Sadaltager">Sadaltager — Knowledgeable</option>
+            <option value="Schedar">Schedar — Even</option>
+            <option value="Sulafat">Sulafat — Warm</option>
+            <option value="Umbriel">Umbriel — Easy-going</option>
+            <option value="Vindemiatrix">Vindemiatrix — Gentle</option>
+            <option value="Zephyr">Zephyr — Bright</option>
+            <option value="Zubenelgenubi">Zubenelgenubi — Casual</option>
+          </select>
+        </div>
+        <div>
+          <label
+            for="gen-accent"
+            class="block text-xs font-medium text-gray-600 mb-1"
+            >Default Accent</label
+          >
+          <input
+            type="text"
+            id="gen-accent"
+            value="Australian English"
+            placeholder="e.g. Australian English"
+            class="block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Output ─────────────────────────────────────────────────── -->
+  <div
+    id="step-2"
+    class="hidden card p-6 bg-white border border-gray-200 rounded-lg shadow-sm"
+  >
+    <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3">
+      Step 2 — Output
+    </p>
+
+    <!-- Not connected state -->
+    <div id="step2-no-cx" class="hidden">
+      <div
+        class="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-4 w-4 flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20A10 10 0 0112 2z"
+          />
+        </svg>
+        Not connected to CXone — files will be downloaded as a ZIP. To upload
+        directly, connect via the <strong>Authentication</strong> tab first.
+      </div>
+    </div>
+
+    <!-- Connected state -->
+    <div id="step2-cx" class="hidden">
+      <div class="flex items-center gap-2 mb-4">
+        <span
+          class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium"
+          id="step2-cx-badge"
+        ></span>
+      </div>
+      <div
+        class="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium"
+      >
+        <button
+          id="out-download"
+          data-out="download"
+          class="out-btn flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 text-white transition-colors duration-150"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+            />
+          </svg>
+          Download ZIP
+        </button>
+        <button
+          id="out-upload"
+          data-out="upload"
+          class="out-btn flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-white text-gray-600 hover:bg-gray-50 transition-colors duration-150"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12"
+            />
+          </svg>
+          Upload to CXone
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Start ──────────────────────────────────────────────────── -->
+  <div
+    id="step-3"
+    class="hidden card p-6 bg-white border border-gray-200 rounded-lg shadow-sm"
+  >
+    <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3">
+      Step 3 — Start
+    </p>
+
+    <p id="step3-summary" class="text-sm text-gray-600 mb-4"></p>
+
+    <!-- Progress -->
+    <div id="step3-progress" class="hidden mb-4">
+      <div class="flex justify-between text-sm text-gray-600 mb-1">
+        <span id="step3-progress-text" class="font-medium"></span>
+        <span id="step3-progress-pct" class="font-medium"></span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          id="step3-progress-bar"
+          class="h-2.5 rounded-full transition-all duration-300"
+          style="width: 0%"
+        ></div>
+      </div>
+    </div>
+
+    <button
+      id="start-btn"
+      class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+    >
+      Start
+    </button>
+
+    <!-- Results -->
+    <div id="step3-results" class="hidden space-y-2 text-sm"></div>
+
+    <!-- Start over -->
+    <button
+      id="start-over-btn"
+      class="hidden w-full mt-3 text-sm text-gray-500 hover:text-gray-700 underline"
+    >
+      Start over
+    </button>
+  </div>
+</div>

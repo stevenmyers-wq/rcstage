@@ -1,9 +1,8 @@
 // webapp/static/js/cxone_script_analyzer.js
-document.addEventListener("DOMContentLoaded", () => {
-  const btnConnect = document.getElementById("cx-connect-btn");
-  if (!btnConnect) return;
+document.addEventListener("DOMContentLoaded", async () => {
+  const workspace = document.getElementById("cx-workspace");
+  if (!workspace) return; // Not on the analyzer tab
 
-  // Setup Cytoscape Dagre extension
   if (
     typeof cytoscape !== "undefined" &&
     typeof cytoscapeDagre !== "undefined"
@@ -11,24 +10,45 @@ document.addEventListener("DOMContentLoaded", () => {
     cytoscape.use(cytoscapeDagre);
   }
 
-  let cxState = { token: null, base_uri: null, scriptsMap: {} };
+  let cxState = { scriptsMap: {} };
   let currentPdfBase64 = null;
   let cxCy = null;
-  let hoverPreview = null; // For the tooltip
+  let hoverPreview = null;
 
   // Elements
-  const workspace = document.getElementById("cx-workspace");
   const folderSelect = document.getElementById("cx-folder");
   const scriptSelect = document.getElementById("cx-script");
+  const authorInput = document.getElementById("cx-author");
   const outputArea = document.getElementById("cx-output-area");
   const mdDisplay = document.getElementById("cx-markdown-display");
   const pdfBtn = document.getElementById("cx-download-pdf-btn");
 
   const loaderWrapper = document.getElementById("cx-global-loader");
   const loaderText = document.getElementById("cx-loading-text");
-  const authStatus = document.getElementById("cx-auth-status");
 
-  // --- Loading UI Helpers ---
+  // Persistent Error Box Elements
+  const errorBox = document.getElementById("cx-error-box");
+  const errorText = document.getElementById("cx-error-text");
+
+  // --- Initial Check ---
+  try {
+    const res = await fetch("/api/cxone/status");
+    const data = await res.json();
+    if (data.status === "connected") {
+      workspace.classList.remove("hidden");
+      loadFolders();
+    } else {
+      workspace.innerHTML = `<div class="p-8 text-center text-gray-500 bg-white rounded-lg border border-gray-200">
+              <h3 class="text-xl font-bold text-red-600 mb-2">Not Connected</h3>
+              <p>Please connect to RCCC (CXone) in the Authentication menu on the left to use the Script Analyzer.</p>
+          </div>`;
+      workspace.classList.remove("hidden");
+    }
+  } catch (e) {
+    console.error("Failed to check CXone status", e);
+  }
+
+  // --- Loading & Error UI Helpers ---
   function showLoader(message) {
     if (loaderText) loaderText.textContent = message || "Processing...";
     if (loaderWrapper) loaderWrapper.classList.remove("hidden");
@@ -36,6 +56,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function hideLoader() {
     if (loaderWrapper) loaderWrapper.classList.add("hidden");
+  }
+
+  function showError(msg) {
+    if (errorBox && errorText) {
+      errorText.textContent = msg;
+      errorBox.classList.remove("hidden");
+      errorBox.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
+  function hideError() {
+    if (errorBox) errorBox.classList.add("hidden");
   }
 
   // --- Inner Tab Switching ---
@@ -54,58 +86,8 @@ document.addEventListener("DOMContentLoaded", () => {
       document
         .getElementById(e.target.dataset.target)
         .classList.remove("hidden");
+      hideError();
     });
-  });
-
-  // --- 1. Auth ---
-  btnConnect.addEventListener("click", async () => {
-    const region = document.getElementById("cx-region").value;
-    const access_key = document.getElementById("cx-access").value;
-    const secret_key = document.getElementById("cx-secret").value;
-
-    if (!access_key || !secret_key) {
-      authStatus.textContent = "❌ Access Key and Secret Key are required.";
-      authStatus.className = "ml-3 text-sm font-semibold text-red-600";
-      return;
-    }
-
-    btnConnect.disabled = true;
-    btnConnect.textContent = "Connecting...";
-    authStatus.textContent = ""; // Clear previous status
-    showLoader("Authenticating with CXone API...");
-
-    try {
-      const res = await fetch("/api/cxone/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ region, access_key, secret_key }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        cxState.token = data.token;
-        cxState.base_uri = data.base_uri;
-        authStatus.textContent = "✅ Connected!";
-        authStatus.className = "ml-3 text-sm font-semibold text-green-600";
-        workspace.classList.remove("hidden");
-        loadFolders();
-      } else {
-        // Display error inline next to the button
-        authStatus.textContent =
-          "❌ " + (data.error || "Authentication failed.");
-        authStatus.className = "ml-3 text-sm font-semibold text-red-600";
-        workspace.classList.add("hidden");
-      }
-    } catch (e) {
-      console.error("CXone Auth Error:", e);
-      authStatus.textContent = "❌ Network error during authentication.";
-      authStatus.className = "ml-3 text-sm font-semibold text-red-600";
-      workspace.classList.add("hidden");
-    } finally {
-      btnConnect.disabled = false;
-      btnConnect.textContent = "Connect to CXone";
-      hideLoader();
-    }
   });
 
   // --- 2. Load Folders & Scripts ---
@@ -113,10 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const res = await fetch("/api/cxone/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: cxState.token,
-        base_uri: cxState.base_uri,
-      }),
+      body: JSON.stringify({}),
     });
     const data = await res.json();
     if (data.success && data.folders) {
@@ -124,6 +103,8 @@ document.addEventListener("DOMContentLoaded", () => {
         .map((f) => `<option value="${f}">${f}</option>`)
         .join("");
       loadScripts();
+    } else {
+      showError("Failed to fetch folders: " + (data.error || "Unknown Error"));
     }
   }
 
@@ -135,8 +116,6 @@ document.addEventListener("DOMContentLoaded", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        token: cxState.token,
-        base_uri: cxState.base_uri,
         folder: folderSelect.value,
       }),
     });
@@ -154,6 +133,8 @@ document.addEventListener("DOMContentLoaded", () => {
           scriptSelect.innerHTML += `<option value="${s_id}">${display} (ID: ${s_id})</option>`;
         }
       });
+    } else {
+      showError("Failed to fetch scripts: " + (data.error || "Unknown Error"));
     }
   }
 
@@ -163,11 +144,11 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("cx-load-history-btn")
     .addEventListener("click", async () => {
       if (scriptSelect.selectedOptions.length !== 1) {
-        if (typeof showMessage === "function")
-          showMessage("Please select exactly one script.", true);
+        showError("Please select exactly one script.");
         return;
       }
 
+      hideError();
       showLoader("Fetching script historical versions...");
       const sid = scriptSelect.value;
 
@@ -176,8 +157,6 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            token: cxState.token,
-            base_uri: cxState.base_uri,
             script_path: cxState.scriptsMap[sid].path,
           }),
         });
@@ -185,8 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
         compareHistoryData = data.history || [];
 
         if (compareHistoryData.length < 2) {
-          if (typeof showMessage === "function")
-            showMessage("Script needs at least 2 versions to compare.", true);
+          showError("Script needs at least 2 versions to compare.");
           return;
         }
 
@@ -198,7 +176,7 @@ document.addEventListener("DOMContentLoaded", () => {
           .join("");
         document.getElementById("cx-prev-ver").innerHTML = opts;
         document.getElementById("cx-curr-ver").innerHTML = opts;
-        document.getElementById("cx-prev-ver").selectedIndex = 1; // Default to N-1
+        document.getElementById("cx-prev-ver").selectedIndex = 1;
 
         document.getElementById("compare-selectors").classList.remove("hidden");
         document
@@ -206,8 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
           .classList.remove("hidden");
       } catch (e) {
         console.error(e);
-        if (typeof showMessage === "function")
-          showMessage("Failed to fetch history.", true);
+        showError("Failed to fetch history.");
       } finally {
         hideLoader();
       }
@@ -230,8 +207,7 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("cx-run-asbuilt-btn")
     .addEventListener("click", () => {
       if (scriptSelect.selectedOptions.length === 0) {
-        if (typeof showMessage === "function")
-          showMessage("Please select at least one script.", true);
+        showError("Please select at least one script.");
         return;
       }
       const scripts = Array.from(scriptSelect.selectedOptions).map((opt) => ({
@@ -240,19 +216,30 @@ document.addEventListener("DOMContentLoaded", () => {
         path: cxState.scriptsMap[opt.value].path,
       }));
 
+      const author = authorInput
+        ? authorInput.value.trim() || "[Author Placeholder]"
+        : "[Author Placeholder]";
+
       runAnalysis(
-        { mode: "as-built", scripts: scripts },
+        { mode: "as-built", scripts: scripts, author: author },
         document.getElementById("cx-run-asbuilt-btn"),
       );
     });
+
+  // --- 4b. Pane: Environment Config ---
+  document.getElementById("cx-run-config-btn").addEventListener("click", () => {
+    runAnalysis(
+      { mode: "config" },
+      document.getElementById("cx-run-config-btn"),
+    );
+  });
 
   // --- 5. Pane: Visualize Script ---
   document
     .getElementById("cx-run-visualize-btn")
     .addEventListener("click", async () => {
       if (scriptSelect.selectedOptions.length !== 1) {
-        if (typeof showMessage === "function")
-          showMessage("Please select exactly one script to visualize.", true);
+        showError("Please select exactly one script to visualize.");
         return;
       }
 
@@ -260,6 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const btn = document.getElementById("cx-run-visualize-btn");
       btn.disabled = true;
 
+      hideError();
       showLoader("Fetching script payload and compiling visual graph...");
 
       try {
@@ -267,16 +255,13 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            token: cxState.token,
-            base_uri: cxState.base_uri,
             script_path: cxState.scriptsMap[sid].path,
           }),
         });
         const histData = await histRes.json();
 
         if (!histData.history || histData.history.length === 0) {
-          if (typeof showMessage === "function")
-            showMessage("No version history found to build diagram.", true);
+          showError("No version history found to build diagram.");
           return;
         }
 
@@ -286,15 +271,12 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            token: cxState.token,
-            base_uri: cxState.base_uri,
             script_id: latestScriptId,
           }),
         });
         const data = await res.json();
 
         if (data.success && data.graph) {
-          // ONLY SHOW RAW DECODED JSON
           const debugWrapper = document.getElementById("cx-debug-wrapper");
           const debugTextarea = document.getElementById("cx-debug-json");
           if (debugWrapper && debugTextarea) {
@@ -304,11 +286,9 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           if (!data.graph.nodes || data.graph.nodes.length === 0) {
-            if (typeof showMessage === "function")
-              showMessage(
-                "Warning: Script data fetched, but no valid flowchart actions were found inside the JSON. Check the console for details.",
-                true,
-              );
+            showError(
+              "Warning: Script data fetched, but no valid flowchart actions were found. Check the console.",
+            );
             document
               .getElementById("cx-diagram-wrapper")
               .classList.add("hidden");
@@ -324,13 +304,11 @@ document.addEventListener("DOMContentLoaded", () => {
               );
           }
         } else {
-          if (typeof showMessage === "function")
-            showMessage(data.error || "Visualization failed.", true);
+          showError(data.error || "Visualization failed.");
         }
       } catch (e) {
         console.error("Visualization Error:", e);
-        if (typeof showMessage === "function")
-          showMessage("Error loading diagram.", true);
+        showError("Error loading diagram.");
       } finally {
         btn.disabled = false;
         hideLoader();
@@ -394,7 +372,7 @@ document.addEventListener("DOMContentLoaded", () => {
         selector: "node",
         style: {
           shape: "round-rectangle",
-          "background-color": "#0ea5e9", // Base light blue
+          "background-color": "#0ea5e9",
           color: "#ffffff",
           label: "data(label)",
           "text-wrap": "wrap",
@@ -411,27 +389,27 @@ document.addEventListener("DOMContentLoaded", () => {
       {
         selector: 'node[type="begin"]',
         style: { "background-color": "#22c55e", "border-color": "#16a34a" },
-      }, // Green
+      },
       {
         selector: 'node[type="end"]',
         style: { "background-color": "#ef4444", "border-color": "#dc2626" },
-      }, // Red
+      },
       {
         selector: 'node[type="menu"]',
         style: { "background-color": "#8b5cf6", "border-color": "#7c3aed" },
-      }, // Purple
+      },
       {
         selector: 'node[type="play"]',
         style: { "background-color": "#f59e0b", "border-color": "#d97706" },
-      }, // Orange
+      },
       {
         selector: 'node[type="reqagent"]',
         style: { "background-color": "#10b981", "border-color": "#059669" },
-      }, // Teal
+      },
       {
         selector: 'node[type="snippet"]',
         style: { "background-color": "#64748b", "border-color": "#475569" },
-      }, // Slate
+      },
       {
         selector: "edge",
         style: {
@@ -470,7 +448,6 @@ document.addEventListener("DOMContentLoaded", () => {
       maxZoom: 3,
     });
 
-    // Wire up hover tooltips
     cxCy.on("mouseover", "node", (evt) => {
       const nd = evt.target.data();
       if (nd.properties) {
@@ -502,20 +479,16 @@ document.addEventListener("DOMContentLoaded", () => {
       link.click();
     });
 
-  // --- Core Executor (Text/PDF Analysis) ---
+  // --- Core Executor ---
   async function runAnalysis(customPayload, btnElement) {
     const originalText = btnElement.textContent;
     btnElement.disabled = true;
-    btnElement.textContent = "Analyzing with Gemini (Please wait)...";
     outputArea.classList.add("hidden");
+    hideError();
 
-    showLoader(
-      "Analyzing script logic with Gemini AI (this may take 30-60 seconds)...",
-    );
+    showLoader("Analyzing with Gemini AI / Extracting Config...");
 
     const payload = {
-      token: cxState.token,
-      base_uri: cxState.base_uri,
       ...customPayload,
     };
 
@@ -535,13 +508,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof showMessage === "function")
           showMessage("Analysis complete!", false);
       } else {
-        if (typeof showMessage === "function")
-          showMessage(data.error || "Analysis failed.", true);
+        showError(data.error || "Analysis failed.");
       }
     } catch (e) {
       console.error("Analysis Error:", e);
-      if (typeof showMessage === "function")
-        showMessage("Network timeout or error during analysis.", true);
+      showError("Network timeout or error during analysis.");
     } finally {
       btnElement.disabled = false;
       btnElement.textContent = originalText;

@@ -8,12 +8,10 @@ from flask import (
 )
 from webapp.auth_utils import is_authenticated, get_rc_access_token, create_pkce_challenge
 
-# A Blueprint for RingCentral authentication routes
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/auth/initiate-pkce', methods=['POST'])
 def initiate_pkce():
-    """Initiates the PKCE flow."""
     if not is_authenticated():
         return jsonify({'status': 'error', 'message': 'Not unlocked.'}), 401
     
@@ -47,7 +45,6 @@ def initiate_pkce():
 
 @auth_bp.route('/auth/callback', methods=['GET'])
 def auth_callback():
-    """Handles the token exchange."""
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
@@ -85,7 +82,7 @@ def auth_callback():
         session['rc_current_client_id'] = client_id
         session['rc_user_email'] = token_data.get('owner_id')
         
-        return redirect(url_for('core.index', tab='authenticator'))
+        return redirect(url_for('core.index', tab='auth_rex'))
     except requests.exceptions.RequestException as e:
         status_code = e.response.status_code if e.response else 'N/A'
         response_text = e.response.text if e.response else 'No body.'
@@ -96,7 +93,6 @@ def auth_callback():
 
 @auth_bp.route('/api/rc/disconnect', methods=['POST'])
 def rc_disconnect():
-    """Clears only the RC token state."""
     session.pop('rc_access_token', None)
     session.pop('rc_current_client_id', None)
     session.pop('rc_user_email', None)
@@ -104,7 +100,6 @@ def rc_disconnect():
 
 @auth_bp.route('/api/rc/status')
 def get_rc_status():
-    """API endpoint to check current RingCentral connection status."""
     token = get_rc_access_token()
     return jsonify({
         'status': 'connected' if token else 'disconnected',

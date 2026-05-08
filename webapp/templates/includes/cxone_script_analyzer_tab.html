@@ -21,6 +21,88 @@
     animation: progress-indeterminate 1.5s infinite linear;
     width: 50%;
   }
+
+  #cx-markdown-display h1 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: #1e3a8a;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #bfdbfe;
+    padding-bottom: 0.5rem;
+  }
+  #cx-markdown-display h2 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #1d4ed8;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 0.25rem;
+  }
+  #cx-markdown-display h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #374151;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  #cx-markdown-display p {
+    margin-bottom: 1rem;
+    line-height: 1.6;
+  }
+  #cx-markdown-display ul {
+    list-style-type: disc;
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  #cx-markdown-display ol {
+    list-style-type: decimal;
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  #cx-markdown-display li {
+    margin-bottom: 0.25rem;
+  }
+  #cx-markdown-display ul ul {
+    list-style-type: circle;
+    margin-top: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+  #cx-markdown-display strong {
+    font-weight: bold;
+    color: #111827;
+  }
+  #cx-markdown-display em {
+    font-style: italic;
+  }
+  #cx-markdown-display table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.875rem;
+  }
+  #cx-markdown-display th,
+  #cx-markdown-display td {
+    border: 1px solid #d1d5db;
+    padding: 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  #cx-markdown-display th {
+    background-color: #f3f4f6;
+    font-weight: bold;
+    color: #374151;
+  }
+  #cx-markdown-display tr:nth-child(even) {
+    background-color: #f9fafb;
+  }
+  #cx-markdown-display hr {
+    border: 0;
+    border-top: 1px solid #e5e7eb;
+    margin: 2rem 0;
+  }
 </style>
 
 <div class="space-y-6">
@@ -29,53 +111,6 @@
     Connect to your CXone tenant to generate changelogs, as-built documents, and
     dynamic flowchart diagrams.
   </p>
-
-  <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-    <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">1. Configuration</h4>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div>
-        <label class="block text-xs font-bold text-gray-500 uppercase"
-          >Region</label
-        >
-        <select id="cx-region" class="w-full p-2 border rounded mt-1">
-          <option value="au1">au1</option>
-          <option value="na1">na1</option>
-          <option value="na2">na2</option>
-          <option value="eu1">eu1</option>
-          <option value="uk1">uk1</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-bold text-gray-500 uppercase"
-          >Access Key ID</label
-        >
-        <input
-          type="password"
-          id="cx-access"
-          class="w-full p-2 border rounded mt-1"
-          placeholder="Enter Access Key"
-        />
-      </div>
-      <div>
-        <label class="block text-xs font-bold text-gray-500 uppercase"
-          >Secret Access Key</label
-        >
-        <input
-          type="password"
-          id="cx-secret"
-          class="w-full p-2 border rounded mt-1"
-          placeholder="Enter Secret Key"
-        />
-      </div>
-    </div>
-    <button
-      id="cx-connect-btn"
-      class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition"
-    >
-      Connect to CXone
-    </button>
-    <span id="cx-auth-status" class="ml-3 text-sm font-semibold"></span>
-  </div>
 
   <div
     id="cx-global-loader"
@@ -114,9 +149,19 @@
   </div>
 
   <div id="cx-workspace" class="hidden space-y-6">
+    <div
+      id="cx-error-box"
+      class="hidden p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded shadow-sm"
+    >
+      <div class="flex items-center">
+        <span class="font-bold mr-2">Error:</span>
+        <span id="cx-error-text"></span>
+      </div>
+    </div>
+
     <div class="card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
       <h4 class="font-bold text-gray-800 mb-3 border-b pb-2">
-        2. Select Target
+        1. Select Target
       </h4>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
@@ -126,6 +171,16 @@
           <select id="cx-folder" class="w-full p-2 border rounded mt-1">
             <option>Loading...</option>
           </select>
+
+          <label class="block text-xs font-bold text-gray-500 uppercase mt-4"
+            >Document Author</label
+          >
+          <input
+            type="text"
+            id="cx-author"
+            class="w-full p-2 border rounded mt-1"
+            placeholder="e.g. Jane Doe"
+          />
         </div>
         <div>
           <label class="block text-xs font-bold text-gray-500 uppercase"
@@ -136,6 +191,7 @@
             class="w-full p-2 border rounded mt-1"
             multiple
             size="4"
+            style="height: 124px"
           ></select>
           <p class="text-xs text-gray-400 mt-1">
             Hold Ctrl/Cmd to select multiple for As-Built docs.
@@ -147,27 +203,33 @@
     <div
       class="card p-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden"
     >
-      <div class="flex border-b bg-gray-50">
+      <div class="flex border-b bg-gray-50 flex-wrap">
         <button
-          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-blue-600 text-blue-600 transition"
+          class="cx-tab-btn flex-1 py-3 px-2 text-xs md:text-sm font-bold border-b-2 border-blue-600 text-blue-600 transition"
           data-target="pane-compare"
         >
           Compare Versions
         </button>
         <button
-          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          class="cx-tab-btn flex-1 py-3 px-2 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
           data-target="pane-history"
         >
           Full History
         </button>
         <button
-          class="cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          class="cx-tab-btn flex-1 py-3 px-2 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
           data-target="pane-asbuilt"
         >
           As-Built Docs
         </button>
         <button
-          class="hidden cx-tab-btn flex-1 py-3 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          class="hidden cx-tab-btn flex-1 py-3 px-2 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
+          data-target="pane-config"
+        >
+          Environment Config
+        </button>
+        <button
+          class="hidden cx-tab-btn flex-1 py-3 px-2 text-xs md:text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition"
           data-target="pane-visualize"
         >
           Visualize Script
@@ -194,7 +256,8 @@
             <div>
               <label class="text-xs font-bold text-gray-500 uppercase"
                 >Previous Version</label
-              ><select
+              >
+              <select
                 id="cx-prev-ver"
                 class="w-full p-2 border rounded mt-1"
               ></select>
@@ -202,7 +265,8 @@
             <div>
               <label class="text-xs font-bold text-gray-500 uppercase"
                 >Current Version</label
-              ><select
+              >
+              <select
                 id="cx-curr-ver"
                 class="w-full p-2 border rounded mt-1"
               ></select>
@@ -240,6 +304,19 @@
             class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition"
           >
             Generate As-Built Docs
+          </button>
+        </div>
+
+        <div id="pane-config" class="cx-pane hidden">
+          <p class="text-sm text-gray-600 mb-4">
+            Extract and document the tenant's current Skills, Hours of
+            Operation, and Points of Contact config natively.
+          </p>
+          <button
+            id="cx-run-config-btn"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition"
+          >
+            Extract Environment Config
           </button>
         </div>
 
@@ -295,10 +372,7 @@
           📄 Download PDF
         </button>
       </div>
-      <div
-        id="cx-markdown-display"
-        class="prose max-w-none text-sm text-gray-800"
-      ></div>
+      <div id="cx-markdown-display" class="text-sm text-gray-800"></div>
     </div>
   </div>
 </div>

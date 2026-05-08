@@ -86,4 +86,8 @@ def create_app():
         from .cxone_script_analyzer import routes as cxone_script_analyzer_routes
         app.register_blueprint(cxone_script_analyzer_routes.cxone_script_analyzer_bp)
 
+        # Register the new CXone Audio Converter Blueprint
+        from .cxone_audio_converter import routes as cxone_audio_converter_routes
+        app.register_blueprint(cxone_audio_converter_routes.cxone_audio_converter_bp)
+
     return app
