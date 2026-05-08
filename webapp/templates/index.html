@@ -274,6 +274,7 @@
             {% endif %}
           </div>
 
+<<<<<<< HEAD
           <div class="flex-1 w-full min-w-0">
             <div class="bg-transparent">
               {% if current_tab == 'auth_rex' %} {% include
@@ -315,6 +316,112 @@
                 </p>
               </div>
               {% endif %}
+=======
+            <div class="flex flex-col md:flex-row gap-6 items-start">
+                
+                <div class="w-full md:w-64 flex-shrink-0">
+                    <nav class="flex flex-col space-y-1" aria-label="Tabs">
+                        {% set tabs = [
+                            ('authenticator', 'PKCE Setup', 'Manages RingCentral Authorization'),
+                            ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'),
+                            ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'),
+                            ('renamer', 'Extension Renamer', 'Bulk edit extension names'),
+                            ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
+                            ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
+                            ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
+                            ('live_events', 'Live Events', 'Real-time subscription listener'),
+                            ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
+                            ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
+                            ('greetings_uploader', 'Greetings Uploader', 'Upload custom greetings to Message-Only and Announcement extensions'),
+                            ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'),
+                            ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'),
+                            ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'),
+                            ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'),
+                            ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'),
+							('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts via Gemini'),
+							('port_mapping', 'Port Mapping', 'Upload LOA and BRD to extract and map phone numbers')
+                        ] %}
+                        
+                        {% for tab_id, tab_name, tab_desc in tabs %}
+                            <a href="{{ url_for('core.index', tab=tab_id) }}" 
+                               class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200
+                               {% if current_tab == tab_id %}
+                                   bg-white border-blue-600 text-blue-700 shadow-sm
+                               {% else %}
+                                   border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900
+                               {% endif %}"
+                               aria-current="{% if current_tab == tab_id %}page{% else %}false{% endif %}"
+                               title="{{ tab_desc }}">
+                                {{ tab_name }}
+                            </a>
+                        {% endfor %}
+                        
+                        {% if USER_ROLE == 'Admin' %}
+                            <a href="{{ url_for('core.index', tab='admin_dashboard') }}" 
+                               class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 mt-4 {% if current_tab == 'admin_dashboard' %}bg-red-50 border-red-600 text-red-700 shadow-sm{% else %}border-transparent text-red-600 hover:bg-red-100 hover:text-red-900{% endif %}"
+                               title="Admin Analytics Dashboard">
+                                Admin Dashboard
+                            </a>
+                        {% endif %}
+                    </nav>
+
+                    {% if USER_ROLE == 'Admin' %}
+                    <div class="mt-8 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
+                        <h3 class="text-sm font-bold text-red-800 mb-1">Admin Mode</h3>
+                        <p class="text-xs text-red-700">Manage admins in settings.</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="flex-1 w-full min-w-0">
+                    <div class="bg-transparent"> 
+                        {% if current_tab == 'authenticator' %}
+                            {% include 'includes/authenticator_tab.html' %}
+                        {% elif current_tab == 'sip_fetcher' %}
+                            {% include 'includes/sip_fetcher_tab.html' %}
+                        {% elif current_tab == 'device_swap' %}
+                            {% include 'includes/device_swap_tab.html' %}
+                        {% elif current_tab == 'renamer' %}
+                            {% include 'includes/extension_renamer_tab.html' %}
+                        {% elif current_tab == 'bulk_opening' %}
+                            {% include 'includes/bulk_opening_tab.html' %}
+                        {% elif current_tab == 'personal_address_book' %}
+                            {% include 'includes/personal_address_book_tab.html' %}
+                        {% elif current_tab == 'call_flow' %}
+                            {% include 'includes/call_flow_tab.html' %}
+                        {% elif current_tab == 'live_events' %}
+                            {% include 'includes/live_events_tab.html' %}
+                        {% elif current_tab == 'custom_rules' %}
+                            {% include 'includes/custom_rules_tab.html' %}
+                        {% elif current_tab == 'notifications' %}
+                            {% include 'includes/notifications_tab.html' %}
+                        {% elif current_tab == 'greetings_uploader' %}
+                            {% include 'includes/greetings_uploader_tab.html' %}
+                        {% elif current_tab == 'ringex_uat' %}
+                            {% include 'includes/ringex_uat_tab.html' %}
+                        {% elif current_tab == 'ai_demo_calls' %}
+                            {% include 'includes/ai_demo_calls_tab.html' %}
+                        {% elif current_tab == 'analytics' %}
+                            {% include 'includes/analytics_tab.html' %}
+                        {% elif current_tab == 'presence' %}
+                            {% include 'includes/presence_tab.html' %}
+                        {% elif current_tab == 'account_discovery' %}
+        					{% include 'includes/account_health_tab.html' %}
+                        {% elif current_tab == 'admin_dashboard' and USER_ROLE == 'Admin' %}
+                            {% include 'includes/admin_dashboard_tab.html' %}
+						{% elif current_tab == 'cxone_script_analyzer' %}
+                            {% include 'includes/cxone_script_analyzer_tab.html' %}
+						{% elif current_tab == 'port_mapping' %}
+							{% include 'includes/port_mapping_tab.html' %}
+                        {% else %}
+                            <div class="card text-center py-12">
+                                <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+>>>>>>> 9341e6139938537f003c4659b6d9ee8e078ec638
             </div>
           </div>
         </div>

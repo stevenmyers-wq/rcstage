@@ -7,7 +7,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA']
 
-  # 3. Deploy to US (us-central1)
+  # 3. Deploy to US (us-central1) with Secret Manager bindings
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -20,8 +20,10 @@ steps:
     - 'us-central1'
     - '--platform'
     - 'managed'
+    - '--update-secrets'
+    - 'DEMO_RC_CLIENT_ID=DEMO_RC_CLIENT_ID:latest,DEMO_RC_CLIENT_SECRET=DEMO_RC_CLIENT_SECRET:latest,DEMO_RC_JWT_AU=DEMO_RC_JWT_AU:latest,DEMO_RC_JWT_UK=DEMO_RC_JWT_UK:latest,DEMO_RC_JWT_US=DEMO_RC_JWT_US:latest,FLASK_SECRET_KEY=FLASK_SECRET_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SM_CLIENT_ID=SM_CLIENT_ID:latest,SM_CLIENT_SECRET=SM_CLIENT_SECRET:latest'
 
-  # 4. Deploy the SAME image to UK (europe-west2)
+  # 4. Deploy the SAME image to UK (europe-west2) with Secret Manager bindings
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -34,6 +36,8 @@ steps:
     - 'europe-west2'
     - '--platform'
     - 'managed'
+    - '--update-secrets'
+    - 'DEMO_RC_CLIENT_ID=DEMO_RC_CLIENT_ID:latest,DEMO_RC_CLIENT_SECRET=DEMO_RC_CLIENT_SECRET:latest,DEMO_RC_JWT_AU=DEMO_RC_JWT_AU:latest,DEMO_RC_JWT_UK=DEMO_RC_JWT_UK:latest,DEMO_RC_JWT_US=DEMO_RC_JWT_US:latest,FLASK_SECRET_KEY=FLASK_SECRET_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SM_CLIENT_ID=SM_CLIENT_ID:latest,SM_CLIENT_SECRET=SM_CLIENT_SECRET:latest'
 
 images:
 - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA'
