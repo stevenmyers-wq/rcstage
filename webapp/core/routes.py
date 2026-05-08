@@ -87,13 +87,9 @@ def admin_analytics():
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
         
     data = get_analytics_data()
-<<<<<<< HEAD
-    return jsonify(data), 200
-=======
     return jsonify(data), 200
 
 # suppress favicon errors
 # @core_bp.route('/favicon.ico')
 # def favicon():
 #    return '', 204
->>>>>>> 9341e6139938537f003c4659b6d9ee8e078ec638
