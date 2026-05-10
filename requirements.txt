@@ -12,4 +12,3 @@ google-cloud-firestore
 markdown
 xhtml2pdf
 pydub==0.25.1
-audioop-lts
