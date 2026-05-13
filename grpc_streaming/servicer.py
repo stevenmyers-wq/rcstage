@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 RCAU_WEBHOOK_URL = os.environ.get('RCAU_WEBHOOK_URL', '')
 RCAU_WEBHOOK_SECRET = os.environ.get('RCAU_WEBHOOK_SECRET', '')
 
-# Participant type int → readable string (matches proto enum values)
 PARTICIPANT_TYPE_NAMES = {
     0: 'UNKNOWN',
     1: 'CONTACT',
@@ -19,35 +18,51 @@ PARTICIPANT_TYPE_NAMES = {
 }
 
 
+def _post_to_flask(endpoint, payload):
+    """
+    Generic fire-and-forget POST to the RCAU Flask app.
+    """
+    if not RCAU_WEBHOOK_URL:
+        logger.warning('RCAU_WEBHOOK_URL not set — event not forwarded.')
+        return
+    headers = {'X-Webhook-Secret': RCAU_WEBHOOK_SECRET}
+    try:
+        requests.post(
+            f'{RCAU_WEBHOOK_URL}{endpoint}',
+            json=payload,
+            headers=headers,
+            timeout=5,
+        )
+    except Exception as e:
+        logger.error(f'Failed to POST to {endpoint}: {e}')
+
+
+def post_dialog_event(event_type, dialog_id, ani=None, dnis=None):
+    """
+    POSTs a dialog_start or dialog_end event to Flask.
+    Used to maintain the active dialogs list in the UI.
+    """
+    _post_to_flask('/api/audio_streaming/dialog-event', {
+        'event': event_type,
+        'dialog_id': dialog_id,
+        'ani': ani,
+        'dnis': dnis,
+    })
+
+
 def post_transcript_event(dialog_id, segment_id, participant_type, participant_name,
                           text, is_final):
     """
     POSTs a transcript line to the RCAU Flask app webhook endpoint.
-    Fire-and-forget — errors are logged but don't affect the stream.
     """
-    if not RCAU_WEBHOOK_URL:
-        logger.warning('RCAU_WEBHOOK_URL not set — transcript not forwarded.')
-        return
-
-    payload = {
+    _post_to_flask('/api/audio_streaming/transcript-event', {
         'dialog_id': dialog_id,
         'segment_id': segment_id,
         'participant_type': participant_type,
         'participant_name': participant_name,
         'text': text,
         'is_final': is_final,
-    }
-    headers = {'X-Webhook-Secret': RCAU_WEBHOOK_SECRET}
-
-    try:
-        requests.post(
-            f'{RCAU_WEBHOOK_URL}/api/audio_streaming/transcript-event',
-            json=payload,
-            headers=headers,
-            timeout=5,
-        )
-    except Exception as e:
-        logger.error(f'Failed to POST transcript event: {e}')
+    })
 
 
 class StreamingServicer(streaming_pb2_grpc.StreamingServicer):
@@ -59,9 +74,10 @@ class StreamingServicer(streaming_pb2_grpc.StreamingServicer):
     def Stream(self, request_iterator, context):
         logger.info('New gRPC stream opened.')
 
-        # Track active segment transcribers keyed by segment_id
         transcribers = {}
         dialog_id = None
+        ani = None
+        dnis = None
 
         try:
             for event in request_iterator:
@@ -70,11 +86,17 @@ class StreamingServicer(streaming_pb2_grpc.StreamingServicer):
                 if event_type == 'dialog_init':
                     dialog = event.dialog_init.dialog
                     dialog_id = dialog.id
+                    ani = dialog.ani if dialog.HasField('ani') else None
+                    dnis = dialog.dnis if dialog.HasField('dnis') else None
+
                     logger.info(
                         f'DialogInit: dialog_id={dialog_id} '
                         f'type={dialog.type} '
-                        f'ani={dialog.ani} dnis={dialog.dnis}'
+                        f'ani={ani} dnis={dnis}'
                     )
+
+                    # Notify Flask that a new call has started
+                    post_dialog_event('dialog_start', dialog_id, ani=ani, dnis=dnis)
 
                 elif event_type == 'segment_start':
                     seg = event.segment_start
@@ -82,7 +104,7 @@ class StreamingServicer(streaming_pb2_grpc.StreamingServicer):
                     participant = seg.participant
                     audio_fmt = seg.audio_format if seg.HasField('audio_format') else None
 
-                    codec = audio_fmt.codec if audio_fmt else 3  # Default PCMU
+                    codec = audio_fmt.codec if audio_fmt else 3
                     sample_rate = audio_fmt.rate if audio_fmt else 8000
 
                     participant_type_str = PARTICIPANT_TYPE_NAMES.get(
@@ -110,7 +132,6 @@ class StreamingServicer(streaming_pb2_grpc.StreamingServicer):
                     seg_media = event.segment_media
                     segment_id = seg_media.segment_id
                     audio_bytes = seg_media.audio_content.payload
-
                     transcriber = transcribers.get(segment_id)
                     if transcriber:
                         transcriber.feed_audio(audio_bytes)
@@ -118,22 +139,23 @@ class StreamingServicer(streaming_pb2_grpc.StreamingServicer):
                 elif event_type == 'segment_stop':
                     segment_id = event.segment_stop.segment_id
                     logger.info(f'SegmentStop: segment_id={segment_id}')
-
                     transcriber = transcribers.pop(segment_id, None)
                     if transcriber:
                         transcriber.stop()
 
                 elif event_type == 'segment_info':
-                    # Currently unused per the proto spec
                     pass
 
         except Exception as e:
             logger.error(f'Error in Stream for dialog {dialog_id}: {e}')
 
         finally:
-            # Clean up any still-running transcribers if stream closes unexpectedly
             for transcriber in transcribers.values():
                 transcriber.stop()
             logger.info(f'gRPC stream closed for dialog {dialog_id}.')
+
+            # Notify Flask that the call has ended
+            if dialog_id:
+                post_dialog_event('dialog_end', dialog_id)
 
         return empty_pb2.Empty()

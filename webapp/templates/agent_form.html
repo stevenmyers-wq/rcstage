@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Personal Injury Triage</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        .suggestion-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1d4ed8;
+            border-radius: 9999px;
+            padding: 2px 10px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .suggestion-pill:hover { background: #dbeafe; }
+        .suggestion-pill .dismiss { color: #93c5fd; font-weight: bold; }
+        .suggestion-pill .dismiss:hover { color: #dc2626; }
+        .field-accepted { background: #f0fdf4; border-color: #86efac; }
+        .listening-dot {
+            width: 6px; height: 6px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body class="h-screen overflow-hidden">
+
+<div class="flex h-full">
+
+    <!-- Left: Live Transcript -->
+    <div class="w-2/5 flex flex-col border-r border-slate-200 bg-white">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <div id="listening-dot" class="listening-dot hidden"></div>
+            <h2 class="text-sm font-bold text-slate-700">Live Transcript</h2>
+            <span id="call-info" class="text-xs text-slate-400 ml-auto"></span>
+        </div>
+        <div id="transcript-container" class="flex-1 overflow-y-auto p-3 space-y-2">
+            <p id="transcript-placeholder" class="text-slate-400 text-xs text-center mt-6">
+                Waiting for call audio...
+            </p>
+        </div>
+    </div>
+
+    <!-- Right: Triage Form -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+            <h2 class="text-sm font-bold text-slate-700">Personal Injury Triage</h2>
+            <div class="flex items-center gap-2">
+                <span id="ai-status" class="text-xs text-slate-400"></span>
+                <button id="submit-btn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-1.5 px-3 rounded transition">
+                    Submit
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4">
+            <form id="triage-form" class="space-y-5">
+
+                {% set current_section = namespace(name='') %}
+                {% for field in form_fields %}
+                    {% if field.section != current_section.name %}
+                        {% set current_section.name = field.section %}
+                        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider pt-2 {% if not loop.first %}border-t border-slate-100{% endif %}">
+                            {{ field.section }}
+                        </h3>
+                    {% endif %}
+
+                    <div class="space-y-1" id="field-wrapper-{{ field.id }}">
+                        <label class="block text-xs font-medium text-slate-600" for="{{ field.id }}">
+                            {{ field.label }}
+                        </label>
+
+                        {% if field.type == 'textarea' %}
+                            <textarea id="{{ field.id }}" name="{{ field.id }}" rows="2"
+                                class="w-full border border-slate-200 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                                placeholder="Listening..."></textarea>
+                        {% elif field.type == 'select' %}
+                            <select id="{{ field.id }}" name="{{ field.id }}"
+                                class="w-full border border-slate-200 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">— Select —</option>
+                                {% for opt in field.options %}
+                                    <option value="{{ opt }}">{{ opt }}</option>
+                                {% endfor %}
+                            </select>
+                        {% else %}
+                            <input type="text" id="{{ field.id }}" name="{{ field.id }}"
+                                class="w-full border border-slate-200 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Listening..." />
+                        {% endif %}
+
+                        <!-- AI suggestion pills render here -->
+                        <div id="suggestions-{{ field.id }}" class="flex flex-wrap gap-1 mt-1"></div>
+                    </div>
+                {% endfor %}
+
+            </form>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// =====================================================================
+// Agent Form — Standalone page JS
+// dialog_id and ani injected from Flask template
+// =====================================================================
+
+const DIALOG_ID = {{ dialog_id | tojson }};
+const ANI = {{ ani | tojson }};
+
+let eventSource = null;
+let transcriptLines = [];   // Full transcript for AI context
+let finalLineCount = 0;     // Count of final lines — trigger AI every 3
+let interimBubbles = {};
+const AI_TRIGGER_EVERY = 3; // Lines between Gemini calls
+
+// Pre-populate phone from ANI
+if (ANI) {
+    const phoneField = document.getElementById('caller_phone');
+    if (phoneField) phoneField.value = ANI;
+    document.getElementById('call-info').textContent = ANI;
+}
+
+// Start SSE if dialog_id is present
+if (DIALOG_ID) {
+    startSSE();
+} else {
+    document.getElementById('transcript-placeholder').textContent =
+        'No dialog ID provided. Check agent script configuration.';
+}
+
+function startSSE() {
+    document.getElementById('listening-dot').classList.remove('hidden');
+    eventSource = new EventSource(`/api/audio_streaming/transcript-stream/${DIALOG_ID}`);
+
+    eventSource.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'connected') return;
+        handleTranscriptEvent(data);
+    };
+
+    eventSource.onerror = () => {
+        document.getElementById('listening-dot').classList.add('hidden');
+        document.getElementById('ai-status').textContent = 'Connection lost';
+    };
+}
+
+function handleTranscriptEvent(data) {
+    const placeholder = document.getElementById('transcript-placeholder');
+    if (placeholder) placeholder.style.display = 'none';
+
+    const container = document.getElementById('transcript-container');
+    const isAgent = data.participant_type === 'AGENT';
+    const segmentId = data.segment_id;
+
+    if (!data.is_final) {
+        if (interimBubbles[segmentId]) {
+            interimBubbles[segmentId].querySelector('.bubble-text').textContent = data.text;
+        } else {
+            const bubble = createBubble(data, false);
+            interimBubbles[segmentId] = bubble;
+            container.appendChild(bubble);
+            container.scrollTop = container.scrollHeight;
+        }
+    } else {
+        if (interimBubbles[segmentId]) {
+            interimBubbles[segmentId].querySelector('.bubble-text').textContent = data.text;
+            interimBubbles[segmentId].classList.remove('opacity-50');
+            delete interimBubbles[segmentId];
+        } else {
+            container.appendChild(createBubble(data, true));
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Add to transcript for AI context
+        const speaker = isAgent ? 'Agent' : 'Caller';
+        transcriptLines.push(`${speaker}: ${data.text}`);
+        finalLineCount++;
+
+        // Trigger AI suggestion every N final lines
+        if (finalLineCount % AI_TRIGGER_EVERY === 0) {
+            requestSuggestions();
+        }
+    }
+}
+
+function createBubble(data, isFinal) {
+    const isAgent = data.participant_type === 'AGENT';
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex ${isAgent ? 'justify-end' : 'justify-start'}`;
+    if (!isFinal) wrapper.classList.add('opacity-50');
+
+    const bubble = document.createElement('div');
+    bubble.className = `bubble-text max-w-xs rounded-xl px-3 py-1.5 text-xs leading-relaxed ${
+        isAgent ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-800'
+    }`;
+    bubble.textContent = data.text;
+    wrapper.appendChild(bubble);
+    return wrapper;
+}
+
+// --- AI Suggestions ---
+async function requestSuggestions() {
+    const aiStatus = document.getElementById('ai-status');
+    aiStatus.textContent = 'AI thinking...';
+
+    try {
+        const response = await fetch('/agent-form/suggest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript: transcriptLines.join('\n') })
+        });
+        const data = await response.json();
+        if (response.ok && data.suggestions) {
+            renderSuggestions(data.suggestions);
+            aiStatus.textContent = `AI updated ${new Date().toLocaleTimeString()}`;
+        } else {
+            aiStatus.textContent = 'AI error';
+        }
+    } catch {
+        aiStatus.textContent = 'AI error';
+    }
+}
+
+function renderSuggestions(suggestions) {
+    Object.entries(suggestions).forEach(([fieldId, value]) => {
+        if (!value) return;
+        const container = document.getElementById(`suggestions-${fieldId}`);
+        if (!container) return;
+
+        // Don't add duplicate suggestions
+        const existing = [...container.querySelectorAll('.suggestion-pill')];
+        if (existing.some(p => p.dataset.value === String(value))) return;
+
+        const pill = document.createElement('span');
+        pill.className = 'suggestion-pill';
+        pill.dataset.value = value;
+        pill.innerHTML = `
+            <span class="accept" title="Accept">✓</span>
+            <span>${value}</span>
+            <span class="dismiss" title="Dismiss">×</span>
+        `;
+
+        // Accept
+        pill.querySelector('.accept').addEventListener('click', () => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.value = value;
+                const wrapper = document.getElementById(`field-wrapper-${fieldId}`);
+                if (wrapper) wrapper.classList.add('field-accepted');
+            }
+            container.innerHTML = '';
+        });
+
+        // Dismiss
+        pill.querySelector('.dismiss').addEventListener('click', (e) => {
+            e.stopPropagation();
+            pill.remove();
+        });
+
+        container.appendChild(pill);
+    });
+}
+
+// --- Submit ---
+document.getElementById('submit-btn').addEventListener('click', () => {
+    const form = document.getElementById('triage-form');
+    const formData = new FormData(form);
+    const result = {};
+    formData.forEach((v, k) => { result[k] = v; });
+    console.log('Form submitted:', result);
+    alert('Triage form submitted. (CRM integration coming soon.)');
+});
+</script>
+
+</body>
+</html>

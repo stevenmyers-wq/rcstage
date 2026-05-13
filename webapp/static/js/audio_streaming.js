@@ -1,12 +1,12 @@
 // audio_streaming.js
-// Handles RingCX token exchange, auto-refresh, account loading, SSE transcript display.
+// Handles RingCX connection, active call polling, SSE transcript display.
 
 let ringcxRefreshInterval = null;
+let dialogPollInterval = null;
 let eventSource = null;
-// Tracks interim transcript bubbles by segment_id so we can update them in place
 const interimBubbles = {};
-
-const REFRESH_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes
+const REFRESH_INTERVAL_MS = 4 * 60 * 1000;
+const DIALOG_POLL_INTERVAL_MS = 5000;
 
 document.addEventListener('DOMContentLoaded', () => {
     const connectBtn = document.getElementById('ringcx-connect-btn');
@@ -17,12 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const subAccountSelect = document.getElementById('ringcx-sub-account-select');
     const subAccountSection = document.getElementById('ringcx-sub-account-section');
     const subAccountLoadingMsg = document.getElementById('ringcx-sub-account-loading');
-    const dialogIdInput = document.getElementById('dialog-id-input');
+    const grpcUrlSection = document.getElementById('ringcx-grpc-url-section');
+    const grpcUrlDisplay = document.getElementById('grpc-url-display');
+    const copyGrpcUrlBtn = document.getElementById('copy-grpc-url-btn');
+    const activeDialogSelect = document.getElementById('active-dialog-select');
+    const refreshDialogsBtn = document.getElementById('refresh-dialogs-btn');
     const startListeningBtn = document.getElementById('start-listening-btn');
     const stopListeningBtn = document.getElementById('stop-listening-btn');
     const sseStatus = document.getElementById('sse-status');
     const transcriptContainer = document.getElementById('transcript-container');
     const transcriptPlaceholder = document.getElementById('transcript-placeholder');
+    const transcriptCallInfo = document.getElementById('transcript-call-info');
     const clearBtn = document.getElementById('clear-transcript-btn');
 
     if (!connectBtn) return;
@@ -43,6 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 setConnectedState(data.accountId);
                 showMessage('Connected to RingCX successfully.');
                 await loadSubAccounts();
+                await loadGrpcUrl();
+                startDialogPolling();
             } else if (response.status === 401) {
                 showMessage('Please connect to RingCentral first via the RC Auth tab.', true);
                 setDisconnectedState();
@@ -50,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessage(data.error || 'Failed to connect to RingCX.', true);
                 setDisconnectedState();
             }
-        } catch (err) {
+        } catch {
             showMessage('Network error connecting to RingCX.', true);
             setDisconnectedState();
         }
@@ -60,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     disconnectBtn.addEventListener('click', async () => {
         try { await fetch('/api/audio_streaming/ringcx-disconnect', { method: 'POST' }); } catch {}
         stopRefreshTimer();
+        stopDialogPolling();
         setDisconnectedState();
         showMessage('Disconnected from RingCX.');
     });
@@ -72,6 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.connected) {
                 setConnectedState(data.accountId);
                 await loadSubAccounts();
+                await loadGrpcUrl();
+                startDialogPolling();
             } else {
                 setDisconnectedState();
             }
@@ -80,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Load sub-accounts ---
+    // --- Sub-accounts ---
     async function loadSubAccounts() {
         subAccountSection.classList.remove('hidden');
         subAccountLoadingMsg.classList.remove('hidden');
@@ -118,41 +128,121 @@ document.addEventListener('DOMContentLoaded', () => {
         subAccountSelect.classList.remove('hidden');
     }
 
-    // --- SSE: Start listening ---
-    startListeningBtn.addEventListener('click', () => {
-        const dialogId = dialogIdInput.value.trim();
-        if (!dialogId) {
-            showMessage('Please enter a Dialog ID.', true);
+    // --- gRPC URL ---
+    async function loadGrpcUrl() {
+        try {
+            const response = await fetch('/api/audio_streaming/grpc-service-url');
+            const data = await response.json();
+            if (response.ok && data.url) {
+                grpcUrlDisplay.textContent = data.url;
+                grpcUrlSection.classList.remove('hidden');
+            }
+        } catch {}
+    }
+
+    copyGrpcUrlBtn.addEventListener('click', () => {
+        const url = grpcUrlDisplay.textContent;
+        if (!url) return;
+        navigator.clipboard.writeText(url).then(() => {
+            copyGrpcUrlBtn.textContent = 'Copied!';
+            setTimeout(() => { copyGrpcUrlBtn.textContent = 'Copy'; }, 2000);
+        });
+    });
+
+    // --- Active dialog polling ---
+    function startDialogPolling() {
+        stopDialogPolling();
+        loadActiveDialogs();
+        dialogPollInterval = setInterval(loadActiveDialogs, DIALOG_POLL_INTERVAL_MS);
+    }
+
+    function stopDialogPolling() {
+        if (dialogPollInterval) {
+            clearInterval(dialogPollInterval);
+            dialogPollInterval = null;
+        }
+    }
+
+    async function loadActiveDialogs() {
+        try {
+            const response = await fetch('/api/audio_streaming/active-dialogs');
+            const data = await response.json();
+            if (response.ok) {
+                updateDialogDropdown(data.dialogs || []);
+            }
+        } catch {}
+    }
+
+    function updateDialogDropdown(dialogs) {
+        const currentValue = activeDialogSelect.value;
+        activeDialogSelect.innerHTML = '';
+
+        if (dialogs.length === 0) {
+            activeDialogSelect.appendChild(new Option('No active calls', ''));
+            startListeningBtn.disabled = true;
             return;
         }
-        startSSE(dialogId);
+
+        dialogs.forEach(d => {
+            const label = `${d.ani || 'Unknown'} → ${d.dnis || 'Unknown'}`;
+            const option = new Option(label, d.dialog_id);
+            option.dataset.ani = d.ani || '';
+            option.dataset.dnis = d.dnis || '';
+            activeDialogSelect.appendChild(option);
+        });
+
+        startListeningBtn.disabled = false;
+
+        // Re-select previous if still active
+        if (currentValue && [...activeDialogSelect.options].some(o => o.value === currentValue)) {
+            activeDialogSelect.value = currentValue;
+        } else if (dialogs.length === 1) {
+            // Auto-select if only one call
+            activeDialogSelect.value = dialogs[0].dialog_id;
+        }
+    }
+
+    refreshDialogsBtn.addEventListener('click', loadActiveDialogs);
+
+    // --- Listen / Stop ---
+    startListeningBtn.addEventListener('click', () => {
+        const dialogId = activeDialogSelect.value;
+        if (!dialogId) {
+            showMessage('No active call selected.', true);
+            return;
+        }
+        const selected = activeDialogSelect.options[activeDialogSelect.selectedIndex];
+        const ani = selected.dataset.ani || '';
+        const dnis = selected.dataset.dnis || '';
+        startSSE(dialogId, ani, dnis);
     });
 
-    stopListeningBtn.addEventListener('click', () => {
+    stopListeningBtn.addEventListener('click', () => stopSSE());
+
+    function startSSE(dialogId, ani, dnis) {
         stopSSE();
-    });
-
-    function startSSE(dialogId) {
-        stopSSE(); // Close any existing connection
+        clearTranscript();
 
         eventSource = new EventSource(`/api/audio_streaming/transcript-stream/${dialogId}`);
 
         eventSource.onopen = () => {
-            sseStatus.textContent = `Listening to dialog: ${dialogId}`;
+            sseStatus.textContent = `Listening to ${ani} → ${dnis}`;
             sseStatus.className = 'mt-2 text-xs text-green-600';
+            if (transcriptCallInfo) {
+                transcriptCallInfo.textContent = `${ani} → ${dnis}`;
+            }
             startListeningBtn.classList.add('hidden');
             stopListeningBtn.classList.remove('hidden');
-            dialogIdInput.disabled = true;
         };
 
         eventSource.onmessage = (e) => {
             const data = JSON.parse(e.data);
-            if (data.type === 'connected') return; // Initial confirmation, ignore
+            if (data.type === 'connected') return;
             handleTranscriptEvent(data);
         };
 
         eventSource.onerror = () => {
-            sseStatus.textContent = 'Connection lost. Try listening again.';
+            sseStatus.textContent = 'Connection lost.';
             sseStatus.className = 'mt-2 text-xs text-red-500';
             stopSSE();
         };
@@ -165,20 +255,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         startListeningBtn.classList.remove('hidden');
         stopListeningBtn.classList.add('hidden');
-        dialogIdInput.disabled = false;
         sseStatus.textContent = '';
+        if (transcriptCallInfo) transcriptCallInfo.textContent = '';
     }
 
     // --- Transcript display ---
     function handleTranscriptEvent(data) {
         if (transcriptPlaceholder) transcriptPlaceholder.style.display = 'none';
-
-        const isAgent = data.participant_type === 'AGENT';
         const isFinal = data.is_final;
         const segmentId = data.segment_id;
 
         if (!isFinal) {
-            // Interim result — update existing bubble or create new one
             if (interimBubbles[segmentId]) {
                 interimBubbles[segmentId].querySelector('.bubble-text').textContent = data.text;
             } else {
@@ -188,13 +275,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
             }
         } else {
-            // Final result — replace interim bubble if exists, otherwise create new
             if (interimBubbles[segmentId]) {
                 const existing = interimBubbles[segmentId];
                 existing.querySelector('.bubble-text').textContent = data.text;
                 existing.classList.remove('opacity-60');
-                existing.querySelector('.bubble-label').textContent =
-                    `${data.participant_name || data.participant_type}`;
+                existing.querySelector('.bubble-label').textContent = data.participant_name || data.participant_type;
                 delete interimBubbles[segmentId];
             } else {
                 const bubble = createBubble(data, true);
@@ -213,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isFinal) wrapper.classList.add('opacity-60');
 
         const inner = document.createElement('div');
-        inner.className = `max-w-xs lg:max-w-md xl:max-w-lg`;
+        inner.className = 'max-w-xs lg:max-w-md xl:max-w-lg';
 
         const label = document.createElement('div');
         label.className = `bubble-label text-xs font-medium mb-1 ${isAgent ? 'text-right text-blue-600' : 'text-left text-slate-500'}`;
@@ -225,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? 'bg-blue-600 text-white rounded-tr-sm'
                 : isContact
                     ? 'bg-slate-100 text-slate-800 rounded-tl-sm'
-                    : 'bg-purple-100 text-purple-800 rounded-tl-sm' // BOT
+                    : 'bg-purple-100 text-purple-800 rounded-tl-sm'
         }`;
         bubble.textContent = data.text;
 
@@ -235,15 +320,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return wrapper;
     }
 
-    // --- Clear transcript ---
-    clearBtn.addEventListener('click', () => {
-        // Remove all bubbles but keep the placeholder
+    function clearTranscript() {
         Array.from(transcriptContainer.children).forEach(child => {
             if (child.id !== 'transcript-placeholder') child.remove();
         });
         if (transcriptPlaceholder) transcriptPlaceholder.style.display = '';
         Object.keys(interimBubbles).forEach(k => delete interimBubbles[k]);
-    });
+    }
+
+    clearBtn.addEventListener('click', clearTranscript);
 
     // --- Token refresh ---
     function startRefreshTimer() {
@@ -292,8 +377,11 @@ document.addEventListener('DOMContentLoaded', () => {
         disconnectBtn.classList.add('hidden');
         accountInfo.classList.add('hidden');
         subAccountSection.classList.add('hidden');
+        grpcUrlSection.classList.add('hidden');
         mainAccountIdSpan.textContent = '';
         subAccountSelect.innerHTML = '';
+        grpcUrlDisplay.textContent = '';
+        activeDialogSelect.innerHTML = '<option value="">No active calls</option>';
         stopSSE();
     }
 });

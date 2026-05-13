@@ -97,5 +97,9 @@ def create_app():
         # RingCX Audio Streaming routes
         from .audio_streaming import routes as audio_streaming_routes
         app.register_blueprint(audio_streaming_routes.audio_streaming_bp)
+        
+        # Agent Form routes
+        from .agent_form import routes as agent_form_routes
+        app.register_blueprint(agent_form_routes.agent_form_bp)
 
     return app

@@ -10,7 +10,11 @@ It provides a suite of tools that interact with the RingCentral API on behalf of
 Access is restricted to @ringcentral.com Google accounts via SSO.
 Deployed on Google Cloud Run, built via Cloud Build on push to GitHub.
 
-Production URL: https://rcau-api-tools-396158962307.us-central1.run.app/
+Production URLs:
+- AU: https://rcau-api-tools-396158962307.us-central1.run.app/
+- UK: https://rcuk-api-tools-396158962307.europe-west2.run.app/
+
+GCP Project: sr-1906369, Project Number: 396158962307
 
 ## Stack
 
@@ -26,61 +30,58 @@ Modular Flask Blueprint architecture. Each tool is fully self-contained:
 - `webapp/module_name/utils.py` — business logic and API calls (not always present)
 - `webapp/templates/includes/module_name_tab.html` — UI partial
 - `webapp/static/js/module_name.js` — frontend JS
-- `webapp/static/css/module_name.css` — styles (only if needed)
 
-Shared utilities used by all modules:
-- `webapp/rc_api.py` — `rc_api_call()` function for all RingCentral API calls
-- `webapp/auth_utils.py` — `@require_rc_token` decorator and auth helpers
+Shared utilities:
+- `webapp/rc_api.py` — `rc_api_call()` for all RC API calls
+- `webapp/auth_utils.py` — `@require_rc_token` decorator
 - `webapp/usage_tracking.py` — `@track_usage()` decorator, logs to Firestore
-- `webapp/firestore_utils.py` — reads app config (passcode, admin list) from Firestore
+- `webapp/firestore_utils.py` — reads app config from Firestore
 - `webapp/static/js/app.js` — shared JS: `showMessage()`, `checkRcStatus()`, PKCE connect
 
 New blueprints are registered in `webapp/__init__.py`.
-New tabs are added to the `{% set tabs = [...] %}` list in `webapp/templates/index.html`.
+New tabs are added to `{% set tabs = [...] %}` in `webapp/templates/index.html`.
 
 ## Authentication layers
 
-1. Google SSO — baseline access, all users. Handled by `core/routes.py`. Do not touch.
-2. RingCentral PKCE OAuth — most tools. Gives `session['rc_access_token']`. Protect routes with `@require_rc_token`.
-3. JWT server-to-server — AI Demo Calls only. Token comes from env vars, not session.
+1. Google SSO — all users. `core/routes.py`. Do not touch.
+2. RingCentral PKCE OAuth — most tools. `session['rc_access_token']`. Use `@require_rc_token`.
+3. JWT server-to-server — AI Demo Calls only. Token from env vars.
+4. RingCX token exchange — RingCX Streaming only. Exchanges RC token for RingCX token.
+   Session keys: `ringcx_access_token`, `ringcx_refresh_token`, `ringcx_account_id`.
+   Expires every 5 mins, auto-refreshed by frontend every 4 mins.
+5. Agent Form (/agent-form/) — intentionally no auth. Public route for iframe embedding.
+   Only needs `dialog_id` URL param. Dialog IDs are unguessable UUIDs.
 
-In development mode (`FLASK_ENV=development`), Google SSO is bypassed automatically.
-Session is auto-set to: `authenticated=True`, `user_email=developer@local.test`, `is_admin=True`.
+In development mode (`FLASK_ENV=development`), Google SSO is bypassed.
+Auto-session: `authenticated=True`, `user_email=developer@local.test`, `is_admin=True`.
 
-## Non-negotiable patterns — follow these exactly
+## Non-negotiable patterns
 
-### Decorator order (wrong order causes silent failures)
+### Decorator order
 ```python
 @blueprint.route('/endpoint', methods=['POST'])  # always first
 @require_rc_token                                 # always second
-@track_usage('Tool Name')                         # always third (innermost)
+@track_usage('Tool Name')                         # always third
 def your_function():
 ```
 
-### Making RingCentral API calls
+### RC API calls
 ```python
 from webapp.rc_api import rc_api_call
-
 data = rc_api_call("/restapi/v1.0/account/~/sites")
-data = rc_api_call("/restapi/v1.0/account/~/extension", params={"perPage": 1000})
-result = rc_api_call("/restapi/v1.0/account/~/...", method='POST', json={"key": "val"})
+# NEVER pass token manually — TypeError
 ```
-NEVER pass the access token manually — rc_api_call() gets it from session automatically.
-Passing a token as first argument causes a TypeError.
 
 ### Blueprint naming
 ```python
 your_tool_bp = Blueprint('your_tool_bp', __name__, url_prefix='/api/your_tool_name')
 ```
-- Folder: snake_case
-- Blueprint variable and name string: snake_case_bp
-- URL prefix: /api/folder_name
 
-### Tab registration in index.html
+### Tab registration
 ```python
 ('tab_id', 'Display Name', 'Short description'),
 ```
-The tab_id must exactly match the folder name convention and the {% elif current_tab == 'tab_id' %} include block.
+tab_id must match folder name and {% elif current_tab == 'tab_id' %} include block.
 
 ### Frontend fetch pattern
 ```javascript
@@ -100,40 +101,109 @@ document.addEventListener('DOMContentLoaded', () => {
             else { showMessage(data.error || 'Error.', true); }
         } catch (err) {
             showMessage('Network error.', true);
-        } finally {
-            btn.disabled = false;
-        }
+        } finally { btn.disabled = false; }
     });
 });
 ```
-Use showMessage(text, isError) from app.js — it is globally available.
-Reference static files in templates with: {{ url_for('static', filename='js/file.js') }}
-
-### utils.py decision
-Create utils.py if the module makes multiple RC API calls or has data transformation logic.
-Keep routes.py thin — just HTTP handling, validation, and calling utils functions.
-Routes-only is fine for simple single-call endpoints (see sip_fetcher as example).
 
 ## Files that should rarely or never be touched
-- `webapp/core/routes.py` — Google SSO, index route
-- `webapp/auth/routes.py` — PKCE OAuth flow
-- `webapp/__init__.py` — only add new blueprint registrations, never remove existing ones
-- `webapp/rc_api.py` — shared API handler
-- `webapp/auth_utils.py` — shared auth helpers
+- `webapp/core/routes.py`
+- `webapp/auth/routes.py`
+- `webapp/__init__.py` — only add blueprint registrations
+- `webapp/rc_api.py`
+- `webapp/auth_utils.py`
 
 ## Environment variables
-Required always: FLASK_SECRET_KEY, FLASK_ENV, GOOGLE_CLIENT_ID, RC_REDIRECT_URI, RC_SERVER_URL, RC_SCOPE, ADMIN_EMAILS
-AI Demo Calls module also needs: DEMO_RC_JWT_AU, DEMO_RC_JWT_UK, DEMO_RC_JWT_US, DEMO_RC_CLIENT_ID, DEMO_RC_CLIENT_SECRET, GEMINI_API_KEY
-Analytics module also needs: SM_CLIENT_ID, SM_CLIENT_SECRET
-All secrets are in .env locally and injected via Cloud Run environment variables in production.
+Always: FLASK_SECRET_KEY, FLASK_ENV, GOOGLE_CLIENT_ID, RC_REDIRECT_URI, RC_SERVER_URL, RC_SCOPE, ADMIN_EMAILS
+RingCX + Agent Form: RCAU_WEBHOOK_SECRET, GCP_PROJECT_NUMBER (default: 396158962307), GEMINI_API_KEY
+AI Demo Calls: DEMO_RC_JWT_AU, DEMO_RC_JWT_UK, DEMO_RC_JWT_US, DEMO_RC_CLIENT_ID, DEMO_RC_CLIENT_SECRET
+Analytics: SM_CLIENT_ID, SM_CLIENT_SECRET
 
 ## Deployment
-Push to GitHub → Cloud Build triggers automatically → builds Docker image → pushes to Artifact Registry → deploys to Cloud Run.
-No manual deployment steps needed. cloudbuild.yaml handles everything.
+
+### Flask app
+Push to GitHub → Cloud Build → builds Docker image → deploys to Cloud Run (AU + UK).
+Existing trigger has `grpc_streaming/**` in ignored files filter.
+
+### gRPC streaming service (grpc_streaming/)
+Separate Cloud Build trigger:
+- Name: rcau-grpc-streaming
+- Included files: grpc_streaming/**
+- Config: grpc_streaming/cloudbuild.yaml
+- Deploys: rcau-rcx-grpc-streaming in us-central1
+Env vars set manually in Cloud Run console (not in code).
+
+## gRPC Streaming Service (grpc_streaming/)
+
+Separate Cloud Run service receiving live audio from RingCX via gRPC.
+
+### How it works
+1. RingCX Workflow Studio Start Streaming node connects to gRPC service
+2. servicer.py handles StreamEvents:
+   - DialogInit → POSTs `dialog_start` to Flask `/api/audio_streaming/dialog-event`
+   - SegmentStart → creates SegmentTranscriber (transcription.py) per participant
+   - SegmentMedia → feeds audio to Google STT via transcription.py
+   - SegmentStop → stops transcriber
+   - Stream closes → POSTs `dialog_end` to Flask
+3. Each transcript result → POSTs to Flask `/api/audio_streaming/transcript-event`
+4. Flask pushes via SSE to browser subscribers
+
+### Proto stubs
+Pre-compiled in grpc_streaming/generated/. DO NOT REGENERATE.
+streaming_pb2_grpc.py line 7 has manual fix: `from generated import streaming_pb2`
+Regenerating overwrites this and breaks the server.
+
+### RingCX Workflow Studio URL
+grpc://rcau-rcx-grpc-streaming-396158962307.us-central1.run.app:443
+MUST use grpc:// scheme. https:// causes STREAMING SETUP FAILED.
+Credentials: Basic Auth, any username/password (server accepts all).
+
+## audio_streaming blueprint (webapp/audio_streaming/)
+
+routes.py endpoints:
+- POST /api/audio_streaming/ringcx-token — RingCX token exchange (requires @require_rc_token)
+- POST /api/audio_streaming/ringcx-refresh — token refresh (no auth, uses session refresh token)
+- GET /api/audio_streaming/accounts — fetch RingCX sub-accounts
+- GET /api/audio_streaming/ringcx-status — session connection state
+- POST /api/audio_streaming/ringcx-disconnect — clear session tokens
+- GET /api/audio_streaming/grpc-service-url — returns Workflow Studio URL from GCP_PROJECT_NUMBER
+- POST /api/audio_streaming/dialog-event — receives dialog_start/dialog_end from gRPC service
+- GET /api/audio_streaming/active-dialogs — returns in-memory list of active calls (no auth)
+- POST /api/audio_streaming/transcript-event — receives transcript lines from gRPC service
+- GET /api/audio_streaming/transcript-stream/<dialog_id> — SSE endpoint for live transcripts
+
+In-memory stores (reset on container restart — intentional for PoC):
+- _active_dialogs: {dialog_id: {ani, dnis, started_at}}
+- _transcript_subscribers: {dialog_id: [Queue, ...]}
+
+## agent_form blueprint (webapp/agent_form/)
+
+routes.py endpoints:
+- GET /agent-form/ — renders standalone agent_form.html (no RCAU chrome)
+  Params: dialog_id (required), ani (optional, pre-populates phone field)
+- POST /agent-form/suggest — takes transcript text, calls Gemini, returns field suggestions JSON
+
+agent_form.html — standalone minimal page:
+- Left panel: live transcript (connects SSE automatically from dialog_id URL param)
+- Right panel: personal injury triage form with AI suggestion pills
+- Every 3 final transcript lines → calls /agent-form/suggest → renders accept/dismiss pills
+- No RCAU session required — completely public route
+
+agent_form_tab.html + agent_form_tab.js — RCAU debug tab:
+- Polls /api/audio_streaming/active-dialogs every 5s
+- Shows active call dropdown (shared with streaming tab via same API)
+- Load Form button → loads /agent-form/ into iframe + starts transcript mirror SSE
+- Shows iframe URL with copy button for agent script configuration
+
+Form fields (defined in agent_form/routes.py FORM_FIELDS):
+- Caller Details: Full Name, Phone (pre-filled from ANI), Best Contact Time
+- Incident Details: Type, Date, Location, Description
+- Medical: Seen Doctor, Injury Nature, Still Treating
+- Viability: Other Party Fault, Prior Claim, Lead Quality
 
 ## Working style for this project
 - Explain what you are going to do and why before making any changes
 - Show me the diff and wait for approval before writing to any file
-- When making RingCentral API calls in new code, check rc_api.py first so you understand the return types
-- If something touches core/, auth/, or __init__.py, flag it and explain why before proceeding
+- When making RC API calls in new code, check rc_api.py first
+- If something touches core/, auth/, or __init__.py, flag it and explain why
 - After completing a change, tell me what to test and how
