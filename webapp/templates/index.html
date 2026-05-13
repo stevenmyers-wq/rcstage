@@ -246,7 +246,7 @@
               Changelogs & As-Builts'),('cxone_audio_converter', 'CXone Audio
               Converter', 'Convert audio files to 8kHz, mono,
               u-law'),('port_mapping', 'Port Mapping', 'Upload LOA and BRD to
-              extract and map phone numbers') ] %} {% for tab_id, tab_name,
+              extract and map phone numbers'),('audio_streaming', 'RingCX Streaming', 'Live call audio streaming and transcription') ] %} {% for tab_id, tab_name,
               tab_desc in tabs %}
               <a
                 href="{{ url_for('core.index', tab=tab_id) }}"
@@ -312,7 +312,7 @@
               == 'cxone_audio_converter' %} {% include
               'includes/cxone_audio_converter_tab.html' %} {% elif current_tab
               == 'port_mapping' %} {% include 'includes/port_mapping_tab.html'
-              %} {% else %}
+              %} {% elif current_tab == 'audio_streaming' %} {% include 'includes/audio_streaming_tab.html' %} {% else %}
               <div class="card text-center py-12">
                 <p class="text-gray-500 text-lg">
                   Select a tool from the sidebar to begin.

@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package ringcentral.ringcx.streaming.v1beta2;
+
+enum Codec {
+  CODEC_UNSPECIFIED = 0;
+  OPUS = 1;
+  PCMA = 2;
+  PCMU = 3;
+  L16 = 4;
+  FLAC = 5;
+}
+
+enum ProductType {
+  PRODUCT_TYPE_UNSPECIFIED = 0;
+  QUEUE = 1;
+  CAMPAIGN = 2;
+  IVR = 3;
+}
+
+enum DialogType {
+  DIALOG_TYPE_UNSPECIFIED = 0;
+  INBOUND = 1;
+  OUTBOUND = 2;
+}
+
+enum ParticipantType {
+  PARTICIPANT_TYPE_UNSPECIFIED = 0;
+  CONTACT = 1;
+  AGENT = 2;
+  BOT = 5;
+}
+
+message Account {
+  string id = 1;
+  string sub_account_id = 2;
+  string rc_account_id = 3;
+}
+
+message Product {
+  string id = 1;
+  ProductType type = 2;
+}
+
+message Dialog {
+  string id = 1;
+  DialogType type = 2;
+  optional string ani = 3;
+  optional string dnis = 4;
+  optional string language = 5;
+  map<string, string> attributes = 6;
+}
+
+message Participant {
+  string id = 1;
+  ParticipantType type = 2;
+  optional string name = 3;
+}
+
+message AudioFormat {
+  Codec codec = 1;
+  uint32 rate = 2;
+  uint32 ptime = 3;
+}
+
+message AudioContent {
+  bytes payload = 1;
+  uint32 seq = 2;
+  uint32 duration = 3;
+}
+
+service Streaming {
+  rpc Stream(stream StreamEvent) returns (google.protobuf.Empty);
+}
+
+message StreamEvent {
+  string session_id = 1;
+  oneof event {
+    DialogInitEvent dialog_init = 2;
+    SegmentStartEvent segment_start = 3;
+    SegmentMediaEvent segment_media = 4;
+    SegmentInfoEvent segment_info = 5;
+    SegmentStopEvent segment_stop = 6;
+  }
+}
+
+message DialogInitEvent {
+  Account account = 1;
+  Dialog dialog = 2;
+}
+
+message SegmentStartEvent {
+  string segment_id = 1;
+  optional Product product = 2;
+  Participant participant = 3;
+  optional AudioFormat audio_format = 4;
+}
+
+message SegmentMediaEvent {
+  string segment_id = 1;
+  AudioContent audio_content = 2;
+}
+
+message SegmentInfoEvent {
+  string segment_id = 1;
+  string event = 2;
+  optional string data = 3;
+}
+
+message SegmentStopEvent {
+  string segment_id = 1;
+}

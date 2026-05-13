@@ -1,0 +1,41 @@
+steps:
+  # 1. Build the container image from the grpc_streaming subfolder
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-grpc-streaming:$COMMIT_SHA'
+      - '-f'
+      - 'grpc_streaming/dockerfile'
+      - 'grpc_streaming'
+
+  # 2. Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-grpc-streaming:$COMMIT_SHA'
+
+  # 3. Deploy to Cloud Run in us-central1
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'rcau-rcx-grpc-streaming'
+      - '--image'
+      - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-grpc-streaming:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--port'
+      - '8080'
+      - '--use-http2'
+      - '--min-instances'
+      - '1'
+
+images:
+  - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-grpc-streaming:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

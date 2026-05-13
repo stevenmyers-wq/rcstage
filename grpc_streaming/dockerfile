@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED True
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Compile proto stubs at build time
+RUN python -m grpc_tools.protoc \
+    -I./proto \
+    -I$(python -c "import grpc_tools; import os; print(os.path.dirname(grpc_tools.__file__))") \
+    --python_out=./generated \
+    --grpc_python_out=./generated \
+    proto/streaming.proto
+
+CMD exec python main.py

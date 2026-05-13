@@ -89,8 +89,13 @@ def create_app():
         # Register the new CXone Audio Converter Blueprint
         from .cxone_audio_converter import routes as cxone_audio_converter_routes
         app.register_blueprint(cxone_audio_converter_routes.cxone_audio_converter_bp)
+        
         # Port Mapping routes
         from .port_mapping import routes as port_mapping_routes
         app.register_blueprint(port_mapping_routes.port_mapping_bp)
+        
+        # RingCX Audio Streaming routes
+        from .audio_streaming import routes as audio_streaming_routes
+        app.register_blueprint(audio_streaming_routes.audio_streaming_bp)
 
     return app
