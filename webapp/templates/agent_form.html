@@ -7,32 +7,77 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background: #f8fafc; }
-        .suggestion-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+
+        .field-accepted { border-left: 3px solid #22c55e !important; }
+        .field-accepted input,
+        .field-accepted textarea,
+        .field-accepted select {
+            border-color: #86efac;
+            background: #f0fdf4;
+        }
+
+        .suggestion-box {
             background: #eff6ff;
             border: 1px solid #bfdbfe;
-            color: #1d4ed8;
-            border-radius: 9999px;
-            padding: 2px 10px;
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.15s;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-top: 4px;
+            font-size: 0.78rem;
+            color: #1e40af;
+            line-height: 1.5;
         }
-        .suggestion-pill:hover { background: #dbeafe; }
-        .suggestion-pill .dismiss { color: #93c5fd; font-weight: bold; }
-        .suggestion-pill .dismiss:hover { color: #dc2626; }
-        .field-accepted { background: #f0fdf4; border-color: #86efac; }
+
+        .update-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            color: #92400e;
+            border-radius: 9999px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+        .update-badge:hover { background: #fde68a; }
+
         .listening-dot {
             width: 6px; height: 6px;
             background: #22c55e;
             border-radius: 50%;
             animation: pulse 1.5s infinite;
+            display: inline-block;
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
+        }
+
+        .transcript-bubble-agent {
+            background: #3b82f6;
+            color: white;
+            border-radius: 12px 12px 2px 12px;
+            padding: 5px 10px;
+            font-size: 0.72rem;
+            max-width: 90%;
+            margin-left: auto;
+            margin-bottom: 4px;
+        }
+        .transcript-bubble-contact {
+            background: #e2e8f0;
+            color: #1e293b;
+            border-radius: 12px 12px 12px 2px;
+            padding: 5px 10px;
+            font-size: 0.72rem;
+            max-width: 90%;
+            margin-bottom: 4px;
+        }
+        .transcript-label {
+            font-size: 0.65rem;
+            color: #94a3b8;
+            margin-bottom: 2px;
         }
     </style>
 </head>
@@ -40,25 +85,25 @@
 
 <div class="flex h-full">
 
-    <!-- Left: Live Transcript -->
-    <div class="w-2/5 flex flex-col border-r border-slate-200 bg-white">
-        <div class="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <div id="listening-dot" class="listening-dot hidden"></div>
-            <h2 class="text-sm font-bold text-slate-700">Live Transcript</h2>
-            <span id="call-info" class="text-xs text-slate-400 ml-auto"></span>
+    <!-- Left: Narrow transcript sidebar (25%) -->
+    <div class="flex flex-col border-r border-slate-200 bg-white" style="width: 25%; min-width: 160px;">
+        <div class="px-3 py-2 border-b border-slate-100 flex items-center gap-2 flex-shrink-0">
+            <span id="listening-dot" class="listening-dot hidden"></span>
+            <h2 class="text-xs font-bold text-slate-600">Transcript</h2>
+            <span id="call-info" class="text-xs text-slate-400 ml-auto truncate"></span>
         </div>
-        <div id="transcript-container" class="flex-1 overflow-y-auto p-3 space-y-2">
-            <p id="transcript-placeholder" class="text-slate-400 text-xs text-center mt-6">
-                Waiting for call audio...
+        <div id="transcript-container" class="flex-1 overflow-y-auto p-2">
+            <p id="transcript-placeholder" class="text-slate-400 text-xs text-center mt-4">
+                Waiting...
             </p>
         </div>
     </div>
 
-    <!-- Right: Triage Form -->
-    <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+    <!-- Right: Full form (75%) -->
+    <div class="flex-1 flex flex-col overflow-hidden" style="width: 75%;">
+        <div class="px-4 py-2 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
             <h2 class="text-sm font-bold text-slate-700">Personal Injury Triage</h2>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-3">
                 <span id="ai-status" class="text-xs text-slate-400"></span>
                 <button id="submit-btn"
                     class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-1.5 px-3 rounded transition">
@@ -68,18 +113,18 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-4">
-            <form id="triage-form" class="space-y-5">
+            <form id="triage-form" class="space-y-4">
 
                 {% set current_section = namespace(name='') %}
                 {% for field in form_fields %}
                     {% if field.section != current_section.name %}
                         {% set current_section.name = field.section %}
-                        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider pt-2 {% if not loop.first %}border-t border-slate-100{% endif %}">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider pt-2 {% if not loop.first %}border-t border-slate-100{% endif %}">
                             {{ field.section }}
                         </h3>
                     {% endif %}
 
-                    <div class="space-y-1" id="field-wrapper-{{ field.id }}">
+                    <div class="space-y-1 pl-1 border-l-2 border-transparent transition-all" id="field-wrapper-{{ field.id }}">
                         <label class="block text-xs font-medium text-slate-600" for="{{ field.id }}">
                             {{ field.label }}
                         </label>
@@ -102,8 +147,8 @@
                                 placeholder="Listening..." />
                         {% endif %}
 
-                        <!-- AI suggestion pills render here -->
-                        <div id="suggestions-{{ field.id }}" class="flex flex-wrap gap-1 mt-1"></div>
+                        <!-- AI suggestion area -->
+                        <div id="suggestion-area-{{ field.id }}"></div>
                     </div>
                 {% endfor %}
 
@@ -114,33 +159,35 @@
 </div>
 
 <script>
-// =====================================================================
-// Agent Form — Standalone page JS
-// dialog_id and ani injected from Flask template
-// =====================================================================
-
 const DIALOG_ID = {{ dialog_id | tojson }};
 const ANI = {{ ani | tojson }};
 
 let eventSource = null;
-let transcriptLines = [];   // Full transcript for AI context
-let finalLineCount = 0;     // Count of final lines — trigger AI every 3
+let transcriptLines = [];
+let finalLineCount = 0;
 let interimBubbles = {};
-const AI_TRIGGER_EVERY = 3; // Lines between Gemini calls
+const AI_TRIGGER_EVERY = 3;
+
+// Track accepted values: {fieldId: acceptedValue}
+const acceptedValues = {};
 
 // Pre-populate phone from ANI
 if (ANI) {
     const phoneField = document.getElementById('caller_phone');
-    if (phoneField) phoneField.value = ANI;
+    if (phoneField) {
+        phoneField.value = ANI;
+        const wrapper = document.getElementById('field-wrapper-caller_phone');
+        if (wrapper) wrapper.classList.add('field-accepted');
+        acceptedValues['caller_phone'] = ANI;
+    }
     document.getElementById('call-info').textContent = ANI;
 }
 
-// Start SSE if dialog_id is present
 if (DIALOG_ID) {
     startSSE();
 } else {
     document.getElementById('transcript-placeholder').textContent =
-        'No dialog ID provided. Check agent script configuration.';
+        'No dialog ID. Check agent script config.';
 }
 
 function startSSE() {
@@ -186,12 +233,10 @@ function handleTranscriptEvent(data) {
             container.scrollTop = container.scrollHeight;
         }
 
-        // Add to transcript for AI context
         const speaker = isAgent ? 'Agent' : 'Caller';
         transcriptLines.push(`${speaker}: ${data.text}`);
         finalLineCount++;
 
-        // Trigger AI suggestion every N final lines
         if (finalLineCount % AI_TRIGGER_EVERY === 0) {
             requestSuggestions();
         }
@@ -201,14 +246,18 @@ function handleTranscriptEvent(data) {
 function createBubble(data, isFinal) {
     const isAgent = data.participant_type === 'AGENT';
     const wrapper = document.createElement('div');
-    wrapper.className = `flex ${isAgent ? 'justify-end' : 'justify-start'}`;
+    wrapper.className = isAgent ? 'text-right mb-1' : 'text-left mb-1';
     if (!isFinal) wrapper.classList.add('opacity-50');
 
+    const label = document.createElement('div');
+    label.className = 'transcript-label ' + (isAgent ? 'text-right' : '');
+    label.textContent = isAgent ? 'Agent' : 'Caller';
+
     const bubble = document.createElement('div');
-    bubble.className = `bubble-text max-w-xs rounded-xl px-3 py-1.5 text-xs leading-relaxed ${
-        isAgent ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-800'
-    }`;
+    bubble.className = `bubble-text ${isAgent ? 'transcript-bubble-agent' : 'transcript-bubble-contact'}`;
     bubble.textContent = data.text;
+
+    wrapper.appendChild(label);
     wrapper.appendChild(bubble);
     return wrapper;
 }
@@ -239,41 +288,106 @@ async function requestSuggestions() {
 function renderSuggestions(suggestions) {
     Object.entries(suggestions).forEach(([fieldId, value]) => {
         if (!value) return;
-        const container = document.getElementById(`suggestions-${fieldId}`);
-        if (!container) return;
+        const suggestionArea = document.getElementById(`suggestion-area-${fieldId}`);
+        if (!suggestionArea) return;
 
-        // Don't add duplicate suggestions
-        const existing = [...container.querySelectorAll('.suggestion-pill')];
-        if (existing.some(p => p.dataset.value === String(value))) return;
+        const newValue = String(value).trim();
+        if (!newValue) return;
 
-        const pill = document.createElement('span');
-        pill.className = 'suggestion-pill';
-        pill.dataset.value = value;
-        pill.innerHTML = `
-            <span class="accept" title="Accept">✓</span>
-            <span>${value}</span>
-            <span class="dismiss" title="Dismiss">×</span>
-        `;
+        const isAccepted = fieldId in acceptedValues;
 
-        // Accept
-        pill.querySelector('.accept').addEventListener('click', () => {
-            const field = document.getElementById(fieldId);
-            if (field) {
-                field.value = value;
-                const wrapper = document.getElementById(`field-wrapper-${fieldId}`);
-                if (wrapper) wrapper.classList.add('field-accepted');
+        if (isAccepted) {
+            const accepted = String(acceptedValues[fieldId]).trim().toLowerCase();
+            const incoming = newValue.toLowerCase();
+
+            // Same or contained within accepted — skip silently
+            if (incoming === accepted || accepted.includes(incoming) || incoming.includes(accepted)) {
+                return;
             }
-            container.innerHTML = '';
-        });
 
-        // Dismiss
-        pill.querySelector('.dismiss').addEventListener('click', (e) => {
-            e.stopPropagation();
-            pill.remove();
-        });
-
-        container.appendChild(pill);
+            // Genuinely different — show update indicator
+            showUpdateIndicator(fieldId, newValue);
+        } else {
+            // Not yet accepted — replace existing suggestion
+            suggestionArea.innerHTML = '';
+            showSuggestion(fieldId, newValue, suggestionArea);
+        }
     });
+}
+
+function showSuggestion(fieldId, value, container) {
+    const box = document.createElement('div');
+    box.className = 'suggestion-box';
+
+    const text = document.createElement('div');
+    text.className = 'mb-2 leading-relaxed';
+    text.textContent = value;
+
+    const actions = document.createElement('div');
+    actions.className = 'flex gap-3 mt-1';
+
+    const acceptBtn = document.createElement('button');
+    acceptBtn.type = 'button';
+    acceptBtn.className = 'text-xs font-semibold text-blue-700 hover:text-blue-900';
+    acceptBtn.textContent = '✓ Accept';
+    acceptBtn.addEventListener('click', () => {
+        acceptValue(fieldId, value);
+        container.innerHTML = '';
+    });
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'text-xs font-semibold text-slate-500 hover:text-slate-700';
+    editBtn.textContent = '✎ Edit';
+    editBtn.addEventListener('click', () => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.value = value;
+            field.focus();
+        }
+        container.innerHTML = '';
+    });
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.type = 'button';
+    dismissBtn.className = 'text-xs font-semibold text-slate-400 hover:text-slate-600';
+    dismissBtn.textContent = '✕ Dismiss';
+    dismissBtn.addEventListener('click', () => {
+        container.innerHTML = '';
+    });
+
+    actions.appendChild(acceptBtn);
+    actions.appendChild(editBtn);
+    actions.appendChild(dismissBtn);
+    box.appendChild(text);
+    box.appendChild(actions);
+    container.appendChild(box);
+}
+
+function showUpdateIndicator(fieldId, newValue) {
+    const suggestionArea = document.getElementById(`suggestion-area-${fieldId}`);
+    if (!suggestionArea) return;
+
+    // Replace any existing indicator — don't stack
+    suggestionArea.innerHTML = '';
+
+    const badge = document.createElement('div');
+    badge.className = 'update-badge';
+    badge.innerHTML = '⟳ AI has an update — click to review';
+    badge.addEventListener('click', () => {
+        suggestionArea.innerHTML = '';
+        showSuggestion(fieldId, newValue, suggestionArea);
+    });
+
+    suggestionArea.appendChild(badge);
+}
+
+function acceptValue(fieldId, value) {
+    const field = document.getElementById(fieldId);
+    if (field) field.value = value;
+    acceptedValues[fieldId] = value;
+    const wrapper = document.getElementById(`field-wrapper-${fieldId}`);
+    if (wrapper) wrapper.classList.add('field-accepted');
 }
 
 // --- Submit ---
@@ -281,9 +395,9 @@ document.getElementById('submit-btn').addEventListener('click', () => {
     const form = document.getElementById('triage-form');
     const formData = new FormData(form);
     const result = {};
-    formData.forEach((v, k) => { result[k] = v; });
+    formData.forEach((v, k) => { if (v) result[k] = v; });
     console.log('Form submitted:', result);
-    alert('Triage form submitted. (CRM integration coming soon.)');
+    alert('Triage form submitted.\n(CRM integration coming soon.)');
 });
 </script>
 
