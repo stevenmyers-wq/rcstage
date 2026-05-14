@@ -77,7 +77,6 @@ class NotificationManager:
             while True:
                 try:
                     resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
-                        'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                         'perPage': 1000, 
                         'page': page
                     })
@@ -96,12 +95,17 @@ class NotificationManager:
                         r_type = r.get('type', '')
                         status = r.get('status', '')
                         
+                        if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
+                            continue
+                            
                         if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
                             continue
                             
                         extensions.append(r)
                     
-                    if not data.get('navigation', {}).get('nextPage'): break
+                    # Pagination Fix
+                    paging = data.get('paging', {})
+                    if page >= paging.get('totalPages', 1): break
                     page += 1
                 except Exception as e:
                     self._update_job_status(job_id, "error", 100, f"Fetch Exception: {str(e)}")
@@ -152,7 +156,6 @@ class NotificationManager:
             page = 1
             while True:
                 resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
-                    'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                     'perPage': 1000, 'page': page
                 })
 
@@ -169,11 +172,18 @@ class NotificationManager:
                 for r in data.get('records', []):
                     r_type = r.get('type', '')
                     status = r.get('status', '')
+                    
+                    if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
+                        continue
+                        
                     if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
                         continue
+                        
                     if 'extensionNumber' in r: ext_map[str(r['extensionNumber'])] = str(r['id'])
                 
-                if not data.get('navigation', {}).get('nextPage'): break
+                # Pagination Fix
+                paging = data.get('paging', {})
+                if page >= paging.get('totalPages', 1): break
                 page += 1
 
             if not ext_map:
