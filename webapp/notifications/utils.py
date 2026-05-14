@@ -84,7 +84,7 @@ class NotificationManager:
                 try:
                     resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
                         'status': ['Enabled', 'Disabled', 'NotActivated'], 
-                        'type': ['User', 'Department', 'Voicemail'], 
+                        'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                         'perPage': 1000, 
                         'page': page
                     })
@@ -154,7 +154,7 @@ class NotificationManager:
             while True:
                 resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
                     'status': ['Enabled', 'Disabled', 'NotActivated'], 
-                    'type': ['User', 'Department', 'Voicemail'], 
+                    'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                     'perPage': 1000, 'page': page
                 })
                 if resp.status_code != 200:
