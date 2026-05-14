@@ -6,7 +6,7 @@ from webapp.rc_api import rc_api_call
 notifications_bp = Blueprint('notifications_bp', __name__)
 
 def _call_with_retry(endpoint, method='GET', **kwargs):
-    """Helper to handle 429 Rate Limits gracefully within the route."""
+    """Helper to handle 429 Rate Limits gracefully within the route (server-side pause)."""
     max_retries = 3
     for _ in range(max_retries):
         resp = rc_api_call(endpoint, method=method, return_response=True, **kwargs)
@@ -32,6 +32,7 @@ def get_targets():
     
     while True:
         params = {'perPage': 1000, 'page': page}
+        # Server-side retry for fetching the base list
         resp_data = _call_with_retry('/restapi/v1.0/account/~/extension', params=params)
         
         if not resp_data or 'records' not in resp_data or not resp_data['records']:
@@ -42,6 +43,7 @@ def get_targets():
             if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
                 continue
             
+            # Local Filter: Only enforce Enabled/NotActivated on Users and Limited.
             status = record.get('status', '')
             if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
                 continue
@@ -74,10 +76,18 @@ def audit_single_extension():
     ext_id = data.get('id')
     
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
-    settings = _call_with_retry(endpoint)
     
-    if not settings:
-        return jsonify({"status": "success", "data": {}})
+    # Use return_response=True so we can pass 429s directly to the frontend for UI pauses
+    resp = rc_api_call(endpoint, return_response=True)
+    
+    if resp and getattr(resp, 'status_code', None) == 429:
+        retry_after = int(resp.headers.get('Retry-After', 60)) if hasattr(resp, 'headers') else 60
+        return jsonify({"error": "Rate limit", "retry_after": retry_after}), 429
+        
+    if not resp or not getattr(resp, 'ok', False):
+        return jsonify({"status": "error", "message": "Settings unavailable or unassigned"})
+
+    settings = resp.json()
 
     def get_emails(obj, key):
         if not obj or key not in obj: return ""
@@ -89,8 +99,6 @@ def audit_single_extension():
 
     is_advanced = settings.get('advancedMode', False)
     
-    # Always extract all email fields regardless of advancedMode so we don't 
-    # miss addresses stored in the root array due to RC API quirks
     response_data = {
         "Extension ID": ext_id,
         "Advanced Mode": str(is_advanced).upper(),
@@ -123,18 +131,22 @@ def update_single_extension():
         return [e.strip() for e in val.split(';') if e.strip()]
 
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
-    original = _call_with_retry(endpoint)
     
-    if not original:
+    original_resp = rc_api_call(endpoint, return_response=True)
+    if original_resp and getattr(original_resp, 'status_code', None) == 429:
+        retry_after = int(original_resp.headers.get('Retry-After', 60)) if hasattr(original_resp, 'headers') else 60
+        return jsonify({"error": "Rate limit", "retry_after": retry_after}), 429
+        
+    if not original_resp or not getattr(original_resp, 'ok', False):
         return jsonify({"status": "error", "message": "Failed to fetch original settings"})
 
+    original = original_resp.json()
     advanced_mode = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
     payload = {}
     
     if 'advancedMode' in original:
         payload['advancedMode'] = advanced_mode
 
-    # Always apply global emails if the user provided them in the payload
     if 'global_emails' in data:
         payload["emailAddresses"] = parse_list(data.get('global_emails'))
 
@@ -142,26 +154,29 @@ def update_single_extension():
         if cat in original:
             payload[cat] = original[cat] 
             
-            # Map Toggles and Specific Emails
             if cat == 'voicemails':
                 if 'enable_vm' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
                 if 'vm_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('vm_emails'))
-            
             elif cat == 'missedCalls':
                 if 'enable_missed' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
                 if 'missed_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('missed_emails'))
-            
             elif cat == 'inboundFaxes':
                 if 'enable_fax' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_fax'))
                 if 'fax_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('fax_emails'))
-            
             elif cat == 'inboundTexts':
                 if 'enable_sms' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_sms'))
                 if 'sms_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('sms_emails'))
 
-    resp_data = _call_with_retry(endpoint, method='PUT', json=payload)
+    put_resp = rc_api_call(endpoint, method='PUT', json=payload, return_response=True)
     
-    if resp_data and 'uri' in resp_data:
+    if put_resp and getattr(put_resp, 'status_code', None) == 429:
+        retry_after = int(put_resp.headers.get('Retry-After', 60)) if hasattr(put_resp, 'headers') else 60
+        return jsonify({"error": "Rate limit", "retry_after": retry_after}), 429
+        
+    if put_resp and getattr(put_resp, 'ok', False):
         return jsonify({"status": "success"})
     else:
-        return jsonify({"status": "error", "message": "Update failed"})
+        msg = "Update failed"
+        try: msg = put_resp.json().get('message', msg)
+        except: pass
+        return jsonify({"status": "error", "message": msg})
