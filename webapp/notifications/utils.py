@@ -82,7 +82,6 @@ class NotificationManager:
                         'page': page
                     })
                     
-                    # 429 Handle specific for the master pagination loop
                     if resp.status_code == 429:
                         self._handle_429(resp)
                         time.sleep(max(1, self._pause_until - time.time()))
@@ -321,7 +320,7 @@ class NotificationManager:
                     self._handle_429(resp)
                     continue
                 else:
-                    return {'ExtensionNumber': ext.get('extensionNumber'), 'ExtensionName': f"Error {resp.status_code}"}
+                    return {'ExtensionNumber': ext.get('extensionNumber'), 'ExtensionName': "API ERROR / UNASSIGNED"}
             except Exception as e:
                 return {'ExtensionNumber': ext.get('extensionNumber'), 'ExtensionName': f"Err: {str(e)}"}
         return {'ExtensionNumber': ext.get('extensionNumber'), 'ExtensionName': "Failed: Rate Limit Exceeded"}
