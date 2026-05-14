@@ -1,8 +1,28 @@
+import time
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
 
 notifications_bp = Blueprint('notifications_bp', __name__)
+
+def _call_with_retry(endpoint, method='GET', **kwargs):
+    """Helper to handle 429 Rate Limits gracefully within the route."""
+    max_retries = 3
+    for _ in range(max_retries):
+        # We use return_response=True to inspect the status code directly
+        resp = rc_api_call(endpoint, method=method, return_response=True, **kwargs)
+        
+        status = getattr(resp, 'status_code', None)
+        if status == 429:
+            retry_after = int(resp.headers.get('Retry-After', 60)) if hasattr(resp, 'headers') else 60
+            time.sleep(retry_after + 1)
+            continue
+            
+        if resp and getattr(resp, 'ok', False):
+            return resp.json()
+            
+        return None
+    return None
 
 # --- 1. GET LIST ---
 @notifications_bp.route('/api/notifications/get-targets')
@@ -12,20 +32,18 @@ def get_targets():
     page = 1
     
     while True:
-        # Removed strict status API param to ensure we capture Queues/Voicemail 
         params = {'perPage': 1000, 'page': page}
-        resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
+        resp_data = _call_with_retry('/restapi/v1.0/account/~/extension', params=params)
         
-        if not resp or 'records' not in resp or not resp['records']:
+        if not resp_data or 'records' not in resp_data or not resp_data['records']:
             break
             
-        for record in resp['records']:
+        for record in resp_data['records']:
             r_type = record.get('type', '')
             if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
                 continue
             
             # Local Filter: Only enforce Enabled/NotActivated on Users and Limited.
-            # Queues and Message-Only often have Unassigned statuses.
             status = record.get('status', '')
             if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
                 continue
@@ -38,7 +56,7 @@ def get_targets():
                 "type": r_type
             })
         
-        if not resp.get('navigation', {}).get('nextPage'):
+        if not resp_data.get('navigation', {}).get('nextPage'):
             break
         page += 1
     
@@ -58,17 +76,15 @@ def audit_single_extension():
     ext_id = data.get('id')
     
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
-    settings = rc_api_call(endpoint)
+    settings = _call_with_retry(endpoint)
     
     if not settings:
         return jsonify({"status": "success", "data": {}})
 
-    # Helper for extracting Email Lists
     def get_emails(obj, key):
         if not obj or key not in obj: return ""
         return "; ".join(obj[key].get('emailAddresses', []))
 
-    # Helper for extracting Toggles
     def get_flag(obj, key):
         if not obj or key not in obj: return "FALSE"
         return str(obj[key].get('notifyByEmail', False)).upper()
@@ -85,24 +101,19 @@ def audit_single_extension():
     }
 
     if not is_advanced:
-        # QUEUE / BASIC MODE: Use Global Email only
         response_data["Global Emails"] = "; ".join(settings.get('emailAddresses', []))
         response_data["Voicemail Emails"] = ""
         response_data["Fax Emails"] = ""
         response_data["SMS Emails"] = ""
         response_data["MissedCall Emails"] = ""
     else:
-        # ADVANCED MODE: Use Specific Emails only
         response_data["Global Emails"] = "" 
         response_data["Voicemail Emails"] = get_emails(settings, 'voicemails')
         response_data["Fax Emails"] = get_emails(settings, 'inboundFaxes')
         response_data["SMS Emails"] = get_emails(settings, 'inboundTexts')
         response_data["MissedCall Emails"] = get_emails(settings, 'missedCalls')
 
-    return jsonify({
-        "status": "success", 
-        "data": response_data
-    })
+    return jsonify({"status": "success", "data": response_data})
 
 
 # --- 3. UPDATE SINGLE ---
@@ -120,27 +131,23 @@ def update_single_extension():
         return [e.strip() for e in val.split(';') if e.strip()]
 
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
+    original = _call_with_retry(endpoint)
     
-    # 1. Fetch original settings to see what this extension type supports
-    original = rc_api_call(endpoint)
     if not original:
         return jsonify({"status": "error", "message": "Failed to fetch original settings"})
 
     advanced_mode = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
-    
     payload = {}
     
-    # Only set advancedMode if the extension supports it (Queues do not)
     if 'advancedMode' in original:
         payload['advancedMode'] = advanced_mode
 
     if not advanced_mode:
         payload["emailAddresses"] = parse_list(data.get('global_emails'))
 
-    # Only attach properties that are naturally supported by this extension
     for cat in ['voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts']:
         if cat in original:
-            payload[cat] = original[cat] # Inherit original settings like includeManagers
+            payload[cat] = original[cat] 
             
             if cat == 'voicemails': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
             elif cat == 'missedCalls': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
@@ -153,10 +160,9 @@ def update_single_extension():
                 elif cat == 'inboundFaxes': payload[cat]["emailAddresses"] = parse_list(data.get('fax_emails'))
                 elif cat == 'inboundTexts': payload[cat]["emailAddresses"] = parse_list(data.get('sms_emails'))
 
-    resp = rc_api_call(endpoint, method='PUT', payload=payload)
+    resp_data = _call_with_retry(endpoint, method='PUT', json=payload)
     
-    if resp and 'uri' in resp:
+    if resp_data and 'uri' in resp_data:
         return jsonify({"status": "success"})
     else:
-        msg = resp.get('message', 'Update failed') if resp else 'Unknown error'
-        return jsonify({"status": "error", "message": msg})
+        return jsonify({"status": "error", "message": "Update failed"})
