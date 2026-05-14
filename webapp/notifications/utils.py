@@ -82,6 +82,12 @@ class NotificationManager:
                         'page': page
                     })
                     
+                    # 429 Handle specific for the master pagination loop
+                    if resp.status_code == 429:
+                        self._handle_429(resp)
+                        time.sleep(max(1, self._pause_until - time.time()))
+                        continue
+
                     if resp.status_code != 200:
                         self._update_job_status(job_id, "error", 100, f"API Error {resp.status_code}: {resp.text}")
                         return
@@ -150,6 +156,12 @@ class NotificationManager:
                     'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                     'perPage': 1000, 'page': page
                 })
+
+                if resp.status_code == 429:
+                    self._handle_429(resp)
+                    time.sleep(max(1, self._pause_until - time.time()))
+                    continue
+
                 if resp.status_code != 200:
                     self._update_job_status(job_id, "error", 100, f"API Error during mapping: {resp.status_code}")
                     return
@@ -232,7 +244,7 @@ class NotificationManager:
                     }
                     
                     for cat, cols in cats.items():
-                        if cat in settings: # Ensures we don't attach Faxes to Queues, causing 400s
+                        if cat in settings: 
                             if cols[0] in row and not pd.isna(row[cols[0]]): settings[cat]['notifyByEmail'] = bool(row[cols[0]])
                             if cols[1] in row and not pd.isna(row[cols[1]]): settings[cat]['notifyBySms'] = bool(row[cols[1]])
                             if cols[2] and cols[2] in row and not pd.isna(row[cols[2]]): settings[cat]['markAsRead'] = bool(row[cols[2]])
