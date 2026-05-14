@@ -13,7 +13,6 @@ from datetime import datetime
 JOB_DIR = os.path.join('static', 'jobs')
 REPORT_DIR = os.path.join('static', 'reports')
 
-# Ensure directories exist
 os.makedirs(JOB_DIR, exist_ok=True)
 os.makedirs(REPORT_DIR, exist_ok=True)
 
@@ -32,8 +31,6 @@ class NotificationManager:
         self._pause_until = 0
         self._lock = threading.Lock()
 
-    # --- JOB MANAGEMENT ---
-    
     def start_audit_job(self, token):
         job_id = str(uuid.uuid4())
         self._update_job_status(job_id, "running", 0, "Initializing Audit...")
@@ -69,13 +66,10 @@ class NotificationManager:
         with open(os.path.join(JOB_DIR, f"{job_id}.json"), 'w') as f:
             json.dump(data, f)
 
-    # --- WORKERS ---
-
     def _run_audit_background(self, job_id, token):
         try:
             from webapp.rc_api import rc
             
-            # 1. Fetch Extensions with DEBUGGING
             self._update_job_status(job_id, "running", 5, "Fetching extension list...")
             extensions = []
             page = 1
@@ -83,20 +77,24 @@ class NotificationManager:
             while True:
                 try:
                     resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
-                        'status': ['Enabled', 'Disabled', 'NotActivated'], 
                         'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                         'perPage': 1000, 
                         'page': page
                     })
                     
-                    # DEBUG: Log if API fails
                     if resp.status_code != 200:
                         self._update_job_status(job_id, "error", 100, f"API Error {resp.status_code}: {resp.text}")
                         return
 
                     data = resp.json()
-                    records = data.get('records', [])
-                    extensions.extend(records)
+                    for r in data.get('records', []):
+                        r_type = r.get('type', '')
+                        status = r.get('status', '')
+                        
+                        if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
+                            continue
+                            
+                        extensions.append(r)
                     
                     if not data.get('navigation', {}).get('nextPage'): break
                     page += 1
@@ -106,11 +104,9 @@ class NotificationManager:
 
             total_ext = len(extensions)
             if total_ext == 0:
-                # DEBUG: Explicitly state 0 records found
-                self._update_job_status(job_id, "error", 100, f"Success (200 OK) but 0 extensions found. Check Account ID/Permissions.")
+                self._update_job_status(job_id, "error", 100, f"Success but 0 valid extensions found.")
                 return
 
-            # 2. Fetch Settings
             results = []
             completed_count = 0
             self._pause_until = 0
@@ -126,7 +122,6 @@ class NotificationManager:
                         percent = 10 + int((completed_count / total_ext) * 80)
                         self._update_job_status(job_id, "running", percent, f"Processed {completed_count}/{total_ext} extensions...")
 
-            # 3. Save
             self._update_job_status(job_id, "running", 95, "Saving Excel...")
             df = pd.DataFrame(results, columns=self.columns)
             filename = f"Notification_Audit_{job_id}.xlsx"
@@ -147,13 +142,11 @@ class NotificationManager:
         try:
             from webapp.rc_api import rc
             
-            # 1. Map Extensions
             self._update_job_status(job_id, "running", 5, "Mapping extensions...")
             ext_map = {}
             page = 1
             while True:
                 resp = rc.get('/restapi/v1.0/account/~/extension', token=token, params={
-                    'status': ['Enabled', 'Disabled', 'NotActivated'], 
                     'type': ['User', 'Department', 'Voicemail', 'Limited'], 
                     'perPage': 1000, 'page': page
                 })
@@ -163,6 +156,10 @@ class NotificationManager:
                 
                 data = resp.json()
                 for r in data.get('records', []):
+                    r_type = r.get('type', '')
+                    status = r.get('status', '')
+                    if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
+                        continue
                     if 'extensionNumber' in r: ext_map[str(r['extensionNumber'])] = str(r['id'])
                 
                 if not data.get('navigation', {}).get('nextPage'): break
@@ -177,7 +174,6 @@ class NotificationManager:
             processed_rows = 0
             self._pause_until = 0
 
-            # 2. Process Rows
             for index, row in df.iterrows():
                 processed_rows += 1
                 if processed_rows % 5 == 0 or processed_rows == 1:
@@ -193,13 +189,11 @@ class NotificationManager:
                     logs.append(f"⚠️ Ext {ext_num}: Not found. Skipping.")
                     continue
 
-                # Rate Limit Wait
                 wait_needed = self._pause_until - time.time()
                 if wait_needed > 0: time.sleep(wait_needed)
                 time.sleep(random.uniform(0.01, 0.05))
 
                 try:
-                    # Fetch
                     get_resp = rc.get(f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings", token=token)
                     if get_resp.status_code == 429:
                         self._handle_429(get_resp)
@@ -211,7 +205,6 @@ class NotificationManager:
                     
                     settings = get_resp.json()
                     
-                    # Updates
                     if 'EmailAddresses' in row and not pd.isna(row['EmailAddresses']):
                         raw = str(row['EmailAddresses'])
                         settings['emailAddresses'] = [e.strip() for e in raw.split(',') if e.strip()]
@@ -224,9 +217,11 @@ class NotificationManager:
                                 if cat in settings: settings[cat]['includeManagers'] = False
 
                     if 'IncludeSms' in row and not pd.isna(row['IncludeSms']):
-                        settings['includeSmsRecipients'] = bool(row['IncludeSms'])
+                        if 'includeSmsRecipients' in settings:
+                            settings['includeSmsRecipients'] = bool(row['IncludeSms'])
                     if 'AdvancedMode' in row and not pd.isna(row['AdvancedMode']):
-                        settings['advancedMode'] = bool(row['AdvancedMode'])
+                        if 'advancedMode' in settings:
+                            settings['advancedMode'] = bool(row['AdvancedMode'])
 
                     cats = {
                         'voicemails': ('Voicemails_Email', 'Voicemails_SMS', 'Voicemails_MarkAsRead'),
@@ -235,13 +230,13 @@ class NotificationManager:
                         'inboundFaxes': ('InboundFaxes_Email', 'InboundFaxes_SMS', 'InboundFaxes_MarkAsRead'),
                         'outboundFaxes': ('OutboundFaxes_Email', 'OutboundFaxes_SMS', None)
                     }
+                    
                     for cat, cols in cats.items():
-                        if cat not in settings: settings[cat] = {}
-                        if cols[0] in row and not pd.isna(row[cols[0]]): settings[cat]['notifyByEmail'] = bool(row[cols[0]])
-                        if cols[1] in row and not pd.isna(row[cols[1]]): settings[cat]['notifyBySms'] = bool(row[cols[1]])
-                        if cols[2] and cols[2] in row and not pd.isna(row[cols[2]]): settings[cat]['markAsRead'] = bool(row[cols[2]])
+                        if cat in settings: # Ensures we don't attach Faxes to Queues, causing 400s
+                            if cols[0] in row and not pd.isna(row[cols[0]]): settings[cat]['notifyByEmail'] = bool(row[cols[0]])
+                            if cols[1] in row and not pd.isna(row[cols[1]]): settings[cat]['notifyBySms'] = bool(row[cols[1]])
+                            if cols[2] and cols[2] in row and not pd.isna(row[cols[2]]): settings[cat]['markAsRead'] = bool(row[cols[2]])
 
-                    # Push
                     put_resp = rc.put(f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings", json=settings, token=token)
                     if put_resp.status_code == 200:
                         logs.append(f"✅ Ext {ext_num}: Updated")
