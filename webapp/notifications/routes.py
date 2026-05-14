@@ -19,12 +19,12 @@ def get_targets():
             break
             
         for record in resp['records']:
-            # Local Filter: Enabled/NotActivated AND User/Department
+            # Local Filter: Enabled/NotActivated AND User/Department/Voicemail/Limited
             status = record.get('status', '')
             if status not in ['Enabled', 'NotActivated']:
                 continue
             r_type = record.get('type', '')
-            if r_type not in ['User', 'Department']:
+            if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
                 continue
 
             targets.append({
