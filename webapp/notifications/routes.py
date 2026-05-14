@@ -31,8 +31,8 @@ def get_targets():
     page = 1
     
     while True:
+        # Removed the 'type' API parameter to fetch the full raw list and rely on the Python filter.
         params = {'perPage': 1000, 'page': page}
-        # Server-side retry for fetching the base list
         resp_data = _call_with_retry('/restapi/v1.0/account/~/extension', params=params)
         
         if not resp_data or 'records' not in resp_data or not resp_data['records']:
@@ -56,7 +56,9 @@ def get_targets():
                 "type": r_type
             })
         
-        if not resp_data.get('navigation', {}).get('nextPage'):
+        # Pagination Fix: Use paging.totalPages instead of navigation.nextPage
+        paging = resp_data.get('paging', {})
+        if page >= paging.get('totalPages', 1):
             break
         page += 1
     
