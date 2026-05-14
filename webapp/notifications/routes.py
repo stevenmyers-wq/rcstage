@@ -9,7 +9,6 @@ def _call_with_retry(endpoint, method='GET', **kwargs):
     """Helper to handle 429 Rate Limits gracefully within the route."""
     max_retries = 3
     for _ in range(max_retries):
-        # We use return_response=True to inspect the status code directly
         resp = rc_api_call(endpoint, method=method, return_response=True, **kwargs)
         
         status = getattr(resp, 'status_code', None)
@@ -43,7 +42,6 @@ def get_targets():
             if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
                 continue
             
-            # Local Filter: Only enforce Enabled/NotActivated on Users and Limited.
             status = record.get('status', '')
             if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
                 continue
@@ -91,6 +89,8 @@ def audit_single_extension():
 
     is_advanced = settings.get('advancedMode', False)
     
+    # Always extract all email fields regardless of advancedMode so we don't 
+    # miss addresses stored in the root array due to RC API quirks
     response_data = {
         "Extension ID": ext_id,
         "Advanced Mode": str(is_advanced).upper(),
@@ -98,20 +98,12 @@ def audit_single_extension():
         "Enable MissedCalls": get_flag(settings, 'missedCalls'),
         "Enable Faxes": get_flag(settings, 'inboundFaxes'),
         "Enable SMS": get_flag(settings, 'inboundTexts'),
+        "Global Emails": "; ".join(settings.get('emailAddresses', [])),
+        "Voicemail Emails": get_emails(settings, 'voicemails'),
+        "Fax Emails": get_emails(settings, 'inboundFaxes'),
+        "SMS Emails": get_emails(settings, 'inboundTexts'),
+        "MissedCall Emails": get_emails(settings, 'missedCalls')
     }
-
-    if not is_advanced:
-        response_data["Global Emails"] = "; ".join(settings.get('emailAddresses', []))
-        response_data["Voicemail Emails"] = ""
-        response_data["Fax Emails"] = ""
-        response_data["SMS Emails"] = ""
-        response_data["MissedCall Emails"] = ""
-    else:
-        response_data["Global Emails"] = "" 
-        response_data["Voicemail Emails"] = get_emails(settings, 'voicemails')
-        response_data["Fax Emails"] = get_emails(settings, 'inboundFaxes')
-        response_data["SMS Emails"] = get_emails(settings, 'inboundTexts')
-        response_data["MissedCall Emails"] = get_emails(settings, 'missedCalls')
 
     return jsonify({"status": "success", "data": response_data})
 
@@ -142,23 +134,30 @@ def update_single_extension():
     if 'advancedMode' in original:
         payload['advancedMode'] = advanced_mode
 
-    if not advanced_mode:
+    # Always apply global emails if the user provided them in the payload
+    if 'global_emails' in data:
         payload["emailAddresses"] = parse_list(data.get('global_emails'))
 
     for cat in ['voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts']:
         if cat in original:
             payload[cat] = original[cat] 
             
-            if cat == 'voicemails': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
-            elif cat == 'missedCalls': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
-            elif cat == 'inboundFaxes': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_fax'))
-            elif cat == 'inboundTexts': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_sms'))
+            # Map Toggles and Specific Emails
+            if cat == 'voicemails':
+                if 'enable_vm' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
+                if 'vm_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('vm_emails'))
             
-            if advanced_mode:
-                if cat == 'voicemails': payload[cat]["emailAddresses"] = parse_list(data.get('vm_emails'))
-                elif cat == 'missedCalls': payload[cat]["emailAddresses"] = parse_list(data.get('missed_emails'))
-                elif cat == 'inboundFaxes': payload[cat]["emailAddresses"] = parse_list(data.get('fax_emails'))
-                elif cat == 'inboundTexts': payload[cat]["emailAddresses"] = parse_list(data.get('sms_emails'))
+            elif cat == 'missedCalls':
+                if 'enable_missed' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
+                if 'missed_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('missed_emails'))
+            
+            elif cat == 'inboundFaxes':
+                if 'enable_fax' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_fax'))
+                if 'fax_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('fax_emails'))
+            
+            elif cat == 'inboundTexts':
+                if 'enable_sms' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_sms'))
+                if 'sms_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('sms_emails'))
 
     resp_data = _call_with_retry(endpoint, method='PUT', json=payload)
     
