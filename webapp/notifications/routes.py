@@ -12,6 +12,7 @@ def get_targets():
     page = 1
     
     while True:
+        # Removed strict status API param to ensure we capture Queues/Voicemail 
         params = {'perPage': 1000, 'page': page}
         resp = rc_api_call('/restapi/v1.0/account/~/extension', params)
         
@@ -19,12 +20,14 @@ def get_targets():
             break
             
         for record in resp['records']:
-            # Local Filter: Enabled/NotActivated AND User/Department/Voicemail/Limited
-            status = record.get('status', '')
-            if status not in ['Enabled', 'NotActivated']:
-                continue
             r_type = record.get('type', '')
             if r_type not in ['User', 'Department', 'Voicemail', 'Limited']:
+                continue
+            
+            # Local Filter: Only enforce Enabled/NotActivated on Users and Limited.
+            # Queues and Message-Only often have Unassigned statuses.
+            status = record.get('status', '')
+            if r_type in ['User', 'Limited'] and status not in ['Enabled', 'NotActivated']:
                 continue
 
             targets.append({
@@ -46,7 +49,8 @@ def get_targets():
     
     return jsonify({"targets": targets})
 
-# --- 2. AUDIT SINGLE (Logic Split) ---
+
+# --- 2. AUDIT SINGLE ---
 @notifications_bp.route('/api/notifications/audit-single', methods=['POST'])
 @require_rc_token
 def audit_single_extension():
@@ -71,12 +75,9 @@ def audit_single_extension():
 
     is_advanced = settings.get('advancedMode', False)
     
-    # OUTPUT DATA STRUCTURE
     response_data = {
         "Extension ID": ext_id,
         "Advanced Mode": str(is_advanced).upper(),
-        
-        # Toggles (Always populated)
         "Enable Voicemail": get_flag(settings, 'voicemails'),
         "Enable MissedCalls": get_flag(settings, 'missedCalls'),
         "Enable Faxes": get_flag(settings, 'inboundFaxes'),
@@ -86,14 +87,13 @@ def audit_single_extension():
     if not is_advanced:
         # QUEUE / BASIC MODE: Use Global Email only
         response_data["Global Emails"] = "; ".join(settings.get('emailAddresses', []))
-        # Clear specific columns to avoid confusion
         response_data["Voicemail Emails"] = ""
         response_data["Fax Emails"] = ""
         response_data["SMS Emails"] = ""
         response_data["MissedCall Emails"] = ""
     else:
         # ADVANCED MODE: Use Specific Emails only
-        response_data["Global Emails"] = "" # Clear global
+        response_data["Global Emails"] = "" 
         response_data["Voicemail Emails"] = get_emails(settings, 'voicemails')
         response_data["Fax Emails"] = get_emails(settings, 'inboundFaxes')
         response_data["SMS Emails"] = get_emails(settings, 'inboundTexts')
@@ -104,15 +104,13 @@ def audit_single_extension():
         "data": response_data
     })
 
-# --- 3. UPDATE SINGLE (Logic Split) ---
+
+# --- 3. UPDATE SINGLE ---
 @notifications_bp.route('/api/notifications/update-single', methods=['POST'])
 @require_rc_token
 def update_single_extension():
     data = request.get_json()
     ext_id = data.get('id')
-    
-    # 1. Determine Mode
-    advanced_mode = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
     
     def parse_bool(val):
         return str(val).upper() == 'TRUE'
@@ -121,29 +119,40 @@ def update_single_extension():
         if not val: return []
         return [e.strip() for e in val.split(';') if e.strip()]
 
-    # 2. Base Payload (Toggles apply to everyone)
-    payload = {
-        "advancedMode": advanced_mode,
-        "voicemails": {"notifyByEmail": parse_bool(data.get('enable_vm'))},
-        "missedCalls": {"notifyByEmail": parse_bool(data.get('enable_missed'))},
-        "inboundFaxes": {"notifyByEmail": parse_bool(data.get('enable_fax'))},
-        "inboundTexts": {"notifyByEmail": parse_bool(data.get('enable_sms'))}
-    }
-
-    # 3. Email Logic Split
-    if not advanced_mode:
-        # QUEUE / BASIC: Update the global list only
-        # The API applies this global list to all enabled features automatically
-        payload["emailAddresses"] = parse_list(data.get('global_emails'))
-    else:
-        # ADVANCED: Update specific lists only
-        payload["voicemails"]["emailAddresses"] = parse_list(data.get('vm_emails'))
-        payload["missedCalls"]["emailAddresses"] = parse_list(data.get('missed_emails'))
-        payload["inboundFaxes"]["emailAddresses"] = parse_list(data.get('fax_emails'))
-        payload["inboundTexts"]["emailAddresses"] = parse_list(data.get('sms_emails'))
-
-    # 4. Send
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
+    
+    # 1. Fetch original settings to see what this extension type supports
+    original = rc_api_call(endpoint)
+    if not original:
+        return jsonify({"status": "error", "message": "Failed to fetch original settings"})
+
+    advanced_mode = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
+    
+    payload = {}
+    
+    # Only set advancedMode if the extension supports it (Queues do not)
+    if 'advancedMode' in original:
+        payload['advancedMode'] = advanced_mode
+
+    if not advanced_mode:
+        payload["emailAddresses"] = parse_list(data.get('global_emails'))
+
+    # Only attach properties that are naturally supported by this extension
+    for cat in ['voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts']:
+        if cat in original:
+            payload[cat] = original[cat] # Inherit original settings like includeManagers
+            
+            if cat == 'voicemails': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
+            elif cat == 'missedCalls': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
+            elif cat == 'inboundFaxes': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_fax'))
+            elif cat == 'inboundTexts': payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_sms'))
+            
+            if advanced_mode:
+                if cat == 'voicemails': payload[cat]["emailAddresses"] = parse_list(data.get('vm_emails'))
+                elif cat == 'missedCalls': payload[cat]["emailAddresses"] = parse_list(data.get('missed_emails'))
+                elif cat == 'inboundFaxes': payload[cat]["emailAddresses"] = parse_list(data.get('fax_emails'))
+                elif cat == 'inboundTexts': payload[cat]["emailAddresses"] = parse_list(data.get('sms_emails'))
+
     resp = rc_api_call(endpoint, method='PUT', payload=payload)
     
     if resp and 'uri' in resp:
