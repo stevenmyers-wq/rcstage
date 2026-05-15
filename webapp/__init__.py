@@ -102,4 +102,8 @@ def create_app():
         from .agent_form import routes as agent_form_routes
         app.register_blueprint(agent_form_routes.agent_form_bp)
 
+        # D365 + RingCX Demo routes
+        from .d365_ringcx import routes as d365_ringcx_routes
+        app.register_blueprint(d365_ringcx_routes.d365_ringcx_bp)
+
     return app
