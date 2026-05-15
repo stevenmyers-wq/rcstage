@@ -63,56 +63,146 @@ def get_ringcx_campaigns(ringcx_token: str, account_id: str) -> list:
     return all_campaigns
 
 
-def push_lead_to_ringcx(ringcx_token: str, account_id: str, campaign_id: str, lead_data: dict) -> dict:
+def push_leads_to_ringcx(ringcx_token: str, account_id: str, campaign_id: str, leads: list) -> dict:
     """
-    Pushes a single lead into a RingCX campaign via the Lead Loader direct API.
+    Pushes a batch of leads into a RingCX campaign in a single upload (one email per batch).
 
-    /leadLoader/direct is a file-upload endpoint — it expects multipart/form-data
-    with the leads as a comma-delimited CSV (one header row + one data row),
-    and the config params as separate form fields.
+    Discovered via HAR analysis of a working manual UI upload:
+      Step 1: POST /leadLoader/preview  -- multipart/form-data CSV -> returns transactionId
+      Step 2: POST /leadLoader/process  -- JSON with transactionId + column mappings -> 202 Accepted
 
-    lead_data required keys:
-        firstName, lastName, phone1, externId (set to D365 leadId for postback matching)
+    Key settings (all confirmed from working HAR + listLog analysis):
+      phoneNumbersI18nEnabled:   true
+      internationalNumberFormat: false
+      numberOriginCountry:       "e164"  -- literal string, NOT a country code;
+                                           tells the API phones are already E.164
+      timeZoneOption:            "EXPLICIT" -- per-lead timezone in col 5 of the CSV
+      fileContainsHeaders:       false (server default) -- do NOT include a header row;
+                                 the server treats every row as a lead, so a header row
+                                 fails phone validation and counts as a rejected lead.
 
-    Returns the raw API response dict (leadsInserted, leadsAccepted, etc.).
+    Each entry in leads must have:
+        firstName, lastName, phone1 (E.164 e.g. +61412345678), externId (D365 leadId),
+        leadTimezone (RingCX timezone code: EAST / CENTRAL / WEST)
+
+    Returns dict with at least {'transactionId': '...'}.
     """
-    url = f'{ENGAGE_BASE_URL}/voice/api/v1/admin/accounts/{account_id}/campaigns/{campaign_id}/leadLoader/direct'
+    if not leads:
+        raise ValueError('push_leads_to_ringcx: leads list is empty')
 
-    # Build a minimal CSV: header row + one data row
-    fields   = ['firstName', 'lastName', 'phone1', 'externId']
-    header   = ','.join(fields)
-    row      = ','.join(str(lead_data.get(f, '')) for f in fields)
-    csv_body = f'{header}\n{row}\n'
+    base_url = f'{RINGCX_BASE_URL}/voice/api/v1/admin/accounts/{account_id}/campaigns/{campaign_id}'
+    auth_headers = {'Authorization': f'Bearer {ringcx_token}'}
 
-    form_data = {
-        'listState':          (None, 'ACTIVE'),
-        'dialPriority':       (None, 'IMMEDIATE'),
-        'duplicateHandling':  (None, 'RETAIN_ALL'),
-        'timeZoneOption':     (None, 'NOT_APPLICABLE'),
-        'fileType':           (None, 'COMMA'),
-        'fileContainsHeaders':(None, 'true'),
+    def _safe(val):
+        return (str(val or '')).replace('"', '').replace(',', ' ').strip()
+
+    # Build multi-row CSV (no header row)
+    # Columns (1-indexed):
+    #   1=firstName, 2=lastName, 3=phone1, 4=externalId, 5=timezone,
+    #   6=webscore (AUX_DATA1), 7=moveType (AUX_DATA2),
+    #   8=origin (AUX_DATA3), 9=destination (AUX_DATA4)
+    rows = []
+    for ld in leads:
+        rows.append(','.join([
+            _safe(ld.get('firstName')),
+            _safe(ld.get('lastName')),
+            _safe(ld.get('phone1')),
+            _safe(ld.get('externId')),
+            _safe(ld.get('leadTimezone', 'EAST')),
+            _safe(ld.get('webscore', '')),
+            _safe(ld.get('movetype', '')),
+            _safe(ld.get('origin', '')),
+            _safe(ld.get('destination', '')),
+        ]))
+    csv_content = '\n'.join(rows) + '\n'
+
+    # ------------------------------------------------------------------ Step 1
+    try:
+        logger.warning(
+            f'RingCX push_leads step1/preview campaign={campaign_id} count={len(leads)}'
+        )
+        preview_resp = requests.post(
+            f'{base_url}/leadLoader/preview',
+            headers=auth_headers,
+            files={
+                'file':                      ('leads.csv', csv_content.encode('utf-8'), 'text/csv'),
+                'fileType':                  (None, 'COMMA'),
+                'internationalNumberFormat': (None, 'false'),
+                'phoneNumbersI18nEnabled':   (None, 'true'),
+            },
+        )
+        logger.warning(
+            f'RingCX preview status={preview_resp.status_code} '
+            f'body={preview_resp.text[:500]}'
+        )
+        preview_resp.raise_for_status()
+        transaction_id = preview_resp.json()['transactionId']
+    except requests.exceptions.HTTPError as e:
+        body = e.response.text if e.response is not None else 'no body'
+        logger.error(f'RingCX push_leads preview failed: {e} -- {body}')
+        raise Exception(f'RingCX leadLoader preview failed: {body}')
+    except Exception as e:
+        logger.error(f'RingCX push_leads preview error: {e}')
+        raise
+
+    # ------------------------------------------------------------------ Step 2
+    process_payload = {
+        'listState':                 'ACTIVE',
+        'fileType':                  'COMMA',
+        'duplicateHandling':         'RETAIN_ALL',
+        'timeZoneOption':            'EXPLICIT',
+        'phoneNumbersI18nEnabled':   True,
+        'internationalNumberFormat': False,
+        'numberOriginCountry':       'e164',
+        'scheduleArchiveDts':        '',
+        'description':               'Demo lead',
+        'transactionId':             transaction_id,
+        'pageColumnMappings': {
+            'FIRST_NAME':    1,
+            'LAST_NAME':     2,
+            'LEAD_PHONE':    3,
+            'EXTERN_ID':     4,
+            'LEAD_TIMEZONE': 5,
+            'AUX_DATA1':     6,   # webscore
+            'AUX_DATA2':     7,   # move type
+            'AUX_DATA3':     8,   # origin suburb
+            'AUX_DATA4':     9,   # destination suburb
+        },
+        'dncTags':                  [],
+        'pageNumber':               1,
+        'extendedLeadDataMappings': {},
     }
-    # Add the CSV as a file field
-    form_data['file'] = ('leads.csv', csv_body, 'text/plain')
 
     try:
-        logger.warning(f'RingCX push_lead to campaign {campaign_id} CSV:\n{csv_body}')
-        response = requests.post(
-            url,
-            headers={'Authorization': f'Bearer {ringcx_token}'},
-            files=form_data,
+        logger.warning(
+            f'RingCX push_leads step2/process campaign={campaign_id} '
+            f'transactionId={transaction_id} count={len(leads)}'
         )
-        logger.warning(f'RingCX push_lead to campaign {campaign_id} raw response: {response.text[:2000]}')
-        response.raise_for_status()
-        result = response.json()
-        logger.warning(f'RingCX push_lead to campaign {campaign_id} leadsInserted={result.get("leadsInserted")} leadsAccepted={result.get("leadsAccepted")}')
+        process_resp = requests.post(
+            f'{base_url}/leadLoader/process',
+            headers={**auth_headers, 'Content-Type': 'application/json'},
+            json=process_payload,
+        )
+        logger.warning(
+            f'RingCX process status={process_resp.status_code} '
+            f'body={process_resp.text[:500]}'
+        )
+        process_resp.raise_for_status()
+        try:
+            result = process_resp.json()
+        except Exception:
+            result = {}
+        result['transactionId'] = transaction_id
+        logger.warning(
+            f'RingCX push_leads complete transactionId={transaction_id} count={len(leads)}'
+        )
         return result
     except requests.exceptions.HTTPError as e:
         body = e.response.text if e.response is not None else 'no body'
-        logger.error(f'RingCX push_lead failed: {e} — {body}')
-        raise Exception(f'RingCX push lead failed: {body}')
+        logger.error(f'RingCX push_leads process failed: {e} -- {body}')
+        raise Exception(f'RingCX leadLoader process failed: {body}')
     except Exception as e:
-        logger.error(f'RingCX push_lead error: {e}')
+        logger.error(f'RingCX push_leads process error: {e}')
         raise
 
 

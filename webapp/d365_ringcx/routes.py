@@ -141,6 +141,46 @@ def _generate_fake_lead(phone: str) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
+_AU_STATE_TIMEZONE = {
+    'NSW': 'Australia/Sydney',
+    'ACT': 'Australia/Sydney',
+    'VIC': 'Australia/Melbourne',
+    'QLD': 'Australia/Brisbane',
+    'SA':  'Australia/Adelaide',
+    'WA':  'Australia/Perth',
+    'TAS': 'Australia/Hobart',
+    'NT':  'Australia/Darwin',
+}
+
+
+def _to_local_au_phone(phone: str) -> str:
+    """
+    Converts an E.164 AU number to local format for RingCX lead loader.
+    +61412345678 → 0412345678
+    61412345678  → 0412345678
+    Already local (0412345678) → unchanged
+    """
+    phone = (phone or '').strip()
+    if phone.startswith('+61'):
+        return '0' + phone[3:]
+    if phone.startswith('61') and len(phone) >= 10:
+        return '0' + phone[2:]
+    return phone
+
+
+_AU_STATE_RINGCX_TZ = {
+    'NSW': 'EAST', 'ACT': 'EAST', 'VIC': 'EAST',
+    'QLD': 'EAST', 'TAS': 'EAST',
+    'SA':  'CENTRAL', 'NT': 'CENTRAL',
+    'WA':  'WEST',
+}
+
+
+def _state_to_ringcx_tz(state: str) -> str:
+    """Maps AU state abbreviation to RingCX timezone code (EAST / CENTRAL / WEST)."""
+    return _AU_STATE_RINGCX_TZ.get((state or '').strip().upper(), 'EAST')
+
+
 def _get_d365_token_for_env(env_id: str):
     """
     Fetches the environment config from Firestore and returns a D365 token.
@@ -460,10 +500,14 @@ def create_demo_leads():
             leadid = result.get('leadid')
             if leadid:
                 fs.save_demo_lead(env_id, leadid, {
-                    'firstname':  lead_data['firstname'],
-                    'lastname':   lead_data['lastname'],
-                    'phone':      phone,
-                    'created_by': user_email,
+                    'firstname':   lead_data['firstname'],
+                    'lastname':    lead_data['lastname'],
+                    'phone':       phone,
+                    'state':       lead_data.get('address1_stateorprovince', ''),
+                    'origin':      lead_data.get('crd67_originsuburb', ''),
+                    'destination': lead_data.get('crd67_destinationsuburb', ''),
+                    'movetype':    _MOVE_TYPES.get(lead_data.get('crd67_movetype'), ''),
+                    'created_by':  user_email,
                 })
             created.append({
                 'leadid':    leadid,
@@ -702,42 +746,66 @@ def push_leads():
     if unscored:
         return jsonify({'error': f'{len(unscored)} leads have no score. Run "Score Leads" first.'}), 400
 
+    # Group leads by campaign so we make one bulk upload per campaign (one email per group)
+    human_leads = []
+    ai_leads    = []
+    for fl in demo_leads:
+        score    = fl.get('webscore', 0)
+        is_human = score >= AI_CAMPAIGN_SCORE_THRESHOLD
+        entry = {
+            'leadid':       fl['leadid'],
+            'firstName':    fl.get('firstname', ''),
+            'lastName':     fl.get('lastname', ''),
+            'phone1':       fl.get('phone', ''),
+            'externId':     fl['leadid'],
+            'leadTimezone': _state_to_ringcx_tz(fl.get('state', '')),
+            'webscore':     str(fl.get('webscore', '')),
+            'movetype':     fl.get('movetype', ''),
+            'origin':       fl.get('origin', ''),
+            'destination':  fl.get('destination', ''),
+            'is_human':     is_human,
+        }
+        if is_human:
+            human_leads.append(entry)
+        else:
+            ai_leads.append(entry)
+
     pushed_human = 0
     pushed_ai    = 0
     errors       = []
 
-    for fl in demo_leads:
-        leadid    = fl['leadid']
-        score     = fl.get('webscore', 0)
-        is_human  = score >= AI_CAMPAIGN_SCORE_THRESHOLD
-        campaign_id = human_campaign_id if is_human else ai_campaign_id
-
+    def _push_group(leads_group, campaign_id, bucket_label):
+        nonlocal pushed_human, pushed_ai
+        if not leads_group:
+            return
         try:
-            result = d365.push_lead_to_ringcx(
-                ringcx_token,
-                ringcx_account_id,
-                campaign_id,
-                {
-                    'firstName': fl.get('firstname', ''),
-                    'lastName':  fl.get('lastname', ''),
-                    'phone1':    fl.get('phone', '').lstrip('+'),  # Engage Voice needs digits only
-                    'externId':  leadid,   # D365 leadId — matched in postback webhook
-                }
+            result = d365.push_leads_to_ringcx(
+                ringcx_token, ringcx_account_id, campaign_id,
+                leads_group,
             )
-            # leadLoader/direct doesn't return per-lead IDs — store transactionId instead
-            ringcx_lead_id = (result or {}).get('transactionId') or (result or {}).get('leadId') or (result or {}).get('id')
-            fs.update_demo_lead(env_id, leadid, {
-                'ringcx_lead_id':   ringcx_lead_id,
-                'ringcx_campaign_id': campaign_id,
-                'campaign_assigned':  'human' if is_human else 'ai',
-            })
-            if is_human:
-                pushed_human += 1
+            transaction_id = (result or {}).get('transactionId')
+            for fl in leads_group:
+                leadid = fl['leadid']
+                fs.update_demo_lead(env_id, leadid, {
+                    'ringcx_lead_id':    transaction_id,
+                    'ringcx_campaign_id': campaign_id,
+                    'campaign_assigned':  bucket_label,
+                })
+            if bucket_label == 'human':
+                pushed_human += len(leads_group)
             else:
-                pushed_ai += 1
+                pushed_ai += len(leads_group)
         except Exception as e:
-            logger.error(f'push_leads: failed for lead {leadid}: {e}')
-            errors.append({'leadid': leadid, 'name': f"{fl.get('firstname','')} {fl.get('lastname','')}".strip(), 'error': str(e)})
+            logger.error(f'push_leads: batch failed for {bucket_label} campaign {campaign_id}: {e}')
+            for fl in leads_group:
+                errors.append({
+                    'leadid': fl['leadid'],
+                    'name':   f"{fl.get('firstName','')} {fl.get('lastName','')}".strip(),
+                    'error':  str(e),
+                })
+
+    _push_group(human_leads, human_campaign_id, 'human')
+    _push_group(ai_leads,    ai_campaign_id,    'ai')
 
     return jsonify({
         'human':  pushed_human,
@@ -1021,16 +1089,17 @@ def push_to_booking():
         return jsonify({'error': 'Lead not found'}), 404
 
     try:
-        d365.push_lead_to_ringcx(
+        d365.push_leads_to_ringcx(
             ringcx_token,
             ringcx_account_id,
             booking_campaign_id,
-            {
-                'firstName': lead.get('firstname', ''),
-                'lastName':  lead.get('lastname', ''),
-                'phone1':    lead.get('phone', '').lstrip('+'),
-                'externId':  leadid,
-            }
+            [{
+                'firstName':    lead.get('firstname', ''),
+                'lastName':     lead.get('lastname', ''),
+                'phone1':       lead.get('phone', ''),
+                'externId':     leadid,
+                'leadTimezone': _state_to_ringcx_tz(lead.get('state', '')),
+            }],
         )
         fs.update_demo_lead(env_id, leadid, {'booking_pushed': True})
         return jsonify({'status': 'ok'})
