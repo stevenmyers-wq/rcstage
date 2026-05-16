@@ -1117,7 +1117,7 @@ def push_to_booking():
 @require_rc_token
 def get_outcomes():
     """
-    Returns call outcome summary + list of disposed leads for the dashboard.
+    Returns lead outcome summary + full lead list for the live dashboard.
     Query param: env_id
     """
     env_id = request.args.get('env_id', '')
@@ -1125,33 +1125,71 @@ def get_outcomes():
         return jsonify({'error': 'env_id required'}), 400
 
     leads = fs.get_demo_leads(env_id)
+
+    def is_hot(l):
+        # Matches "HOT", "HOT LEAD", etc. but not "NOT HOT"
+        return (l.get('disposition') or '').upper().strip().startswith('HOT')
+
     total   = len(leads)
     called  = sum(1 for l in leads if l.get('disposition'))
-    hot     = sum(1 for l in leads if (l.get('disposition') or '').upper() == 'HOT')
+    hot     = sum(1 for l in leads if is_hot(l))
     not_hot = called - hot
     pending = total - called
 
-    disposed_leads = [
+    # AI vs Human split
+    def split_stats(group):
+        g_called = sum(1 for l in group if l.get('disposition'))
+        g_hot    = sum(1 for l in group if is_hot(l))
+        return {'total': len(group), 'called': g_called, 'hot': g_hot, 'not_hot': g_called - g_hot}
+
+    ai_stats    = split_stats([l for l in leads if l.get('campaign_assigned') == 'ai'])
+    human_stats = split_stats([l for l in leads if l.get('campaign_assigned') == 'human'])
+
+    # Automation speed: avg seconds from created_at → pushed_at
+    speed_samples = []
+    for l in leads:
+        try:
+            c, p = l.get('created_at'), l.get('pushed_at')
+            if c and p:
+                ct = datetime.fromisoformat(c.replace('Z', '+00:00'))
+                pt = datetime.fromisoformat(p.replace('Z', '+00:00'))
+                secs = (pt - ct).total_seconds()
+                if 0 <= secs < 3600:
+                    speed_samples.append(secs)
+        except Exception:
+            pass
+    avg_speed = round(sum(speed_samples) / len(speed_samples), 1) if speed_samples else None
+
+    all_leads = [
         {
-            'leadid':           l['leadid'],
-            'firstname':        l.get('firstname', ''),
-            'lastname':         l.get('lastname', ''),
-            'phone':            l.get('phone', ''),
-            'campaign':         l.get('campaign_assigned', ''),
-            'disposition':      l.get('disposition', ''),
-            'recording_url':    l.get('recording_url', ''),
-            'notes':            l.get('notes', ''),
-            'disposed_at':      l.get('disposed_at', ''),
-            'booking_pushed':   l.get('booking_pushed', False),
+            'leadid':         l['leadid'],
+            'firstname':      l.get('firstname', ''),
+            'lastname':       l.get('lastname', ''),
+            'phone':          l.get('phone', ''),
+            'campaign':       l.get('campaign_assigned', ''),
+            'disposition':    l.get('disposition', ''),
+            'recording_url':  l.get('recording_url', ''),
+            'notes':          l.get('notes', ''),
+            'disposed_at':    l.get('disposed_at', ''),
+            'booking_pushed': l.get('booking_pushed', False),
+            'webscore':       l.get('webscore'),
+            'movetype':       l.get('movetype', ''),
+            'origin':         l.get('origin', ''),
+            'destination':    l.get('destination', ''),
+            'created_at':     l.get('created_at', ''),
+            'pushed_at':      l.get('pushed_at', ''),
         }
-        for l in leads if l.get('disposition')
+        for l in leads
     ]
 
     return jsonify({
-        'total':   total,
-        'called':  called,
-        'hot':     hot,
-        'not_hot': not_hot,
-        'pending': pending,
-        'leads':   disposed_leads,
+        'total':                     total,
+        'called':                    called,
+        'hot':                       hot,
+        'not_hot':                   not_hot,
+        'pending':                   pending,
+        'avg_automation_speed_secs': avg_speed,
+        'ai':                        ai_stats,
+        'human':                     human_stats,
+        'leads':                     all_leads,
     })

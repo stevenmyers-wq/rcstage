@@ -58,12 +58,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const scoreResults          = document.getElementById('d365-score-results');
     const scoreResultsBody      = document.getElementById('d365-score-results-body');
 
-    const outcomesTotal         = document.getElementById('outcomes-total');
-    const outcomesCalled        = document.getElementById('outcomes-called');
     const outcomesHot           = document.getElementById('outcomes-hot');
-    const outcomesNotHot        = document.getElementById('outcomes-not-hot');
+    const outcomesCalled        = document.getElementById('outcomes-called');
     const outcomesStatus        = document.getElementById('outcomes-status');
     const refreshOutcomesBtn    = document.getElementById('d365-refresh-outcomes-btn');
+    const dashSpeed             = document.getElementById('dash-speed');
+    const dashConv              = document.getElementById('dash-conv');
+    const dashHumanTotal        = document.getElementById('dash-human-total');
+    const dashHumanCalled       = document.getElementById('dash-human-called');
+    const dashHumanHot          = document.getElementById('dash-human-hot');
+    const dashHumanBar          = document.getElementById('dash-human-bar');
+    const dashHumanPct          = document.getElementById('dash-human-pct');
+    const dashAiTotal           = document.getElementById('dash-ai-total');
+    const dashAiCalled          = document.getElementById('dash-ai-called');
+    const dashAiHot             = document.getElementById('dash-ai-hot');
+    const dashAiBar             = document.getElementById('dash-ai-bar');
+    const dashAiPct             = document.getElementById('dash-ai-pct');
     const liveFeedDot           = document.getElementById('live-feed-status-dot');
     const liveFeedLabel         = document.getElementById('live-feed-status-label');
     const liveFeedEmpty         = document.getElementById('live-feed-empty');
@@ -768,11 +778,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let liveFeedEventSource = null;
 
+    function isHotDisposition(disposition) {
+        return (disposition || '').toUpperCase().trim().startsWith('HOT');
+    }
+
     function dispositionBadge(disposition) {
-        const d = (disposition || '').toUpperCase();
-        if (d === 'HOT')  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800">${disposition}</span>`;
-        if (d === 'WARM') return `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800">${disposition}</span>`;
-        return `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-600">${disposition || '—'}</span>`;
+        if (!disposition) return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-400">Pending</span>`;
+        const d = disposition.toUpperCase();
+        if (isHotDisposition(disposition))
+            return `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800">${escHtml(disposition)}</span>`;
+        if (d.includes('WARM'))
+            return `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800">${escHtml(disposition)}</span>`;
+        return `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-600">${escHtml(disposition)}</span>`;
     }
 
     function campaignBadge(campaign) {
@@ -788,36 +805,60 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch { return iso; }
     }
 
-    function renderFeedRow(event, prepend = false) {
-        const isHot = (event.disposition || '').toUpperCase() === 'HOT';
-        const rowId = `feed-row-${event.leadid}`;
+    function renderFeedRow(lead, prepend = false) {
+        const isDisposed = !!lead.disposition;
+        const isHot      = isHotDisposition(lead.disposition);
+        const rowId      = `feed-row-${lead.leadid}`;
 
-        // Remove existing row for this lead if re-rendering
         const existing = document.getElementById(rowId);
         if (existing) existing.remove();
 
+        // WebScore badge
+        const score = lead.webscore;
+        let scoreBadge = '<span class="text-slate-300">—</span>';
+        if (score !== null && score !== undefined) {
+            const cls = score >= 60 ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800';
+            scoreBadge = `<span class="inline-block px-1.5 py-0.5 rounded text-xs font-bold ${cls}">${score}</span>`;
+        }
+
+        // Origin → Dest
+        const route = (lead.origin || lead.destination)
+            ? `${escHtml(lead.origin || '')} → ${escHtml(lead.destination || '')}`.replace(/^ → | → $/g, '')
+            : '<span class="text-slate-300">—</span>';
+
+        // Actions
+        let actionsHtml;
+        if (!isDisposed) {
+            actionsHtml = '<span class="text-slate-300 text-xs">—</span>';
+        } else if (lead.booking_pushed) {
+            actionsHtml = `<span class="text-xs font-medium text-green-700">✓ Booking</span>`;
+        } else {
+            actionsHtml = `
+                <button data-leadid="${lead.leadid}"
+                    class="feed-book-btn ${isHot ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-500 hover:bg-slate-600'} text-white text-xs font-semibold py-1 px-2 rounded transition mr-1 disabled:opacity-50">
+                    Push to Booking
+                </button>
+                <button data-leadid="${lead.leadid}"
+                    class="feed-dismiss-btn text-xs text-slate-400 hover:text-slate-600 transition py-1 px-2">
+                    Dismiss
+                </button>`;
+        }
+
+        const name = escHtml((`${lead.firstname || ''} ${lead.lastname || ''}`).trim() || '—');
+
         const tr = document.createElement('tr');
         tr.id = rowId;
-        tr.className = `border-b border-slate-100 ${isHot ? 'bg-green-50' : ''}`;
+        tr.className = `border-b border-slate-100 ${isHot ? 'bg-green-50' : ''} ${!isDisposed ? 'opacity-60' : ''}`;
         tr.innerHTML = `
-            <td class="py-2 pr-3 font-medium text-slate-800">${event.firstname} ${event.lastname}</td>
-            <td class="py-2 pr-3 text-slate-500 font-mono text-xs">${event.phone || '—'}</td>
-            <td class="py-2 pr-3">${campaignBadge(event.campaign)}</td>
-            <td class="py-2 pr-3">${dispositionBadge(event.disposition)}</td>
-            <td class="py-2 pr-3 text-xs text-slate-400">${formatTime(event.disposed_at)}</td>
-            <td class="py-2">
-                ${event.booking_pushed
-                    ? `<span class="text-xs font-medium text-green-700">✓ Sent to Booking</span>`
-                    : `<button data-leadid="${event.leadid}"
-                            class="feed-book-btn ${isHot ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-500 hover:bg-slate-600'} text-white text-xs font-semibold py-1 px-2 rounded transition mr-1 disabled:opacity-50">
-                            Push to Booking
-                        </button>
-                        <button data-leadid="${event.leadid}"
-                            class="feed-dismiss-btn text-xs text-slate-400 hover:text-slate-600 transition py-1 px-2">
-                            Dismiss
-                        </button>`
-                }
-            </td>`;
+            <td class="py-2 pr-2 font-medium text-slate-800 whitespace-nowrap text-sm">${name}</td>
+            <td class="py-2 pr-2 font-mono text-slate-500 text-xs whitespace-nowrap">${escHtml(lead.phone || '—')}</td>
+            <td class="py-2 pr-2">${scoreBadge}</td>
+            <td class="py-2 pr-2">${campaignBadge(lead.campaign)}</td>
+            <td class="py-2 pr-2 text-slate-500 text-xs whitespace-nowrap">${escHtml(lead.movetype || '—')}</td>
+            <td class="py-2 pr-2 text-slate-500 text-xs">${route}</td>
+            <td class="py-2 pr-2">${dispositionBadge(lead.disposition)}</td>
+            <td class="py-2 pr-2 text-xs text-slate-400 whitespace-nowrap">${formatTime(lead.disposed_at)}</td>
+            <td class="py-2">${actionsHtml}</td>`;
 
         if (prepend && liveFeedBody.firstChild) {
             liveFeedBody.insertBefore(tr, liveFeedBody.firstChild);
@@ -847,18 +888,50 @@ document.addEventListener('DOMContentLoaded', () => {
             liveFeedLabel.textContent = 'live';
         };
 
-        es.onmessage = (e) => {
-            try {
-                const event = JSON.parse(e.data);
-                renderFeedRow(event, true);   // prepend — newest at top
-                loadOutcomeSummary();
-            } catch { /* ignore malformed */ }
+        es.onmessage = () => {
+            // Reload everything on any new disposition — keeps table and metrics in sync
+            loadOutcomes();
         };
 
         es.onerror = () => {
             liveFeedDot.className    = 'inline-block w-2 h-2 rounded-full bg-red-400';
             liveFeedLabel.textContent = 'reconnecting…';
         };
+    }
+
+    function formatDuration(secs) {
+        if (secs === null || secs === undefined) return '—';
+        if (secs < 60) return `${Math.round(secs)}s`;
+        const m = Math.floor(secs / 60);
+        const s = Math.round(secs % 60);
+        return `${m}m ${s}s`;
+    }
+
+    function updateDashboardMetrics(data) {
+        // Top tiles
+        dashSpeed.textContent    = formatDuration(data.avg_automation_speed_secs);
+        outcomesHot.textContent  = data.hot  ?? '—';
+        outcomesCalled.textContent = data.called ?? '—';
+        const convRate = data.called > 0 ? Math.round((data.hot / data.called) * 100) : null;
+        dashConv.textContent = convRate !== null ? `${convRate}%` : '—';
+
+        // Human panel
+        const h = data.human || {};
+        dashHumanTotal.textContent  = h.total  ?? '—';
+        dashHumanCalled.textContent = h.called ?? '—';
+        dashHumanHot.textContent    = h.hot    ?? '—';
+        const hPct = h.called > 0 ? Math.round((h.hot / h.called) * 100) : 0;
+        dashHumanBar.style.width = `${hPct}%`;
+        dashHumanPct.textContent = h.called > 0 ? `${hPct}%` : '—';
+
+        // AI panel
+        const a = data.ai || {};
+        dashAiTotal.textContent  = a.total  ?? '—';
+        dashAiCalled.textContent = a.called ?? '—';
+        dashAiHot.textContent    = a.hot    ?? '—';
+        const aPct = a.called > 0 ? Math.round((a.hot / a.called) * 100) : 0;
+        dashAiBar.style.width = `${aPct}%`;
+        dashAiPct.textContent = a.called > 0 ? `${aPct}%` : '—';
     }
 
     async function loadOutcomes() {
@@ -874,14 +947,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 outcomesStatus.textContent = data.error || 'Failed to load outcomes.';
                 return;
             }
-            // Summary counters
-            outcomesTotal.textContent  = data.total   ?? '—';
-            outcomesCalled.textContent = data.called  ?? '—';
-            outcomesHot.textContent    = data.hot     ?? '—';
-            outcomesNotHot.textContent = data.not_hot ?? '—';
             outcomesStatus.textContent = '';
+            updateDashboardMetrics(data);
 
-            // Render disposed leads (clear first to avoid duplicates on refresh)
+            // Render all leads (disposed and pending)
             liveFeedBody.innerHTML = '';
             if (data.leads && data.leads.length > 0) {
                 data.leads.forEach(l => renderFeedRow(l));
@@ -894,20 +963,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {
             outcomesStatus.textContent = 'Network error loading outcomes.';
         }
-    }
-
-    async function loadOutcomeSummary() {
-        if (!d365CurrentEnvId) return;
-        try {
-            const response = await fetch(`/api/d365_ringcx/outcomes?env_id=${encodeURIComponent(d365CurrentEnvId)}`);
-            const data = await response.json();
-            if (response.ok) {
-                outcomesTotal.textContent  = data.total   ?? '—';
-                outcomesCalled.textContent = data.called  ?? '—';
-                outcomesHot.textContent    = data.hot     ?? '—';
-                outcomesNotHot.textContent = data.not_hot ?? '—';
-            }
-        } catch { /* silent */ }
     }
 
     // Push to Booking / Dismiss — delegated to tbody
