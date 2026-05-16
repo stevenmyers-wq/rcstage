@@ -926,7 +926,7 @@ def ringcx_postback():
     then writes disposition back to D365 and broadcasts to live feed SSE.
     """
     # --- Auth ---
-    WEBHOOK_SECRET  = os.environ.get('D365_POSTBACK_SECRET', os.environ.get('RCAU_WEBHOOK_SECRET', 'rcau-demo-2026'))
+    WEBHOOK_SECRET  = os.environ.get('D365_POSTBACK_SECRET', 'rcau-demo-2026')
     provided_secret = request.args.get('secret', '')
     if provided_secret != WEBHOOK_SECRET:
         logger.warning(f'ringcx_postback: invalid secret from {request.remote_addr}')
