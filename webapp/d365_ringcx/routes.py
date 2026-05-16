@@ -783,11 +783,12 @@ def push_leads():
                 ringcx_token, ringcx_account_id, campaign_id,
                 leads_group,
             )
-            transaction_id = (result or {}).get('transactionId')
             for fl in leads_group:
                 leadid = fl['leadid']
                 fs.update_demo_lead(env_id, leadid, {
-                    'ringcx_lead_id':    transaction_id,
+                    # No per-lead RingCX ID available from batch upload —
+                    # transactionId is an upload reference, not a deletable lead ID.
+                    # RingCX cleanup must be done manually via the campaign UI.
                     'ringcx_campaign_id': campaign_id,
                     'campaign_assigned':  bucket_label,
                 })
@@ -925,7 +926,7 @@ def ringcx_postback():
     then writes disposition back to D365 and broadcasts to live feed SSE.
     """
     # --- Auth ---
-    WEBHOOK_SECRET  = os.environ.get('RCAU_WEBHOOK_SECRET', 'rcau-demo-2026')
+    WEBHOOK_SECRET  = os.environ.get('D365_POSTBACK_SECRET', os.environ.get('RCAU_WEBHOOK_SECRET', 'rcau-demo-2026'))
     provided_secret = request.args.get('secret', '')
     if provided_secret != WEBHOOK_SECRET:
         logger.warning(f'ringcx_postback: invalid secret from {request.remote_addr}')
