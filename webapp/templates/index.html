@@ -195,66 +195,90 @@
         <div class="flex flex-col md:flex-row gap-6 items-start">
           <div class="w-full md:w-64 flex-shrink-0">
             <nav class="flex flex-col space-y-1" aria-label="Tabs">
-              <div
-                class="text-xs font-bold text-gray-400 uppercase tracking-wider mt-2 mb-2 pl-4"
-              >
+              
+              <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mt-2 mb-2 pl-4">
                 Authentication
               </div>
 
-              <a
-                href="{{ url_for('core.index', tab='auth_rex') }}"
-                class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == 'auth_rex' %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}"
-              >
+              <a href="{{ url_for('core.index', tab='auth_rex') }}" class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == 'auth_rex' %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}">
                 REX Authentication
               </a>
 
-              <a
-                href="{{ url_for('core.index', tab='auth_cxone') }}"
-                class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == 'auth_cxone' %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}"
-              >
+              <a href="{{ url_for('core.index', tab='auth_cxone') }}" class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == 'auth_cxone' %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}">
                 RCCC (CXOne) Authentication
               </a>
 
-              <div
-                class="text-xs font-bold text-gray-400 uppercase tracking-wider mt-6 mb-2 pl-4"
-              >
-                Tools
-              </div>
+              <hr class="my-4 border-gray-200">
 
-              {% set tabs = [ 
-              ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'), 
-              ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'), 
-              ('renamer', 'Extension Renamer', 'Bulk edit extension names'), 
-              ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
-              ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'), 
-              ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'), 
-              ('live_events', 'Live Events', 'Real-time subscription listener'),
-              ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'), 
-              ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
-              ('message_management', 'Message Management', 'Download and upload custom audio greetings for Users, Call Queues, and IVRs'),
-              ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'), 
-              ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'), 
-              ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'),
-              ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'), 
-              ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'),
-              ('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts'),
-              ('cxone_audio_converter', 'CXone Audio Converter', 'Convert audio files to 8kHz, mono, u-law'),
-              ('port_mapping', 'Port Mapping', 'Upload LOA and BRD to extract and map phone numbers'),
-              ('audio_streaming', 'RingCX Streaming', 'Live call audio streaming and transcription'),
-              ('agent_form', 'Agent Form', 'AI-assisted personal injury triage form'),
-              ('d365_ringcx', 'D365 RingCX Demo', 'D365 + RingCX outbound lead flow demo') ] %} 
-              
-              {% for tab_id, tab_name, tab_desc in tabs %}
-              <a
-                href="{{ url_for('core.index', tab=tab_id) }}"
-                class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == tab_id %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}"
-                title="{{ tab_desc }}"
-              >
-                {{ tab_name }}
-              </a>
+              {% set nav_groups = [
+                {
+                  'id': 'cc_tools',
+                  'title': 'CC Tools',
+                  'tabs': [
+                    ('cxone_audio_converter', 'CXone Audio Converter', 'Convert audio files to 8kHz, mono, u-law'),
+                    ('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts'),
+                    ('audio_streaming', 'RingCX Streaming', 'Live call audio streaming and transcription')
+                  ]
+                },
+                {
+                  'id': 'pm_tools',
+                  'title': 'PM Tools',
+                  'tabs': [
+                    ('port_mapping', 'Port Mapping', 'Upload LOA and BRD to extract and map phone numbers')
+                  ]
+                },
+                {
+                  'id': 'se_tools',
+                  'title': 'SE Tools',
+                  'tabs': [
+                    ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'),
+                    ('agent_form', 'Agent Form', 'AI-assisted personal injury triage form'),
+                    ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'),
+                    ('d365_ringcx', 'D365 RingCX Demo', 'D365 + RingCX outbound lead flow demo')
+                  ]
+                },
+                {
+                  'id': 'uc_tools',
+                  'title': 'UC Tools',
+                  'tabs': [
+                    ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'),
+                    ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'),
+                    ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'),
+                    ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'),
+                    ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'),
+                    ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'),
+                    ('renamer', 'Extension Renamer', 'Bulk edit extension names'),
+                    ('live_events', 'Live Events', 'Real-time subscription listener'),
+                    ('message_management', 'Message Management', 'Download and upload custom audio greetings for Users, Call Queues, and IVRs'),
+                    ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
+                    ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
+                    ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'),
+                    ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices')
+                  ]
+                }
+              ] %}
+
+              {% for group in nav_groups %}
+                {% set is_active_group = group.tabs | selectattr(0, 'equalto', current_tab) | list | length > 0 %}
+                <div class="nav-group mt-2">
+                  <button class="nav-toggle flex items-center justify-between w-full px-4 py-3 rounded-r-lg hover:bg-gray-200 text-gray-700 font-bold transition-colors focus:outline-none" onclick="toggleNavGroup('{{ group.id }}-menu', this)">
+                      <div class="flex items-center text-xs uppercase tracking-wider text-gray-500 font-bold">
+                          {{ group.title }}
+                      </div>
+                      <svg class="nav-chevron w-4 h-4 text-gray-500 transform transition-transform duration-200 {% if is_active_group %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </button>
+                  <div id="{{ group.id }}-menu" class="{% if not is_active_group %}hidden{% endif %} flex-col mt-1 space-y-1">
+                      {% for tab_id, tab_name, tab_desc in group.tabs %}
+                      <a href="{{ url_for('core.index', tab=tab_id) }}" title="{{ tab_desc }}" class="group flex items-center pl-8 pr-4 py-2 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == tab_id %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}">
+                          {{ tab_name }}
+                      </a>
+                      {% endfor %}
+                  </div>
+                </div>
               {% endfor %} 
               
               {% if USER_ROLE == 'Admin' %}
+              <hr class="my-4 border-gray-200">
               <a
                 href="{{ url_for('core.index', tab='admin_dashboard') }}"
                 class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 mt-4 {% if current_tab == 'admin_dashboard' %}bg-red-50 border-red-600 text-red-700 shadow-sm{% else %}border-transparent text-red-600 hover:bg-red-100 hover:text-red-900{% endif %}"
@@ -314,5 +338,23 @@
       </div>
       {% endif %}
     </div>
+
+    <script>
+      function toggleNavGroup(menuId, btnElement) {
+          const menu = document.getElementById(menuId);
+          const chevron = btnElement.querySelector('.nav-chevron');
+          const isHidden = menu.classList.contains('hidden');
+          
+          if (isHidden) {
+              menu.classList.remove('hidden');
+              menu.classList.add('flex');
+              chevron.classList.add('rotate-180');
+          } else {
+              menu.classList.add('hidden');
+              menu.classList.remove('flex');
+              chevron.classList.remove('rotate-180');
+          }
+      }
+    </script>
   </body>
 </html>
