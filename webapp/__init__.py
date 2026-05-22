@@ -58,10 +58,6 @@ def create_app():
         from .notifications import routes as notifications_routes
         app.register_blueprint(notifications_routes.notifications_bp)
 
-        # Greetings Uploader routes
-        from .greetings_uploader import routes as greetings_uploader_routes
-        app.register_blueprint(greetings_uploader_routes.greetings_uploader_bp)
-
         # RingEX UAT Generator routes
         from .ringex_uat import routes as ringex_uat_routes
         app.register_blueprint(ringex_uat_routes.ringex_uat_bp)
@@ -105,5 +101,9 @@ def create_app():
         # D365 + RingCX Demo routes
         from .d365_ringcx import routes as d365_ringcx_routes
         app.register_blueprint(d365_ringcx_routes.d365_ringcx_bp)
+
+        # Message Management (Greetings) routes
+        from .message_management import routes as message_management_routes
+        app.register_blueprint(message_management_routes.message_management_bp)
 
     return app

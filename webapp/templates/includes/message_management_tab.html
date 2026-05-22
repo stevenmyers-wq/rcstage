@@ -1,0 +1,1021 @@
+<audio id="global-audio-player" class="hidden"></audio>
+
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 border-b border-gray-200 pb-4">
+        <div>
+            <h2 class="text-3xl font-bold text-slate-800 mb-1">Greeting Studio</h2>
+            <p class="text-slate-500 text-sm">Audit, apply, and export custom audio across your organization.</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+            <button id="btn-open-upload" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📁 Upload File
+            </button>
+            <button id="btn-open-tts" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                ✨ AI Studio
+            </button>
+            <button id="btn-open-export" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📥 Export Archive
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end">
+        <div class="flex-grow min-w-[200px]">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search Endpoints</label>
+            <input type="text" id="msg-search-input" placeholder="Name or Ext Number..." class="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        
+        <div class="w-56" id="filter-type">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
+            <div class="relative">
+                <button class="ms-btn w-full text-left p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow">
+                    <span class="ms-label truncate text-gray-700">All Types</span>
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl">
+                    <div class="p-2 border-b border-gray-100">
+                        <input type="text" class="ms-search w-full p-1.5 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" placeholder="Search types...">
+                    </div>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-gray-700"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-56" id="filter-site">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Site</label>
+            <div class="relative">
+                <button class="ms-btn w-full text-left p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow">
+                    <span class="ms-label truncate text-gray-700">All Sites</span>
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl">
+                    <div class="p-2 border-b border-gray-100">
+                        <input type="text" class="ms-search w-full p-1.5 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" placeholder="Search sites...">
+                    </div>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-gray-700"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center h-[42px] px-2">
+            <label class="flex items-center gap-2 cursor-pointer group">
+                <input type="checkbox" id="msg-ignore-defaults" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                <span class="text-sm font-bold text-gray-500 uppercase group-hover:text-blue-600 transition-colors" title="Hide system default audio slots from previews and exports.">Custom Only</span>
+            </label>
+        </div>
+
+        <div>
+            <button id="msg-refresh-endpoints" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-lg transition border border-gray-300 text-sm h-[42px]">
+                Refresh List
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+        <div class="overflow-x-auto max-h-[600px]">
+            <table class="min-w-full text-sm text-left relative">
+                <thead class="bg-gray-50 text-xs text-gray-600 uppercase sticky top-0 z-10 shadow-sm select-none">
+                    <tr>
+                        <th class="px-4 py-3 w-12 text-center">
+                            <input type="checkbox" id="msg-select-all" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-1/4 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="name">
+                            Endpoint Name <span id="sort-icon-name" class="ml-0.5 text-blue-600 font-bold">▲</span>
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-24 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="ext">
+                            Ext <span id="sort-icon-ext" class="ml-0.5 text-slate-400"></span>
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-32 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="type">
+                            Type <span id="sort-icon-type" class="ml-0.5 text-slate-400"></span>
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-32 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="site">
+                            Site <span id="sort-icon-site" class="ml-0.5 text-slate-400"></span>
+                        </th>
+                        <th class="px-4 py-3 font-medium text-right pr-6">View Greetings</th>
+                    </tr>
+                </thead>
+                <tbody id="msg-tbody" class="divide-y divide-gray-100 text-gray-700">
+                    <tr><td colspan="6" class="px-4 py-12 text-center text-gray-400">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Loading endpoints...
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="modal-upload" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-200">
+        <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+            <h3 class="font-bold text-gray-800 text-lg">📁 Upload Audio</h3>
+            <button class="close-modal text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <form id="form-upload" class="p-6 space-y-4">
+            <div class="text-sm text-blue-700 bg-blue-50 p-3 rounded border border-blue-200 font-medium selected-count-display">
+                Uploading to 0 selected endpoints.
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Greeting Type</label>
+                <select name="greeting_type" class="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                    </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Audio File (.mp3, .wav)</label>
+                <input type="file" name="file" accept=".mp3,.wav" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg">
+            </div>
+            <div class="pt-4 flex justify-end gap-3">
+                <button type="button" class="close-modal bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-50 transition">Cancel</button>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition shadow-sm">Start Upload</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="modal-tts" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 transform scale-95 transition-transform duration-200">
+        <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+            <h3 class="font-bold text-gray-800 text-lg">✨ AI Studio</h3>
+            <button class="close-modal text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <form id="form-tts" class="p-6 space-y-4">
+            <div class="text-sm text-purple-700 bg-purple-50 p-3 rounded border border-purple-200 font-medium selected-count-display">
+                Generating and applying to 0 selected endpoints.
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Greeting Type</label>
+                    <select name="greeting_type" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-purple-500">
+                        </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">AI Voice Actor</label>
+                    <select name="voice" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-purple-500">
+                        <option value="Kore" selected>Kore (Firm Female, AU)</option>
+                        <option value="Aoede">Aoede (Warm Female, AU)</option>
+                        <option value="Charon">Charon (Calm Male, AU)</option>
+                        <option value="Puck">Puck (Upbeat Male, AU)</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Prompt Script</label>
+                <textarea name="text" required class="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-purple-500 h-28" placeholder="Type the greeting here. It will be generated once and uploaded to all selected endpoints."></textarea>
+            </div>
+            <div class="pt-4 flex justify-end gap-3">
+                <button type="button" class="close-modal bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-50 transition">Cancel</button>
+                <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg transition shadow-sm">Generate & Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="modal-export" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-200">
+        <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+            <h3 class="font-bold text-emerald-800 text-lg">📥 Bulk Archive Export</h3>
+            <button class="close-modal text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div class="text-sm text-emerald-700 bg-emerald-50 p-3 rounded border border-emerald-200 font-medium selected-count-display">
+                Archiving 0 selected endpoints.
+            </div>
+            <p class="text-sm text-gray-600">
+                You are about to export a complete backup of the active audio configurations for the selected endpoints. This will generate a ZIP file containing physical copies of all custom audio files alongside a comprehensive CSV mapping audit.
+            </p>
+            <p class="text-xs text-gray-500 bg-gray-50 p-2 border border-gray-200 rounded" id="export-note-ui">
+                <strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.
+            </p>
+            <div class="pt-4 flex justify-end gap-3">
+                <button type="button" class="close-modal bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-50 transition">Cancel</button>
+                <button id="btn-trigger-export" type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg transition shadow-sm">Start Export</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center">
+        <h3 class="font-bold text-gray-800 text-lg mb-2" id="progress-title">Processing...</h3>
+        <p class="text-sm text-gray-500 mb-6" id="progress-desc">Please do not close this window.</p>
+        
+        <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
+            <div id="progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="text-xs font-bold text-gray-700 text-right" id="progress-pct">0/0</div>
+
+        <div id="progress-log" class="mt-4 h-32 overflow-y-auto bg-gray-900 text-left p-3 rounded-lg font-mono text-xs text-green-400 space-y-1">
+            </div>
+        
+        <button id="progress-close-btn" class="mt-4 hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition">
+            Close & Refresh Table
+        </button>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let allEndpoints = [];
+    let selectedIds = new Set();
+    
+    let currentSortCol = 'name';
+    let sortDirection = 'asc';
+    
+    let selectedTypes = new Set();
+    let selectedSites = new Set();
+    
+    const searchInput = document.getElementById('msg-search-input');
+    const tbody = document.getElementById('msg-tbody');
+    const selectAllCb = document.getElementById('msg-select-all');
+    const toggleIgnoreDefaults = document.getElementById('msg-ignore-defaults');
+    
+    const btnOpenUpload = document.getElementById('btn-open-upload');
+    const btnOpenTts = document.getElementById('btn-open-tts');
+    const btnOpenExport = document.getElementById('btn-open-export');
+    const audioPlayer = document.getElementById('global-audio-player');
+    let currentlyPlayingBtn = null;
+
+    const GREETING_TYPE_MAP = {
+        'User': [
+            {val: 'business-hours-rule:Voicemail', label: 'Business Hours — Voicemail'},
+            {val: 'after-hours-rule:Voicemail', label: 'After Hours — Voicemail'},
+            {val: 'business-hours-rule:ConnectingMessage', label: 'Business Hours — Connecting Message'},
+            {val: 'after-hours-rule:ConnectingMessage', label: 'After Hours — Connecting Message'},
+            {val: 'business-hours-rule:ConnectingAudio', label: 'Business Hours — Connecting Audio'},
+            {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'}
+        ],
+        'Department': [
+            {val: 'business-hours-rule:Voicemail', label: 'Business Hours — Voicemail'},
+            {val: 'after-hours-rule:Voicemail', label: 'After Hours — Voicemail'},
+            {val: 'business-hours-rule:Introductory', label: 'Business Hours — Introductory Greeting'},
+            {val: 'after-hours-rule:Introductory', label: 'After Hours — Introductory Greeting'},
+            {val: 'business-hours-rule:ConnectingAudio', label: 'Business Hours — Connecting Audio'},
+            {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'},
+            {val: 'after-hours-rule:HoldMusic', label: 'After Hours — After Hours Hold Music'},
+            {val: 'business-hours-rule:InterruptPrompt', label: 'Business Hours — Interrupt Prompt'}
+        ],
+        'IvrMenu': [
+            {val: 'ivr:IvrPrompt', label: 'IVR Audio Prompt'}
+        ],
+        'Voicemail': [
+            {val: 'business-hours-rule:Voicemail', label: 'Voicemail Greeting'}
+        ],
+        'AnnouncementOnly': [
+            {val: 'business-hours-rule:Introductory', label: 'Announcement Greeting'}
+        ]
+    };
+
+    const typeOptions = [
+        {val: 'Department', label: 'Call Queue'},
+        {val: 'IvrMenu', label: 'IVR Menu'},
+        {val: 'User', label: 'User'},
+        {val: 'AnnouncementOnly', label: 'Announcement Only'},
+        {val: 'Voicemail', label: 'Message Only'}
+    ];
+
+    function renderMultiSelectList(containerId, items, selectedSet, defaultLabel, onChange) {
+        const container = document.getElementById(containerId);
+        const list = container.querySelector('.ms-list');
+        const search = container.querySelector('.ms-search');
+        const label = container.querySelector('.ms-label');
+        
+        const draw = (filterText = '') => {
+            list.innerHTML = '';
+            items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'px-2 py-1.5 hover:bg-gray-100 cursor-pointer flex items-center gap-2 rounded transition-colors';
+                const checked = selectedSet.has(item.val) ? 'checked' : '';
+                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
+                
+                li.onclick = (e) => {
+                    e.stopPropagation();
+                    if(selectedSet.has(item.val)) selectedSet.delete(item.val);
+                    else selectedSet.add(item.val);
+                    
+                    li.querySelector('input').checked = selectedSet.has(item.val);
+                    updateLabel();
+                    onChange();
+                };
+                list.appendChild(li);
+            });
+        };
+
+        const updateLabel = () => {
+            if(selectedSet.size === 0) label.textContent = defaultLabel;
+            else if(selectedSet.size === 1) {
+                const selectedItem = items.find(i => i.val === Array.from(selectedSet)[0]);
+                label.textContent = selectedItem ? selectedItem.label : '1 Selected';
+            }
+            else label.textContent = `${selectedSet.size} Selected`;
+        };
+
+        if (!container.dataset.initialized) {
+            const btn = container.querySelector('.ms-btn');
+            const dropdown = container.querySelector('.ms-dropdown');
+            
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const isHidden = dropdown.classList.contains('hidden');
+                document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+                if (isHidden) {
+                    dropdown.classList.remove('hidden');
+                    search.focus();
+                }
+            };
+
+            search.oninput = (e) => draw(e.target.value);
+            search.onclick = (e) => e.stopPropagation();
+            dropdown.onclick = (e) => e.stopPropagation();
+            
+            container.dataset.initialized = 'true';
+        }
+
+        draw(search.value);
+        updateLabel();
+    }
+
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+    });
+
+    loadEndpoints();
+
+    async function loadEndpoints() {
+        try {
+            const res = await fetch('/api/message_management/endpoints');
+            if (!res.ok) throw new Error("Failed to load");
+            
+            const data = await res.json();
+            if (data.records) {
+                allEndpoints = data.records.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                
+                renderMultiSelectList('filter-type', typeOptions, selectedTypes, 'All Types', renderTable);
+                populateSiteFilter();
+                renderTable();
+            }
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-500">Failed to load endpoints: ${e.message}</td></tr>`;
+        }
+    }
+
+    function populateSiteFilter() {
+        const sites = new Set();
+        allEndpoints.forEach(ext => {
+            sites.add(ext.site?.name || 'Main Site');
+        });
+        
+        const sortedSites = Array.from(sites).sort();
+        const siteOptions = sortedSites.map(s => ({val: s, label: s}));
+        renderMultiSelectList('filter-site', siteOptions, selectedSites, 'All Sites', renderTable);
+    }
+
+    function getFilteredEndpoints() {
+        const term = searchInput.value.toLowerCase();
+        
+        return allEndpoints.filter(ext => {
+            const matchTerm = (ext.name || '').toLowerCase().includes(term) || (ext.extensionNumber || '').includes(term);
+            const extSite = ext.site?.name || 'Main Site';
+            
+            const matchType = selectedTypes.size === 0 ? true : selectedTypes.has(ext.type);
+            const matchSite = selectedSites.size === 0 ? true : selectedSites.has(extSite);
+            
+            return matchTerm && matchType && matchSite;
+        });
+    }
+
+    function renderTable() {
+        let filtered = getFilteredEndpoints();
+        
+        filtered.sort((a, b) => {
+            let valA = '';
+            let valB = '';
+            
+            if (currentSortCol === 'name') {
+                valA = a.name || '';
+                valB = b.name || '';
+            } else if (currentSortCol === 'ext') {
+                valA = a.extensionNumber || '';
+                valB = b.extensionNumber || '';
+            } else if (currentSortCol === 'type') {
+                valA = a.type === 'Department' ? 'Call Queue' : a.type || '';
+                valB = b.type === 'Department' ? 'Call Queue' : b.type || '';
+            } else if (currentSortCol === 'site') {
+                valA = a.site?.name || 'Main Site';
+                valB = b.site?.name || 'Main Site';
+            }
+            
+            let cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+            return sortDirection === 'asc' ? cmp : -cmp;
+        });
+
+        tbody.innerHTML = '';
+        
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">No endpoints found matching filters.</td></tr>';
+            return;
+        }
+
+        filtered.forEach(ext => {
+            const isChecked = selectedIds.has(String(ext.id));
+            const tr = document.createElement('tr');
+            tr.className = `border-b border-gray-100 transition-colors ${isChecked ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`;
+            tr.dataset.extType = ext.type;
+            
+            const displayType = ext.type === 'Department' ? 'Call Queue' :
+                                ext.type === 'AnnouncementOnly' ? 'Announcement Only' :
+                                ext.type === 'Voicemail' ? 'Message Only' : ext.type;
+
+            const badgeColor = ext.type === 'IvrMenu' ? 'bg-cyan-100 text-cyan-700' : 
+                               ext.type === 'Department' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700';
+
+            const siteName = ext.site?.name || 'Main Site';
+
+            tr.innerHTML = `
+                <td class="px-4 py-3 text-center">
+                    <input type="checkbox" class="row-cb h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-id="${ext.id}" ${isChecked ? 'checked' : ''}>
+                </td>
+                <td class="px-4 py-3 font-semibold text-gray-800">${ext.name || 'Unnamed'}</td>
+                <td class="px-4 py-3 text-gray-600">${ext.extensionNumber || 'N/A'}</td>
+                <td class="px-4 py-3"><span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${badgeColor}">${displayType}</span></td>
+                <td class="px-4 py-3 text-gray-600 text-xs">${siteName}</td>
+                <td class="px-4 py-3 text-right pr-6">
+                    <button class="expand-greet-btn text-gray-400 hover:text-blue-600 transition p-1 focus:outline-none" data-id="${ext.id}" title="View Configured Audio">
+                        <svg class="w-5 h-5 inline-block transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        updateSelectionState();
+    }
+
+    searchInput.addEventListener('input', renderTable);
+
+    document.getElementById('msg-refresh-endpoints').addEventListener('click', () => {
+        selectedIds.clear();
+        selectedTypes.clear();
+        selectedSites.clear();
+        searchInput.value = '';
+        renderMultiSelectList('filter-type', typeOptions, selectedTypes, 'All Types', renderTable);
+        loadEndpoints();
+    });
+
+    document.querySelectorAll('.msg-sort-header').forEach(header => {
+        header.addEventListener('click', (e) => {
+            const col = e.currentTarget.dataset.sort;
+            if (currentSortCol === col) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortCol = col;
+                sortDirection = 'asc';
+            }
+            updateSortIcons();
+            renderTable();
+        });
+    });
+
+    function updateSortIcons() {
+        ['name', 'ext', 'type', 'site'].forEach(col => {
+            const icon = document.getElementById(`sort-icon-${col}`);
+            if (!icon) return;
+            if (currentSortCol === col) {
+                icon.textContent = sortDirection === 'asc' ? '▲' : '▼';
+                icon.className = 'ml-0.5 text-blue-600 font-bold';
+            } else {
+                icon.textContent = '';
+                icon.className = 'ml-0.5 text-slate-400';
+            }
+        });
+    }
+
+    tbody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('row-cb')) {
+            const id = e.target.dataset.id;
+            if (e.target.checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+            
+            e.target.closest('tr').classList.toggle('bg-blue-50/50', e.target.checked);
+            updateSelectionState();
+        }
+    });
+
+    selectAllCb.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        document.querySelectorAll('.row-cb').forEach(cb => {
+            cb.checked = isChecked;
+            const id = cb.dataset.id;
+            if (isChecked) selectedIds.add(id);
+            else selectedIds.delete(id);
+            cb.closest('tr').classList.toggle('bg-blue-50/50', isChecked);
+        });
+        updateSelectionState();
+    });
+
+    function updateSelectionState() {
+        const count = selectedIds.size;
+        const hasSelection = count > 0;
+        btnOpenUpload.disabled = !hasSelection;
+        btnOpenTts.disabled = !hasSelection;
+        btnOpenExport.disabled = !hasSelection;
+        
+        document.querySelectorAll('.selected-count-display').forEach(el => {
+            el.textContent = `Action targets: ${count} selected endpoint(s).`;
+        });
+    }
+
+    function updateGreetingDropdowns(extType) {
+        const selects = document.querySelectorAll('select[name="greeting_type"]');
+        const options = GREETING_TYPE_MAP[extType] || [{val: 'Unknown', label: 'Unknown Type'}];
+        
+        selects.forEach(sel => {
+            sel.innerHTML = '';
+            options.forEach(opt => {
+                const o = document.createElement('option');
+                o.value = opt.val;
+                o.textContent = opt.label;
+                sel.appendChild(o);
+            });
+        });
+    }
+
+    function handleActionOpen(modalId) {
+        if (selectedIds.size === 0) return;
+
+        const selectedTypesSet = new Set();
+        selectedIds.forEach(id => {
+            const ext = allEndpoints.find(e => String(e.id) === String(id));
+            if (ext) selectedTypesSet.add(ext.type);
+        });
+
+        if (selectedTypesSet.size > 1 && modalId !== 'modal-export') {
+            alert("Cannot apply audio to multiple extension types at once. Please select only one type of endpoint (e.g., only Call Queues, or only IVRs).");
+            return;
+        }
+
+        if (selectedTypesSet.size === 1 || modalId === 'modal-export') {
+            const extType = Array.from(selectedTypesSet)[0];
+            if (modalId !== 'modal-export') updateGreetingDropdowns(extType);
+            openModal(modalId);
+        }
+    }
+
+    // --- UI Update: Close expanded rows if user toggles "Custom Only" so next click fetches clean list ---
+    toggleIgnoreDefaults.addEventListener('change', () => {
+        document.querySelectorAll('tr[id^="subrow-"]').forEach(row => {
+            const extId = row.id.replace('subrow-', '');
+            row.remove();
+            const btn = document.querySelector(`.expand-greet-btn[data-id="${extId}"] svg`);
+            if (btn) btn.classList.remove('rotate-180');
+        });
+        
+        const exportNote = document.getElementById('export-note-ui');
+        if (toggleIgnoreDefaults.checked) {
+            exportNote.innerHTML = "<strong>Note:</strong> Custom Only mode is ENABLED. System presets will be entirely ignored in the ZIP output and CSV log.";
+            exportNote.className = "text-xs text-blue-700 bg-blue-50 p-2 border border-blue-200 rounded";
+        } else {
+            exportNote.innerHTML = "<strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.";
+            exportNote.className = "text-xs text-gray-500 bg-gray-50 p-2 border border-gray-200 rounded";
+        }
+    });
+
+    tbody.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.expand-greet-btn');
+        if (btn) {
+            const extId = btn.dataset.id;
+            const tr = btn.closest('tr');
+            const icon = btn.querySelector('svg');
+            let subRow = document.getElementById(`subrow-${extId}`);
+            
+            if (subRow) {
+                const isHidden = subRow.classList.contains('hidden');
+                if (isHidden) {
+                    subRow.classList.remove('hidden');
+                    icon.classList.add('rotate-180');
+                    tr.classList.add('bg-gray-50');
+                } else {
+                    subRow.classList.add('hidden');
+                    icon.classList.remove('rotate-180');
+                    tr.classList.remove('bg-gray-50');
+                }
+                return;
+            }
+
+            const controlCell = tr.querySelector('td:last-child');
+            const origCellHTML = controlCell.innerHTML;
+            controlCell.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500 mr-4"></i>';
+            
+            try {
+                const res = await fetch(`/api/message_management/greetings/${extId}`);
+                const data = await res.json();
+                
+                controlCell.innerHTML = origCellHTML;
+                const restoredBtn = controlCell.querySelector('.expand-greet-btn');
+                if (restoredBtn) {
+                    restoredBtn.querySelector('svg').classList.add('rotate-180');
+                }
+                tr.classList.add('bg-gray-50');
+
+                subRow = document.createElement('tr');
+                subRow.id = `subrow-${extId}`;
+                subRow.className = 'bg-gray-50 border-b border-gray-200 shadow-inner';
+                
+                let innerHTML = `<td colspan="6" class="p-0">
+                    <div class="p-5 pl-14 bg-slate-50 border-t border-slate-200">
+                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Configured Audio Mappings</h4>
+                    `;
+
+                if (res.ok && data.status === 'NotActivated') {
+                    innerHTML += `<p class="text-sm text-amber-600 font-semibold py-4 flex items-center gap-1">⚠️ This extension is currently not activated in RingCentral. Custom audio files and announcements cannot be loaded, played back, or mapped until activation is complete.</p>`;
+                } else if (res.ok && data.records && data.records.length > 0) {
+                    
+                    // Filter the records on the fly based on user toggle state
+                    const ignoreDefaults = toggleIgnoreDefaults.checked;
+                    let displayRecords = data.records;
+                    if (ignoreDefaults) {
+                        displayRecords = displayRecords.filter(g => g.is_custom);
+                    }
+
+                    if (displayRecords.length === 0) {
+                        innerHTML += `<p class="text-sm text-gray-500 italic py-2">No custom audio records returned for this endpoint.</p>`;
+                    } else {
+                        innerHTML += `<div class="overflow-hidden rounded border border-gray-200 bg-white">
+                            <table class="min-w-full text-left text-sm">
+                                <thead class="bg-gray-100 text-xs text-gray-500">
+                                    <tr>
+                                        <th class="px-4 py-2">Answering Rule / Context</th>
+                                        <th class="px-4 py-2">Greeting Type</th>
+                                        <th class="px-4 py-2">Source</th>
+                                        <th class="px-4 py-2">Name / Description</th>
+                                        <th class="px-4 py-2 text-right pr-4">Playback & Export</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">`;
+                        
+                        displayRecords.forEach(g => {
+                            const isCustom = g.is_custom;
+                            const sourceBadge = isCustom 
+                                ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 shadow-sm">Custom Audio</span>'
+                                : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200 shadow-sm">Default / System</span>';
+                            
+                            const isIvrPrompt = g.type === 'IvrPrompt';
+                            const ruleContextName = g.rule_name || 'IVR Library';
+                            
+                            let nameDisplay = g.name;
+                            if (!isCustom && isIvrPrompt) {
+                                nameDisplay = `<span class="italic text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md border font-mono">💬 "${g.name}"</span>`;
+                            } else if (g.id === 'default') {
+                                nameDisplay = `<span class="text-gray-400 italic">System Factory Default Settings</span>`;
+                            }
+
+                            let mediaUrl = `/api/message_management/media/${extId}/${g.id}?is_ivr=${isIvrPrompt}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(g.type)}&preset_uri=${encodeURIComponent(g.preset_uri || '')}&text=${encodeURIComponent(g.name)}`;
+
+                            let playbackBtn = `
+                                <div class="flex items-center justify-end gap-1">
+                                    <button class="play-audio-btn text-blue-600 hover:text-blue-900 transition focus:outline-none bg-blue-50 px-3 py-1.5 rounded border border-blue-200 font-medium text-xs flex items-center justify-center shadow-sm w-[90px]" 
+                                            data-ext="${extId}" data-greet="${g.id}" data-custom="${isCustom}" data-ivr="${isIvrPrompt}" data-type="${g.type}" data-uri="${g.preset_uri || ''}" data-text="${encodeURIComponent(g.name)}">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>
+                                    </button>
+                                    <a href="${mediaUrl}&download=true" class="text-emerald-600 hover:text-emerald-900 transition focus:outline-none bg-emerald-50 px-2 py-1.5 rounded border border-emerald-200 flex items-center justify-center shadow-sm" title="Download Audio File">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                    </a>
+                                </div>
+                            `;
+
+                            innerHTML += `
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-4 py-2 text-slate-500 font-medium">${ruleContextName}</td>
+                                    <td class="px-4 py-2 font-semibold text-gray-700">${g.type}</td>
+                                    <td class="px-4 py-2">${sourceBadge}</td>
+                                    <td class="px-4 py-2 text-gray-600 max-w-md truncate" title="${g.name}">${nameDisplay}</td>
+                                    <td class="px-4 py-2">${playbackBtn}</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        innerHTML += `</tbody></table></div>`;
+                    }
+                } else {
+                    innerHTML += `<p class="text-sm text-gray-500 italic py-2">No custom or default audio records returned for this endpoint.</p>`;
+                }
+                
+                innerHTML += `</div></td>`;
+                subRow.innerHTML = innerHTML;
+                tr.after(subRow);
+                
+            } catch (err) {
+                if (controlCell) controlCell.innerHTML = origCellHTML;
+                alert("Error loading greetings.");
+            }
+        }
+
+        if (e.target.closest('.play-audio-btn')) {
+            const playBtn = e.target.closest('.play-audio-btn');
+            const extId = playBtn.dataset.ext;
+            const greetId = playBtn.dataset.greet;
+            const isIvr = playBtn.dataset.ivr;
+            const isCustom = playBtn.dataset.custom;
+            const gType = playBtn.dataset.type;
+            const presetUri = encodeURIComponent(playBtn.dataset.uri || '');
+            const gText = decodeURIComponent(playBtn.dataset.text);
+
+            if (currentlyPlayingBtn === playBtn && !audioPlayer.paused) {
+                audioPlayer.pause();
+                return;
+            }
+
+            if (currentlyPlayingBtn && currentlyPlayingBtn !== playBtn) {
+                currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
+                currentlyPlayingBtn.classList.remove('animate-pulse');
+            }
+
+            currentlyPlayingBtn = playBtn;
+            playBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-[10px]"></i> <span class="text-[11px] font-mono ml-1">Buffering...</span>';
+            
+            audioPlayer.src = `/api/message_management/media/${extId}/${greetId}?is_ivr=${isIvr}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(gType)}&preset_uri=${presetUri}&text=${encodeURIComponent(gText)}`;
+            audioPlayer.play().catch(e => {
+                playBtn.innerHTML = '⚠ Error';
+                currentlyPlayingBtn = null;
+                console.error("Audio play failed", e);
+            });
+        }
+    });
+
+    audioPlayer.addEventListener('timeupdate', () => {
+        if (currentlyPlayingBtn && audioPlayer.duration) {
+            const pct = Math.round((audioPlayer.currentTime / audioPlayer.duration) * 100);
+            currentlyPlayingBtn.innerHTML = `
+                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg> 
+                <span class="font-mono text-[10px]">Pause (${pct}%)</span>
+            `;
+        }
+    });
+
+    audioPlayer.addEventListener('pause', () => {
+        if (currentlyPlayingBtn) {
+            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
+            currentlyPlayingBtn.classList.remove('animate-pulse');
+        }
+    });
+
+    audioPlayer.addEventListener('ended', () => {
+        if (currentlyPlayingBtn) {
+            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
+            currentlyPlayingBtn.classList.remove('animate-pulse');
+            currentlyPlayingBtn = null;
+        }
+    });
+
+    function openModal(id) {
+        const m = document.getElementById(id);
+        m.classList.remove('hidden');
+        setTimeout(() => {
+            m.classList.remove('opacity-0');
+            m.querySelector('div').classList.remove('scale-95');
+        }, 10);
+    }
+
+    function closeModal(id) {
+        const m = document.getElementById(id);
+        m.classList.add('opacity-0');
+        m.querySelector('div').classList.add('scale-95');
+        setTimeout(() => m.classList.add('hidden'), 200);
+    }
+
+    document.querySelectorAll('.close-modal').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            closeModal(e.target.closest('.fixed').id);
+        });
+    });
+
+    btnOpenUpload.addEventListener('click', () => handleActionOpen('modal-upload'));
+    btnOpenTts.addEventListener('click', () => handleActionOpen('modal-tts'));
+    btnOpenExport.addEventListener('click', () => handleActionOpen('modal-export'));
+
+    const progressLog = document.getElementById('progress-log');
+    const progressBar = document.getElementById('progress-bar');
+    const progressPct = document.getElementById('progress-pct');
+    const progressTitle = document.getElementById('progress-title');
+    const progressCloseBtn = document.getElementById('progress-close-btn');
+
+    function logProgress(msg, type='info') {
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+        entry.innerText = `> ${msg}`;
+        progressLog.appendChild(entry);
+        progressLog.scrollTop = progressLog.scrollHeight;
+    }
+
+    document.getElementById('btn-trigger-export').addEventListener('click', async () => {
+        closeModal('modal-export');
+        openModal('modal-progress');
+        
+        progressLog.innerHTML = '';
+        progressCloseBtn.classList.add('hidden');
+        progressTitle.textContent = "Compiling Export Archive...";
+        document.getElementById('progress-desc').textContent = "Extracting physical audio files and writing CSV audit. Please stand by.";
+        
+        const extIds = Array.from(selectedIds);
+        const total = extIds.length;
+        const ignoreDefaults = toggleIgnoreDefaults.checked;
+        
+        progressBar.style.width = `0%`;
+        progressBar.classList.remove('animate-pulse');
+        progressPct.textContent = `0/${total}`;
+        
+        logProgress(`Initiating export for ${total} endpoints...`, 'info');
+
+        const taskId = 'export_' + Date.now();
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/message_management/export/status?task_id=${taskId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.total > 0) {
+                        const pct = Math.round((data.current / data.total) * 100);
+                        progressBar.style.width = `${pct}%`;
+                        progressPct.textContent = `${data.current}/${data.total}`;
+                    }
+                }
+            } catch (e) {
+                // Fail silently on polling timeout
+            }
+        }, 1000);
+
+        try {
+            const res = await fetch('/api/message_management/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ext_ids: extIds, task_id: taskId, ignore_defaults: ignoreDefaults })
+            });
+
+            clearInterval(pollInterval);
+
+            if (!res.ok) throw new Error("Server failed to compile the archive.");
+            
+            const blob = await res.blob();
+            logProgress(`ZIP Archive compiled successfully! Size: ${Math.round(blob.size/1024)}kb`, 'success');
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'RingCentral_Audio_Export.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            
+            progressBar.style.width = `100%`;
+            progressPct.textContent = `${total}/${total}`;
+            progressTitle.textContent = "Export Finished";
+            document.getElementById('progress-desc').textContent = "Your ZIP file should begin downloading automatically.";
+            progressCloseBtn.classList.remove('hidden');
+
+        } catch (err) {
+            clearInterval(pollInterval);
+            logProgress(`Error: ${err.message}`, 'error');
+            progressBar.classList.remove('animate-pulse');
+            progressBar.style.width = `100%`;
+            progressBar.classList.add('bg-red-500');
+            progressPct.textContent = `Failed`;
+            progressTitle.textContent = "Export Failed";
+            progressCloseBtn.classList.remove('hidden');
+        }
+    });
+
+    async function processBulkUpload(file, greetingType) {
+        closeModal('modal-upload');
+        openModal('modal-progress');
+        
+        progressLog.innerHTML = '';
+        progressCloseBtn.classList.add('hidden');
+        progressTitle.textContent = "Uploading Audio File...";
+        
+        const ids = Array.from(selectedIds);
+        const total = ids.length;
+
+        for (let i = 0; i < total; i++) {
+            const extId = ids[i];
+            progressBar.style.width = `${((i) / total) * 100}%`;
+            progressPct.textContent = `${i}/${total}`;
+            
+            const formData = new FormData();
+            formData.append('ext_id', extId);
+            formData.append('greeting_type', greetingType);
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    logProgress(`Success: Ext ${extId} updated.`, 'success');
+                } else {
+                    logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
+                }
+            } catch (err) {
+                logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
+            }
+        }
+        
+        finishProgress(total);
+    }
+
+    async function processBulkTts(text, voice, greetingType) {
+        closeModal('modal-tts');
+        openModal('modal-progress');
+        
+        progressLog.innerHTML = '';
+        progressCloseBtn.classList.add('hidden');
+        progressTitle.textContent = "Generating AI Audio...";
+        progressBar.style.width = `5%`;
+        progressPct.textContent = `0/0`;
+        logProgress(`Synthesizing voice prompt using Gemini...`, 'info');
+
+        let audioBlob = null;
+        try {
+            const ttsRes = await fetch('/api/message_management/generate_tts_audio_only', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, voice })
+            });
+
+            if (!ttsRes.ok) throw new Error("Gemini generation failed.");
+            audioBlob = await ttsRes.blob();
+            logProgress(`AI Audio Generated Successfully! Size: ${Math.round(audioBlob.size/1024)}kb`, 'success');
+        } catch (e) {
+            logProgress(e.message, 'error');
+            finishProgress(0);
+            return;
+        }
+
+        progressTitle.textContent = "Applying to Endpoints...";
+        const ids = Array.from(selectedIds);
+        const total = ids.length;
+
+        for (let i = 0; i < total; i++) {
+            const extId = ids[i];
+            progressBar.style.width = `${((i) / total) * 100}%`;
+            progressPct.textContent = `${i}/${total}`;
+            
+            const file = new File([audioBlob], `ai_voice_${voice}.wav`, { type: 'audio/wav' });
+            const formData = new FormData();
+            formData.append('ext_id', extId);
+            formData.append('greeting_type', greetingType);
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    logProgress(`Success: Ext ${extId} mapped.`, 'success');
+                } else {
+                    logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
+                }
+            } catch (err) {
+                logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
+            }
+        }
+        
+        finishProgress(total);
+    }
+
+    function finishProgress(total) {
+        progressBar.style.width = `100%`;
+        progressPct.textContent = `${total}/${total}`;
+        progressTitle.textContent = "Operation Complete";
+        progressCloseBtn.classList.remove('hidden');
+    }
+
+    progressCloseBtn.addEventListener('click', () => {
+        closeModal('modal-progress');
+        progressBar.classList.remove('bg-red-500'); 
+        
+        selectedIds.forEach(id => {
+            const subRow = document.getElementById(`subrow-${id}`);
+            if (subRow && !subRow.classList.contains('hidden')) {
+                subRow.remove();
+                const btn = document.querySelector(`.expand-greet-btn[data-id="${id}"]`);
+                if (btn) btn.click();
+            }
+        });
+        
+        selectAllCb.checked = false;
+        selectAllCb.dispatchEvent(new Event('change'));
+    });
+
+    document.getElementById('form-upload').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        processBulkUpload(fd.get('file'), fd.get('greeting_type'));
+    });
+
+    document.getElementById('form-tts').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        processBulkTts(fd.get('text'), fd.get('voice'), fd.get('greeting_type'));
+    });
+
+});
+</script>

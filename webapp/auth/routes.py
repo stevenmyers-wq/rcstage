@@ -79,6 +79,7 @@ def auth_callback():
         token_data = response.json()
         
         session['rc_access_token'] = token_data.get('access_token')
+        session['rc_refresh_token'] = token_data.get('refresh_token') # Added line
         session['rc_current_client_id'] = client_id
         session['rc_user_email'] = token_data.get('owner_id')
         
@@ -94,6 +95,7 @@ def auth_callback():
 @auth_bp.route('/api/rc/disconnect', methods=['POST'])
 def rc_disconnect():
     session.pop('rc_access_token', None)
+    session.pop('rc_refresh_token', None) # Clean up refresh token on disconnect
     session.pop('rc_current_client_id', None)
     session.pop('rc_user_email', None)
     return jsonify({'status': 'success', 'message': 'Disconnected.'}), 200

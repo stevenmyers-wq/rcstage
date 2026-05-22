@@ -5,6 +5,42 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# --- Refresh Token Helper ---
+def refresh_rc_token():
+    """Attempts to refresh the RingCentral access token using the stored refresh token."""
+    refresh_token = session.get('rc_refresh_token')
+    client_id = session.get('rc_current_client_id')
+    
+    if not refresh_token or not client_id:
+        return False
+        
+    base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
+    token_url = f"{base_url}/restapi/oauth/token"
+    
+    data = {
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token,
+        'client_id': client_id
+    }
+    
+    try:
+        resp = requests.post(token_url, data=data, headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        if resp.ok:
+            token_data = resp.json()
+            session['rc_access_token'] = token_data.get('access_token')
+            session['rc_refresh_token'] = token_data.get('refresh_token')
+            session.modified = True
+            logger.info("Successfully refreshed RingCentral access token.")
+            return True
+    except Exception as e:
+        logger.error(f"Exception during token refresh: {e}")
+        
+    # If refresh fails (e.g., refresh token expired), clear session tokens to force re-auth
+    logger.warning("Token refresh failed. User must re-authenticate.")
+    session.pop('rc_access_token', None)
+    session.pop('rc_refresh_token', None)
+    return False
+
 # --- Compatibility Layer ---
 class MockResponse:
     """
@@ -88,6 +124,21 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
             **kwargs 
         )
         
+        # --- 401 INTERCEPTION AND RETRY BLOCK ---
+        if response.status_code == 401 and has_request_context() and not token:
+            logger.info("Received 401 Unauthorized. Attempting to refresh token...")
+            if refresh_rc_token():
+                # Token refreshed successfully, update headers and retry the exact same request
+                headers['Authorization'] = f"Bearer {session.get('rc_access_token')}"
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    **kwargs 
+                )
+        # ----------------------------------------
+        
         if return_response:
             return response
         
@@ -103,7 +154,6 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
         return response.json()
 
     except Exception as e:
-        # === THE DEFINITIVE FIX IS HERE ===
         rc_error_text = "No additional RC error body provided."
         
         # Pull the raw RingCentral JSON rejection out of the request exception
