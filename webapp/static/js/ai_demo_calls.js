@@ -45,13 +45,32 @@ window.currentTurnIndex = 0;
 let sequencerRunning = false;
 let sequencerAbortFlag = false;
 
-// --- 1. THE VIRTUAL MICROPHONE INTERCEPTOR ---
+// --- 1. AUDIO CONTEXT INIT (safe to call anytime, no getUserMedia side effects) ---
+// Called by the sequencer so playback works even without an active call.
+// In preview mode, customer audio routes to speakers alongside agent audio.
+function initAudioContext() {
+    if (audioCtx) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContext();
+    customerMixer = audioCtx.createGain();
+    // Preview mode: customer audio goes to speakers so you can hear both sides
+    customerMixer.connect(audioCtx.destination);
+}
+
+// --- 2. THE VIRTUAL MICROPHONE INTERCEPTOR ---
+// Called only when making a live call. Switches customer audio from speakers
+// into the virtual mic stream so RingCX receives it as the "caller" voice.
 function setupVirtualMicrophone() {
-    if (!audioCtx) {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AudioContext();
-        customerMixer = audioCtx.createGain(); 
-        
+    initAudioContext();
+
+    // Fresh virtual mic stream for each call
+    customerMixer.disconnect();
+    virtualMic = audioCtx.createMediaStreamDestination();
+    customerMixer.connect(virtualMic);
+
+    // Only intercept getUserMedia once — closure captures outer `virtualMic` by reference,
+    // so reassigning virtualMic above is automatically picked up on the next call.
+    if (!navigator.mediaDevices._virtualMicIntercepted) {
         const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
         navigator.mediaDevices.getUserMedia = async (constraints) => {
             if (constraints && constraints.audio) {
@@ -60,26 +79,24 @@ function setupVirtualMicrophone() {
             }
             return originalGetUserMedia(constraints);
         };
+        navigator.mediaDevices._virtualMicIntercepted = true;
     }
-    
-    virtualMic = audioCtx.createMediaStreamDestination();
-    customerMixer.disconnect();
-    customerMixer.connect(virtualMic);
 }
 
-// --- 2. PIPING AUDIO INTO THE CALL (MANUAL BUTTONS) ---
+// --- 3. PIPING AUDIO INTO THE CALL (MANUAL BUTTONS) ---
 window.playTurnIntoCall = function(audioId) {
     const audioEl = document.getElementById(audioId);
     if (!audioEl) return;
-    
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-    
+
+    initAudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
-        source.connect(customerMixer); 
+        source.connect(customerMixer);
         audioEl.isRouted = true;
     }
-    
+
     audioEl.play();
 };
 
@@ -222,7 +239,9 @@ function playNextAutoTurn() {
 
     const isAgent = audioEl.dataset.speaker === 'agent';
 
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    // Ensure AudioContext exists — handles preview playback before any call is made
+    initAudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 
     if (!audioEl.isRouted) {
         const source = audioCtx.createMediaElementSource(audioEl);
@@ -402,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = dialTargetInput.value.trim();
             if (!target) return alert("Please enter an extension or phone number to dial.");
             
-            if (!audioCtx) setupVirtualMicrophone();
+            setupVirtualMicrophone();  // idempotent: re-creates virtualMic, skips getUserMedia re-intercept
             if (audioCtx.state === 'suspended') await audioCtx.resume();
 
             callBtn.disabled = true;

@@ -6,6 +6,8 @@ import base64
 import time
 import concurrent.futures
 import requests
+# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0 for SpeechConfig.language_code TTS support.
+# If Gemini calls break after a dependency update, contact Riyaz Mohammed before changing SDK usage here.
 from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call  # Pulling in your RC API wrapper
@@ -62,6 +64,17 @@ def create_wave_base64(pcm_data):
     b64_encoded = base64.b64encode(wav_bytes).decode('utf-8')
     return f"data:audio/wav;base64,{b64_encoded}"
 
+# Maps UI voice_prompt values to BCP-47 language codes for reliable TTS language selection
+LANGUAGE_CODE_MAP = {
+    'Australian English':       'en-AU',
+    'American English':         'en-US',
+    'British English':          'en-GB',
+    'French (France)':          'fr-FR',
+    'French (Canadian)':        'fr-CA',
+    'Spanish (Latin American)': 'es-US',
+    'German':                   'de-DE',
+}
+
 # Whitelist of valid Gemini TTS voice names to prevent injection via user input
 VALID_VOICES = {
     'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe',
@@ -82,7 +95,7 @@ def _resolve_voice(voice_name, default):
         print(f"Warning: '{voice_name}' is not a recognised Gemini TTS voice. Falling back to '{default}'.")
     return default
 
-def _process_single_turn(index, turn, voice_prompt, client, agent_voice, customer_voice):
+def _process_single_turn(index, turn, voice_prompt, client, agent_voice, customer_voice, language_code='en-AU'):
     """Helper function to generate a single audio clip (used for parallel processing).
 
     Retries up to 3 times with a short delay to handle Gemini TTS occasionally
@@ -95,7 +108,9 @@ def _process_single_turn(index, turn, voice_prompt, client, agent_voice, custome
     # Use the caller-supplied voice names (already validated by generate_audio_for_script)
     voice_name = agent_voice if speaker.lower() == 'agent' else customer_voice
 
-    tts_prompt = f"Voice instruction: You MUST speak with a clear, professional, and natural {voice_prompt} accent/style. Avoid overly exaggerated colloquialisms. Style instruction: {emotion}. \nText to speak: {text}"
+    # language_code sets the accent at the API level; the prompt reinforces it per-turn
+    # so the model doesn't drift back to American English mid-conversation
+    tts_prompt = f"Language and accent: {voice_prompt}. Voice acting instruction: {emotion}\nText to speak: {text}"
 
     max_attempts = 3
     last_error = None
@@ -108,6 +123,7 @@ def _process_single_turn(index, turn, voice_prompt, client, agent_voice, custome
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(
+                        language_code=language_code,
                         voice_config=types.VoiceConfig(
                             prebuilt_voice_config=types.PrebuiltVoiceConfig(
                                 voice_name=voice_name
@@ -157,17 +173,20 @@ def generate_audio_for_script(script_array, template_id, voice_prompt, agent_voi
     resolved_agent_voice = _resolve_voice(agent_voice, DEFAULT_AGENT_VOICE)
     resolved_customer_voice = _resolve_voice(customer_voice, DEFAULT_CUSTOMER_VOICE)
 
-    print(f"Generating audio — Agent: {resolved_agent_voice}, Customer: {resolved_customer_voice}, Accent: {voice_prompt}")
+    # Resolve language code from the UI voice_prompt value; fall back to en-AU
+    language_code = LANGUAGE_CODE_MAP.get(voice_prompt, 'en-AU')
+
+    print(f"Generating audio — Agent: {resolved_agent_voice}, Customer: {resolved_customer_voice}, Language: {language_code}")
 
     generated_files = []
-    
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [
             executor.submit(
                 _process_single_turn,
                 index, turn, voice_prompt, client,
-                resolved_agent_voice, resolved_customer_voice
-            ) 
+                resolved_agent_voice, resolved_customer_voice, language_code
+            )
             for index, turn in enumerate(script_array)
         ]
         

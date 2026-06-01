@@ -10,6 +10,8 @@ import pandas as pd
 
 # Suppress the InsecureRequestWarning — same pattern used by cxone_script_analyzer
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. TTS calls here borrow get_gemini_client()
+# from ai_demo_calls. If audio conversion breaks, contact Riyaz Mohammed before changing SDK usage.
 
 
 def _run_ffmpeg(args, label="ffmpeg"):

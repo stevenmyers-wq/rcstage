@@ -8,6 +8,8 @@ import zipfile
 import time
 import requests
 from flask import session
+# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. If Gemini TTS breaks,
+# contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before changing SDK usage here.
 from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call

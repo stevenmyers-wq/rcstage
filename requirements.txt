@@ -7,7 +7,10 @@ pandas
 openpyxl
 ringcentral
 xlsxwriter
-google-genai==0.3.0
+# NOTE (Jun 2026): Bumped from 0.3.0 → >=1.11.0 to support SpeechConfig.language_code for TTS.
+# This affects ai_demo_calls, cxone_audio_converter, cxone_script_analyzer, message_management, port_mapping.
+# If any Gemini feature breaks, contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before touching this.
+google-genai>=1.11.0
 google-cloud-firestore
 markdown
 xhtml2pdf

@@ -3,6 +3,9 @@ import re
 import io
 import os
 import requests
+# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. This module uses types.Part.from_bytes()
+# for PDF parsing — the highest-risk call after the upgrade. If port mapping breaks,
+# contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before changing SDK usage here.
 from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call

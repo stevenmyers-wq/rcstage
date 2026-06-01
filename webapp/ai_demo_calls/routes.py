@@ -33,15 +33,17 @@ def generate_demo_audio():
     script = data.get('script')
     template_id = data.get('template_id')
     voice_prompt = data.get('voice_prompt', 'Australian English')
-    
+    agent_voice = data.get('agent_voice')
+    customer_voice = data.get('customer_voice')
+
     if not template_id:
         template_id = f"demo_{uuid.uuid4().hex[:8]}"
-    
+
     if not script or not isinstance(script, list):
         return jsonify({"error": "A valid script array is required."}), 400
-        
+
     try:
-        audio_files = utils.generate_audio_for_script(script, template_id, voice_prompt)
+        audio_files = utils.generate_audio_for_script(script, template_id, voice_prompt, agent_voice, customer_voice)
         return jsonify({
             "status": "success", 
             "template_id": template_id,

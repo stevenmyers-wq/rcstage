@@ -148,9 +148,6 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
         if raise_error:
             response.raise_for_status()
 
-        if not raise_error:
-            response.raise_for_status()
-            
         return response.json()
 
     except Exception as e:

@@ -1,4 +1,6 @@
 # webapp/cxone_script_analyzer/utils.py
+# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. If Gemini script analysis breaks,
+# contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before changing SDK usage here.
 import requests
 import json
 import time
