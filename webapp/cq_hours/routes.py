@@ -22,7 +22,7 @@ def create_pkce_challenge():
     return code_verifier, code_challenge
 
 def get_strict_redirect_uri():
-    return os.getenv('CQ_REDIRECT_URI', 'http://localhost:8080/api/cq_hours/oauth2callback')
+    return os.getenv('CQ_REDIRECT_URI', 'https://rcau-uid-auth-396158962307.us-central1.run.app/api/cq_hours/oauth2callback')
 
 @cq_hours_bp.route('/auth', methods=['GET'])
 def cq_auth():
