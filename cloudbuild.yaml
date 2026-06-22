@@ -1,11 +1,11 @@
 steps:
   # 1. Build the container image once
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA', '.']
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-uid-auth:$COMMIT_SHA', '.']
 
   # 2. Push the image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA']
+    args: ['push', 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-uid-auth:$COMMIT_SHA']
 
   # 3. Deploy to US (us-central1)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -13,30 +13,16 @@ steps:
     args:
     - 'run'
     - 'deploy'
-    - 'rcau-api-tools'
+    - 'rcau-uid-auth'
     - '--image'
-    - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA'
+    - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-uid-auth:$COMMIT_SHA'
     - '--region'
     - 'us-central1'
     - '--platform'
     - 'managed'
 
-  # 4. Deploy the SAME image to UK (europe-west2)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
-    args:
-    - 'run'
-    - 'deploy'
-    - 'rcuk-api-tools'
-    - '--image'
-    - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA'
-    - '--region'
-    - 'europe-west2'
-    - '--platform'
-    - 'managed'
-
 images:
-- 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-api-tools:$COMMIT_SHA'
+- 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-uid-auth:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
