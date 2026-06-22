@@ -3,32 +3,45 @@ import re
 import io
 import os
 import requests
-# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. This module uses types.Part.from_bytes()
-# for PDF parsing — the highest-risk call after the upgrade. If port mapping breaks,
-# contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before changing SDK usage here.
 from google import genai
 from google.genai import types
-from webapp.rc_api import rc_api_call
+
+def get_impersonation_token(employee_token, target_account_id):
+    """Exchanges an employee token for a customer-scoped token using the whitelisted PS bridge."""
+    exchange_url = "https://auth.ps.ringcentral.com/jwks"
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "access_token": employee_token  
+    }
+    
+    payload = {
+        "accountId": str(target_account_id),
+        "appName": "brd"
+    }
+    
+    try:
+        resp = requests.post(exchange_url, headers=headers, json=payload)
+        if resp.ok:
+            return resp.json().get("access_token")
+        print(f"Token exchange failed: {resp.status_code} - {resp.text}")
+        return None
+    except Exception as e:
+        print(f"Exception during token exchange: {e}")
+        return None
 
 def download_public_drive_file(file_id, is_pdf=False):
-    """Downloads a publicly accessible Google Drive file."""
     if not is_pdf:
-        # Attempt 1: Download assuming it's a Google Sheet document
         url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
         response = requests.get(url)
-        if response.status_code == 200:
-            return response.content
+        if response.status_code == 200: return response.content
             
-    # Attempt 2: Direct download (for .xlsx or .pdf files hosted in Drive)
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
     response = requests.get(url)
-    
-    if response.status_code == 200:
-        return response.content
-        
-    raise Exception(f"Failed to download file from Google Drive (ID: {file_id}). Ensure the sharing setting is 'Anyone with the link can view'. HTTP {response.status_code}")
+    if response.status_code == 200: return response.content
+    raise Exception(f"Failed to download file from Google Drive. HTTP {response.status_code}")
 
-# --- Formatters & Helpers ---
 def normalize_number(txt):
     if pd.isna(txt): return ""
     raw = re.sub(r'[^0-9]', '', str(txt))
@@ -38,22 +51,16 @@ def normalize_number(txt):
     return raw
 
 def name_match(name1, name2):
-    """Bulletproof name matching: handles typos like 'Vos' vs 'Voss' and formatting differences."""
     if not name1 or not name2: return False
     s1 = re.sub(r'[^a-z0-9]', '', str(name1).lower())
     s2 = re.sub(r'[^a-z0-9]', '', str(name2).lower())
     if not s1 or not s2: return False
-    
-    # Direct substring match (catches allanvos inside allanvoss)
     if s1 in s2 or s2 in s1: return True
-    
-    # Token subset match
     set1 = set(re.sub(r'[^a-z0-9\s]', ' ', str(name1).lower()).split())
     set2 = set(re.sub(r'[^a-z0-9\s]', ' ', str(name2).lower()).split())
     return set1.issubset(set2) or set2.issubset(set1)
 
 def extract_digits_collection(txt):
-    """Safely extracts all distinct phone numbers from a single cell."""
     if pd.isna(txt): return []
     txt_str = str(txt)
     parts = re.split(r'[,\n\r/|;]+', txt_str)
@@ -85,7 +92,6 @@ def safe_str(val):
     return s
 
 def find_col_index(df, possible_names):
-    """Searches prioritizing EXACT matches first."""
     for name in possible_names:
         name_clean = name.strip().lower()
         for i in range(min(15, len(df))):
@@ -107,38 +113,41 @@ def load_sheet_by_name(brd, target_names):
             return pd.read_excel(brd, sheet_name=name, header=None)
     return pd.DataFrame()
 
-# --- Live API Fetch (V2 Enforced) ---
-def fetch_api_data():
-    """Fetches Extensions to guarantee we have the Name/Ext Number, then maps Phone Numbers using V2."""
+def fetch_api_data(token):
+    base_url = "https://platform.ringcentral.com"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     
-    # 1. Fetch all extensions to build a master lookup dictionary
     exts = []
     page = 1
     while True:
-        resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000, 'page': page})
-        if not resp or 'records' not in resp: break
+        r = requests.get(f"{base_url}/restapi/v1.0/account/~/extension", headers=headers, params={'perPage': 1000, 'page': page})
+        if not r.ok: break
+        resp = r.json()
+        if 'records' not in resp: break
         exts.extend(resp['records'])
         if not resp.get('navigation', {}).get('nextPage'): break
         page += 1
         
     ext_dict = {str(e['id']): e for e in exts if 'id' in e}
     
-    # 2. Fetch all phone numbers strictly using V2
     phones = []
     page = 1
     try:
         while True:
-            resp = rc_api_call('/restapi/v2/accounts/~/phone-numbers', params={'perPage': 1000, 'page': page}, raise_error=True)
-            if not resp or 'records' not in resp: break
+            r = requests.get(f"{base_url}/restapi/v2/accounts/~/phone-numbers", headers=headers, params={'perPage': 1000, 'page': page})
+            if not r.ok: raise Exception("V2 Failed")
+            resp = r.json()
+            if 'records' not in resp: break
             phones.extend(resp['records'])
             if not resp.get('navigation', {}).get('nextPage'): break
             page += 1
-    except Exception as e:
-        print("V2 API failed, falling back to V1:", e)
+    except Exception:
         page = 1
         while True:
-            resp = rc_api_call('/restapi/v1.0/account/~/phone-number', params={'perPage': 1000, 'page': page})
-            if not resp or 'records' not in resp: break
+            r = requests.get(f"{base_url}/restapi/v1.0/account/~/phone-number", headers=headers, params={'perPage': 1000, 'page': page})
+            if not r.ok: break
+            resp = r.json()
+            if 'records' not in resp: break
             phones.extend(resp['records'])
             if not resp.get('navigation', {}).get('nextPage'): break
             page += 1
@@ -147,11 +156,9 @@ def fetch_api_data():
     for p in phones:
         assignee = p.get('assignee') or p.get('extension') or {}
         ext_id = str(assignee.get('id', ''))
-        
         name = str(assignee.get('name', '')).strip()
         num = str(assignee.get('extensionNumber', '')).strip()
         
-        # Enrich sparse phone records using the master extension dictionary
         if ext_id and ext_id in ext_dict:
             master = ext_dict[ext_id]
             name = name or str(master.get('name', '')).strip()
@@ -166,7 +173,6 @@ def fetch_api_data():
         
     return enriched_phones
 
-# --- AI Extraction ---
 def extract_loa_numbers_with_gemini(pdf_bytes):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: raise ValueError("GEMINI_API_KEY is not set.")
@@ -178,8 +184,8 @@ def extract_loa_numbers_with_gemini(pdf_bytes):
     - If "Begin" and "End" match, treat as a single number.
     - If "Begin" ends in 00 and "End" ends in 99, treat as a 100-number range and expand into 100 individual consecutive rows.
     Format Numbers:
-    - Rule A (Numbers starting with 0): Remove the leading 0 and prefix with 61 (e.g., 02... becomes 612...).
-    - Rule B (1300/1800 numbers): Prefix these numbers with 61 (e.g., 1300... becomes 611300...).
+    - Rule A (Numbers starting with 0): Remove the leading 0 and prefix with 61.
+    - Rule B (1300/1800 numbers): Prefix these numbers with 61.
     Output Requirements:
     - Provide a CSV block with the header "Port In Number".
     - Sort Order: List all single numbers first, followed by the expanded ranges.
@@ -190,22 +196,15 @@ def extract_loa_numbers_with_gemini(pdf_bytes):
     response = client.models.generate_content(model='gemini-2.5-flash', contents=[pdf_part, prompt])
     return response.text.strip()
 
-# --- Main Processor ---
-def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_file_id=None):
-    # Retrieve bytes from Drive if URLs were provided
+def process_port_mapping(token, loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_file_id=None):
     if not loa_bytes and loa_file_id:
-        try:
-            loa_bytes = download_public_drive_file(loa_file_id, is_pdf=True)
-        except Exception as e:
-            raise ValueError(f"LOA Download Error: {str(e)}")
+        try: loa_bytes = download_public_drive_file(loa_file_id, is_pdf=True)
+        except Exception as e: raise ValueError(f"LOA Download Error: {str(e)}")
 
     if not brd_bytes and brd_file_id:
-        try:
-            brd_bytes = download_public_drive_file(brd_file_id, is_pdf=False)
-        except Exception as e:
-            raise ValueError(f"BRD Download Error: {str(e)}")
+        try: brd_bytes = download_public_drive_file(brd_file_id, is_pdf=False)
+        except Exception as e: raise ValueError(f"BRD Download Error: {str(e)}")
 
-    # 1. AI Extraction of LOA
     extracted_csv = extract_loa_numbers_with_gemini(loa_bytes)
     loa_numbers = set()
     try:
@@ -216,8 +215,8 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
                 if num: loa_numbers.add(num)
     except: pass
     
-    # 2. Fetch Enriched Live Numbers
-    api_numbers = fetch_api_data()
+    api_numbers = fetch_api_data(token)
+    
     ext_num_to_phones = {}
     ext_name_to_phones = {}
     
@@ -230,11 +229,9 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
             if ext_num: ext_num_to_phones.setdefault(ext_num, []).append(phone)
             if ext_name: ext_name_to_phones.setdefault(ext_name, []).append(phone)
 
-    # 3. Universal BRD Parsing
     brd = pd.ExcelFile(io.BytesIO(brd_bytes))
     port_data = {} 
     
-    # Process Fallback Sheet First (NUMBERS DUMP)
     phone_to_assigned = {}
     phone_to_ext_num = {}
     dump_df = load_sheet_by_name(brd, ['all phone numbers', 'numbers dump', 'numbers'])
@@ -258,17 +255,13 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
                 
                 final_name = assigned if assigned else name_val
                 if final_name: phone_to_assigned[phone] = final_name
-                    
                 ext_num = clean_ext_num(dump_df.iloc[i, e_c]) if e_c is not None else ""
                 if ext_num: phone_to_ext_num[phone] = ext_num
 
-    # Process Standard Port Mapping sheets (Users, Queues, IVR)
     def extract_from_sheet(df, port_cols, name_cols, ext_cols, temp_cols=None):
         if df.empty: return
-        
         port_r, port_c = find_col_index(df, port_cols)
         if port_c is None: return 
-        
         temp_r, temp_c = find_col_index(df, temp_cols) if temp_cols else (None, None)
         ext_r, ext_c = find_col_index(df, ext_cols)
         
@@ -276,13 +269,11 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
             fn_r, fn_c = find_col_index(df, name_cols[0])
             ln_r, ln_c = find_col_index(df, name_cols[1])
             name_r = max([r for r in [fn_r, ln_r] if r is not None] or [0])
-            
             if fn_c is not None:
                 start_row = max([r for r in [port_r, name_r, ext_r] if r is not None] or [0]) + 1
                 for i in range(start_row, len(df)):
                     port_list = extract_digits_collection(df.iloc[i, port_c])
                     if not port_list: continue
-
                     temp_list = extract_digits_collection(df.iloc[i, temp_c]) if temp_c is not None else []
                     fname = safe_str(df.iloc[i, fn_c])
                     lname = safe_str(df.iloc[i, ln_c]) if ln_c is not None else ""
@@ -302,7 +293,6 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
                 for i in range(start_row, len(df)):
                     port_list = extract_digits_collection(df.iloc[i, port_c])
                     if not port_list: continue
-
                     temp_list = extract_digits_collection(df.iloc[i, temp_c]) if temp_c is not None else []
                     target_name = safe_str(df.iloc[i, n_c])
                     ext_num = clean_ext_num(df.iloc[i, ext_c]) if ext_c is not None else ""
@@ -318,7 +308,6 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
     extract_from_sheet(load_sheet_by_name(brd, ['call queues', 'queues']), ['phone number'], ['queue name', 'name', 'extension name'], ['extension'], ['temporary number'])
     extract_from_sheet(load_sheet_by_name(brd, ['ivr', 'ivrs']), ['phone number'], ['ivr name', 'menu name', 'name', 'extension name'], ['menu ext', 'extension'], ['temporary number'])
 
-    # 4. Generate Port Mapping Document
     mapping_rows = []
     mapped_temp_numbers = set()
     all_port_in_numbers = set(port_data.keys()).union(loa_numbers)
@@ -338,36 +327,21 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
                 temp_num = format_e164(data['temp'])
             else:
                 live_temps = []
-                
-                # Check Extension Number first (Most accurate)
-                if ext_num and ext_num in ext_num_to_phones:
-                    live_temps.extend(ext_num_to_phones[ext_num])
-                
-                # Check Extension Name if no numbers found
+                if ext_num and ext_num in ext_num_to_phones: live_temps.extend(ext_num_to_phones[ext_num])
                 if not live_temps and target_name:
                     for name_key, phones in ext_name_to_phones.items():
-                        if name_match(name_key, target_name):
-                            live_temps.extend(phones)
+                        if name_match(name_key, target_name): live_temps.extend(phones)
                 
-                # IMPORTANT: Exclude the Port-In number so we capture the true Temporary number
                 valid_temps = [p for p in live_temps if p != port_in]
-                
-                if valid_temps:
-                    temp_num = format_e164(valid_temps[0])
+                if valid_temps: temp_num = format_e164(valid_temps[0])
                 else:
-                    # Fallback to BRD Dump (Ext Number)
                     fb_temp = next((p for p, e in phone_to_ext_num.items() if e == ext_num and p != port_in), None) if ext_num else None
-                    if fb_temp:
-                        temp_num = format_e164(fb_temp)
+                    if fb_temp: temp_num = format_e164(fb_temp)
                     else:
-                        # Fallback to BRD Dump (Name)
                         fb_temp = next((p for p, a in phone_to_assigned.items() if name_match(a, target_name) and p != port_in), None) if target_name else None
-                        if fb_temp:
-                            temp_num = format_e164(fb_temp)
+                        if fb_temp: temp_num = format_e164(fb_temp)
 
-        if temp_num != "SCP storage":
-            mapped_temp_numbers.add(normalize_number(temp_num))
-
+        if temp_num != "SCP storage": mapped_temp_numbers.add(normalize_number(temp_num))
         mapping_rows.append({
             "Port In Number": format_e164(port_in),
             "Temporary Number": temp_num,
@@ -377,21 +351,15 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
 
     port_mapping_df = pd.DataFrame(mapping_rows)
 
-    # 5. Generate Unmapped Numbers enriched by BRD assignment data
     unmapped_rows = []
     seen_unmapped = set()
-    
     for record in api_numbers:
         phone = normalize_number(record.get('phoneNumber'))
-        
         if phone and phone not in mapped_temp_numbers and phone not in all_port_in_numbers:
             ext_name = str(record.get('extensionName', 'N/A')).strip()
             usage = record.get('usageType', 'Unknown')
-            
-            # Enrich missing API names (N/A) from the BRD historical dump
             if not ext_name or ext_name.lower() in ['nan', 'n/a', '', 'unknown']:
                 ext_name = phone_to_assigned.get(phone, 'N/A')
-                
             unmapped_rows.append({
                 "Phone Number": format_e164(phone),
                 "Associated Object / Extension Name": ext_name,
@@ -409,11 +377,9 @@ def process_port_mapping(loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_f
             
     ws_unmapped = pd.DataFrame(unmapped_rows)
 
-    # 6. Output Construction
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         port_mapping_df.to_excel(writer, sheet_name="Port Mapping", index=False)
-        
         if not ws_unmapped.empty:
             ws_unmapped.to_excel(writer, sheet_name="Unmapped Numbers In Admin", index=False)
         else:

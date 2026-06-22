@@ -253,7 +253,9 @@
                     ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'),
                     ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'),
                     ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'),
-                    ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices')
+                    ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'),
+					('account_migration', 'Account Migration', 'Export and Import full account configurations and audio'),
+					('cq_hours', 'CQ Hours', 'Bulk update Call Queue business hours')
                   ]
                 }
               ] %}
@@ -325,6 +327,8 @@
               {% elif current_tab == 'audio_streaming' %} {% include 'includes/audio_streaming_tab.html' %} 
               {% elif current_tab == 'agent_form' %} {% include 'includes/agent_form_tab.html' %} 
               {% elif current_tab == 'd365_ringcx' %} {% include 'includes/d365_ringcx_tab.html' %} 
+              {% elif current_tab == 'account_migration' %} {% include 'includes/account_migration_tab.html' %}
+			  {% elif current_tab == 'cq_hours' %} {% include 'includes/cq_hours_tab.html' %}
               {% else %}
               <div class="card text-center py-12">
                 <p class="text-gray-500 text-lg">

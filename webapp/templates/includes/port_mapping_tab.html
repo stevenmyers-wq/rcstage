@@ -2,11 +2,91 @@
     <div class="flex justify-between items-center mb-8">
         <div>
             <h2 class="text-3xl font-bold text-gray-800">Port Mapping</h2>
-            <p class="text-gray-600 mt-2">Provide the LOA (PDF) and BRD (Excel) via file upload or public Google Drive link to extract and map phone numbers.</p>
+            <p class="text-gray-600 mt-2">Map LOA and BRD files automatically using AI and Live RingCentral Platform Data.</p>
         </div>
     </div>
 
+    {% if not session.get('pm_employee_token') %}
+    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6">
+        <h3 class="font-bold text-slate-800 mb-2">Authentication Required</h3>
+        <p class="text-sm text-slate-600 mb-6">You must securely authenticate with your RingCentral employee account to access the internal bridge.</p>
+        
+        <div class="space-y-4">
+            <a href="/api/port_mapping/auth" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition block text-center uppercase tracking-wide">
+                Sign In (Port Mapping)
+            </a>
+        </div>
+    </div>
+
+    {% elif not session.get('pm_isolated_token') %}
+    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6">
+        <div class="flex justify-between items-start mb-2">
+            <h3 class="font-bold text-slate-800">Impersonation Required</h3>
+            <span class="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-1 rounded">Authenticated ✓</span>
+        </div>
+        <p class="text-sm text-slate-600 mb-6">Enter the <strong>Target Customer Account ID</strong> to grant this tool read-access to the customer's phone numbers via the internal bridge.</p>
+        
+        <div class="space-y-4">
+            <input type="text" id="targetAccountId" class="border p-3 w-full rounded font-mono text-sm" placeholder="Target Account ID (e.g. 777100124)">
+            <button onclick="startBridge()" id="bridgeBtn" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition">
+                BRIDGE CONNECTION
+            </button>
+            <div id="bridgeError" class="text-red-500 text-xs font-bold hidden text-center mt-2"></div>
+        </div>
+        <div class="mt-4 border-t pt-4 text-center">
+            <a href="/api/port_mapping/logout" class="text-xs text-red-500 hover:underline">Log Out</a>
+        </div>
+    </div>
+    
+    <script>
+        async function startBridge() {
+            const id = document.getElementById('targetAccountId').value.trim();
+            const btn = document.getElementById('bridgeBtn');
+            const errDiv = document.getElementById('bridgeError');
+            
+            if (!id) return alert('Please enter a Target Account ID');
+            
+            btn.disabled = true;
+            btn.innerText = "BRIDGING...";
+            errDiv.classList.add('hidden');
+            
+            try {
+                const res = await fetch('/api/port_mapping/bridge', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({targetAccountId: id})
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.href = '/?tab=port_mapping#port-mapping';
+                    window.location.reload();
+                } else {
+                    errDiv.innerText = data.error;
+                    errDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.innerText = "BRIDGE CONNECTION";
+                }
+            } catch (e) {
+                errDiv.innerText = "Network Error: " + e.message;
+                errDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerText = "BRIDGE CONNECTION";
+            }
+        }
+    </script>
+    
+    {% else %}
     <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+        
+        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
+            <div>
+                <span class="text-[10px] font-bold text-blue-500 uppercase block tracking-wider">Active Impersonation Context</span>
+                <span class="font-mono font-bold text-slate-800 text-sm">{{ session.get('pm_target_id') }}</span>
+            </div>
+            <button onclick="location.href='/api/port_mapping/logout'" class="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded font-bold text-slate-600 hover:text-red-600 hover:border-red-300 transition shadow-sm">EXIT / LOGOUT</button>
+        </div>
+
         <h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Configuration Files</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             
@@ -56,102 +136,106 @@
             
         </div>
         
-        <button id="pm-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        <button id="pm-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-md" disabled>
             Submit & Process Files
         </button>
         
         <div id="pm-status" class="hidden mt-4 p-4 rounded-lg text-sm border shadow-sm text-center"></div>
     </div>
+    {% endif %}
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const loaInput = document.getElementById('loa-file');
-    const loaUrl = document.getElementById('loa-url');
-    const brdInput = document.getElementById('brd-file');
-    const brdUrl = document.getElementById('brd-url');
-    const submitBtn = document.getElementById('pm-submit-btn');
-    const statusDiv = document.getElementById('pm-status');
+    // Only run file logic if the form elements exist (user is fully authed and bridged)
+    if (document.getElementById('pm-submit-btn')) {
+        const loaInput = document.getElementById('loa-file');
+        const loaUrl = document.getElementById('loa-url');
+        const brdInput = document.getElementById('brd-file');
+        const brdUrl = document.getElementById('brd-url');
+        const submitBtn = document.getElementById('pm-submit-btn');
+        const statusDiv = document.getElementById('pm-status');
 
-    function checkInputs() {
-        const hasLoa = loaInput.files.length > 0 || loaUrl.value.trim().length > 0;
-        const hasBrd = brdInput.files.length > 0 || brdUrl.value.trim().length > 0;
-        submitBtn.disabled = !(hasLoa && hasBrd);
-    }
-
-    // Mutually exclusive inputs for LOA
-    loaInput.addEventListener('change', (e) => {
-        document.getElementById('loa-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
-        if (e.target.files.length > 0) loaUrl.value = ""; 
-        checkInputs();
-    });
-    loaUrl.addEventListener('input', () => {
-        if (loaUrl.value.trim().length > 0) { 
-            loaInput.value = ""; 
-            document.getElementById('loa-filename').textContent = "No file selected"; 
+        function checkInputs() {
+            const hasLoa = loaInput.files.length > 0 || loaUrl.value.trim().length > 0;
+            const hasBrd = brdInput.files.length > 0 || brdUrl.value.trim().length > 0;
+            submitBtn.disabled = !(hasLoa && hasBrd);
         }
-        checkInputs();
-    });
 
-    // Mutually exclusive inputs for BRD
-    brdInput.addEventListener('change', (e) => {
-        document.getElementById('brd-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
-        if (e.target.files.length > 0) brdUrl.value = "";
-        checkInputs();
-    });
-    brdUrl.addEventListener('input', () => {
-        if (brdUrl.value.trim().length > 0) { 
-            brdInput.value = ""; 
-            document.getElementById('brd-filename').textContent = "No file selected"; 
-        }
-        checkInputs();
-    });
-
-    submitBtn.addEventListener('click', async () => {
-        const formData = new FormData();
-        
-        if (loaInput.files.length > 0) formData.append('loa_file', loaInput.files[0]);
-        if (loaUrl.value.trim()) formData.append('loa_url', loaUrl.value.trim());
-        
-        if (brdInput.files.length > 0) formData.append('brd_file', brdInput.files[0]);
-        if (brdUrl.value.trim()) formData.append('brd_url', brdUrl.value.trim());
-
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
-        
-        statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-blue-50 text-blue-800 border-blue-200 block";
-        statusDiv.innerHTML = "Processing files, extracting numbers with Gemini, and querying live RingCentral API...";
-
-        try {
-            const response = await fetch('/api/port_mapping/process', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = `Processed_Port_Mapping_${new Date().getTime()}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                
-                statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-green-50 text-green-800 border-green-200 block";
-                statusDiv.innerHTML = "<strong>✅ Mapping Complete!</strong> File downloaded successfully.";
-            } else {
-                const data = await response.json();
-                throw new Error(data.error || "An unknown error occurred.");
+        loaInput.addEventListener('change', (e) => {
+            document.getElementById('loa-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
+            if (e.target.files.length > 0) loaUrl.value = ""; 
+            checkInputs();
+        });
+        loaUrl.addEventListener('input', () => {
+            if (loaUrl.value.trim().length > 0) { 
+                loaInput.value = ""; 
+                document.getElementById('loa-filename').textContent = "No file selected"; 
             }
-        } catch (err) {
-            statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-red-50 text-red-800 border-red-200 block";
-            statusDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
-        } finally {
-            submitBtn.innerHTML = 'Submit & Process Files';
-            checkInputs(); 
-        }
-    });
-});
+            checkInputs();
+        });
+
+        brdInput.addEventListener('change', (e) => {
+            document.getElementById('brd-filename').textContent = e.target.files[0] ? e.target.files[0].name : "No file selected";
+            if (e.target.files.length > 0) brdUrl.value = "";
+            checkInputs();
+        });
+        brdUrl.addEventListener('input', () => {
+            if (brdUrl.value.trim().length > 0) { 
+                brdInput.value = ""; 
+                document.getElementById('brd-filename').textContent = "No file selected"; 
+            }
+            checkInputs();
+        });
+
+        submitBtn.addEventListener('click', async () => {
+            const formData = new FormData();
+            
+            if (loaInput.files.length > 0) formData.append('loa_file', loaInput.files[0]);
+            if (loaUrl.value.trim()) formData.append('loa_url', loaUrl.value.trim());
+            
+            if (brdInput.files.length > 0) formData.append('brd_file', brdInput.files[0]);
+            if (brdUrl.value.trim()) formData.append('brd_url', brdUrl.value.trim());
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
+            
+            statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-blue-50 text-blue-800 border-blue-200 block";
+            statusDiv.innerHTML = "Processing files, extracting numbers with Gemini, and querying live RingCentral API...";
+
+            try {
+                const response = await fetch('/api/port_mapping/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `Processed_Port_Mapping_${new Date().getTime()}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    
+                    statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-green-50 text-green-800 border-green-200 block";
+                    statusDiv.innerHTML = "<strong>✅ Mapping Complete!</strong> File downloaded successfully.";
+                } else {
+                    const data = await response.json();
+                    if(response.status === 401) {
+                        alert("Session expired. Please Authorize & Bridge again.");
+                        window.location.href = '/api/port_mapping/logout';
+                    }
+                    throw new Error(data.error || "An unknown error occurred.");
+                }
+            } catch (err) {
+                statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-red-50 text-red-800 border-red-200 block";
+                statusDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+            } finally {
+                submitBtn.innerHTML = 'Submit & Process Files';
+                checkInputs(); 
+            }
+        });
+    }
 </script>

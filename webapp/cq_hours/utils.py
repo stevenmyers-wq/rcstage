@@ -1,0 +1,536 @@
+import re
+import copy
+import time
+import pandas as pd
+import requests
+from datetime import datetime
+from webapp.rc_api import rc_api_call
+
+DAY_ABBR = {
+    "mon": "monday", "tue": "tuesday", "wed": "wednesday", 
+    "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"
+}
+
+_READ_ONLY = ('uri', 'id', 'type', 'name', 'creationTime', 'lastModifiedTime')
+
+def to_int(val):
+    try: return int(float(val))
+    except (TypeError, ValueError): return None
+
+def parse_time_to_seconds(val):
+    if pd.isna(val) or val == '': return None
+    val_str = str(val).lower().strip()
+    match = re.search(r'([\d.]+)', val_str)
+    if not match: return None
+    num = float(match.group(1))
+    return int(num * 60) if 'min' in val_str else int(num)
+
+def format_sec(val):
+    if val is None or str(val).strip() == "": return "None"
+    try:
+        v = int(float(val))
+        if v >= 60 and v % 60 == 0: return f"{v//60} Min"
+        return f"{v} Sec"
+    except: return str(val)
+
+def format_schedule(schedule_dict):
+    if not schedule_dict: return "Closed"
+    day_order = {"monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6, "sunday": 7}
+    sorted_days = sorted(schedule_dict.items(), key=lambda x: day_order.get(x[0].lower(), 99))
+    
+    days = []
+    for day, times in sorted_days:
+        time_strs = []
+        for t in times:
+            if t['from'] == "00:00" and t['to'] == "23:59": time_strs.append("24/7")
+            else: time_strs.append(f"{t['from']}-{t['to']}")
+        days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
+    return " | ".join(days)
+
+def get_impersonation_token(employee_token, target_account_id):
+    exchange_url = "https://auth.ps.ringcentral.com/jwks"
+    headers = {"Accept": "application/json", "Content-Type": "application/json", "access_token": employee_token}
+    payload = {"accountId": str(target_account_id), "appName": "brd"}
+    try:
+        resp = requests.post(exchange_url, headers=headers, json=payload)
+        if resp.ok: return resp.json().get("access_token")
+    except: pass
+    return None
+
+def to_24h(time_str):
+    time_str = time_str.replace(" ", "").lower()
+    if "am" in time_str or "pm" in time_str:
+        fmt = "%I:%M%p" if ":" in time_str else "%I%p"
+        return datetime.strptime(time_str, fmt).strftime("%H:%M")
+    return datetime.strptime(time_str, "%H:%M").strftime("%H:%M")
+
+def parse_intuitive_hours(hours_str):
+    hours_str = str(hours_str).lower().strip().replace("\n", " ").replace("–", "-").replace("—", "-")
+    hours_str = re.sub(r'(?<!\d)(\d{1,2})\.(\d{2})\s*([ap]m)?', r'\1:\2\3', hours_str)
+    hours_str = re.sub(r'(?<!\d)(\d{1,2}(?::\d{2})?)\s*(?:-|to|thru|through)\s*(\d{1,2}(?::\d{2})?\s*pm)', r'\1am-\2', hours_str)
+    
+    if not hours_str or hours_str in ['closed', 'none', 'n/a', 'off']: return {} 
+    if hours_str in ['24/7', '24x7', '24-7', '24 7']: return {day: [{"from": "00:00", "to": "23:59"}] for day in DAY_ABBR.values()}
+        
+    time_pattern = r'(?:\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})\s*(?:-|to|thru|through)\s*(?:\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})'
+    parts = re.split(f'({time_pattern})', hours_str)
+    if len(parts) == 1: raise ValueError(f"Could not detect valid time ranges in text: '{hours_str}'.")
+        
+    times = [parts[i] for i in range(1, len(parts), 2)]
+    texts = [parts[i] for i in range(0, len(parts), 2)]
+    
+    day_map = {
+        r'\bmonday\b': 'mon', r'\bm\b': 'mon', r'\btuesday\b': 'tue', r'\btues\b': 'tue', r'\btu\b': 'tue',
+        r'\bwednesday\b': 'wed', r'\bw\b': 'wed', r'\bthursday\b': 'thu', r'\bthurs\b': 'thu', r'\bthu\b': 'thu', r'\bth\b': 'thu',
+        r'\bfriday\b': 'fri', r'\bf\b': 'fri', r'\bsaturday\b': 'sat', r'\bsa\b': 'sat', r'\bsunday\b': 'sun', r'\bsu\b': 'sun'
+    }
+    
+    days_before = False
+    if texts and texts[0].strip():
+        days_before = bool(re.search(r'\b(m|tu|tue|tues|w|wed|th|thu|thurs|f|fri|sa|sat|su|sun|mon|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', texts[0]))
+
+    weekly_ranges = {}
+    keys = list(DAY_ABBR.keys())
+    
+    for i, t in enumerate(times):
+        assoc_text = texts[i] if days_before else texts[i+1]
+        for pat, rep in day_map.items(): assoc_text = re.sub(pat, rep, assoc_text)
+            
+        time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})\s*(?:-|to|thru|through)\s*(\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})', t)
+        if not time_match: continue
+        start_24 = to_24h(time_match.group(1))
+        end_24 = to_24h(time_match.group(2))
+        
+        day_tokens = re.findall(r'(mon|tue|wed|thu|fri|sat|sun)', assoc_text)
+        day_ranges = re.findall(r'(mon|tue|wed|thu|fri|sat|sun)\s*(?:-|to|thru|through)\s*(mon|tue|wed|thu|fri|sat|sun)', assoc_text)
+        
+        days_to_apply = set()
+        if day_ranges:
+            for d_start, d_end in day_ranges:
+                idx_start, idx_end = keys.index(d_start), keys.index(d_end)
+                if idx_start <= idx_end:
+                    for j in range(idx_start, idx_end + 1): days_to_apply.add(keys[j])
+                else: 
+                    for j in range(idx_start, 7): days_to_apply.add(keys[j])
+                    for j in range(0, idx_end + 1): days_to_apply.add(keys[j])
+        elif day_tokens:
+            for dt in day_tokens: days_to_apply.add(dt)
+        else:
+            if i == 0 and len(times) == 1: days_to_apply = set(keys)
+            
+        for d in days_to_apply:
+            full_day = DAY_ABBR[d]
+            if full_day not in weekly_ranges: weekly_ranges[full_day] = []
+            weekly_ranges[full_day].append({"from": start_24, "to": end_24})
+            
+    if not weekly_ranges: raise ValueError("Could not detect any valid days associated with the provided times.")
+    return weekly_ranges
+
+def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
+    for attempt in range(max_retries):
+        try:
+            resp = rc_api_call(endpoint, method=method, json=json, token=token, return_response=True)
+            status_code = getattr(resp, 'status_code', None)
+            if status_code == 429:
+                try: retry_after = int(resp.headers.get('Retry-After', 60))
+                except: retry_after = 60
+                time.sleep(retry_after + 1)
+                continue
+            if resp and getattr(resp, 'ok', False):
+                try: return True, resp.json() if resp.content else {}
+                except: return True, {}
+            try: err_msg = resp.json().get('message', 'API Error')
+            except: err_msg = getattr(resp, 'text', 'API Error')
+            return False, err_msg
+        except Exception: time.sleep(2)
+    return False, "Max retries exceeded due to rate limiting."
+
+def get_val(row, key):
+    clean_key = str(key).strip().lower()
+    for k, v in row.items():
+        if str(k).strip().lower() == clean_key:
+            if pd.notna(v) and str(v).strip().lower() != 'nan': return str(v).strip()
+    return None
+
+def check_diff(changes_list, param_name, old_val, new_val):
+    old_str = str(old_val).strip() if old_val is not None and str(old_val).strip() != '' else "None"
+    new_str = str(new_val).strip() if new_val is not None and str(new_val).strip() != '' else "None"
+    if old_str != new_str:
+        changes_list.append({"parameter": param_name, "old": old_str, "new": new_str})
+        return True
+    return False
+
+def update_cq_batch(records, token, is_preview=False):
+    total_records = len(records)
+    yield {"type": "start", "total": total_records, "message": "Fetching Account Directories..."}
+    
+    queue_map, ext_map, site_map, site_id_to_name = {}, {}, {}, {}
+    tz_map, tz_id_to_name = {}, {}
+    ext_id_to_num = {}
+    
+    page = 1
+    while True:
+        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', method='GET', token=token)
+        if succ and isinstance(resp, dict) and 'records' in resp:
+            for q in resp['records']:
+                if 'extensionNumber' in q: 
+                    queue_map[str(q['extensionNumber'])] = str(q['id'])
+                    ext_id_to_num[str(q['id'])] = str(q['extensionNumber'])
+            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
+            else: break
+        else: break
+
+    page = 1
+    while True:
+        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', method='GET', token=token)
+        if succ and isinstance(resp, dict) and 'records' in resp:
+            for e in resp['records']:
+                if 'extensionNumber' in e: 
+                    ext_map[str(e['extensionNumber'])] = str(e['id'])
+                    ext_id_to_num[str(e['id'])] = str(e['extensionNumber'])
+            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
+            else: break
+        else: break
+
+    # FIX: Added Full Pagination for Sites
+    page = 1
+    while True:
+        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/sites?perPage=1000&page={page}', method='GET', token=token)
+        if succ and isinstance(resp, dict) and 'records' in resp:
+            for s in resp['records']: 
+                site_map[str(s.get('name')).lower().strip()] = str(s['id'])
+                site_id_to_name[str(s['id'])] = str(s.get('name'))
+            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
+            else: break
+        else: break
+
+    page = 1
+    while True:
+        succ, resp = safe_api_call(f'/restapi/v1.0/dictionary/timezone?perPage=1000&page={page}', method='GET', token=token)
+        if succ and isinstance(resp, dict) and 'records' in resp:
+            for tz in resp['records']:
+                tz_map[str(tz.get('name')).lower().strip()] = str(tz['id'])
+                tz_map[str(tz.get('id'))] = str(tz['id'])
+                tz_id_to_name[str(tz['id'])] = str(tz.get('name'))
+            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
+            else: break
+        else: break
+
+    def _resolve_ext(num):
+        clean_num = str(num).split('.')[0].strip()
+        if clean_num in ext_map: return ext_map[clean_num]
+        return None
+
+    for i, row in enumerate(records):
+        ext_raw = get_val(row, 'Extension') or get_val(row, 'Extension Number')
+        if not ext_raw: 
+            yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": "N/A", "status": "info", "message": "Skipped row", "changes": []}, "is_preview": is_preview}
+            continue
+            
+        ext_num = str(ext_raw).split('.')[0].strip()
+        q_id = queue_map.get(ext_num)
+        
+        if not q_id:
+            succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?extensionNumber={ext_num}', token=token)
+            if succ and isinstance(resp, dict) and resp.get('records'):
+                for rec in resp['records']:
+                    if rec.get('type') == 'Department':
+                        q_id = str(rec['id'])
+                        queue_map[ext_num] = q_id
+                        break
+                        
+        if not q_id:
+            yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": "Call Queue not found.", "changes": []}, "is_preview": is_preview}
+            continue
+
+        logs = []
+        changes = []
+        has_error = False
+
+        # --- A. BASIC INFO UPDATE ---
+        basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone']
+        if any(get_val(row, f) for f in basic_fields):
+            get_succ, old_basic = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='GET', token=token)
+            if get_succ and isinstance(old_basic, dict):
+                basic_payload = {}
+                b_needs_update = False
+                
+                if get_val(row, 'Queue Name'): 
+                    basic_payload['name'] = get_val(row, 'Queue Name')
+                    b_needs_update |= check_diff(changes, 'Queue Name', old_basic.get('name'), basic_payload['name'])
+                    
+                if get_val(row, 'Status'): 
+                    basic_payload['status'] = get_val(row, 'Status').capitalize()
+                    b_needs_update |= check_diff(changes, 'Status', old_basic.get('status'), basic_payload['status'])
+                    
+                if get_val(row, 'Queue Email'): 
+                    basic_payload['contact'] = {'email': get_val(row, 'Queue Email')}
+                    b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
+                    
+                if get_val(row, 'Site'):
+                    s_name = get_val(row, 'Site').lower()
+                    if s_name in site_map: 
+                        new_site_id = site_map[s_name]
+                        
+                        old_site_id = str(old_basic.get('site', {}).get('id', 'None'))
+                        old_site_name = site_id_to_name.get(old_site_id, old_site_id) if old_site_id != 'None' else "None"
+                        new_site_name = site_id_to_name.get(new_site_id, new_site_id)
+                        
+                        if check_diff(changes, 'Site', old_site_name, new_site_name):
+                            if not is_preview:
+                                s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/sites/{new_site_id}/bulk-assign', method='POST', json={"addedExtensionIds": [q_id]}, token=token)
+                                if s_succ: logs.append("Site Updated")
+                                else: has_error = True; logs.append(f"Site Error: {err}")
+                            else:
+                                logs.append("Site Evaluated")
+                    else:
+                        has_error = True
+                        logs.append(f"Invalid Site: '{get_val(row, 'Site')}'")
+                        
+                tz_raw = get_val(row, 'Timezone') or get_val(row, 'Time Zone')
+                if tz_raw:
+                    tz_key = tz_raw.lower()
+                    if tz_key in tz_map:
+                        if 'regionalSettings' not in basic_payload: basic_payload['regionalSettings'] = {}
+                        new_tz_id = tz_map[tz_key]
+                        basic_payload['regionalSettings']['timezone'] = {'id': new_tz_id}
+                        
+                        old_tz_id = str(old_basic.get('regionalSettings', {}).get('timezone', {}).get('id', ''))
+                        old_tz_name = tz_id_to_name.get(old_tz_id, old_tz_id) if old_tz_id else "None"
+                        new_tz_name = tz_id_to_name.get(new_tz_id, new_tz_id)
+                        
+                        b_needs_update |= check_diff(changes, 'Timezone', old_tz_name, new_tz_name)
+                    else:
+                        has_error = True; logs.append(f"Invalid Timezone: '{tz_raw}'")
+
+                if b_needs_update:
+                    if not is_preview:
+                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json=basic_payload, token=token)
+                        if s_succ: logs.append("Basic Info Updated")
+                        else: has_error = True; logs.append(f"Basic Error: {err}")
+                    else:
+                        logs.append("Basic Info Evaluated")
+
+        # --- B. BUSINESS HOURS UPDATE ---
+        hours_str = get_val(row, 'Hours')
+        if hours_str:
+            try:
+                weekly_ranges = parse_intuitive_hours(hours_str)
+                old_hours_str = "Unknown"
+                get_succ, old_hours_resp = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/business-hours', method='GET', token=token)
+                
+                if get_succ and isinstance(old_hours_resp, dict):
+                    old_ranges = old_hours_resp.get('schedule', {}).get('weeklyRanges', {})
+                    old_hours_str = format_schedule(old_ranges)
+
+                new_hours_str = format_schedule(weekly_ranges)
+                
+                if old_hours_str != new_hours_str:
+                    changes.append({"parameter": "Business Hours", "old": old_hours_str, "new": new_hours_str})
+                    if not is_preview:
+                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/business-hours', method='PUT', json={"schedule": {"weeklyRanges": weekly_ranges}}, token=token)
+                        if s_succ: logs.append("Hours Updated")
+                        else: has_error = True; logs.append(f"Hours Error: {err}")
+                    else:
+                        logs.append("Hours Evaluated")
+            except Exception as e:
+                has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
+
+        # --- C. ROUTING & TIMERS ---
+        routing_fields = [
+            'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
+            'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
+            'Interrupt Audio', 'Interrupt Prompt'
+        ]
+        
+        if any(get_val(row, f) for f in routing_fields):
+            get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
+            if get_succ and isinstance(rule, dict):
+                orig_rule = copy.deepcopy(rule)
+                q_set = rule.get('queue', {})
+                enable_adv = False
+                
+                if get_val(row, 'Ring Type'): q_set['transferMode'] = get_val(row, 'Ring Type')
+                
+                val_urt = get_val(row, 'User Ring Time')
+                if val_urt: 
+                    parsed = parse_time_to_seconds(val_urt)
+                    if parsed is not None: q_set['agentTimeout'] = parsed
+                    
+                val_trt = get_val(row, 'Total Ring Time')
+                if val_trt:
+                    parsed = parse_time_to_seconds(val_trt)
+                    if parsed is not None: q_set['holdTime'] = parsed
+                    
+                val_wut = get_val(row, 'Wrap Up Time')
+                if val_wut:
+                    parsed = parse_time_to_seconds(val_wut)
+                    if parsed is not None: q_set['wrapUpTime'] = parsed
+                    
+                val_ciq = get_val(row, 'Callers In Queue')
+                if val_ciq:
+                    parsed = to_int(val_ciq)
+                    if parsed is not None: q_set['maxCallers'] = parsed
+                    
+                val_iap = get_val(row, 'Interrupt Prompt')
+                if val_iap:
+                    parsed = parse_time_to_seconds(val_iap)
+                    if parsed is not None: q_set['holdAudioInterruptionPeriod'] = parsed
+
+                if get_val(row, 'Interrupt Audio'): q_set['holdAudioInterruptionMode'] = get_val(row, 'Interrupt Audio')
+                if get_val(row, 'When Max Time is Reached'): q_set['holdTimeExpirationAction'] = get_val(row, 'When Max Time is Reached')
+                if get_val(row, 'Time Reached Destination'):
+                    dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
+                    if dest_id: q_set['transfer'] = [{'extension': {'id': dest_id}}]
+
+                if get_val(row, 'When Queue is Full'): q_set['maxCallersAction'] = get_val(row, 'When Queue is Full')
+                if get_val(row, 'Queue Full Destination'):
+                    dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
+                    if dest_id: q_set['maxCallersDestination'] = {'extension': {'id': dest_id}}
+
+                if enable_adv and q_set.get('holdAudioInterruptionMode') != 'Periodically':
+                    q_set['holdAudioInterruptionMode'] = 'Periodically'
+                    if 'holdAudioInterruptionPeriod' not in q_set: q_set['holdAudioInterruptionPeriod'] = 30
+
+                rule['queue'] = q_set
+                
+                old_q = orig_rule.get('queue', {})
+                r_needs_update = False
+                
+                r_needs_update |= check_diff(changes, 'Ring Type', old_q.get('transferMode'), q_set.get('transferMode'))
+                r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
+                r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
+                r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
+                r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
+                r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
+                
+                old_f_id = str(old_q.get('maxCallersDestination', {}).get('extension', {}).get('id', 'None'))
+                new_f_id = str(q_set.get('maxCallersDestination', {}).get('extension', {}).get('id', 'None'))
+                if old_f_id != new_f_id:
+                    r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
+
+                r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
+                
+                old_t_id = str(old_q.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if old_q.get('transfer') else 'None'
+                new_t_id = str(q_set.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if q_set.get('transfer') else 'None'
+                if old_t_id != new_t_id:
+                    r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
+
+                r_needs_update |= check_diff(changes, 'Interrupt Audio', old_q.get('holdAudioInterruptionMode'), q_set.get('holdAudioInterruptionMode'))
+                r_needs_update |= check_diff(changes, 'Interrupt Prompt', format_sec(old_q.get('holdAudioInterruptionPeriod')), format_sec(q_set.get('holdAudioInterruptionPeriod')))
+                
+                for field in _READ_ONLY: rule.pop(field, None)
+                for field in _READ_ONLY: 
+                    if 'queue' in rule: rule['queue'].pop(field, None)
+                rule.pop('greetings', None); rule.pop('callers', None); rule.pop('calledNumbers', None)
+                
+                if r_needs_update and not is_preview:
+                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json=rule, token=token)
+                    if put_succ: logs.append("Routing Updated")
+                    else: has_error = True; logs.append(f"Routing Error: {err}")
+
+        # --- D. AFTER HOURS RULE ---
+        ah_fields = ['After Hours Behavior', 'After Hours Destination']
+        if any(get_val(row, f) for f in ah_fields):
+            get_succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='GET', token=token)
+            if get_succ and isinstance(ah_rule, dict):
+                orig_ah = copy.deepcopy(ah_rule)
+                a_needs_update = False
+                
+                if get_val(row, 'After Hours Behavior'): ah_rule['callHandlingAction'] = get_val(row, 'After Hours Behavior')
+                if get_val(row, 'After Hours Destination'):
+                    dest_id = _resolve_ext(get_val(row, 'After Hours Destination'))
+                    if dest_id: ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
+                
+                a_needs_update |= check_diff(changes, 'After Hours Behavior', orig_ah.get('callHandlingAction'), ah_rule.get('callHandlingAction'))
+                
+                old_a_id = str(orig_ah.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if orig_ah.get('transfer') else 'None'
+                new_a_id = str(ah_rule.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if ah_rule.get('transfer') else 'None'
+                if old_a_id != new_a_id:
+                    a_needs_update |= check_diff(changes, 'After Hours Dest', ext_id_to_num.get(old_a_id, old_a_id), ext_id_to_num.get(new_a_id, new_a_id))
+                
+                for field in _READ_ONLY: ah_rule.pop(field, None)
+                ah_rule.pop('greetings', None); ah_rule.pop('callers', None); ah_rule.pop('calledNumbers', None)
+                
+                if a_needs_update and not is_preview:
+                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json=ah_rule, token=token)
+                    if put_succ: logs.append("After Hours Updated")
+                    else: has_error = True; logs.append(f"After Hours Error: {err}")
+
+        # --- E. MEMBERS ---
+        if get_val(row, 'Members (Ext)'):
+            mem_str = get_val(row, 'Members (Ext)')
+            mem_exts = [e.strip() for e in mem_str.split(',')]
+            added_ids = []
+            for m in mem_exts:
+                m_id = _resolve_ext(m)
+                if m_id: added_ids.append({"id": m_id})
+            
+            if added_ids:
+                old_mems_str = "None"
+                get_succ, old_mems_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/members', method='GET', token=token)
+                if get_succ and isinstance(old_mems_resp, dict):
+                    old_mem_list = [str(m.get('extensionNumber')) for m in old_mems_resp.get('records', []) if m.get('extensionNumber')]
+                    if old_mem_list: old_mems_str = ", ".join(old_mem_list)
+                
+                new_mems_str = ", ".join(mem_exts)
+                
+                if set(old_mem_list) != set(mem_exts):
+                    changes.append({"parameter": "Queue Members", "old": old_mems_str, "new": new_mems_str})
+                    if not is_preview:
+                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json={"addedExtensionIds": [a['id'] for a in added_ids]}, token=token)
+                        if s_succ: logs.append("Members Updated")
+                        else: has_error = True; logs.append(f"Members Error: {err}")
+
+        # --- F. VOICEMAIL NOTIFICATIONS ---
+        vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email']
+        if any(get_val(row, f) for f in vm_fields):
+            get_succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='GET', token=token)
+            if get_succ and isinstance(notif, dict):
+                orig_notif = copy.deepcopy(notif)
+                vm_set = notif.get('voicemails', {})
+                v_needs_update = False
+                
+                if get_val(row, 'Voicemail Notifications'):
+                    vm_val = get_val(row, 'Voicemail Notifications').lower()
+                    if vm_val in ['off', 'false', 'no']:
+                        vm_set['notifyByEmail'] = False; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
+                    elif 'read' in vm_val:
+                        vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = True
+                    elif 'attach' in vm_val:
+                        vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = False
+                    else:
+                        vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
+                        
+                if get_val(row, 'Voicemail Notifications Email'):
+                    vm_set['emailAddresses'] = [e.strip() for e in get_val(row, 'Voicemail Notifications Email').split(',')]
+                
+                notif['voicemails'] = vm_set
+                
+                v_needs_update |= check_diff(changes, 'VM Email On', str(orig_notif.get('voicemails', {}).get('notifyByEmail')), str(vm_set.get('notifyByEmail')))
+                v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
+                
+                old_emails = orig_notif.get('voicemails', {}).get('emailAddresses', [])
+                new_emails = vm_set.get('emailAddresses', [])
+                if set(old_emails) != set(new_emails):
+                    v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
+                
+                for field in _READ_ONLY: notif.pop(field, None)
+                
+                if v_needs_update and not is_preview:
+                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json=notif, token=token)
+                    if put_succ: logs.append("Notifications Updated")
+                    else: has_error = True; logs.append(f"Notifications Error: {err}")
+
+        # FIX: Ensure explicit errors are not swallowed by a generic message string.
+        if not logs and not changes: 
+            res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
+        elif has_error: 
+            res_dict = {"ext": ext_num, "status": "error", "message": " | ".join(logs) or "Unknown Error", "changes": changes}
+        else: 
+            res_dict = {"ext": ext_num, "status": "success", "message": "Evaluated successfully." if is_preview else "Changes synced.", "changes": changes}
+            
+        yield {"type": "progress", "current": i + 1, "total": total_records, "result": res_dict, "is_preview": is_preview}
+        time.sleep(1.5) 
+            
+    yield {"type": "done", "is_preview": is_preview}

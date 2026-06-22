@@ -106,4 +106,12 @@ def create_app():
         from .message_management import routes as message_management_routes
         app.register_blueprint(message_management_routes.message_management_bp)
 
+        # Account Migration routes
+        from .account_migration import routes as account_migration_routes
+        app.register_blueprint(account_migration_routes.account_migration_bp)
+        
+        # CQ Hours routes
+        from .cq_hours import routes as cq_hours_routes
+        app.register_blueprint(cq_hours_routes.cq_hours_bp)
+
     return app
