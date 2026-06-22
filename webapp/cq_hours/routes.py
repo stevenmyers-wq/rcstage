@@ -7,8 +7,7 @@ import secrets
 import requests
 import pandas as pd
 from urllib.parse import urlencode
-from flask import Blueprint, jsonify, request, send_file, session, redirect, current_app, Response, stream_with_context
-from openpyxl.worksheet.datavalidation import DataValidation
+from flask import Blueprint, jsonify, request, send_file, session, redirect, current_app, Response, stream_with_context, url_for
 from webapp.usage_tracking import track_usage
 from . import utils
 
@@ -22,7 +21,8 @@ def create_pkce_challenge():
     return code_verifier, code_challenge
 
 def get_strict_redirect_uri():
-    return os.getenv('CQ_REDIRECT_URI', 'https://rcau-uid-auth-396158962307.us-central1.run.app/api/cq_hours/oauth2callback')
+    """Dynamically builds the secure HTTPS redirect URI for Cloud Run."""
+    return url_for('cq_hours.cq_oauth2callback', _external=True, _scheme='https')
 
 @cq_hours_bp.route('/auth', methods=['GET'])
 def cq_auth():
@@ -178,6 +178,7 @@ def download_template():
         workbook = writer.book
         config_ws = workbook['Queue Config']
         
+        from openpyxl.worksheet.datavalidation import DataValidation
         dv_tz = DataValidation(type="list", formula1="=Timezone_Ref!$A$2:$A$" + str(len(global_timezones) + 1), allow_blank=True)
         config_ws.add_data_validation(dv_tz)
         dv_tz.add("K2:K1000") 
@@ -202,7 +203,6 @@ def download_template():
     output.seek(0)
     return send_file(output, as_attachment=True, download_name='CQ_Omni_Manager_Template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-# --- NEW: Lightweight Endpoint to fetch Worksheet names instantly ---
 @cq_hours_bp.route('/sheets', methods=['POST'])
 def get_sheets():
     if 'file' not in request.files:
@@ -237,7 +237,6 @@ def upload_hours():
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
         else:
-            # Safely target the specific sheet if the user provided one
             if sheet_name and sheet_name != 'CSV Format (No Sheets)':
                 df = pd.read_excel(file, sheet_name=sheet_name)
             else:
