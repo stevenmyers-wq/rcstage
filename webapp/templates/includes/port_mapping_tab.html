@@ -59,8 +59,7 @@
                 const data = await res.json();
                 
                 if (data.success) {
-                    window.location.href = '/?tab=port_mapping#port-mapping';
-                    window.location.reload();
+                    window.location.href = '/?tab=port_mapping';
                 } else {
                     errDiv.innerText = data.error;
                     errDiv.classList.remove('hidden');
