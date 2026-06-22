@@ -23,7 +23,7 @@ def create_pkce_challenge():
 def get_strict_redirect_uri():
     """Fetches a strict redirect URI to prevent 'Redirect URIs do not match' OAuth errors."""
     # Defaults to localhost if not set in .env
-    return os.getenv('PM_REDIRECT_URI', 'http://localhost:8080/api/port_mapping/oauth2callback')
+    return os.getenv('PM_REDIRECT_URI', 'https://rcau-api-tools-396158962307.us-central1.run.app/api/port_mapping/oauth2callback')
 
 @port_mapping_bp.route('/auth', methods=['GET'])
 def pm_auth():
