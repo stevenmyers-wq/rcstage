@@ -21,9 +21,8 @@ def create_pkce_challenge():
     return code_verifier, code_challenge
 
 def get_strict_redirect_uri():
-    """Fetches a strict redirect URI to prevent 'Redirect URIs do not match' OAuth errors."""
-    # Defaults to localhost if not set in .env
-    return os.getenv('PM_REDIRECT_URI', 'http://localhost:8080/api/port_mapping/oauth2callback')
+    """Dynamically builds the secure HTTPS redirect URI for Cloud Run."""
+    return url_for('port_mapping_bp.pm_oauth2callback', _external=True, _scheme='https')
 
 @port_mapping_bp.route('/auth', methods=['GET'])
 def pm_auth():
@@ -32,7 +31,7 @@ def pm_auth():
     session['pm_code_verifier'] = code_verifier
     
     redirect_uri = get_strict_redirect_uri()
-    # Aligning to use the same Client ID as cq_hours
+    # Using SM_CLIENT_ID to align with the PS impersonation bridge logic
     client_id = os.getenv('SM_CLIENT_ID')
     
     if not client_id:
@@ -61,7 +60,6 @@ def pm_oauth2callback():
     redirect_uri = get_strict_redirect_uri()
     code_verifier = session.pop('pm_code_verifier', None)
     
-    # Aligning to use the same credentials as cq_hours
     client_id = os.getenv('SM_CLIENT_ID')
     client_secret = os.getenv('SM_CLIENT_SECRET')
     
@@ -92,7 +90,6 @@ def pm_oauth2callback():
     if response.ok:
         token_data = response.json()
         session['pm_employee_token'] = token_data.get('access_token')
-        # Removed the #port-mapping hash to align with cq_hours
         return redirect("/?tab=port_mapping")
     else:
         print(f"Token Exchange Failed! Sent Redirect URI: {redirect_uri}")
@@ -107,12 +104,10 @@ def create_bridge():
     if not target_id:
         return jsonify({"error": "Target Account ID is required"}), 400
         
-    # Strictly use the isolated Port Mapping employee token
     employee_token = session.get('pm_employee_token')
     if not employee_token:
         return jsonify({"error": "Not authenticated. Please click 'Sign In (Port Mapping)' first."}), 401
         
-    # Bridge swap via HAR file's exact PS endpoint logic
     customer_token = utils.get_impersonation_token(employee_token, target_id)
     
     if customer_token:
