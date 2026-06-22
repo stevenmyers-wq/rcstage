@@ -23,19 +23,20 @@ def create_pkce_challenge():
 def get_strict_redirect_uri():
     """Fetches a strict redirect URI to prevent 'Redirect URIs do not match' OAuth errors."""
     # Defaults to localhost if not set in .env
-    return os.getenv('PM_REDIRECT_URI', 'https://rcau-api-tools-396158962307.us-central1.run.app/api/port_mapping/oauth2callback')
+    return os.getenv('PM_REDIRECT_URI', 'http://localhost:8080/api/port_mapping/oauth2callback')
 
 @port_mapping_bp.route('/auth', methods=['GET'])
 def pm_auth():
-    """Initiates the OAuth flow specifically for Port Mapping using the DEMO App Credentials."""
+    """Initiates the OAuth flow specifically for Port Mapping using the PS Auth Credentials."""
     code_verifier, code_challenge = create_pkce_challenge()
     session['pm_code_verifier'] = code_verifier
     
     redirect_uri = get_strict_redirect_uri()
-    client_id = os.getenv('DEMO_RC_CLIENT_ID')
+    # Aligning to use the same Client ID as cq_hours
+    client_id = os.getenv('SM_CLIENT_ID')
     
     if not client_id:
-        return "DEMO_RC_CLIENT_ID not found in environment variables.", 500
+        return "SM_CLIENT_ID not found in environment variables.", 500
     
     params = {
         'response_type': 'code',
@@ -60,8 +61,9 @@ def pm_oauth2callback():
     redirect_uri = get_strict_redirect_uri()
     code_verifier = session.pop('pm_code_verifier', None)
     
-    client_id = os.getenv('DEMO_RC_CLIENT_ID')
-    client_secret = os.getenv('DEMO_RC_CLIENT_SECRET')
+    # Aligning to use the same credentials as cq_hours
+    client_id = os.getenv('SM_CLIENT_ID')
+    client_secret = os.getenv('SM_CLIENT_SECRET')
     
     data = {
         'grant_type': 'authorization_code',
@@ -90,7 +92,8 @@ def pm_oauth2callback():
     if response.ok:
         token_data = response.json()
         session['pm_employee_token'] = token_data.get('access_token')
-        return redirect("/?tab=port_mapping#port-mapping")
+        # Removed the #port-mapping hash to align with cq_hours
+        return redirect("/?tab=port_mapping")
     else:
         print(f"Token Exchange Failed! Sent Redirect URI: {redirect_uri}")
         return jsonify({"error": "Failed to exchange code", "details": response.json()}), 400
@@ -125,7 +128,7 @@ def port_mapping_logout():
     session.pop('pm_isolated_token', None)
     session.pop('pm_target_id', None)
     session.pop('pm_employee_token', None)
-    return redirect("/?tab=port_mapping#port-mapping")
+    return redirect("/?tab=port_mapping")
 
 @port_mapping_bp.route('/process', methods=['POST'])
 @track_usage('Port Mapping (Bridged)')
