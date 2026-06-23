@@ -81,7 +81,7 @@ def auth_callback():
         token_data = response.json()
         
         session['rc_access_token'] = token_data.get('access_token')
-        session['rc_refresh_token'] = token_data.get('refresh_token')
+        session['rc_refresh_token'] = token_data.get('refresh_token') 
         session['rc_current_client_id'] = client_id
         session['rc_user_email'] = token_data.get('owner_id')
         
@@ -174,6 +174,7 @@ def sm_oauth2callback():
         data['client_id'] = client_id
         
     response = requests.post(f"{base_url}/restapi/oauth/token", data=data, headers=headers)
+    
     if response.ok:
         session['sm_employee_token'] = response.json().get('access_token')
         session.pop('sm_redirect_uri', None) # Clean up
