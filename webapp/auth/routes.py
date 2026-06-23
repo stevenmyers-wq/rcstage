@@ -202,15 +202,12 @@ def sm_create_bridge():
         session['sm_isolated_token'] = customer_token
         session['sm_target_id'] = target_id
         
+        # --- FETCH ACTUAL COMPANY NAME ---
         try:
-            # Reverted to ~ because the token is already scoped to this specific account.
-            # Added raise_error=True so rc_api_call throws exceptions directly into our except block.
-            acc_info = rc_api_call('/restapi/v1.0/account/~', token=customer_token, raise_error=True)
-            if acc_info:
-                session['sm_target_name'] = (
-                    acc_info.get('serviceInfo', {}).get('brand', {}).get('name') 
-                    or target_id
-                )
+            # The customer's actual company name lives in the Business Address profile!
+            acc_info = rc_api_call('/restapi/v1.0/account/~/business-address', token=customer_token, raise_error=True)
+            if acc_info and acc_info.get('company'):
+                session['sm_target_name'] = acc_info.get('company')
             else:
                 session['sm_target_name'] = target_id
         except Exception as e:
@@ -227,7 +224,7 @@ def sm_logout():
     target_tab = request.args.get('tab', 'index')
     session.pop('sm_isolated_token', None)
     session.pop('sm_target_id', None)
-    session.pop('sm_target_name', None)
+    session.pop('sm_target_name', None) # Cleared name
     return redirect(f"/?tab={target_tab}")
 
 @auth_bp.route('/api/sm_auth/full_logout')
@@ -236,6 +233,6 @@ def sm_full_logout():
     target_tab = request.args.get('tab', 'index')
     session.pop('sm_isolated_token', None)
     session.pop('sm_target_id', None)
-    session.pop('sm_target_name', None)
+    session.pop('sm_target_name', None) # Cleared name
     session.pop('sm_employee_token', None)
     return redirect(f"/?tab={target_tab}")
