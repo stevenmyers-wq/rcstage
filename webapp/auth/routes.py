@@ -9,6 +9,7 @@ from flask import (
     current_app
 )
 from webapp.auth_utils import is_authenticated, get_rc_access_token, create_pkce_challenge, get_impersonation_token
+from webapp.rc_api import rc_api_call  # Use the robust wrapper for all API calls
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -119,9 +120,17 @@ def get_rc_status():
 def sm_auth_login():
     target_tab = request.args.get('tab', 'index')
     code_verifier, code_challenge = create_pkce_challenge()
-    session['sm_code_verifier'] = code_verifier
     
+    session['sm_code_verifier'] = code_verifier
+    session['sm_target_tab'] = target_tab           # Store tab for routing securely in the backend
+    
+    csrf_state = secrets.token_urlsafe(16)
+    session['sm_state'] = csrf_state                # Store real CSRF nonce
+    
+    # 1. Generate the URI and forcefully strip any proxy ports Cloud Run might append
     redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https').replace(':443', '')
+    
+    # 2. SAVE the exact string to the session to guarantee parity in step 2
     session['sm_redirect_uri'] = redirect_uri
     
     client_id = os.getenv('SM_CLIENT_ID')
@@ -135,7 +144,7 @@ def sm_auth_login():
         'redirect_uri': redirect_uri,
         'code_challenge': code_challenge,
         'code_challenge_method': 'S256',
-        'state': target_tab 
+        'state': csrf_state  # Pass the secure CSRF nonce instead of the tab name
     }
     
     base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
@@ -144,11 +153,21 @@ def sm_auth_login():
 @auth_bp.route('/api/sm_auth/callback', methods=['GET'])
 def sm_oauth2callback():
     code = request.args.get('code')
-    target_tab = request.args.get('state', 'index') 
+    state = request.args.get('state')
+    
     if not code: return "No code provided", 400
         
+    # Validate the CSRF state
+    if not state or state != session.pop('sm_state', None):
+        return "State mismatch", 403
+        
+    # Retrieve the intended target tab from the session
+    target_tab = session.pop('sm_target_tab', 'index')
+        
+    # 3. Retrieve the EXACT string used in Step 1
     redirect_uri = session.get('sm_redirect_uri')
     if not redirect_uri:
+        # Failsafe fallback
         redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https').replace(':443', '')
         
     code_verifier = session.pop('sm_code_verifier', None)
@@ -172,7 +191,7 @@ def sm_oauth2callback():
     
     if response.ok:
         session['sm_employee_token'] = response.json().get('access_token')
-        session.pop('sm_redirect_uri', None)
+        session.pop('sm_redirect_uri', None) # Clean up
         return redirect(f"/?tab={target_tab}")
         
     return jsonify({"error": "Failed to exchange code", "details": response.json()}), 400
@@ -190,16 +209,20 @@ def sm_create_bridge():
         session['sm_isolated_token'] = customer_token
         session['sm_target_id'] = target_id
         
-        # --- NEW: Fetch the Account Name ---
+        # --- FETCH NAME USING ROBUST WRAPPER ---
         try:
-            base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
-            headers = {'Authorization': f'Bearer {customer_token}', 'Accept': 'application/json'}
-            acc_resp = requests.get(f"{base_url}/restapi/v1.0/account/~", headers=headers)
-            if acc_resp.ok:
-                session['sm_target_name'] = acc_resp.json().get('name', target_id)
+            acc_info = rc_api_call(f'/restapi/v1.0/account/{target_id}', token=customer_token)
+            if acc_info:
+                # Correctly pull the company name out of the serviceInfo structure
+                session['sm_target_name'] = (
+                    acc_info.get('serviceInfo', {}).get('brand', {}).get('name') 
+                    or target_id
+                )
             else:
                 session['sm_target_name'] = target_id
-        except Exception:
+        except Exception as e:
+            # If it fails (e.g. 403 Forbidden), it will be caught here AND logged in full by rc_api_call
+            print(f"Failed to fetch account name: {e}")
             session['sm_target_name'] = target_id
             
         return jsonify({"success": True})
