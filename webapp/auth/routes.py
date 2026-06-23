@@ -121,7 +121,12 @@ def sm_auth_login():
     code_verifier, code_challenge = create_pkce_challenge()
     session['sm_code_verifier'] = code_verifier
     
-    redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https')
+    # 1. Generate the URI and forcefully strip any proxy ports Cloud Run might append
+    redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https').replace(':443', '')
+    
+    # 2. SAVE the exact string to the session to guarantee parity in step 2
+    session['sm_redirect_uri'] = redirect_uri
+    
     client_id = os.getenv('SM_CLIENT_ID')
     
     if not client_id:
@@ -145,7 +150,12 @@ def sm_oauth2callback():
     target_tab = request.args.get('state', 'index') 
     if not code: return "No code provided", 400
         
-    redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https')
+    # 3. Retrieve the EXACT string used in Step 1
+    redirect_uri = session.get('sm_redirect_uri')
+    if not redirect_uri:
+        # Failsafe fallback
+        redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https').replace(':443', '')
+        
     code_verifier = session.pop('sm_code_verifier', None)
     
     client_id = os.getenv('SM_CLIENT_ID')
@@ -156,6 +166,7 @@ def sm_oauth2callback():
         
     base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
     headers = { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }
+    
     if client_secret:
         auth_str = f"{client_id}:{client_secret}"
         headers['Authorization'] = f"Basic {base64.b64encode(auth_str.encode()).decode()}"
@@ -165,7 +176,9 @@ def sm_oauth2callback():
     response = requests.post(f"{base_url}/restapi/oauth/token", data=data, headers=headers)
     if response.ok:
         session['sm_employee_token'] = response.json().get('access_token')
+        session.pop('sm_redirect_uri', None) # Clean up
         return redirect(f"/?tab={target_tab}")
+        
     return jsonify({"error": "Failed to exchange code", "details": response.json()}), 400
 
 @auth_bp.route('/api/sm_auth/bridge', methods=['POST'])
