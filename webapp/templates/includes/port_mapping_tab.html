@@ -1,151 +1,59 @@
-<div class="space-y-6 animate-fade-in p-4">
-    <div class="flex justify-between items-center mb-8">
-        <div>
-            <h2 class="text-3xl font-bold text-gray-800">Port Mapping</h2>
-            <p class="text-gray-600 mt-2">Map LOA and BRD files automatically using AI and Live RingCentral Platform Data.</p>
+<h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Configuration Files</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    
+    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+        <div class="text-blue-500 mb-2 text-3xl">📄</div>
+        <h4 class="font-bold text-gray-700 mb-3">LOA (PDF)</h4>
+        
+        <label class="cursor-pointer block mb-3">
+            <span class="text-blue-600 font-bold hover:underline bg-blue-50 px-4 py-2 rounded-full border border-blue-200 inline-block">Upload LOA File</span>
+            <input type="file" id="loa-file" class="hidden" accept="application/pdf">
+        </label>
+        <p id="loa-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
+        
+        <div class="flex items-center justify-center gap-2 mb-4">
+            <hr class="w-1/4 border-gray-300">
+            <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
+            <hr class="w-1/4 border-gray-300">
         </div>
+
+        <label class="block text-left">
+            <span class="text-blue-600 font-bold text-sm">Paste Google Drive Link</span>
+            <input type="url" id="loa-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://drive.google.com/file/d/...">
+        </label>
     </div>
 
-    {% if not session.get('pm_employee_token') %}
-    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6">
-        <h3 class="font-bold text-slate-800 mb-2">Authentication Required</h3>
-        <p class="text-sm text-slate-600 mb-6">You must securely authenticate with your RingCentral employee account to access the internal bridge.</p>
+    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+        <div class="text-green-500 mb-2 text-3xl">📊</div>
+        <h4 class="font-bold text-gray-700 mb-3">BRD (Excel)</h4>
         
-        <div class="space-y-4">
-            <a href="/api/port_mapping/auth" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition block text-center uppercase tracking-wide">
-                Sign In (Port Mapping)
-            </a>
-        </div>
-    </div>
+        <label class="cursor-pointer block mb-3">
+            <span class="text-green-600 font-bold hover:underline bg-green-50 px-4 py-2 rounded-full border border-green-200 inline-block">Upload BRD File</span>
+            <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
+        </label>
+        <p id="brd-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
 
-    {% elif not session.get('pm_isolated_token') %}
-    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6">
-        <div class="flex justify-between items-start mb-2">
-            <h3 class="font-bold text-slate-800">Impersonation Required</h3>
-            <span class="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-1 rounded">Authenticated ✓</span>
+        <div class="flex items-center justify-center gap-2 mb-4">
+            <hr class="w-1/4 border-gray-300">
+            <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
+            <hr class="w-1/4 border-gray-300">
         </div>
-        <p class="text-sm text-slate-600 mb-6">Enter the <strong>Target Customer Account ID</strong> to grant this tool read-access to the customer's phone numbers via the internal bridge.</p>
-        
-        <div class="space-y-4">
-            <input type="text" id="targetAccountId" class="border p-3 w-full rounded font-mono text-sm" placeholder="Target Account ID (e.g. 777100124)">
-            <button onclick="startBridge()" id="bridgeBtn" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition">
-                BRIDGE CONNECTION
-            </button>
-            <div id="bridgeError" class="text-red-500 text-xs font-bold hidden text-center mt-2"></div>
-        </div>
-        <div class="mt-4 border-t pt-4 text-center">
-            <a href="/api/port_mapping/logout" class="text-xs text-red-500 hover:underline">Log Out</a>
-        </div>
+
+        <label class="block text-left">
+            <span class="text-green-600 font-bold text-sm">Paste Google Drive Link</span>
+            <input type="url" id="brd-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://docs.google.com/spreadsheets/d/...">
+        </label>
     </div>
     
-    <script>
-        async function startBridge() {
-            const id = document.getElementById('targetAccountId').value.trim();
-            const btn = document.getElementById('bridgeBtn');
-            const errDiv = document.getElementById('bridgeError');
-            
-            if (!id) return alert('Please enter a Target Account ID');
-            
-            btn.disabled = true;
-            btn.innerText = "BRIDGING...";
-            errDiv.classList.add('hidden');
-            
-            try {
-                const res = await fetch('/api/port_mapping/bridge', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({targetAccountId: id})
-                });
-                const data = await res.json();
-                
-                if (data.success) {
-                    window.location.href = '/?tab=port_mapping';
-                } else {
-                    errDiv.innerText = data.error;
-                    errDiv.classList.remove('hidden');
-                    btn.disabled = false;
-                    btn.innerText = "BRIDGE CONNECTION";
-                }
-            } catch (e) {
-                errDiv.innerText = "Network Error: " + e.message;
-                errDiv.classList.remove('hidden');
-                btn.disabled = false;
-                btn.innerText = "BRIDGE CONNECTION";
-            }
-        }
-    </script>
-    
-    {% else %}
-    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-        
-        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
-            <div>
-                <span class="text-[10px] font-bold text-blue-500 uppercase block tracking-wider">Active Impersonation Context</span>
-                <span class="font-mono font-bold text-slate-800 text-sm">{{ session.get('pm_target_id') }}</span>
-            </div>
-            <button onclick="location.href='/api/port_mapping/logout'" class="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded font-bold text-slate-600 hover:text-red-600 hover:border-red-300 transition shadow-sm">EXIT / LOGOUT</button>
-        </div>
-
-        <h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Configuration Files</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            
-            <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-                <div class="text-blue-500 mb-2 text-3xl">📄</div>
-                <h4 class="font-bold text-gray-700 mb-3">LOA (PDF)</h4>
-                
-                <label class="cursor-pointer block mb-3">
-                    <span class="text-blue-600 font-bold hover:underline bg-blue-50 px-4 py-2 rounded-full border border-blue-200 inline-block">Upload LOA File</span>
-                    <input type="file" id="loa-file" class="hidden" accept="application/pdf">
-                </label>
-                <p id="loa-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
-                
-                <div class="flex items-center justify-center gap-2 mb-4">
-                    <hr class="w-1/4 border-gray-300">
-                    <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
-                    <hr class="w-1/4 border-gray-300">
-                </div>
-
-                <label class="block text-left">
-                    <span class="text-blue-600 font-bold text-sm">Paste Google Drive Link</span>
-                    <input type="url" id="loa-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://drive.google.com/file/d/...">
-                </label>
-            </div>
-
-            <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-                <div class="text-green-500 mb-2 text-3xl">📊</div>
-                <h4 class="font-bold text-gray-700 mb-3">BRD (Excel)</h4>
-                
-                <label class="cursor-pointer block mb-3">
-                    <span class="text-green-600 font-bold hover:underline bg-green-50 px-4 py-2 rounded-full border border-green-200 inline-block">Upload BRD File</span>
-                    <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
-                </label>
-                <p id="brd-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
-
-                <div class="flex items-center justify-center gap-2 mb-4">
-                    <hr class="w-1/4 border-gray-300">
-                    <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
-                    <hr class="w-1/4 border-gray-300">
-                </div>
-
-                <label class="block text-left">
-                    <span class="text-green-600 font-bold text-sm">Paste Google Drive Link</span>
-                    <input type="url" id="brd-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://docs.google.com/spreadsheets/d/...">
-                </label>
-            </div>
-            
-        </div>
-        
-        <button id="pm-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-md" disabled>
-            Submit & Process Files
-        </button>
-        
-        <div id="pm-status" class="hidden mt-4 p-4 rounded-lg text-sm border shadow-sm text-center"></div>
-    </div>
-    {% endif %}
 </div>
 
+<button id="pm-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-md" disabled>
+    Submit & Process Files
+</button>
+
+<div id="pm-status" class="hidden mt-4 p-4 rounded-lg text-sm border shadow-sm text-center"></div>
+
 <script>
-    // Only run file logic if the form elements exist (user is fully authed and bridged)
     if (document.getElementById('pm-submit-btn')) {
         const loaInput = document.getElementById('loa-file');
         const loaUrl = document.getElementById('loa-url');
@@ -224,7 +132,7 @@
                     const data = await response.json();
                     if(response.status === 401) {
                         alert("Session expired. Please Authorize & Bridge again.");
-                        window.location.href = '/api/port_mapping/logout';
+                        window.location.href = '/api/sm_auth/logout?tab=port_mapping';
                     }
                     throw new Error(data.error || "An unknown error occurred.");
                 }
