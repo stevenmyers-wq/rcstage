@@ -1,4 +1,5 @@
 from webapp.rc_api import rc_api_call
+from flask import session
 
 class RCBusinessAnalytics:
     """
@@ -19,6 +20,7 @@ class RCBusinessAnalytics:
         POST /analytics/calls/v1/accounts/{accountId}/aggregation/fetch
         Returns call aggregations filtered by specified parameters.
         """
+        token = session.get('rc_access_token')
         payload = {
             "grouping": grouping,
             "timeSettings": time_settings,
@@ -28,14 +30,14 @@ class RCBusinessAnalytics:
             payload["callFilters"] = call_filters
             
         params = {"page": page, "perPage": per_page}
-        
-        return rc_api_call(f"{self.base_path}/aggregation/fetch", method="POST", json=payload, params=params)
+        return rc_api_call(f"{self.base_path}/aggregation/fetch", method="POST", json=payload, params=params, token=token)
 
     def fetch_timeline(self, interval, grouping, time_settings, response_options, call_filters=None, page=1, per_page=20):
         """
         POST /analytics/calls/v1/accounts/{accountId}/timeline/fetch
         Returns time-value data aggregations (time-series).
         """
+        token = session.get('rc_access_token')
         payload = {
             "grouping": grouping,
             "timeSettings": time_settings,
@@ -45,14 +47,14 @@ class RCBusinessAnalytics:
             payload["callFilters"] = call_filters
             
         params = {"interval": interval, "page": page, "perPage": per_page}
-        
-        return rc_api_call(f"{self.base_path}/timeline/fetch", method="POST", json=payload, params=params)
+        return rc_api_call(f"{self.base_path}/timeline/fetch", method="POST", json=payload, params=params, token=token)
 
     def fetch_records(self, dimension, time_settings, call_filters=None, ids=None, search_string=None, page=1, per_page=100):
         """
         POST /analytics/calls/v1/accounts/{accountId}/records/fetch
         Returns raw, hop-by-hop call records data.
         """
+        token = session.get('rc_access_token')
         payload = {
             "dimension": dimension,
             "timeSettings": time_settings
@@ -62,5 +64,4 @@ class RCBusinessAnalytics:
         if search_string: payload["searchString"] = search_string
         
         params = {"page": page, "perPage": per_page}
-        
-        return rc_api_call(f"{self.base_path}/records/fetch", method="POST", json=payload, params=params)
+        return rc_api_call(f"{self.base_path}/records/fetch", method="POST", json=payload, params=params, token=token)
