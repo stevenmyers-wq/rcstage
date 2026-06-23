@@ -121,10 +121,7 @@ def sm_auth_login():
     code_verifier, code_challenge = create_pkce_challenge()
     session['sm_code_verifier'] = code_verifier
     
-    # 1. Generate the URI and forcefully strip any proxy ports Cloud Run might append
     redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https').replace(':443', '')
-    
-    # 2. SAVE the exact string to the session to guarantee parity in step 2
     session['sm_redirect_uri'] = redirect_uri
     
     client_id = os.getenv('SM_CLIENT_ID')
@@ -150,10 +147,8 @@ def sm_oauth2callback():
     target_tab = request.args.get('state', 'index') 
     if not code: return "No code provided", 400
         
-    # 3. Retrieve the EXACT string used in Step 1
     redirect_uri = session.get('sm_redirect_uri')
     if not redirect_uri:
-        # Failsafe fallback
         redirect_uri = url_for('auth.sm_oauth2callback', _external=True, _scheme='https').replace(':443', '')
         
     code_verifier = session.pop('sm_code_verifier', None)
@@ -177,7 +172,7 @@ def sm_oauth2callback():
     
     if response.ok:
         session['sm_employee_token'] = response.json().get('access_token')
-        session.pop('sm_redirect_uri', None) # Clean up
+        session.pop('sm_redirect_uri', None)
         return redirect(f"/?tab={target_tab}")
         
     return jsonify({"error": "Failed to exchange code", "details": response.json()}), 400
@@ -194,6 +189,19 @@ def sm_create_bridge():
     if customer_token:
         session['sm_isolated_token'] = customer_token
         session['sm_target_id'] = target_id
+        
+        # --- NEW: Fetch the Account Name ---
+        try:
+            base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
+            headers = {'Authorization': f'Bearer {customer_token}', 'Accept': 'application/json'}
+            acc_resp = requests.get(f"{base_url}/restapi/v1.0/account/~", headers=headers)
+            if acc_resp.ok:
+                session['sm_target_name'] = acc_resp.json().get('name', target_id)
+            else:
+                session['sm_target_name'] = target_id
+        except Exception:
+            session['sm_target_name'] = target_id
+            
         return jsonify({"success": True})
         
     return jsonify({"error": "Impersonation Bridge Failed. Ensure you are logged in and the target ID is valid."}), 403
@@ -204,6 +212,7 @@ def sm_logout():
     target_tab = request.args.get('tab', 'index')
     session.pop('sm_isolated_token', None)
     session.pop('sm_target_id', None)
+    session.pop('sm_target_name', None) # Cleared name
     return redirect(f"/?tab={target_tab}")
 
 @auth_bp.route('/api/sm_auth/full_logout')
@@ -212,5 +221,6 @@ def sm_full_logout():
     target_tab = request.args.get('tab', 'index')
     session.pop('sm_isolated_token', None)
     session.pop('sm_target_id', None)
+    session.pop('sm_target_name', None) # Cleared name
     session.pop('sm_employee_token', None)
     return redirect(f"/?tab={target_tab}")
