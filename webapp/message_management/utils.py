@@ -194,7 +194,8 @@ def fetch_custom_greetings(ext_id):
 def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
     """Fetch raw audio utilizing safe_requests_get to prevent Rate Limit crashes."""
     content_uri = None
-    token = session.get('rc_access_token')
+    # Use the isolated SM token if available, fall back to standard RC token
+    token = session.get('sm_isolated_token') or session.get('rc_access_token')
     headers = {'Authorization': f'Bearer {token}'}
 
     if is_ivr:
@@ -434,7 +435,7 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
                             export_filename = f"[{ext_num}] {safe_ext_name} - {safe_rule} - {g_type}.{file_ext}"
                             zip_file.writestr(export_filename, audio_bytes)
                             
-                            # Pace the loop naturally to stay under API threshold limits (increased from 0.2 to 0.5)
+                            # Pace the loop naturally to stay under API threshold limits
                             time.sleep(0.5)
                             
                         except Exception as e:
