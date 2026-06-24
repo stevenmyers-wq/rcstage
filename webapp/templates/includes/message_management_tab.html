@@ -260,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'Voicemail': [
             {val: 'business-hours-rule:Voicemail', label: 'Voicemail Greeting'}
         ],
-        'AnnouncementOnly': [
+        'Announcement': [
             {val: 'business-hours-rule:Introductory', label: 'Announcement Greeting'}
         ]
     };
@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {val: 'Department', label: 'Call Queue'},
         {val: 'IvrMenu', label: 'IVR Menu'},
         {val: 'User', label: 'User'},
-        {val: 'AnnouncementOnly', label: 'Announcement Only'},
+        {val: 'Announcement', label: 'Announcement Only'},
         {val: 'Voicemail', label: 'Message Only'}
     ];
 
@@ -422,7 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.dataset.extType = ext.type;
             
             const displayType = ext.type === 'Department' ? 'Call Queue' :
-                                ext.type === 'AnnouncementOnly' ? 'Announcement Only' :
+                                ext.type === 'Announcement' ? 'Announcement Only' :
                                 ext.type === 'Voicemail' ? 'Message Only' : ext.type;
 
             const badgeColor = ext.type === 'IvrMenu' ? 'bg-cyan-100 text-cyan-700' : 
