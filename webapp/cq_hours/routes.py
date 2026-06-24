@@ -90,7 +90,7 @@ def download_template():
             dv.add(f"{col_letter}2:{col_letter}1000")
 
     output.seek(0)
-    return send_file(output, as_attachment=True, download_name='CQ_Omni_Manager_Template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    return send_file(output, as_attachment=True, download_name='Call_Queue_Manager_Template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @cq_hours_bp.route('/sheets', methods=['POST'])
 def get_sheets():
