@@ -22,7 +22,6 @@ def safe_requests_get(url, headers=None, params=None, max_retries=6):
         resp = requests.get(url, headers=headers, params=params)
         
         if resp.status_code == 429:
-            # Media endpoints are in RC's "Heavy" API group (strict limits per 60s)
             retry_after = resp.headers.get('Retry-After')
             limit_window = resp.headers.get('X-Rate-Limit-Window')
             
@@ -31,10 +30,8 @@ def safe_requests_get(url, headers=None, params=None, max_retries=6):
             elif limit_window and limit_window.isdigit() and int(limit_window) > 0:
                 wait_time = int(limit_window)
             else:
-                # Exponential fallback if headers are missing: 5s, 10s, 20s, 40s, 60s
                 wait_time = min(5 * (2 ** attempt), 60)
             
-            # Sleep for the required penalty box time + 1 second buffer to ensure it clears
             time.sleep(wait_time + 1)
             continue
             
@@ -70,14 +67,26 @@ def fetch_custom_greetings(ext_id):
     ext_type = ext_info.get('type', 'User')
     greetings_list = []
 
+    # Map the exact valid slots per answering rule context to prevent phantom 'default' rows
     baseline_types = {
-        'User': ['Voicemail', 'ConnectingMessage', 'ConnectingAudio', 'HoldMusic'],
-        'Department': ['Voicemail', 'Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt'],
-        'IvrMenu': ['IvrPrompt'],
-        'Voicemail': ['Voicemail'],
-        'Announcement': ['Introductory']
+        'User': {
+            'business-hours-rule': ['Voicemail', 'ConnectingMessage', 'ConnectingAudio', 'HoldMusic'],
+            'after-hours-rule': ['Voicemail', 'Announcement']
+        },
+        'Department': {
+            'business-hours-rule': ['Voicemail', 'Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt'],
+            'after-hours-rule': ['Voicemail', 'Announcement']
+        },
+        'IvrMenu': {
+            'ivr': ['IvrPrompt']
+        },
+        'Voicemail': {
+            'business-hours-rule': ['Voicemail']
+        },
+        'Announcement': {
+            'business-hours-rule': ['Announcement']
+        }
     }
-    expected_slots = baseline_types.get(ext_type, [])
 
     # 1. Handle IVR Menus
     if ext_type == 'IvrMenu':
@@ -146,7 +155,7 @@ def fetch_custom_greetings(ext_id):
             
         for greeting in greetings_array:
             g_type = greeting.get('type')
-            if g_type not in expected_slots:
+            if not g_type:
                 continue
                 
             found_combinations.add((rule_id, g_type))
@@ -172,12 +181,10 @@ def fetch_custom_greetings(ext_id):
                 })
 
     # 3. Backfill missing base slots so the UI table is fully populated for valid extensions
-    target_rules = [('business-hours-rule', 'Business Hours'), ('after-hours-rule', 'After Hours')]
-    if ext_type in ['Voicemail', 'Announcement']:
-        target_rules = [('business-hours-rule', 'Business Hours')]
-
-    for r_id, r_name in target_rules:
-        for slot in expected_slots:
+    expected_matrix = baseline_types.get(ext_type, {})
+    for r_id, slots in expected_matrix.items():
+        r_name = 'Business Hours' if r_id == 'business-hours-rule' else 'After Hours'
+        for slot in slots:
             if (r_id, slot) not in found_combinations:
                 greetings_list.append({
                     'type': slot,
@@ -194,7 +201,6 @@ def fetch_custom_greetings(ext_id):
 def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
     """Fetch raw audio utilizing safe_requests_get to prevent Rate Limit crashes."""
     content_uri = None
-    # Use the isolated SM token if available, fall back to standard RC token
     token = session.get('sm_isolated_token') or session.get('rc_access_token')
     headers = {'Authorization': f'Bearer {token}'}
 
@@ -256,6 +262,8 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
             default_text = "Thank you for your patience. Please continue to hold."
         elif greeting_type == 'Introductory':
             default_text = "Thank you for calling."
+        elif greeting_type == 'Announcement':
+            default_text = "Thank you for calling. Goodbye."
         
         wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
         return wav_buf.read(), "audio/wav"
@@ -310,30 +318,13 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
         'attachment': (filename, file_data, content_type)
     }
 
+    # We enforce ?apply=true in the URL so RC automatically binds the audio to the answering rule natively
     greeting_result = rc_api_call(
-        f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
+        f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
         method='POST',
         files=files,
         raise_error=True
     )
-
-    if greeting_result and 'id' in greeting_result:
-        new_greeting_id = greeting_result['id']
-        rule_detail = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}', method='GET')
-        
-        if rule_detail:
-            existing_greetings = rule_detail.get('greetings', [])
-            updated_greetings = [g for g in existing_greetings if g.get('type') != greeting_type]
-            updated_greetings.append({
-                "type": greeting_type,
-                "custom": {"id": new_greeting_id}
-            })
-            rc_api_call(
-                f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
-                method='PUT',
-                json={"greetings": updated_greetings},
-                raise_error=True
-            )
 
     return greeting_result
 
@@ -435,11 +426,9 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
                             export_filename = f"[{ext_num}] {safe_ext_name} - {safe_rule} - {g_type}.{file_ext}"
                             zip_file.writestr(export_filename, audio_bytes)
                             
-                            # Pace the loop naturally to stay under API threshold limits (increased from 0.2 to 0.5)
                             time.sleep(0.5)
                             
                         except Exception as e:
-                            # If it's a 404/403 or corrupted RC file, log it clearly in the spreadsheet
                             export_filename = f"ERROR: {str(e)}"
                     else:
                         export_filename = "N/A (Text-To-Speech String)"
