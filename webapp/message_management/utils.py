@@ -45,7 +45,7 @@ def fetch_target_endpoints():
     """Fetch all extensions and filter locally to avoid API query string rejections"""
     response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
     
-    valid_types = ['User', 'Department', 'IvrMenu', 'Voicemail', 'AnnouncementOnly']
+    valid_types = ['User', 'Department', 'IvrMenu', 'Voicemail', 'Announcement']
     if response and 'records' in response:
         filtered_records = [
             ext for ext in response['records'] 
@@ -75,7 +75,7 @@ def fetch_custom_greetings(ext_id):
         'Department': ['Voicemail', 'Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt'],
         'IvrMenu': ['IvrPrompt'],
         'Voicemail': ['Voicemail'],
-        'AnnouncementOnly': ['Introductory']
+        'Announcement': ['Introductory']
     }
     expected_slots = baseline_types.get(ext_type, [])
 
@@ -173,7 +173,7 @@ def fetch_custom_greetings(ext_id):
 
     # 3. Backfill missing base slots so the UI table is fully populated for valid extensions
     target_rules = [('business-hours-rule', 'Business Hours'), ('after-hours-rule', 'After Hours')]
-    if ext_type in ['Voicemail', 'AnnouncementOnly']:
+    if ext_type in ['Voicemail', 'Announcement']:
         target_rules = [('business-hours-rule', 'Business Hours')]
 
     for r_id, r_name in target_rules:
@@ -435,7 +435,7 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
                             export_filename = f"[{ext_num}] {safe_ext_name} - {safe_rule} - {g_type}.{file_ext}"
                             zip_file.writestr(export_filename, audio_bytes)
                             
-                            # Pace the loop naturally to stay under API threshold limits
+                            # Pace the loop naturally to stay under API threshold limits (increased from 0.2 to 0.5)
                             time.sleep(0.5)
                             
                         except Exception as e:
