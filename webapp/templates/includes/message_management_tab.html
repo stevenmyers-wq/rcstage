@@ -240,19 +240,18 @@ document.addEventListener('DOMContentLoaded', () => {
             {val: 'business-hours-rule:Voicemail', label: 'Business Hours — Voicemail'},
             {val: 'after-hours-rule:Voicemail', label: 'After Hours — Voicemail'},
             {val: 'business-hours-rule:ConnectingMessage', label: 'Business Hours — Connecting Message'},
-            {val: 'after-hours-rule:ConnectingMessage', label: 'After Hours — Connecting Message'},
             {val: 'business-hours-rule:ConnectingAudio', label: 'Business Hours — Connecting Audio'},
-            {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'}
+            {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'},
+            {val: 'after-hours-rule:Announcement', label: 'After Hours — Announcement'}
         ],
         'Department': [
             {val: 'business-hours-rule:Voicemail', label: 'Business Hours — Voicemail'},
             {val: 'after-hours-rule:Voicemail', label: 'After Hours — Voicemail'},
             {val: 'business-hours-rule:Introductory', label: 'Business Hours — Introductory Greeting'},
-            {val: 'after-hours-rule:Introductory', label: 'After Hours — Introductory Greeting'},
             {val: 'business-hours-rule:ConnectingAudio', label: 'Business Hours — Connecting Audio'},
             {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'},
-            {val: 'after-hours-rule:HoldMusic', label: 'After Hours — After Hours Hold Music'},
-            {val: 'business-hours-rule:InterruptPrompt', label: 'Business Hours — Interrupt Prompt'}
+            {val: 'business-hours-rule:InterruptPrompt', label: 'Business Hours — Interrupt Prompt'},
+            {val: 'after-hours-rule:Announcement', label: 'After Hours — Announcement'}
         ],
         'IvrMenu': [
             {val: 'ivr:IvrPrompt', label: 'IVR Audio Prompt'}
@@ -261,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
             {val: 'business-hours-rule:Voicemail', label: 'Voicemail Greeting'}
         ],
         'Announcement': [
-            {val: 'business-hours-rule:Introductory', label: 'Announcement Greeting'}
+            {val: 'business-hours-rule:Announcement', label: 'Announcement Greeting'}
         ]
     };
 
@@ -562,7 +561,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- UI Update: Close expanded rows if user toggles "Custom Only" so next click fetches clean list ---
     toggleIgnoreDefaults.addEventListener('change', () => {
         document.querySelectorAll('tr[id^="subrow-"]').forEach(row => {
             const extId = row.id.replace('subrow-', '');
@@ -631,7 +629,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     innerHTML += `<p class="text-sm text-amber-600 font-semibold py-4 flex items-center gap-1">⚠️ This extension is currently not activated in RingCentral. Custom audio files and announcements cannot be loaded, played back, or mapped until activation is complete.</p>`;
                 } else if (res.ok && data.records && data.records.length > 0) {
                     
-                    // Filter the records on the fly based on user toggle state
                     const ignoreDefaults = toggleIgnoreDefaults.checked;
                     let displayRecords = data.records;
                     if (ignoreDefaults) {
