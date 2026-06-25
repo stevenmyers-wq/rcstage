@@ -126,13 +126,25 @@ def start_audit():
 def audit_status():
     task_id = request.args.get('task_id')
     data = utils.audit_progress_store.get(task_id, {})
-    return jsonify(data)
+    
+    # CRITICAL FIX: We must filter out the raw bytes (`file_data`) because Flask 
+    # cannot serialize bytes into JSON, which causes a 500 crash and an infinite polling loop!
+    safe_data = {
+        'current': data.get('current', 0),
+        'total': data.get('total', 0),
+        'status': data.get('status', 'running'),
+        'file_ready': data.get('file_ready', False),
+        'error': data.get('error', '')
+    }
+    return jsonify(safe_data)
 
 @cq_hours_bp.route('/audit/download', methods=['GET'])
 def audit_download():
     task_id = request.args.get('task_id')
     data = utils.audit_progress_store.get(task_id, {})
-    if data.get('file_ready'):
+    
+    # The actual file bytes are served here natively, skipping JSON!
+    if data.get('file_ready') and 'file_data' in data:
         mem = io.BytesIO(data['file_data'])
         return send_file(
             mem, 
@@ -140,7 +152,7 @@ def audit_download():
             download_name='Call_Queue_Manager_Export.xlsx', 
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-    return "File not ready", 404
+    return "File not ready or expired", 404
 
 @cq_hours_bp.route('/sheets', methods=['POST'])
 def get_sheets():
