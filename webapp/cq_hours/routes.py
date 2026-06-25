@@ -98,6 +98,7 @@ def download_template():
             config_ws.add_data_validation(dv)
             dv.add(f"{col_letter}2:{col_letter}1000")
             
+        # Prevent Excel from auto-converting 24/7 to July 24th dates
         for col in config_ws.columns:
             for cell in col:
                 cell.number_format = '@'
