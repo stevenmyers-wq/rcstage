@@ -133,6 +133,17 @@ def parse_intuitive_hours(hours_str):
     return weekly_ranges
 
 def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
+    # Mock engine for previewing queues that don't exist yet
+    if 'mock_' in str(endpoint):
+        if method == 'GET':
+            if 'business-hours' in str(endpoint): return True, {"schedule": {"weeklyRanges": {}}}
+            if 'answering-rule' in str(endpoint): return True, {"queue": {}}
+            if 'notification-settings' in str(endpoint): return True, {"voicemails": {}}
+            if 'members' in str(endpoint): return True, {"records": []}
+            if 'managers' in str(endpoint): return True, {"records": []}
+            return True, {"name": "New Queue", "status": "NotActivated", "contact": {}}
+        return True, {}
+
     for attempt in range(max_retries):
         try:
             resp = rc_api_call(endpoint, method=method, json=json, token=token, return_response=True)
@@ -530,8 +541,40 @@ def update_cq_batch(records, token, is_preview=False):
                         break
                         
         if not q_id:
-            yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": "Call Queue not found.", "changes": []}, "is_preview": is_preview}
-            continue
+            q_name = get_val(row, 'Queue Name')
+            if not q_name:
+                yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": "Call Queue not found. 'Queue Name' is required to create a new one.", "changes": []}, "is_preview": is_preview}
+                continue
+                
+            if is_preview:
+                q_id = f"mock_{ext_num}"
+                queue_map[ext_num] = q_id
+                ext_id_to_num[q_id] = ext_num
+                changes.append({"parameter": "Queue", "old": "Missing", "new": "Will be created"})
+                logs.append("Queue will be created")
+            else:
+                create_payload = {
+                    "type": "Department",
+                    "extensionNumber": ext_num,
+                    "contact": { "firstName": q_name }
+                }
+                c_status = get_val(row, 'Status')
+                if c_status: create_payload['status'] = c_status.capitalize()
+                
+                c_email = get_val(row, 'Queue Email')
+                if c_email: create_payload['contact']['email'] = c_email
+                    
+                succ, c_resp = safe_api_call('/restapi/v1.0/account/~/extension', method='POST', json=create_payload, token=token)
+                if succ and isinstance(c_resp, dict) and c_resp.get('id'):
+                    q_id = str(c_resp['id'])
+                    queue_map[ext_num] = q_id
+                    ext_id_to_num[q_id] = ext_num
+                    changes.append({"parameter": "Queue", "old": "Missing", "new": "Created"})
+                    logs.append("Queue Created")
+                    time.sleep(1.0)
+                else:
+                    yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {c_resp}", "changes": changes}, "is_preview": is_preview}
+                    continue
 
         logs = []
         changes = []
