@@ -149,7 +149,6 @@ def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
     return False, "Max retries exceeded due to rate limiting."
 
 def _safe_get_transfer_id(transfer_data):
-    """Safely extracts the destination extension ID, handling API structure inconsistencies (lists vs dicts)."""
     if isinstance(transfer_data, list) and len(transfer_data) > 0:
         return str(transfer_data[0].get('extension', {}).get('id', ''))
     elif isinstance(transfer_data, dict):
@@ -249,12 +248,61 @@ def run_cq_audit(task_id, queue_ids, token):
                 row["Interrupt Audio"] = q_set.get('holdAudioInterruptionMode')
                 row["Interrupt Prompt"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
 
+                # --- NEW: Extract Greetings ---
+                for g in rule.get('greetings', []):
+                    g_type = g.get('type')
+                    if 'custom' in g and g.get('custom', {}).get('name'):
+                        g_name = g['custom']['name']
+                    elif 'preset' in g and g.get('preset', {}).get('name'):
+                        g_name = g['preset']['name']
+                    else:
+                        g_name = 'Default'
+
+                    if g_type == 'Introductory':
+                        row["Greeting"] = g_name
+                    elif g_type == 'ConnectingAudio':
+                        row["Audio While Connecting"] = g_name
+                    elif g_type == 'HoldMusic':
+                        row["Hold Music"] = g_name
+                    elif g_type == 'Voicemail':
+                        row["Voicemail Greeting"] = g_name
+
+                # --- NEW: Extract Voicemail Recipient ---
+                vm_recip = str(rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
+                if vm_recip and vm_recip != 'None':
+                    row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip, vm_recip)
+
             succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
             if succ:
                 row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
                 a_ext = _safe_get_transfer_id(ah_rule.get('transfer'))
                 if a_ext and a_ext != 'None':
                     row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
+                
+                # Fallback for Voicemail Recipients if missing in Business Hours
+                if not row.get("Voicemail Recipients"):
+                    vm_recip_ah = str(ah_rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
+                    if vm_recip_ah and vm_recip_ah != 'None':
+                        row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip_ah, vm_recip_ah)
+
+                # Fallback for Voicemail Greeting if missing in Business Hours
+                if not row.get("Voicemail Greeting"):
+                    for g in ah_rule.get('greetings', []):
+                        if g.get('type') == 'Voicemail':
+                            if 'custom' in g and g.get('custom', {}).get('name'):
+                                row["Voicemail Greeting"] = g['custom']['name']
+                            elif 'preset' in g and g.get('preset', {}).get('name'):
+                                row["Voicemail Greeting"] = g['preset']['name']
+                            else:
+                                row["Voicemail Greeting"] = 'Default'
+
+            # --- NEW: Extract Queue Managers ---
+            succ, mgr_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/managers', token=token)
+            if succ and mgr_resp.get('records'):
+                mgrs = [ext_id_to_num.get(str(m.get('id', '')), '') for m in mgr_resp['records']]
+                mgrs = [m for m in mgrs if m]
+                if mgrs:
+                    row["Queue Manager"] = ", ".join(mgrs)
 
             succ, mem_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/members', token=token)
             if succ and mem_resp.get('records'):
@@ -275,7 +323,8 @@ def run_cq_audit(task_id, queue_ids, token):
                 if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
 
             rows.append(row)
-            time.sleep(0.2) 
+            # Sleep slightly longer (0.35s) since we added an extra API call per queue for Managers
+            time.sleep(0.35) 
 
         df = pd.DataFrame(rows)
         template_cols = [
