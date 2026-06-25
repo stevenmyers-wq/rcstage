@@ -30,13 +30,13 @@ def download_template():
             "Greeting": "",
             "Audio While Connecting": "",
             "Hold Music": "",
-            "Interrupt Audio": "Periodically",
-            "Interrupt Prompt": "30 Seconds",
+            "Interrupt Audio": "30 Seconds",
+            "Interrupt Prompt": "Thank you for your patience",
             "Ring Type": "Simultaneous",
             "User Ring Time": "20 Seconds",
             "Total Ring Time": "5 Minutes",
             "Wrap Up Time": "15 Seconds",
-            "Member Queue Status": "",
+            "Member Queue Status": "Allowed",
             "Callers In Queue": "10",
             "When Queue is Full": "TransferToExtension",
             "Queue Full Destination": "2004",
@@ -75,13 +75,20 @@ def download_template():
         dv_tz.add("K2:K1000") 
         
         schema_validations = {
-            "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"', "N": '"Default,Custom,Off"', "O": '"Default,Custom,Off"',
-            "P": '"Periodically,Never"', "Q": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-            "R": '"Simultaneous,Sequential,Rotating"', "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
+            "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"',
+            "N": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
+            "O": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
+            "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
+            "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default"',
+            "R": '"Simultaneous,Sequential,Rotating"', 
+            "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
             "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-            "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', "V": '"Accepting,NotAccepting"',
-            "W": '"1,2,3,4,5,10,15,20,25"', "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-            "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', "AB": '"Default,Custom,Off"',
+            "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
+            "V": '"Allowed,Not Allowed"',
+            "W": '"5,10,15,20,25"', 
+            "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+            "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
+            "AB": '"Default,Custom,Off"',
             "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
             "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
         }
@@ -90,6 +97,10 @@ def download_template():
             dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
             config_ws.add_data_validation(dv)
             dv.add(f"{col_letter}2:{col_letter}1000")
+            
+        for col in config_ws.columns:
+            for cell in col:
+                cell.number_format = '@'
 
     output.seek(0)
     return send_file(output, as_attachment=True, download_name='Call_Queue_Manager_Template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -127,8 +138,6 @@ def audit_status():
     task_id = request.args.get('task_id')
     data = utils.audit_progress_store.get(task_id, {})
     
-    # CRITICAL FIX: We must filter out the raw bytes (`file_data`) because Flask 
-    # cannot serialize bytes into JSON, which causes a 500 crash and an infinite polling loop!
     safe_data = {
         'current': data.get('current', 0),
         'total': data.get('total', 0),
@@ -143,7 +152,6 @@ def audit_download():
     task_id = request.args.get('task_id')
     data = utils.audit_progress_store.get(task_id, {})
     
-    # The actual file bytes are served here natively, skipping JSON!
     if data.get('file_ready') and 'file_data' in data:
         mem = io.BytesIO(data['file_data'])
         return send_file(
