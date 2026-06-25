@@ -148,6 +148,14 @@ def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
         except Exception: time.sleep(2)
     return False, "Max retries exceeded due to rate limiting."
 
+def _safe_get_transfer_id(transfer_data):
+    """Safely extracts the destination extension ID, handling API structure inconsistencies (lists vs dicts)."""
+    if isinstance(transfer_data, list) and len(transfer_data) > 0:
+        return str(transfer_data[0].get('extension', {}).get('id', ''))
+    elif isinstance(transfer_data, dict):
+        return str(transfer_data.get('extension', {}).get('id', ''))
+    return ''
+
 def fetch_all_queues(token):
     queues = []
     page = 1
@@ -176,7 +184,6 @@ def fetch_all_queues(token):
 def run_cq_audit(task_id, queue_ids, token):
     audit_progress_store[task_id] = {'current': 0, 'total': len(queue_ids), 'status': 'running', 'file_ready': False}
     try:
-        # Pre-fetch maps for fast ID resolution
         ext_id_to_num = {}
         page = 1
         while True:
@@ -234,7 +241,8 @@ def run_cq_audit(task_id, queue_ids, token):
                     row["Queue Full Destination"] = ext_id_to_num.get(f_ext, f_ext)
 
                 row["When Max Time is Reached"] = q_set.get('holdTimeExpirationAction')
-                t_ext = str(q_set.get('transfer', [{}])[0].get('extension', {}).get('id', ''))
+                
+                t_ext = _safe_get_transfer_id(q_set.get('transfer'))
                 if t_ext and t_ext != 'None':
                     row["Time Reached Destination"] = ext_id_to_num.get(t_ext, t_ext)
 
@@ -244,7 +252,7 @@ def run_cq_audit(task_id, queue_ids, token):
             succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
             if succ:
                 row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
-                a_ext = str(ah_rule.get('transfer', [{}])[0].get('extension', {}).get('id', ''))
+                a_ext = _safe_get_transfer_id(ah_rule.get('transfer'))
                 if a_ext and a_ext != 'None':
                     row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
 
@@ -600,8 +608,8 @@ def update_cq_batch(records, token, is_preview=False):
 
                 r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
                 
-                old_t_id = str(old_q.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if old_q.get('transfer') else 'None'
-                new_t_id = str(q_set.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if q_set.get('transfer') else 'None'
+                old_t_id = _safe_get_transfer_id(old_q.get('transfer')) or 'None'
+                new_t_id = _safe_get_transfer_id(q_set.get('transfer')) or 'None'
                 if old_t_id != new_t_id:
                     r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
 
@@ -633,8 +641,8 @@ def update_cq_batch(records, token, is_preview=False):
                 
                 a_needs_update |= check_diff(changes, 'After Hours Behavior', orig_ah.get('callHandlingAction'), ah_rule.get('callHandlingAction'))
                 
-                old_a_id = str(orig_ah.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if orig_ah.get('transfer') else 'None'
-                new_a_id = str(ah_rule.get('transfer', [{}])[0].get('extension', {}).get('id', 'None')) if ah_rule.get('transfer') else 'None'
+                old_a_id = _safe_get_transfer_id(orig_ah.get('transfer')) or 'None'
+                new_a_id = _safe_get_transfer_id(ah_rule.get('transfer')) or 'None'
                 if old_a_id != new_a_id:
                     a_needs_update |= check_diff(changes, 'After Hours Dest', ext_id_to_num.get(old_a_id, old_a_id), ext_id_to_num.get(new_a_id, new_a_id))
                 
