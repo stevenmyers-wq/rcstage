@@ -46,11 +46,9 @@ def format_schedule(schedule_dict):
     
     days = []
     for day, times in sorted_days:
-        time_strs = []
-        for t in times:
-            if t['from'] == "00:00" and t['to'] == "23:59": time_strs.append("24/7")
-            else: time_strs.append(f"{t['from']}-{t['to']}")
-        days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
+        if t['from'] == "00:00" and t['to'] == "23:59": time_strs.append("24/7")
+        else: time_strs.append(f"{t['from']}-{t['to']}")
+    days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
     return " | ".join(days)
 
 def get_impersonation_token(employee_token, target_account_id):
@@ -152,7 +150,6 @@ def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
     return False, "Max retries exceeded due to rate limiting."
 
 def _safe_get_transfer_id(transfer_data):
-    """Safely extracts the destination extension ID from a transfer array/object."""
     if isinstance(transfer_data, list) and len(transfer_data) > 0:
         return str(transfer_data[0].get('extension', {}).get('id', ''))
     elif isinstance(transfer_data, dict):
@@ -277,6 +274,14 @@ def run_cq_audit(task_id, queue_ids, token):
                         row["Hold Music"] = g_name
                     elif g_type == 'Voicemail':
                         row["Voicemail Greeting"] = g_name
+                    elif g_type == 'InterruptPrompt':
+                        # Cleanly map the massive RingCentral strings into the concise UI options
+                        raw_name = g_name.lower()
+                        if 'patience' in raw_name: row["Interrupt Greeting"] = "Thank you for your patience"
+                        elif 'volume' in raw_name: row["Interrupt Greeting"] = "Higher than normal volume"
+                        elif 'busy' in raw_name: row["Interrupt Greeting"] = "Agents are currently busy"
+                        elif 'important' in raw_name: row["Interrupt Greeting"] = "Call is very important to us"
+                        else: row["Interrupt Greeting"] = "Custom Audio" if 'custom' in g else "Default Preset"
 
                 vm_recip = str(rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
                 if vm_recip and vm_recip != 'None':
@@ -336,7 +341,7 @@ def run_cq_audit(task_id, queue_ids, token):
         template_cols = [
             "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number", 
             "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours", 
-            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Prompt", 
+            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Prompt", "Interrupt Greeting", 
             "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status", 
             "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached", 
             "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients", 
@@ -372,20 +377,22 @@ def run_cq_audit(task_id, queue_ids, token):
             config_ws.add_data_validation(dv_tz)
             dv_tz.add("K2:K1000") 
             
+            # Shifting letters gracefully accommodates the new "Interrupt Greeting" column in Q
             schema_validations = {
                 "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"', "N": '"Default,Custom,Off"', "O": '"Default,Custom,Off"',
                 "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "Q": '"Simultaneous,Sequential,Rotating"', 
-                "R": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
-                "S": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-                "T": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
-                "U": '"Accepting,NotAccepting"',
-                "V": '"1,2,3,4,5,10,15,20,25"', 
-                "W": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-                "Y": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
-                "AA": '"Default,Custom,Off"',
-                "AC": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-                "AE": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us"',
+                "R": '"Simultaneous,Sequential,Rotating"', 
+                "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
+                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
+                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
+                "V": '"Accepting,NotAccepting"',
+                "W": '"1,2,3,4,5,10,15,20,25"', 
+                "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
+                "AB": '"Default,Custom,Off"',
+                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
+                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
             }
 
             for col_letter, formula_string in schema_validations.items():
@@ -425,6 +432,7 @@ def update_cq_batch(records, token, is_preview=False):
     tz_map, tz_id_to_name = {}, {}
     ext_id_to_num = {}
     
+    # 1. Background Dictionary Fetches
     page = 1
     while True:
         succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', method='GET', token=token)
@@ -471,6 +479,13 @@ def update_cq_batch(records, token, is_preview=False):
             if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
             else: break
         else: break
+
+    # NEW: Fetch Interrupt Prompt Dictionary for mapping string selections directly into RC preset IDs
+    succ, dict_resp = safe_api_call('/restapi/v1.0/dictionary/greeting?greetingType=InterruptPrompt', method='GET', token=token)
+    interrupt_dict = {}
+    if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
+        for rec in dict_resp['records']:
+            interrupt_dict[rec.get('name', '').lower()] = str(rec.get('id', ''))
 
     def _resolve_ext(num):
         clean_num = str(num).split('.')[0].strip()
@@ -605,7 +620,7 @@ def update_cq_batch(records, token, is_preview=False):
         routing_fields = [
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
-            'Interrupt Prompt', 'Time Reached Destination',
+            'Interrupt Prompt', 'Interrupt Greeting', 'Time Reached Destination',
             'Queue Full Destination', 'Voicemail Recipients'
         ]
         
@@ -692,6 +707,47 @@ def update_cq_batch(records, token, is_preview=False):
                     new_ip_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
                     
                 r_needs_update |= check_diff(changes, 'Interrupt Prompt', old_ip_str, new_ip_str)
+
+                # --- NEW: Interrupt Prompt Dictionary Overwrite Logic ---
+                ig_val = get_val(row, 'Interrupt Greeting')
+                matched_id = None
+                if ig_val:
+                    new_ig = ig_val.lower()
+                    for name, gid in interrupt_dict.items():
+                        if "patience" in new_ig and "patience" in name: matched_id = gid
+                        elif "volume" in new_ig and "volume" in name: matched_id = gid
+                        elif "busy" in new_ig and "busy" in name: matched_id = gid
+                        elif "important" in new_ig and "important" in name: matched_id = gid
+                    
+                    if matched_id:
+                        greetings = []
+                        for g in orig_rule.get('greetings', []):
+                            if g.get('type') == 'InterruptPrompt': continue
+                            # Repackage existing rules flawlessly to prevent HTTP 400 Bad Request rejections
+                            clean_g = {"type": g.get("type")}
+                            if 'preset' in g: clean_g['preset'] = {'id': g['preset']['id']}
+                            elif 'custom' in g: clean_g['custom'] = {'id': g['custom']['id']}
+                            greetings.append(clean_g)
+                            
+                        greetings.append({
+                            "type": "InterruptPrompt",
+                            "preset": {"id": matched_id}
+                        })
+                        rule['greetings'] = greetings
+                        
+                        old_ig = "Custom/Other"
+                        for g in orig_rule.get('greetings', []):
+                            if g.get('type') == 'InterruptPrompt':
+                                if 'preset' in g:
+                                    raw_name = g['preset'].get('name', '').lower()
+                                    if 'patience' in raw_name: old_ig = "Thank you for your patience"
+                                    elif 'volume' in raw_name: old_ig = "Higher than normal volume"
+                                    elif 'busy' in raw_name: old_ig = "Agents are currently busy"
+                                    elif 'important' in raw_name: old_ig = "Call is very important to us"
+                                    else: old_ig = "Preset"
+                                elif 'custom' in g: old_ig = 'Custom Audio'
+                                
+                        r_needs_update |= check_diff(changes, 'Interrupt Greeting', old_ig, ig_val)
                 
                 vm_recip_raw = get_val(row, 'Voicemail Recipients')
                 if vm_recip_raw:
@@ -705,7 +761,10 @@ def update_cq_batch(records, token, is_preview=False):
                 for field in _READ_ONLY: rule.pop(field, None)
                 for field in _READ_ONLY: 
                     if 'queue' in rule: rule['queue'].pop(field, None)
-                rule.pop('greetings', None); rule.pop('callers', None); rule.pop('calledNumbers', None)
+                rule.pop('callers', None); rule.pop('calledNumbers', None)
+                
+                if not ig_val or not matched_id:
+                    rule.pop('greetings', None)
                 
                 if r_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json=rule, token=token)
