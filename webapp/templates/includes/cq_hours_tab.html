@@ -4,62 +4,6 @@
         <p class="text-slate-500 text-sm">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
     </div>
 
-    {% if not session.get('cq_employee_token') %}
-    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6 mx-auto">
-        <h3 class="font-bold text-slate-800 mb-2">Partner Authentication Required</h3>
-        <p class="text-sm text-slate-600 mb-6">You must securely authenticate with your RingCentral employee account to access the internal partner bridge for UC tools.</p>
-        <div class="space-y-4">
-            <a href="/api/cq_hours/auth" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition block text-center uppercase tracking-wide">
-                Sign In To Partner Bridge
-            </a>
-        </div>
-    </div>
-
-    {% elif not session.get('cq_isolated_token') %}
-    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6 mx-auto">
-        <div class="flex justify-between items-start mb-2">
-            <h3 class="font-bold text-slate-800">Impersonation Required</h3>
-            <span class="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-1 rounded">Authenticated ✓</span>
-        </div>
-        <p class="text-sm text-slate-600 mb-6">Enter the <strong>Target Customer Account ID</strong> to grant this tool access to the customer's account.</p>
-        <div class="space-y-4">
-            <input type="text" id="targetAccountId-cq" class="border p-3 w-full rounded font-mono text-sm" placeholder="Target Account ID (e.g. 777100124)">
-            <button onclick="startBridgeCQ()" id="bridgeBtn-cq" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition">
-                BRIDGE CONNECTION
-            </button>
-            <div id="bridgeError-cq" class="text-red-500 text-xs font-bold hidden text-center mt-2"></div>
-        </div>
-        <div class="mt-4 border-t pt-4 text-center">
-            <a href="/api/cq_hours/logout" class="text-xs text-red-500 hover:underline">Log Out of Partner Bridge</a>
-        </div>
-    </div>
-    <script>
-        async function startBridgeCQ() {
-            const id = document.getElementById('targetAccountId-cq').value.trim();
-            const btn = document.getElementById('bridgeBtn-cq');
-            const errDiv = document.getElementById('bridgeError-cq');
-            if (!id) return alert('Please enter a Target Account ID');
-            btn.disabled = true; btn.innerText = "BRIDGING..."; errDiv.classList.add('hidden');
-            try {
-                const res = await fetch('/api/cq_hours/bridge', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({targetAccountId: id})
-                });
-                const data = await res.json();
-                if (data.success) { window.location.href = '/?tab=cq_hours'; } 
-                else { errDiv.innerText = data.error || "Bridge failed"; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "BRIDGE CONNECTION"; }
-            } catch (e) { errDiv.innerText = "Network Error: " + e.message; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "BRIDGE CONNECTION"; }
-        }
-    </script>
-
-    {% else %}
-    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
-        <div>
-            <span class="text-[10px] font-bold text-blue-500 uppercase block tracking-wider">Active Impersonation Context</span>
-            <span class="font-mono font-bold text-slate-800 text-sm">{{ session.get('cq_target_id') }}</span>
-        </div>
-        <a href="/api/cq_hours/logout" class="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded font-bold text-slate-600 hover:text-red-600 hover:border-red-300 transition shadow-sm">EXIT / LOGOUT</a>
-    </div>
-
     <div class="mb-6 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
         <h2 class="text-xl font-bold text-gray-800 mb-2">Call Queue Manager</h2>
         <p class="text-sm text-gray-600 mb-4">
@@ -570,5 +514,4 @@
             syncBtn.addEventListener('click', () => runBatchProcess('sync'));
         });
     </script>
-    {% endif %}
 </div>
