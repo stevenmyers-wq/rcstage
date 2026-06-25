@@ -46,9 +46,11 @@ def format_schedule(schedule_dict):
     
     days = []
     for day, times in sorted_days:
-        if t['from'] == "00:00" and t['to'] == "23:59": time_strs.append("24/7")
-        else: time_strs.append(f"{t['from']}-{t['to']}")
-    days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
+        time_strs = []
+        for t in times:
+            if t['from'] == "00:00" and t['to'] == "23:59": time_strs.append("24/7")
+            else: time_strs.append(f"{t['from']}-{t['to']}")
+        days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
     return " | ".join(days)
 
 def get_impersonation_token(employee_token, target_account_id):
@@ -181,6 +183,17 @@ def fetch_all_queues(token):
         else: break
     return queues
 
+def get_old_greeting_name(orig_rule, slot_type):
+    for g in orig_rule.get('greetings', []):
+        if g.get('type') == slot_type:
+            if 'preset' in g:
+                name = g['preset'].get('name', 'Default')
+                if name.lower() == 'none': return 'Off'
+                return name
+            elif 'custom' in g:
+                return 'Custom'
+    return 'Default'
+
 def run_cq_audit(task_id, queue_ids, token):
     audit_progress_store[task_id] = {'current': 0, 'total': len(queue_ids), 'status': 'running', 'file_ready': False}
     try:
@@ -216,9 +229,9 @@ def run_cq_audit(task_id, queue_ids, token):
             
             editable = base.get('editableMemberStatus')
             if editable is True:
-                row["Member Queue Status"] = "Accepting"
+                row["Member Queue Status"] = "Allowed"
             elif editable is False:
-                row["Member Queue Status"] = "NotAccepting"
+                row["Member Queue Status"] = "Not Allowed"
             
             site_id = str(base.get('site', {}).get('id', ''))
             row["Site"] = site_map.get(site_id, site_id) if site_id else 'Main Site'
@@ -253,16 +266,17 @@ def run_cq_audit(task_id, queue_ids, token):
 
                 mode = q_set.get('holdAudioInterruptionMode')
                 if mode == 'Never' or not mode:
-                    row["Interrupt Prompt"] = "Never"
+                    row["Interrupt Audio"] = "Never"
                 else:
-                    row["Interrupt Prompt"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
+                    row["Interrupt Audio"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
 
                 for g in rule.get('greetings', []):
                     g_type = g.get('type')
                     if 'custom' in g and g.get('custom', {}).get('name'):
-                        g_name = g['custom']['name']
+                        g_name = 'Custom'
                     elif 'preset' in g and g.get('preset', {}).get('name'):
                         g_name = g['preset']['name']
+                        if g_name.lower() == 'none': g_name = 'Off'
                     else:
                         g_name = 'Default'
 
@@ -275,13 +289,12 @@ def run_cq_audit(task_id, queue_ids, token):
                     elif g_type == 'Voicemail':
                         row["Voicemail Greeting"] = g_name
                     elif g_type == 'InterruptPrompt':
-                        # Cleanly map the massive RingCentral strings into the concise UI options
                         raw_name = g_name.lower()
-                        if 'patience' in raw_name: row["Interrupt Greeting"] = "Thank you for your patience"
-                        elif 'volume' in raw_name: row["Interrupt Greeting"] = "Higher than normal volume"
-                        elif 'busy' in raw_name: row["Interrupt Greeting"] = "Agents are currently busy"
-                        elif 'important' in raw_name: row["Interrupt Greeting"] = "Call is very important to us"
-                        else: row["Interrupt Greeting"] = "Custom Audio" if 'custom' in g else "Default Preset"
+                        if 'patience' in raw_name: row["Interrupt Prompt"] = "Thank you for your patience"
+                        elif 'volume' in raw_name: row["Interrupt Prompt"] = "Higher than normal volume"
+                        elif 'busy' in raw_name: row["Interrupt Prompt"] = "Agents are currently busy"
+                        elif 'important' in raw_name: row["Interrupt Prompt"] = "Call is very important to us"
+                        else: row["Interrupt Prompt"] = "Custom" if 'custom' in g else "Default"
 
                 vm_recip = str(rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
                 if vm_recip and vm_recip != 'None':
@@ -303,7 +316,7 @@ def run_cq_audit(task_id, queue_ids, token):
                     for g in ah_rule.get('greetings', []):
                         if g.get('type') == 'Voicemail':
                             if 'custom' in g and g.get('custom', {}).get('name'):
-                                row["Voicemail Greeting"] = g['custom']['name']
+                                row["Voicemail Greeting"] = 'Custom'
                             elif 'preset' in g and g.get('preset', {}).get('name'):
                                 row["Voicemail Greeting"] = g['preset']['name']
                             else:
@@ -341,7 +354,7 @@ def run_cq_audit(task_id, queue_ids, token):
         template_cols = [
             "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number", 
             "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours", 
-            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Prompt", "Interrupt Greeting", 
+            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Audio", "Interrupt Prompt", 
             "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status", 
             "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached", 
             "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients", 
@@ -377,17 +390,18 @@ def run_cq_audit(task_id, queue_ids, token):
             config_ws.add_data_validation(dv_tz)
             dv_tz.add("K2:K1000") 
             
-            # Shifting letters gracefully accommodates the new "Interrupt Greeting" column in Q
             schema_validations = {
-                "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"', "N": '"Default,Custom,Off"', "O": '"Default,Custom,Off"',
+                "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"',
+                "N": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
+                "O": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
                 "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us"',
+                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default"',
                 "R": '"Simultaneous,Sequential,Rotating"', 
                 "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
                 "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
                 "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
-                "V": '"Accepting,NotAccepting"',
-                "W": '"1,2,3,4,5,10,15,20,25"', 
+                "V": '"Allowed,Not Allowed"',
+                "W": '"5,10,15,20,25"', 
                 "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
                 "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
                 "AB": '"Default,Custom,Off"',
@@ -399,6 +413,10 @@ def run_cq_audit(task_id, queue_ids, token):
                 dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
                 config_ws.add_data_validation(dv)
                 dv.add(f"{col_letter}2:{col_letter}1000")
+                
+            for col in config_ws.columns:
+                for cell in col:
+                    cell.number_format = '@'
 
         output.seek(0)
         audit_progress_store[task_id]['file_data'] = output.getvalue()
@@ -432,7 +450,6 @@ def update_cq_batch(records, token, is_preview=False):
     tz_map, tz_id_to_name = {}, {}
     ext_id_to_num = {}
     
-    # 1. Background Dictionary Fetches
     page = 1
     while True:
         succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', method='GET', token=token)
@@ -480,12 +497,14 @@ def update_cq_batch(records, token, is_preview=False):
             else: break
         else: break
 
-    # NEW: Fetch Interrupt Prompt Dictionary for mapping string selections directly into RC preset IDs
-    succ, dict_resp = safe_api_call('/restapi/v1.0/dictionary/greeting?greetingType=InterruptPrompt', method='GET', token=token)
-    interrupt_dict = {}
+    # Background fetch for Audio Greetings mapping
+    succ, dict_resp = safe_api_call('/restapi/v1.0/dictionary/greeting', method='GET', token=token)
+    preset_dict = {'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}}
     if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
         for rec in dict_resp['records']:
-            interrupt_dict[rec.get('name', '').lower()] = str(rec.get('id', ''))
+            g_type = rec.get('type')
+            if g_type in preset_dict:
+                preset_dict[g_type][rec.get('name', '').lower()] = str(rec.get('id', ''))
 
     def _resolve_ext(num):
         clean_num = str(num).split('.')[0].strip()
@@ -540,11 +559,11 @@ def update_cq_batch(records, token, is_preview=False):
                     
                 if get_val(row, 'Member Queue Status'):
                     mem_status = get_val(row, 'Member Queue Status').lower()
-                    new_editable = True if mem_status == 'accepting' else False
+                    new_editable = True if 'allowed' in mem_status and 'not' not in mem_status else False
                     basic_payload['editableMemberStatus'] = new_editable
                     old_editable = old_basic.get('editableMemberStatus')
-                    old_status_str = 'Accepting' if old_editable else 'NotAccepting'
-                    new_status_str = 'Accepting' if new_editable else 'NotAccepting'
+                    old_status_str = 'Allowed' if old_editable else 'Not Allowed'
+                    new_status_str = 'Allowed' if new_editable else 'Not Allowed'
                     b_needs_update |= check_diff(changes, 'Member Queue Status', old_status_str, new_status_str)
 
                 if get_val(row, 'Site'):
@@ -620,8 +639,8 @@ def update_cq_batch(records, token, is_preview=False):
         routing_fields = [
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
-            'Interrupt Prompt', 'Interrupt Greeting', 'Time Reached Destination',
-            'Queue Full Destination', 'Voicemail Recipients'
+            'Interrupt Audio', 'Interrupt Prompt', 'Time Reached Destination',
+            'Queue Full Destination', 'Voicemail Recipients', 'Audio While Connecting', 'Hold Music'
         ]
         
         if any(get_val(row, f) for f in routing_fields):
@@ -653,12 +672,12 @@ def update_cq_batch(records, token, is_preview=False):
                     parsed = to_int(val_ciq)
                     if parsed is not None: q_set['maxCallers'] = parsed
                     
-                val_ip = get_val(row, 'Interrupt Prompt')
-                if val_ip:
-                    if val_ip.lower() == 'never':
+                val_ia = get_val(row, 'Interrupt Audio')
+                if val_ia:
+                    if val_ia.lower() == 'never':
                         q_set['holdAudioInterruptionMode'] = 'Never'
                     else:
-                        parsed = parse_time_to_seconds(val_ip)
+                        parsed = parse_time_to_seconds(val_ia)
                         if parsed is not None: 
                             q_set['holdAudioInterruptionMode'] = 'Periodically'
                             q_set['holdAudioInterruptionPeriod'] = parsed
@@ -694,60 +713,116 @@ def update_cq_batch(records, token, is_preview=False):
                 if old_t_id != new_t_id:
                     r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
 
-                old_ip_mode = old_q.get('holdAudioInterruptionMode')
-                if old_ip_mode == 'Never' or not old_ip_mode:
-                    old_ip_str = "Never"
+                old_ia_mode = old_q.get('holdAudioInterruptionMode')
+                if old_ia_mode == 'Never' or not old_ia_mode:
+                    old_ia_str = "Never"
                 else:
-                    old_ip_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
+                    old_ia_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
                     
-                new_ip_mode = q_set.get('holdAudioInterruptionMode')
-                if new_ip_mode == 'Never' or not new_ip_mode:
-                    new_ip_str = "Never"
+                new_ia_mode = q_set.get('holdAudioInterruptionMode')
+                if new_ia_mode == 'Never' or not new_ia_mode:
+                    new_ia_str = "Never"
                 else:
-                    new_ip_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
+                    new_ia_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
                     
-                r_needs_update |= check_diff(changes, 'Interrupt Prompt', old_ip_str, new_ip_str)
+                r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-                # --- NEW: Interrupt Prompt Dictionary Overwrite Logic ---
-                ig_val = get_val(row, 'Interrupt Greeting')
-                matched_id = None
-                if ig_val:
-                    new_ig = ig_val.lower()
-                    for name, gid in interrupt_dict.items():
-                        if "patience" in new_ig and "patience" in name: matched_id = gid
-                        elif "volume" in new_ig and "volume" in name: matched_id = gid
-                        elif "busy" in new_ig and "busy" in name: matched_id = gid
-                        elif "important" in new_ig and "important" in name: matched_id = gid
+                # --- NEW: Safe Greeting Repackaging ---
+                orig_greetings = orig_rule.get('greetings', [])
+                new_greetings = []
+                
+                # Keep everything we aren't modifying untouched and clean
+                slots_to_mod = ['InterruptPrompt', 'ConnectingAudio', 'HoldMusic']
+                for g in orig_greetings:
+                    if g.get('type') not in slots_to_mod:
+                        clean_g = {"type": g.get("type")}
+                        if 'preset' in g: clean_g['preset'] = {'id': g['preset']['id']}
+                        elif 'custom' in g: clean_g['custom'] = {'id': g['custom']['id']}
+                        new_greetings.append(clean_g)
+                
+                # Interrupt Prompt Logic
+                ip_val = get_val(row, 'Interrupt Prompt')
+                if ip_val:
+                    new_ip = ip_val.lower()
+                    matched_id = None
+                    if new_ip not in ['default', 'custom']:
+                        for name, gid in preset_dict['InterruptPrompt'].items():
+                            if "patience" in new_ip and "patience" in name: matched_id = gid
+                            elif "volume" in new_ip and "volume" in name: matched_id = gid
+                            elif "busy" in new_ip and "busy" in name: matched_id = gid
+                            elif "important" in new_ip and "important" in name: matched_id = gid
                     
                     if matched_id:
-                        greetings = []
-                        for g in orig_rule.get('greetings', []):
-                            if g.get('type') == 'InterruptPrompt': continue
-                            # Repackage existing rules flawlessly to prevent HTTP 400 Bad Request rejections
-                            clean_g = {"type": g.get("type")}
-                            if 'preset' in g: clean_g['preset'] = {'id': g['preset']['id']}
-                            elif 'custom' in g: clean_g['custom'] = {'id': g['custom']['id']}
-                            greetings.append(clean_g)
-                            
-                        greetings.append({
-                            "type": "InterruptPrompt",
-                            "preset": {"id": matched_id}
-                        })
-                        rule['greetings'] = greetings
+                        new_greetings.append({"type": "InterruptPrompt", "preset": {"id": matched_id}})
+                    elif new_ip == 'default' and 'default' in preset_dict['InterruptPrompt']:
+                        new_greetings.append({"type": "InterruptPrompt", "preset": {"id": preset_dict['InterruptPrompt']['default']}})
+                    elif new_ip == 'custom':
+                        orig_g = next((g for g in orig_greetings if g.get('type') == 'InterruptPrompt'), None)
+                        if orig_g and 'custom' in orig_g: new_greetings.append({"type": "InterruptPrompt", "custom": {"id": orig_g['custom']['id']}})
                         
-                        old_ig = "Custom/Other"
-                        for g in orig_rule.get('greetings', []):
-                            if g.get('type') == 'InterruptPrompt':
-                                if 'preset' in g:
-                                    raw_name = g['preset'].get('name', '').lower()
-                                    if 'patience' in raw_name: old_ig = "Thank you for your patience"
-                                    elif 'volume' in raw_name: old_ig = "Higher than normal volume"
-                                    elif 'busy' in raw_name: old_ig = "Agents are currently busy"
-                                    elif 'important' in raw_name: old_ig = "Call is very important to us"
-                                    else: old_ig = "Preset"
-                                elif 'custom' in g: old_ig = 'Custom Audio'
-                                
-                        r_needs_update |= check_diff(changes, 'Interrupt Greeting', old_ig, ig_val)
+                    old_ip = get_old_greeting_name(orig_rule, 'InterruptPrompt')
+                    if old_ip not in ['Default', 'Custom', 'Off']:
+                        n_lower = old_ip.lower()
+                        if 'patience' in n_lower: old_ip = "Thank you for your patience"
+                        elif 'volume' in n_lower: old_ip = "Higher than normal volume"
+                        elif 'busy' in n_lower: old_ip = "Agents are currently busy"
+                        elif 'important' in n_lower: old_ip = "Call is very important to us"
+                    r_needs_update |= check_diff(changes, 'Interrupt Prompt', old_ip, ip_val)
+                else:
+                    orig_g = next((g for g in orig_greetings if g.get('type') == 'InterruptPrompt'), None)
+                    if orig_g:
+                        clean_g = {"type": "InterruptPrompt"}
+                        if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
+                        elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
+                        new_greetings.append(clean_g)
+
+                # Connecting Audio Logic
+                conn_val = get_val(row, 'Audio While Connecting')
+                if conn_val:
+                    new_conn = conn_val.lower().strip()
+                    if new_conn == 'off': new_conn = 'none'
+                    matched_id = preset_dict['ConnectingAudio'].get(new_conn)
+                    
+                    if matched_id:
+                        new_greetings.append({"type": "ConnectingAudio", "preset": {"id": matched_id}})
+                    elif new_conn == 'custom':
+                        orig_g = next((g for g in orig_greetings if g.get('type') == 'ConnectingAudio'), None)
+                        if orig_g and 'custom' in orig_g: new_greetings.append({"type": "ConnectingAudio", "custom": {"id": orig_g['custom']['id']}})
+                        
+                    old_conn = get_old_greeting_name(orig_rule, 'ConnectingAudio')
+                    r_needs_update |= check_diff(changes, 'Audio While Connecting', old_conn, conn_val)
+                else:
+                    orig_g = next((g for g in orig_greetings if g.get('type') == 'ConnectingAudio'), None)
+                    if orig_g:
+                        clean_g = {"type": "ConnectingAudio"}
+                        if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
+                        elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
+                        new_greetings.append(clean_g)
+
+                # Hold Music Logic
+                hold_val = get_val(row, 'Hold Music')
+                if hold_val:
+                    new_hold = hold_val.lower().strip()
+                    if new_hold == 'off': new_hold = 'none'
+                    matched_id = preset_dict['HoldMusic'].get(new_hold)
+                    
+                    if matched_id:
+                        new_greetings.append({"type": "HoldMusic", "preset": {"id": matched_id}})
+                    elif new_hold == 'custom':
+                        orig_g = next((g for g in orig_greetings if g.get('type') == 'HoldMusic'), None)
+                        if orig_g and 'custom' in orig_g: new_greetings.append({"type": "HoldMusic", "custom": {"id": orig_g['custom']['id']}})
+                        
+                    old_hold = get_old_greeting_name(orig_rule, 'HoldMusic')
+                    r_needs_update |= check_diff(changes, 'Hold Music', old_hold, hold_val)
+                else:
+                    orig_g = next((g for g in orig_greetings if g.get('type') == 'HoldMusic'), None)
+                    if orig_g:
+                        clean_g = {"type": "HoldMusic"}
+                        if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
+                        elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
+                        new_greetings.append(clean_g)
+                        
+                rule['greetings'] = new_greetings
                 
                 vm_recip_raw = get_val(row, 'Voicemail Recipients')
                 if vm_recip_raw:
@@ -762,9 +837,6 @@ def update_cq_batch(records, token, is_preview=False):
                 for field in _READ_ONLY: 
                     if 'queue' in rule: rule['queue'].pop(field, None)
                 rule.pop('callers', None); rule.pop('calledNumbers', None)
-                
-                if not ig_val or not matched_id:
-                    rule.pop('greetings', None)
                 
                 if r_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json=rule, token=token)
