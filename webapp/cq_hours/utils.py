@@ -133,7 +133,6 @@ def parse_intuitive_hours(hours_str):
     return weekly_ranges
 
 def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
-    # Mock engine for previewing queues that don't exist yet
     if 'mock_' in str(endpoint):
         if method == 'GET':
             if 'business-hours' in str(endpoint): return True, {"schedule": {"weeklyRanges": {}}}
@@ -510,7 +509,7 @@ def update_cq_batch(records, token, is_preview=False):
 
     # Background fetch for Audio Greetings mapping
     succ, dict_resp = safe_api_call('/restapi/v1.0/dictionary/greeting', method='GET', token=token)
-    preset_dict = {'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}}
+    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
         for rec in dict_resp['records']:
             g_type = rec.get('type')
@@ -683,7 +682,7 @@ def update_cq_batch(records, token, is_preview=False):
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
             'Interrupt Audio', 'Interrupt Prompt', 'Time Reached Destination',
-            'Queue Full Destination', 'Voicemail Recipients', 'Audio While Connecting', 'Hold Music'
+            'Queue Full Destination', 'Voicemail Recipients', 'Audio While Connecting', 'Hold Music', 'Greeting', 'Voicemail Greeting'
         ]
         
         if any(get_val(row, f) for f in routing_fields):
@@ -775,96 +774,62 @@ def update_cq_batch(records, token, is_preview=False):
                 new_greetings = []
                 
                 # Keep everything we aren't modifying untouched and clean
-                slots_to_mod = ['InterruptPrompt', 'ConnectingAudio', 'HoldMusic']
+                slots_to_mod = ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt', 'Voicemail']
                 for g in orig_greetings:
                     if g.get('type') not in slots_to_mod:
                         clean_g = {"type": g.get("type")}
                         if 'preset' in g: clean_g['preset'] = {'id': g['preset']['id']}
                         elif 'custom' in g: clean_g['custom'] = {'id': g['custom']['id']}
                         new_greetings.append(clean_g)
+
+                def apply_greeting(col_name, slot_type):
+                    nonlocal r_needs_update
+                    val = get_val(row, col_name)
+                    if val:
+                        new_val = val.lower().strip()
+                        if new_val == 'off': new_val = 'none'
+                        matched_id = None
+                        
+                        if slot_type == 'InterruptPrompt' and new_val not in ['default', 'custom', 'off', 'none']:
+                            for name, gid in preset_dict['InterruptPrompt'].items():
+                                if "patience" in new_val and "patience" in name: matched_id = gid
+                                elif "volume" in new_val and "volume" in name: matched_id = gid
+                                elif "busy" in new_val and "busy" in name: matched_id = gid
+                                elif "important" in new_val and "important" in name: matched_id = gid
+                        else:
+                            matched_id = preset_dict.get(slot_type, {}).get(new_val)
+                        
+                        if matched_id:
+                            new_greetings.append({"type": slot_type, "preset": {"id": matched_id}})
+                        elif new_val == 'default' and 'default' in preset_dict.get(slot_type, {}):
+                            new_greetings.append({"type": slot_type, "preset": {"id": preset_dict[slot_type]['default']}})
+                        elif new_val == 'custom':
+                            orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
+                            if orig_g and 'custom' in orig_g: new_greetings.append({"type": slot_type, "custom": {"id": orig_g['custom']['id']}})
+                        
+                        old_val_name = get_old_greeting_name(orig_rule, slot_type)
+                        if slot_type == 'InterruptPrompt' and old_val_name not in ['Default', 'Custom', 'Off']:
+                            n_lower = old_val_name.lower()
+                            if 'patience' in n_lower: old_val_name = "Thank you for your patience"
+                            elif 'volume' in n_lower: old_val_name = "Higher than normal volume"
+                            elif 'busy' in n_lower: old_val_name = "Agents are currently busy"
+                            elif 'important' in n_lower: old_val_name = "Call is very important to us"
+                        
+                        r_needs_update |= check_diff(changes, col_name, old_val_name, val)
+                    else:
+                        orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
+                        if orig_g:
+                            clean_g = {"type": slot_type}
+                            if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
+                            elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
+                            new_greetings.append(clean_g)
+
+                apply_greeting('Greeting', 'Introductory')
+                apply_greeting('Audio While Connecting', 'ConnectingAudio')
+                apply_greeting('Hold Music', 'HoldMusic')
+                apply_greeting('Interrupt Prompt', 'InterruptPrompt')
+                apply_greeting('Voicemail Greeting', 'Voicemail')
                 
-                # Interrupt Prompt Logic
-                ip_val = get_val(row, 'Interrupt Prompt')
-                if ip_val:
-                    new_ip = ip_val.lower()
-                    matched_id = None
-                    if new_ip not in ['default', 'custom']:
-                        for name, gid in preset_dict['InterruptPrompt'].items():
-                            if "patience" in new_ip and "patience" in name: matched_id = gid
-                            elif "volume" in new_ip and "volume" in name: matched_id = gid
-                            elif "busy" in new_ip and "busy" in name: matched_id = gid
-                            elif "important" in new_ip and "important" in name: matched_id = gid
-                    
-                    if matched_id:
-                        new_greetings.append({"type": "InterruptPrompt", "preset": {"id": matched_id}})
-                    elif new_ip == 'default' and 'default' in preset_dict['InterruptPrompt']:
-                        new_greetings.append({"type": "InterruptPrompt", "preset": {"id": preset_dict['InterruptPrompt']['default']}})
-                    elif new_ip == 'custom':
-                        orig_g = next((g for g in orig_greetings if g.get('type') == 'InterruptPrompt'), None)
-                        if orig_g and 'custom' in orig_g: new_greetings.append({"type": "InterruptPrompt", "custom": {"id": orig_g['custom']['id']}})
-                        
-                    old_ip = get_old_greeting_name(orig_rule, 'InterruptPrompt')
-                    if old_ip not in ['Default', 'Custom', 'Off']:
-                        n_lower = old_ip.lower()
-                        if 'patience' in n_lower: old_ip = "Thank you for your patience"
-                        elif 'volume' in n_lower: old_ip = "Higher than normal volume"
-                        elif 'busy' in n_lower: old_ip = "Agents are currently busy"
-                        elif 'important' in n_lower: old_ip = "Call is very important to us"
-                    r_needs_update |= check_diff(changes, 'Interrupt Prompt', old_ip, ip_val)
-                else:
-                    orig_g = next((g for g in orig_greetings if g.get('type') == 'InterruptPrompt'), None)
-                    if orig_g:
-                        clean_g = {"type": "InterruptPrompt"}
-                        if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
-                        elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
-                        new_greetings.append(clean_g)
-
-                # Connecting Audio Logic
-                conn_val = get_val(row, 'Audio While Connecting')
-                if conn_val:
-                    new_conn = conn_val.lower().strip()
-                    if new_conn == 'off': new_conn = 'none'
-                    matched_id = preset_dict['ConnectingAudio'].get(new_conn)
-                    
-                    if matched_id:
-                        new_greetings.append({"type": "ConnectingAudio", "preset": {"id": matched_id}})
-                    elif new_conn == 'custom':
-                        orig_g = next((g for g in orig_greetings if g.get('type') == 'ConnectingAudio'), None)
-                        if orig_g and 'custom' in orig_g: new_greetings.append({"type": "ConnectingAudio", "custom": {"id": orig_g['custom']['id']}})
-                        
-                    old_conn = get_old_greeting_name(orig_rule, 'ConnectingAudio')
-                    r_needs_update |= check_diff(changes, 'Audio While Connecting', old_conn, conn_val)
-                else:
-                    orig_g = next((g for g in orig_greetings if g.get('type') == 'ConnectingAudio'), None)
-                    if orig_g:
-                        clean_g = {"type": "ConnectingAudio"}
-                        if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
-                        elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
-                        new_greetings.append(clean_g)
-
-                # Hold Music Logic
-                hold_val = get_val(row, 'Hold Music')
-                if hold_val:
-                    new_hold = hold_val.lower().strip()
-                    if new_hold == 'off': new_hold = 'none'
-                    matched_id = preset_dict['HoldMusic'].get(new_hold)
-                    
-                    if matched_id:
-                        new_greetings.append({"type": "HoldMusic", "preset": {"id": matched_id}})
-                    elif new_hold == 'custom':
-                        orig_g = next((g for g in orig_greetings if g.get('type') == 'HoldMusic'), None)
-                        if orig_g and 'custom' in orig_g: new_greetings.append({"type": "HoldMusic", "custom": {"id": orig_g['custom']['id']}})
-                        
-                    old_hold = get_old_greeting_name(orig_rule, 'HoldMusic')
-                    r_needs_update |= check_diff(changes, 'Hold Music', old_hold, hold_val)
-                else:
-                    orig_g = next((g for g in orig_greetings if g.get('type') == 'HoldMusic'), None)
-                    if orig_g:
-                        clean_g = {"type": "HoldMusic"}
-                        if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
-                        elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
-                        new_greetings.append(clean_g)
-                        
                 rule['greetings'] = new_greetings
                 
                 vm_recip_raw = get_val(row, 'Voicemail Recipients')
