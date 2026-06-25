@@ -32,8 +32,11 @@ def format_sec(val):
     if val is None or str(val).strip() == "": return "None"
     try:
         v = int(float(val))
-        if v >= 60 and v % 60 == 0: return f"{v//60} Min"
-        return f"{v} Sec"
+        if v == 0: return "0 Seconds"
+        if v >= 60 and v % 60 == 0:
+            mins = v // 60
+            return f"{mins} Minute{'s' if mins > 1 else ''}"
+        return f"{v} Seconds"
     except: return str(val)
 
 def format_schedule(schedule_dict):
@@ -149,6 +152,7 @@ def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
     return False, "Max retries exceeded due to rate limiting."
 
 def _safe_get_transfer_id(transfer_data):
+    """Safely extracts the destination extension ID from a transfer array/object."""
     if isinstance(transfer_data, list) and len(transfer_data) > 0:
         return str(transfer_data[0].get('extension', {}).get('id', ''))
     elif isinstance(transfer_data, dict):
@@ -213,6 +217,12 @@ def run_cq_audit(task_id, queue_ids, token):
             row["Status"] = base.get('status', '').capitalize()
             row["Queue Email"] = base.get('contact', {}).get('email', '')
             
+            editable = base.get('editableMemberStatus')
+            if editable is True:
+                row["Member Queue Status"] = "Accepting"
+            elif editable is False:
+                row["Member Queue Status"] = "NotAccepting"
+            
             site_id = str(base.get('site', {}).get('id', ''))
             row["Site"] = site_map.get(site_id, site_id) if site_id else 'Main Site'
             
@@ -233,22 +243,23 @@ def run_cq_audit(task_id, queue_ids, token):
                 row["Total Ring Time"] = format_sec(q_set.get('holdTime'))
                 row["Wrap Up Time"] = format_sec(q_set.get('wrapUpTime'))
                 row["Callers In Queue"] = q_set.get('maxCallers')
-                row["When Queue is Full"] = q_set.get('maxCallersAction')
                 
+                row["When Queue is Full"] = q_set.get('maxCallersAction')
                 f_ext = str(q_set.get('maxCallersDestination', {}).get('extension', {}).get('id', ''))
-                if f_ext and f_ext != 'None': 
+                if f_ext and f_ext != 'None':
                     row["Queue Full Destination"] = ext_id_to_num.get(f_ext, f_ext)
 
                 row["When Max Time is Reached"] = q_set.get('holdTimeExpirationAction')
-                
                 t_ext = _safe_get_transfer_id(q_set.get('transfer'))
                 if t_ext and t_ext != 'None':
                     row["Time Reached Destination"] = ext_id_to_num.get(t_ext, t_ext)
 
-                row["Interrupt Audio"] = q_set.get('holdAudioInterruptionMode')
-                row["Interrupt Prompt"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
+                mode = q_set.get('holdAudioInterruptionMode')
+                if mode == 'Never' or not mode:
+                    row["Interrupt Prompt"] = "Never"
+                else:
+                    row["Interrupt Prompt"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
 
-                # --- NEW: Extract Greetings ---
                 for g in rule.get('greetings', []):
                     g_type = g.get('type')
                     if 'custom' in g and g.get('custom', {}).get('name'):
@@ -267,7 +278,6 @@ def run_cq_audit(task_id, queue_ids, token):
                     elif g_type == 'Voicemail':
                         row["Voicemail Greeting"] = g_name
 
-                # --- NEW: Extract Voicemail Recipient ---
                 vm_recip = str(rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
                 if vm_recip and vm_recip != 'None':
                     row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip, vm_recip)
@@ -279,13 +289,11 @@ def run_cq_audit(task_id, queue_ids, token):
                 if a_ext and a_ext != 'None':
                     row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
                 
-                # Fallback for Voicemail Recipients if missing in Business Hours
                 if not row.get("Voicemail Recipients"):
                     vm_recip_ah = str(ah_rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
                     if vm_recip_ah and vm_recip_ah != 'None':
                         row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip_ah, vm_recip_ah)
 
-                # Fallback for Voicemail Greeting if missing in Business Hours
                 if not row.get("Voicemail Greeting"):
                     for g in ah_rule.get('greetings', []):
                         if g.get('type') == 'Voicemail':
@@ -296,7 +304,6 @@ def run_cq_audit(task_id, queue_ids, token):
                             else:
                                 row["Voicemail Greeting"] = 'Default'
 
-            # --- NEW: Extract Queue Managers ---
             succ, mgr_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/managers', token=token)
             if succ and mgr_resp.get('records'):
                 mgrs = [ext_id_to_num.get(str(m.get('id', '')), '') for m in mgr_resp['records']]
@@ -323,14 +330,13 @@ def run_cq_audit(task_id, queue_ids, token):
                 if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
 
             rows.append(row)
-            # Sleep slightly longer (0.35s) since we added an extra API call per queue for Managers
             time.sleep(0.35) 
 
         df = pd.DataFrame(rows)
         template_cols = [
             "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number", 
             "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours", 
-            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Audio", "Interrupt Prompt", 
+            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Prompt", 
             "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status", 
             "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached", 
             "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients", 
@@ -368,14 +374,18 @@ def run_cq_audit(task_id, queue_ids, token):
             
             schema_validations = {
                 "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"', "N": '"Default,Custom,Off"', "O": '"Default,Custom,Off"',
-                "P": '"Periodically,Never"', "Q": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "R": '"Simultaneous,Sequential,Rotating"', "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
-                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', "V": '"Accepting,NotAccepting"',
-                "W": '"1,2,3,4,5,10,15,20,25"', "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', "AB": '"Default,Custom,Off"',
-                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+                "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
+                "Q": '"Simultaneous,Sequential,Rotating"', 
+                "R": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
+                "S": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
+                "T": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
+                "U": '"Accepting,NotAccepting"',
+                "V": '"1,2,3,4,5,10,15,20,25"', 
+                "W": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+                "Y": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
+                "AA": '"Default,Custom,Off"',
+                "AC": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
+                "AE": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
             }
 
             for col_letter, formula_string in schema_validations.items():
@@ -494,7 +504,7 @@ def update_cq_batch(records, token, is_preview=False):
         has_error = False
 
         # --- A. BASIC INFO UPDATE ---
-        basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone']
+        basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
         if any(get_val(row, f) for f in basic_fields):
             get_succ, old_basic = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='GET', token=token)
             if get_succ and isinstance(old_basic, dict):
@@ -513,6 +523,15 @@ def update_cq_batch(records, token, is_preview=False):
                     basic_payload['contact'] = {'email': get_val(row, 'Queue Email')}
                     b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
                     
+                if get_val(row, 'Member Queue Status'):
+                    mem_status = get_val(row, 'Member Queue Status').lower()
+                    new_editable = True if mem_status == 'accepting' else False
+                    basic_payload['editableMemberStatus'] = new_editable
+                    old_editable = old_basic.get('editableMemberStatus')
+                    old_status_str = 'Accepting' if old_editable else 'NotAccepting'
+                    new_status_str = 'Accepting' if new_editable else 'NotAccepting'
+                    b_needs_update |= check_diff(changes, 'Member Queue Status', old_status_str, new_status_str)
+
                 if get_val(row, 'Site'):
                     s_name = get_val(row, 'Site').lower()
                     if s_name in site_map: 
@@ -586,7 +605,8 @@ def update_cq_batch(records, token, is_preview=False):
         routing_fields = [
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
-            'Interrupt Audio', 'Interrupt Prompt'
+            'Interrupt Prompt', 'Time Reached Destination',
+            'Queue Full Destination', 'Voicemail Recipients'
         ]
         
         if any(get_val(row, f) for f in routing_fields):
@@ -594,7 +614,7 @@ def update_cq_batch(records, token, is_preview=False):
             if get_succ and isinstance(rule, dict):
                 orig_rule = copy.deepcopy(rule)
                 q_set = rule.get('queue', {})
-                enable_adv = False
+                r_needs_update = False
                 
                 if get_val(row, 'Ring Type'): q_set['transferMode'] = get_val(row, 'Ring Type')
                 
@@ -618,12 +638,16 @@ def update_cq_batch(records, token, is_preview=False):
                     parsed = to_int(val_ciq)
                     if parsed is not None: q_set['maxCallers'] = parsed
                     
-                val_iap = get_val(row, 'Interrupt Prompt')
-                if val_iap:
-                    parsed = parse_time_to_seconds(val_iap)
-                    if parsed is not None: q_set['holdAudioInterruptionPeriod'] = parsed
+                val_ip = get_val(row, 'Interrupt Prompt')
+                if val_ip:
+                    if val_ip.lower() == 'never':
+                        q_set['holdAudioInterruptionMode'] = 'Never'
+                    else:
+                        parsed = parse_time_to_seconds(val_ip)
+                        if parsed is not None: 
+                            q_set['holdAudioInterruptionMode'] = 'Periodically'
+                            q_set['holdAudioInterruptionPeriod'] = parsed
 
-                if get_val(row, 'Interrupt Audio'): q_set['holdAudioInterruptionMode'] = get_val(row, 'Interrupt Audio')
                 if get_val(row, 'When Max Time is Reached'): q_set['holdTimeExpirationAction'] = get_val(row, 'When Max Time is Reached')
                 if get_val(row, 'Time Reached Destination'):
                     dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
@@ -634,37 +658,50 @@ def update_cq_batch(records, token, is_preview=False):
                     dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
                     if dest_id: q_set['maxCallersDestination'] = {'extension': {'id': dest_id}}
 
-                if enable_adv and q_set.get('holdAudioInterruptionMode') != 'Periodically':
-                    q_set['holdAudioInterruptionMode'] = 'Periodically'
-                    if 'holdAudioInterruptionPeriod' not in q_set: q_set['holdAudioInterruptionPeriod'] = 30
-
                 rule['queue'] = q_set
-                
                 old_q = orig_rule.get('queue', {})
-                r_needs_update = False
                 
                 r_needs_update |= check_diff(changes, 'Ring Type', old_q.get('transferMode'), q_set.get('transferMode'))
                 r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
                 r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
                 r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
                 r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
-                r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
                 
+                r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
                 old_f_id = str(old_q.get('maxCallersDestination', {}).get('extension', {}).get('id', 'None'))
                 new_f_id = str(q_set.get('maxCallersDestination', {}).get('extension', {}).get('id', 'None'))
                 if old_f_id != new_f_id:
                     r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
 
                 r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
-                
                 old_t_id = _safe_get_transfer_id(old_q.get('transfer')) or 'None'
                 new_t_id = _safe_get_transfer_id(q_set.get('transfer')) or 'None'
                 if old_t_id != new_t_id:
                     r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
 
-                r_needs_update |= check_diff(changes, 'Interrupt Audio', old_q.get('holdAudioInterruptionMode'), q_set.get('holdAudioInterruptionMode'))
-                r_needs_update |= check_diff(changes, 'Interrupt Prompt', format_sec(old_q.get('holdAudioInterruptionPeriod')), format_sec(q_set.get('holdAudioInterruptionPeriod')))
+                old_ip_mode = old_q.get('holdAudioInterruptionMode')
+                if old_ip_mode == 'Never' or not old_ip_mode:
+                    old_ip_str = "Never"
+                else:
+                    old_ip_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
+                    
+                new_ip_mode = q_set.get('holdAudioInterruptionMode')
+                if new_ip_mode == 'Never' or not new_ip_mode:
+                    new_ip_str = "Never"
+                else:
+                    new_ip_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
+                    
+                r_needs_update |= check_diff(changes, 'Interrupt Prompt', old_ip_str, new_ip_str)
                 
+                vm_recip_raw = get_val(row, 'Voicemail Recipients')
+                if vm_recip_raw:
+                    vm_ext_id = _resolve_ext(vm_recip_raw)
+                    if vm_ext_id:
+                        if 'voicemail' not in rule: rule['voicemail'] = {}
+                        rule['voicemail']['recipient'] = {'id': vm_ext_id}
+                        old_vm = str(orig_rule.get('voicemail', {}).get('recipient', {}).get('id', 'None'))
+                        r_needs_update |= check_diff(changes, 'VM Recipient', ext_id_to_num.get(old_vm, old_vm), ext_id_to_num.get(vm_ext_id, vm_ext_id))
+
                 for field in _READ_ONLY: rule.pop(field, None)
                 for field in _READ_ONLY: 
                     if 'queue' in rule: rule['queue'].pop(field, None)
