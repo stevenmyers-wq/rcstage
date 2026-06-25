@@ -1,12 +1,125 @@
+import os
 import io
 import json
+import base64
+import hashlib
+import secrets
+import requests
+import threading
+import time
 import pandas as pd
-from flask import Blueprint, jsonify, request, send_file, session, Response, stream_with_context
+from urllib.parse import urlencode
+from flask import Blueprint, jsonify, request, send_file, session, redirect, current_app, Response, stream_with_context, url_for
 from webapp.usage_tracking import track_usage
 from openpyxl.worksheet.datavalidation import DataValidation
 from . import utils
 
 cq_hours_bp = Blueprint('cq_hours', __name__, url_prefix='/api/cq_hours')
+
+def create_pkce_challenge():
+    code_verifier = secrets.token_urlsafe(96)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode('ascii')).digest()
+    ).rstrip(b'=').decode('ascii')
+    return code_verifier, code_challenge
+
+def get_strict_redirect_uri():
+    return url_for('cq_hours.cq_oauth2callback', _external=True, _scheme='https')
+
+@cq_hours_bp.route('/auth', methods=['GET'])
+def cq_auth():
+    code_verifier, code_challenge = create_pkce_challenge()
+    session['cq_code_verifier'] = code_verifier
+    
+    redirect_uri = get_strict_redirect_uri()
+    client_id = os.getenv('SM_CLIENT_ID')
+    
+    if not client_id:
+        return "SM_CLIENT_ID not found in environment variables.", 500
+    
+    params = {
+        'response_type': 'code',
+        'client_id': client_id,
+        'redirect_uri': redirect_uri,
+        'code_challenge': code_challenge,
+        'code_challenge_method': 'S256',
+        'state': 'cq_hours'
+    }
+    
+    base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
+    auth_url = f"{base_url}/restapi/oauth/authorize?{urlencode(params)}"
+    return redirect(auth_url)
+
+@cq_hours_bp.route('/oauth2callback', methods=['GET'])
+def cq_oauth2callback():
+    code = request.args.get('code')
+    if not code:
+        return "No code provided", 400
+        
+    redirect_uri = get_strict_redirect_uri()
+    code_verifier = session.pop('cq_code_verifier', None)
+    
+    client_id = os.getenv('SM_CLIENT_ID')
+    client_secret = os.getenv('SM_CLIENT_SECRET')
+    
+    data = {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirect_uri,
+    }
+    
+    if code_verifier:
+        data['code_verifier'] = code_verifier
+        
+    base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
+    token_url = f"{base_url}/restapi/oauth/token"
+    
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+    }
+    
+    if client_secret:
+        auth_str = f"{client_id}:{client_secret}"
+        headers['Authorization'] = f"Basic {base64.b64encode(auth_str.encode()).decode()}"
+    else:
+        data['client_id'] = client_id
+    
+    response = requests.post(token_url, data=data, headers=headers)
+    if response.ok:
+        token_data = response.json()
+        session['cq_employee_token'] = token_data.get('access_token')
+        return redirect("/?tab=cq_hours")
+    else:
+        return jsonify({"error": "Failed to exchange code", "details": response.json()}), 400
+
+@cq_hours_bp.route('/bridge', methods=['POST'])
+def create_bridge():
+    data = request.json
+    target_id = data.get('targetAccountId')
+    
+    if not target_id:
+        return jsonify({"error": "Target Account ID is required"}), 400
+        
+    employee_token = session.get('cq_employee_token')
+    if not employee_token:
+        return jsonify({"error": "Not authenticated. Please Sign In first."}), 401
+        
+    customer_token = utils.get_impersonation_token(employee_token, target_id)
+    
+    if customer_token:
+        session['cq_isolated_token'] = customer_token
+        session['cq_target_id'] = target_id
+        return jsonify({"success": True})
+    
+    return jsonify({"error": "Impersonation Bridge Failed. Ensure you are logged in and the target ID is valid."}), 403
+
+@cq_hours_bp.route('/logout')
+def cq_logout():
+    session.pop('cq_isolated_token', None)
+    session.pop('cq_target_id', None)
+    session.pop('cq_employee_token', None)
+    return redirect("/?tab=cq_hours")
 
 @cq_hours_bp.route('/template', methods=['GET'])
 def download_template():
@@ -67,7 +180,6 @@ def download_template():
         workbook = writer.book
         config_ws = workbook['Queue Config']
         
-        from openpyxl.worksheet.datavalidation import DataValidation
         dv_tz = DataValidation(type="list", formula1="=Timezone_Ref!$A$2:$A$" + str(len(global_timezones) + 1), allow_blank=True)
         config_ws.add_data_validation(dv_tz)
         dv_tz.add("K2:K1000") 
@@ -92,6 +204,54 @@ def download_template():
     output.seek(0)
     return send_file(output, as_attachment=True, download_name='Call_Queue_Manager_Template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+@cq_hours_bp.route('/queues', methods=['GET'])
+def get_queues():
+    token = session.get('cq_isolated_token')
+    if not token:
+        return jsonify({"success": False, "error": "Unauthorized. Please bridge connection."}), 401
+    try:
+        queues = utils.fetch_all_queues(token)
+        return jsonify({"success": True, "queues": queues})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@cq_hours_bp.route('/audit', methods=['POST'])
+@track_usage('CQ Omni Manager Audit')
+def start_audit():
+    token = session.get('cq_isolated_token')
+    if not token:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    
+    data = request.json
+    queue_ids = data.get('queue_ids', [])
+    if not queue_ids:
+        return jsonify({"success": False, "error": "No queues selected."}), 400
+        
+    task_id = f"audit_{int(time.time())}"
+    threading.Thread(target=utils.run_cq_audit, args=(task_id, queue_ids, token)).start()
+    
+    return jsonify({"success": True, "task_id": task_id})
+
+@cq_hours_bp.route('/audit/status', methods=['GET'])
+def audit_status():
+    task_id = request.args.get('task_id')
+    data = utils.audit_progress_store.get(task_id, {})
+    return jsonify(data)
+
+@cq_hours_bp.route('/audit/download', methods=['GET'])
+def audit_download():
+    task_id = request.args.get('task_id')
+    data = utils.audit_progress_store.get(task_id, {})
+    if data.get('file_ready'):
+        mem = io.BytesIO(data['file_data'])
+        return send_file(
+            mem, 
+            as_attachment=True, 
+            download_name='Call_Queue_Manager_Export.xlsx', 
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    return "File not ready", 404
+
 @cq_hours_bp.route('/sheets', methods=['POST'])
 def get_sheets():
     if 'file' not in request.files:
@@ -110,8 +270,7 @@ def get_sheets():
 @cq_hours_bp.route('/upload', methods=['POST'])
 @track_usage('CQ Omni Manager Update')
 def upload_hours():
-    # Using the central SM token
-    token = session.get('sm_isolated_token')
+    token = session.get('cq_isolated_token')
     if not token:
         return jsonify({"type": "error", "message": "Unauthorized: Please Bridge the connection first."}), 401
 
@@ -123,7 +282,6 @@ def upload_hours():
         
     try:
         file = request.files['file']
-        
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
         else:
