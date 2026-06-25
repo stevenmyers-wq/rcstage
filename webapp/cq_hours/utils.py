@@ -1,10 +1,13 @@
 import re
 import copy
 import time
+import io
 import pandas as pd
 import requests
 from datetime import datetime
 from webapp.rc_api import rc_api_call
+
+audit_progress_store = {}
 
 DAY_ABBR = {
     "mon": "monday", "tue": "tuesday", "wed": "wednesday", 
@@ -145,6 +148,193 @@ def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
         except Exception: time.sleep(2)
     return False, "Max retries exceeded due to rate limiting."
 
+def fetch_all_queues(token):
+    queues = []
+    page = 1
+    site_map = {}
+    
+    succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
+    if succ and 'records' in sites_resp:
+        site_map = {str(s['id']): s['name'] for s in sites_resp['records']}
+
+    while True:
+        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', token=token)
+        if not succ or 'records' not in resp: break
+        for q in resp['records']:
+            site_id = str(q.get('site', {}).get('id', ''))
+            site_name = site_map.get(site_id, 'Main Site') if site_id else 'Main Site'
+            queues.append({
+                'id': q['id'],
+                'name': q.get('name', 'Unknown'),
+                'extensionNumber': q.get('extensionNumber', ''),
+                'site': site_name
+            })
+        if 'navigation' in resp and resp['navigation'].get('nextPage'): page += 1
+        else: break
+    return queues
+
+def run_cq_audit(task_id, queue_ids, token):
+    audit_progress_store[task_id] = {'current': 0, 'total': len(queue_ids), 'status': 'running', 'file_ready': False}
+    try:
+        # Pre-fetch maps for fast ID resolution
+        ext_id_to_num = {}
+        page = 1
+        while True:
+            succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', token=token)
+            if succ and 'records' in resp:
+                for e in resp['records']:
+                    ext_id_to_num[str(e['id'])] = str(e.get('extensionNumber', ''))
+                if 'navigation' in resp and resp['navigation'].get('nextPage'): page += 1
+                else: break
+            else: break
+
+        succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
+        site_map = {str(s['id']): s['name'] for s in sites_resp.get('records', [])} if succ else {}
+
+        succ, tz_resp = safe_api_call('/restapi/v1.0/dictionary/timezone?perPage=1000', token=token)
+        tz_map = {str(t['id']): t['name'] for t in tz_resp.get('records', [])} if succ else {}
+
+        rows = []
+        for idx, qid in enumerate(queue_ids):
+            audit_progress_store[task_id]['current'] = idx + 1
+            row = {}
+            
+            succ, base = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}', token=token)
+            if not succ: continue
+            
+            row["Queue Name"] = base.get('name', '')
+            row["Extension"] = base.get('extensionNumber', '')
+            row["Status"] = base.get('status', '').capitalize()
+            row["Queue Email"] = base.get('contact', {}).get('email', '')
+            
+            site_id = str(base.get('site', {}).get('id', ''))
+            row["Site"] = site_map.get(site_id, site_id) if site_id else 'Main Site'
+            
+            tz_id = str(base.get('regionalSettings', {}).get('timezone', {}).get('id', ''))
+            row["Timezone"] = tz_map.get(tz_id, tz_id)
+
+            succ, bh = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/business-hours', token=token)
+            if succ and bh.get('schedule', {}).get('weeklyRanges'):
+                row["Hours"] = format_schedule(bh['schedule']['weeklyRanges'])
+            else:
+                row["Hours"] = "24/7"
+
+            succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/business-hours-rule', token=token)
+            if succ:
+                q_set = rule.get('queue', {})
+                row["Ring Type"] = q_set.get('transferMode', 'Simultaneous')
+                row["User Ring Time"] = format_sec(q_set.get('agentTimeout'))
+                row["Total Ring Time"] = format_sec(q_set.get('holdTime'))
+                row["Wrap Up Time"] = format_sec(q_set.get('wrapUpTime'))
+                row["Callers In Queue"] = q_set.get('maxCallers')
+                row["When Queue is Full"] = q_set.get('maxCallersAction')
+                
+                f_ext = str(q_set.get('maxCallersDestination', {}).get('extension', {}).get('id', ''))
+                if f_ext and f_ext != 'None': 
+                    row["Queue Full Destination"] = ext_id_to_num.get(f_ext, f_ext)
+
+                row["When Max Time is Reached"] = q_set.get('holdTimeExpirationAction')
+                t_ext = str(q_set.get('transfer', [{}])[0].get('extension', {}).get('id', ''))
+                if t_ext and t_ext != 'None':
+                    row["Time Reached Destination"] = ext_id_to_num.get(t_ext, t_ext)
+
+                row["Interrupt Audio"] = q_set.get('holdAudioInterruptionMode')
+                row["Interrupt Prompt"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
+
+            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
+            if succ:
+                row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
+                a_ext = str(ah_rule.get('transfer', [{}])[0].get('extension', {}).get('id', ''))
+                if a_ext and a_ext != 'None':
+                    row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
+
+            succ, mem_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/members', token=token)
+            if succ and mem_resp.get('records'):
+                mems = [str(m.get('extensionNumber')) for m in mem_resp['records'] if m.get('extensionNumber')]
+                row["Members (Ext)"] = ", ".join(mems)
+
+            succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/notification-settings', token=token)
+            if succ:
+                vm_set = notif.get('voicemails', {})
+                if vm_set.get('notifyByEmail'):
+                    if vm_set.get('markAsRead'): row["Voicemail Notifications"] = "Notify Attach & Read"
+                    elif vm_set.get('includeAttachment'): row["Voicemail Notifications"] = "Notify & Attach"
+                    else: row["Voicemail Notifications"] = "Notify by Email"
+                else:
+                    row["Voicemail Notifications"] = "Off"
+                
+                emails = vm_set.get('emailAddresses', [])
+                if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
+
+            rows.append(row)
+            time.sleep(0.2) 
+
+        df = pd.DataFrame(rows)
+        template_cols = [
+            "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number", 
+            "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours", 
+            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Audio", "Interrupt Prompt", 
+            "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status", 
+            "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached", 
+            "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients", 
+            "Voicemail Notifications", "Voicemail Notifications Email", "After Hours Behavior", 
+            "After Hours Destination"
+        ]
+        
+        for col in template_cols:
+            if col not in df.columns:
+                df[col] = ""
+        df = df[template_cols]
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Queue Config')
+            
+            global_timezones = [
+                "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
+                "Canada/Eastern", "Canada/Central", "Canada/Mountain", "Canada/Pacific", "Canada/Atlantic",
+                "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Athens", "Europe/Moscow",
+                "GMT", "UTC", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Hong_Kong",
+                "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Adelaide", "Australia/Perth",
+                "Pacific/Auckland", "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City"
+            ]
+            tz_df = pd.DataFrame({"ValidTimezones": global_timezones})
+            tz_df.to_excel(writer, index=False, sheet_name='Timezone_Ref')
+            
+            workbook = writer.book
+            config_ws = workbook['Queue Config']
+            
+            from openpyxl.worksheet.datavalidation import DataValidation
+            dv_tz = DataValidation(type="list", formula1="=Timezone_Ref!$A$2:$A$" + str(len(global_timezones) + 1), allow_blank=True)
+            config_ws.add_data_validation(dv_tz)
+            dv_tz.add("K2:K1000") 
+            
+            schema_validations = {
+                "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"', "N": '"Default,Custom,Off"', "O": '"Default,Custom,Off"',
+                "P": '"Periodically,Never"', "Q": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
+                "R": '"Simultaneous,Sequential,Rotating"', "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
+                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
+                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', "V": '"Accepting,NotAccepting"',
+                "W": '"1,2,3,4,5,10,15,20,25"', "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', "AB": '"Default,Custom,Off"',
+                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
+                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+            }
+
+            for col_letter, formula_string in schema_validations.items():
+                dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
+                config_ws.add_data_validation(dv)
+                dv.add(f"{col_letter}2:{col_letter}1000")
+
+        output.seek(0)
+        audit_progress_store[task_id]['file_data'] = output.getvalue()
+        audit_progress_store[task_id]['status'] = 'completed'
+        audit_progress_store[task_id]['file_ready'] = True
+
+    except Exception as e:
+        audit_progress_store[task_id]['status'] = 'error'
+        audit_progress_store[task_id]['error'] = str(e)
+
 def get_val(row, key):
     clean_key = str(key).strip().lower()
     for k, v in row.items():
@@ -192,7 +382,6 @@ def update_cq_batch(records, token, is_preview=False):
             else: break
         else: break
 
-    # FIX: Added Full Pagination for Sites
     page = 1
     while True:
         succ, resp = safe_api_call(f'/restapi/v1.0/account/~/sites?perPage=1000&page={page}', method='GET', token=token)
@@ -522,7 +711,6 @@ def update_cq_batch(records, token, is_preview=False):
                     if put_succ: logs.append("Notifications Updated")
                     else: has_error = True; logs.append(f"Notifications Error: {err}")
 
-        # FIX: Ensure explicit errors are not swallowed by a generic message string.
         if not logs and not changes: 
             res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
         elif has_error: 
