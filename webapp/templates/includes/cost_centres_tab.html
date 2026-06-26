@@ -1,7 +1,7 @@
 <div class="space-y-6 animate-fade-in p-4 w-full">
     <div class="mb-4 border-b border-gray-200 pb-4">
         <h2 class="text-3xl font-bold text-slate-800 mb-1">Cost Centres</h2>
-        <p class="text-slate-500 text-sm">Audit and update Cost Centre allocations for Extensions, Phone Numbers, Devices, and Unassigned Licenses.</p>
+        <p class="text-slate-500 text-sm">Audit and update Cost Centre allocations for Extensions, Phone Numbers, Devices, and Billing Items.</p>
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
@@ -13,19 +13,10 @@
                     🔄 Refresh Data
                 </button>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label>
                     <input type="text" id="cc-search" placeholder="Name or Number..." class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Status</label>
-                    <select id="cc-filter-status" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
-                        <option value="">All Statuses</option>
-                        <option value="Unassigned">Unassigned</option>
-                        <option value="Enabled">Enabled</option>
-                        <option value="NotActivated">Not Activated</option>
-                    </select>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
@@ -75,8 +66,7 @@
                             <input type="checkbox" id="cc-select-all" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                         </th>
                         <th class="px-4 py-3 font-semibold">Name</th>
-                        <th class="px-4 py-3 font-semibold">Number</th>
-                        <th class="px-4 py-3 font-semibold">Status</th>
+                        <th class="px-4 py-3 font-semibold">Number / Qty</th>
                         <th class="px-4 py-3 font-semibold">Type</th>
                         <th class="px-4 py-3 font-semibold">Site</th>
                         <th class="px-4 py-3 font-semibold">Department</th>
@@ -104,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const searchInput = document.getElementById('cc-search');
     const typeFilter = document.getElementById('cc-filter-type');
-    const statusFilter = document.getElementById('cc-filter-status');
     const siteFilter = document.getElementById('cc-filter-site');
     const currentCcFilter = document.getElementById('cc-filter-current');
     
@@ -121,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn.addEventListener('click', loadData);
     searchInput.addEventListener('input', applyFilters);
     typeFilter.addEventListener('change', applyFilters);
-    statusFilter.addEventListener('change', applyFilters);
     siteFilter.addEventListener('change', applyFilters);
     currentCcFilter.addEventListener('change', applyFilters);
     
@@ -205,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
             applyFilters();
 
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-red-500 font-medium">Error: ${e.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-red-500 font-medium">Error: ${e.message}</td></tr>`;
         } finally {
             loader.classList.add('hidden');
         }
@@ -215,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ccMap = new Map();
         
         rawData.assets.forEach(a => {
-            if (a.costCenterId && a.costCenterName && a.costCenterName !== 'Account Default') {
+            if (a.costCenterId && a.costCenterName && a.costCenterName !== 'Unassigned') {
                 ccMap.set(a.costCenterId, a.costCenterName);
             }
         });
@@ -230,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .join('');
         
         targetCcSelect.innerHTML = '<option value="">Select Target...</option>' + ccOptions;
-        currentCcFilter.innerHTML = '<option value="">All Cost Centres</option><option value="Account Default">Account Default</option>' + ccOptions;
+        currentCcFilter.innerHTML = '<option value="">All Cost Centres</option><option value="Unassigned">Unassigned</option>' + ccOptions;
 
         const sites = new Set();
         rawData.assets.forEach(a => { if(a.site && a.site !== 'N/A') sites.add(a.site); });
@@ -256,7 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Limited': 'Limited Extension',
                 'HardPhone': 'Hard Phone',
                 'SoftPhone': 'Soft Phone',
-                'Paging': 'Paging Device'
+                'Paging': 'Paging Device',
+                'Unassigned Licence': 'Unassigned Licence'
             };
             return labels[type] || type;
         };
@@ -268,21 +257,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyFilters() {
         const term = searchInput.value.toLowerCase();
         const tFilter = typeFilter.value;
-        const stFilter = statusFilter.value;
         const sFilter = siteFilter.value;
         const cFilter = currentCcFilter.value;
 
         filteredAssets = rawData.assets.filter(a => {
             const matchSearch = (a.name.toLowerCase().includes(term) || a.number.toLowerCase().includes(term));
             const matchType = tFilter === '' || a.subType === tFilter;
-            const matchStatus = stFilter === '' || a.status === stFilter;
             const matchSite = sFilter === '' || a.site === sFilter;
             
             let matchCc = true;
-            if (cFilter === 'Account Default') matchCc = (a.costCenterName === 'Account Default' || a.costCenterId === '');
+            if (cFilter === 'Unassigned') matchCc = (a.costCenterName === 'Unassigned' || a.costCenterId === '');
             else if (cFilter !== '') matchCc = (a.costCenterId === cFilter);
 
-            return matchSearch && matchType && matchStatus && matchSite && matchCc;
+            return matchSearch && matchType && matchSite && matchCc;
         });
 
         renderTable();
@@ -293,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectAllCb.checked = false;
 
         if (filteredAssets.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 italic">No assets found matching filters.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 italic">No assets found matching filters.</td></tr>`;
             return;
         }
 
@@ -310,16 +297,12 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (asset.type === 'Device') badgeClass = 'bg-amber-100 text-amber-700';
             else if (asset.type === 'License') badgeClass = 'bg-indigo-100 text-indigo-700';
 
-            let statusClass = 'bg-gray-100 text-gray-600';
-            if (asset.status === 'Enabled') statusClass = 'bg-green-100 text-green-700';
-            else if (asset.status === 'Unassigned') statusClass = 'bg-red-100 text-red-700';
-            else if (asset.status === 'NotActivated') statusClass = 'bg-amber-100 text-amber-700';
-
             const assetJson = encodeURIComponent(JSON.stringify(asset));
             const formatTypeLabel = (type) => {
                 const labels = {
                     'Department': 'Call Queue', 'IvrMenu': 'IVR Menu', 'AnnouncementOnly': 'Announcement Only', 
-                    'Voicemail': 'Message Only', 'ApplicationExtension': 'App Extension', 'Limited': 'Limited Extension'
+                    'Voicemail': 'Message Only', 'ApplicationExtension': 'App Extension', 'Limited': 'Limited Extension',
+                    'Unassigned Licence': 'Unassigned Licence'
                 };
                 return labels[type] || type;
             };
@@ -332,18 +315,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="px-4 py-2 font-medium text-gray-800">${asset.name}</td>
                 <td class="px-4 py-2 text-gray-600">${asset.number}</td>
                 <td class="px-4 py-2">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border shadow-sm ${statusClass}">
-                        ${asset.status}
-                    </span>
-                </td>
-                <td class="px-4 py-2">
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border shadow-sm ${badgeClass}">
                         ${formatTypeLabel(asset.subType || asset.type)}
                     </span>
                 </td>
                 <td class="px-4 py-2 text-gray-600 text-xs">${asset.site}</td>
                 <td class="px-4 py-2 text-gray-600 text-xs">${asset.department}</td>
-                <td class="px-4 py-2 font-medium ${asset.costCenterName === 'Account Default' ? 'text-gray-500 italic' : 'text-blue-700'}">
+                <td class="px-4 py-2 font-medium ${asset.costCenterName === 'Unassigned' ? 'text-red-500 italic' : 'text-blue-700'}">
                     ${asset.costCenterName}
                 </td>
             `;
