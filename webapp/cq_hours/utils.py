@@ -40,7 +40,7 @@ def format_sec(val):
     except: return str(val)
 
 def format_schedule(schedule_dict):
-    if not schedule_dict: return "Closed"
+    if not schedule_dict: return "24/7"
     day_order = {"monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6, "sunday": 7}
     sorted_days = sorted(schedule_dict.items(), key=lambda x: day_order.get(x[0].lower(), 99))
     
@@ -75,8 +75,8 @@ def parse_intuitive_hours(hours_str):
     hours_str = re.sub(r'(?<!\d)(\d{1,2})\.(\d{2})\s*([ap]m)?', r'\1:\2\3', hours_str)
     hours_str = re.sub(r'(?<!\d)(\d{1,2}(?::\d{2})?)\s*(?:-|to|thru|through)\s*(\d{1,2}(?::\d{2})?\s*pm)', r'\1am-\2', hours_str)
     
+    if hours_str in ['24/7', '24x7', '24-7', '24 7']: return "24/7"
     if not hours_str or hours_str in ['closed', 'none', 'n/a', 'off']: return {} 
-    if hours_str in ['24/7', '24x7', '24-7', '24 7']: return {day: [{"from": "00:00", "to": "23:59"}] for day in DAY_ABBR.values()}
         
     time_pattern = r'(?:\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})\s*(?:-|to|thru|through)\s*(?:\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})'
     parts = re.split(f'({time_pattern})', hours_str)
@@ -596,7 +596,8 @@ def update_cq_batch(records, token, is_preview=False):
                     b_needs_update |= check_diff(changes, 'Status', old_basic.get('status'), basic_payload['status'])
                     
                 if get_val(row, 'Queue Email'): 
-                    basic_payload['contact'] = {'email': get_val(row, 'Queue Email')}
+                    basic_payload['contact'] = old_basic.get('contact', {})
+                    basic_payload['contact']['email'] = get_val(row, 'Queue Email')
                     b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
                     
                 if get_val(row, 'Member Queue Status'):
@@ -610,12 +611,12 @@ def update_cq_batch(records, token, is_preview=False):
 
                 if get_val(row, 'Site'):
                     s_name = get_val(row, 'Site').lower()
-                    if s_name in site_map: 
-                        new_site_id = site_map[s_name]
-                        
+                    new_site_id = 'main-site' if s_name in ['main site', 'company'] else site_map.get(s_name)
+                    
+                    if new_site_id: 
                         old_site_id = str(old_basic.get('site', {}).get('id', 'None'))
-                        old_site_name = site_id_to_name.get(old_site_id, old_site_id) if old_site_id != 'None' else "None"
-                        new_site_name = site_id_to_name.get(new_site_id, new_site_id)
+                        old_site_name = 'Main Site' if old_site_id == 'main-site' else site_id_to_name.get(old_site_id, old_site_id)
+                        new_site_name = 'Main Site' if new_site_id == 'main-site' else site_id_to_name.get(new_site_id, new_site_id)
                         
                         if check_diff(changes, 'Site', old_site_name, new_site_name):
                             if not is_preview:
@@ -662,14 +663,16 @@ def update_cq_batch(records, token, is_preview=False):
                 
                 if get_succ and isinstance(old_hours_resp, dict):
                     old_ranges = old_hours_resp.get('schedule', {}).get('weeklyRanges', {})
-                    old_hours_str = format_schedule(old_ranges)
+                    if not old_ranges and 'schedule' in old_hours_resp: old_hours_str = "24/7"
+                    else: old_hours_str = format_schedule(old_ranges)
 
-                new_hours_str = format_schedule(weekly_ranges)
+                new_hours_str = "24/7" if weekly_ranges == "24/7" else format_schedule(weekly_ranges)
                 
                 if old_hours_str != new_hours_str:
                     changes.append({"parameter": "Business Hours", "old": old_hours_str, "new": new_hours_str})
                     if not is_preview:
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/business-hours', method='PUT', json={"schedule": {"weeklyRanges": weekly_ranges}}, token=token)
+                        payload = {"schedule": {}} if weekly_ranges == "24/7" else {"schedule": {"weeklyRanges": weekly_ranges}}
+                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/business-hours', method='PUT', json=payload, token=token)
                         if s_succ: logs.append("Hours Updated")
                         else: has_error = True; logs.append(f"Hours Error: {err}")
                     else:
@@ -692,7 +695,10 @@ def update_cq_batch(records, token, is_preview=False):
                 q_set = rule.get('queue', {})
                 r_needs_update = False
                 
-                if get_val(row, 'Ring Type'): q_set['transferMode'] = get_val(row, 'Ring Type')
+                rt = get_val(row, 'Ring Type')
+                if rt:
+                    if rt.lower() == 'longest idle': rt = 'Rotating'
+                    q_set['transferMode'] = rt
                 
                 val_urt = get_val(row, 'User Ring Time')
                 if val_urt: 
@@ -724,15 +730,44 @@ def update_cq_batch(records, token, is_preview=False):
                             q_set['holdAudioInterruptionMode'] = 'Periodically'
                             q_set['holdAudioInterruptionPeriod'] = parsed
 
-                if get_val(row, 'When Max Time is Reached'): q_set['holdTimeExpirationAction'] = get_val(row, 'When Max Time is Reached')
-                if get_val(row, 'Time Reached Destination'):
-                    dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
-                    if dest_id: q_set['transfer'] = [{'extension': {'id': dest_id}}]
+                if get_val(row, 'When Max Time is Reached'):
+                    action = get_val(row, 'When Max Time is Reached')
+                    if action == 'TransferToExtension':
+                        dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
+                        if dest_id:
+                            q_set['holdTimeExpirationAction'] = action
+                            q_set['transfer'] = [{'extension': {'id': dest_id}}]
+                        else:
+                            logs.append(f"Warning: Reverting 'Max Time' to Voicemail (Missing Dest in sheet)")
+                            q_set['holdTimeExpirationAction'] = 'Voicemail'
+                            q_set.pop('transfer', None)
+                    else:
+                        q_set['holdTimeExpirationAction'] = action
+                        q_set.pop('transfer', None)
 
-                if get_val(row, 'When Queue is Full'): q_set['maxCallersAction'] = get_val(row, 'When Queue is Full')
-                if get_val(row, 'Queue Full Destination'):
-                    dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
-                    if dest_id: q_set['maxCallersDestination'] = {'extension': {'id': dest_id}}
+                if get_val(row, 'When Queue is Full'):
+                    action = get_val(row, 'When Queue is Full')
+                    if action == 'TransferToExtension':
+                        dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
+                        if dest_id:
+                            q_set['maxCallersAction'] = action
+                            q_set['maxCallersDestination'] = {'extension': {'id': dest_id}}
+                        else:
+                            logs.append(f"Warning: Reverting 'Queue Full' to Voicemail (Missing Dest in sheet)")
+                            q_set['maxCallersAction'] = 'Voicemail'
+                            q_set.pop('maxCallersDestination', None)
+                    else:
+                        q_set['maxCallersAction'] = action
+                        q_set.pop('maxCallersDestination', None)
+                        
+                # Failsafe before updating logic in case the queue already lacked valid settings
+                if q_set.get('holdTimeExpirationAction') == 'TransferToExtension' and not q_set.get('transfer'):
+                    logs.append("Warning: Reverting 'Max Time' to Voicemail (No valid destination)")
+                    q_set['holdTimeExpirationAction'] = 'Voicemail'
+                
+                if q_set.get('maxCallersAction') == 'TransferToExtension' and not q_set.get('maxCallersDestination'):
+                    logs.append("Warning: Reverting 'Queue Full' to Voicemail (No valid destination)")
+                    q_set['maxCallersAction'] = 'Voicemail'
 
                 rule['queue'] = q_set
                 old_q = orig_rule.get('queue', {})
@@ -801,8 +836,8 @@ def update_cq_batch(records, token, is_preview=False):
                         
                         if matched_id:
                             new_greetings.append({"type": slot_type, "preset": {"id": matched_id}})
-                        elif new_val == 'default' and 'default' in preset_dict.get(slot_type, {}):
-                            new_greetings.append({"type": slot_type, "preset": {"id": preset_dict[slot_type]['default']}})
+                        elif new_val == 'default':
+                            new_greetings.append({"type": slot_type, "preset": {"id": "default"}})
                         elif new_val == 'custom':
                             orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
                             if orig_g and 'custom' in orig_g: new_greetings.append({"type": slot_type, "custom": {"id": orig_g['custom']['id']}})
@@ -859,10 +894,24 @@ def update_cq_batch(records, token, is_preview=False):
                 orig_ah = copy.deepcopy(ah_rule)
                 a_needs_update = False
                 
-                if get_val(row, 'After Hours Behavior'): ah_rule['callHandlingAction'] = get_val(row, 'After Hours Behavior')
-                if get_val(row, 'After Hours Destination'):
-                    dest_id = _resolve_ext(get_val(row, 'After Hours Destination'))
-                    if dest_id: ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
+                if get_val(row, 'After Hours Behavior'): 
+                    action = get_val(row, 'After Hours Behavior')
+                    if action == 'TransferToExtension':
+                        dest_id = _resolve_ext(get_val(row, 'After Hours Destination'))
+                        if dest_id:
+                            ah_rule['callHandlingAction'] = action
+                            ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
+                        else:
+                            logs.append(f"Warning: Reverting 'After Hours Behavior' to Voicemail (Missing Dest in sheet)")
+                            ah_rule['callHandlingAction'] = 'Voicemail'
+                            ah_rule.pop('transfer', None)
+                    else:
+                        ah_rule['callHandlingAction'] = action
+                        ah_rule.pop('transfer', None)
+                        
+                if ah_rule.get('callHandlingAction') == 'TransferToExtension' and not ah_rule.get('transfer'):
+                    logs.append("Warning: Reverting 'After Hours Behavior' to Voicemail (No valid destination)")
+                    ah_rule['callHandlingAction'] = 'Voicemail'
                 
                 a_needs_update |= check_diff(changes, 'After Hours Behavior', orig_ah.get('callHandlingAction'), ah_rule.get('callHandlingAction'))
                 
@@ -925,7 +974,19 @@ def update_cq_batch(records, token, is_preview=False):
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
                         
                 if get_val(row, 'Voicemail Notifications Email'):
-                    vm_set['emailAddresses'] = [e.strip() for e in get_val(row, 'Voicemail Notifications Email').split(',')]
+                    emails = [e.strip() for e in get_val(row, 'Voicemail Notifications Email').split(',') if e.strip()]
+                    vm_set['emailAddresses'] = emails
+                    
+                # Prevent RC from throwing a 400 error by ensuring emailAddresses is populated if notifications are enabled
+                if vm_set.get('notifyByEmail'):
+                    if not vm_set.get('emailAddresses'):
+                        fallback = get_val(row, 'Queue Email')
+                        if fallback:
+                            vm_set['emailAddresses'] = [fallback]
+                        else:
+                            vm_set['notifyByEmail'] = False
+                            vm_set['includeAttachment'] = False
+                            vm_set['markAsRead'] = False
                 
                 notif['voicemails'] = vm_set
                 
