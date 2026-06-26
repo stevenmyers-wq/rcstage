@@ -200,17 +200,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateDropdowns() {
-        // 1. Populate Target and Current CC dropdowns with a robust fallback
         const ccMap = new Map();
         
-        // Extract dynamically from existing assets as a fallback
         rawData.assets.forEach(a => {
             if (a.costCenterId && a.costCenterName && a.costCenterName !== 'Unassigned') {
                 ccMap.set(a.costCenterId, a.costCenterName);
             }
         });
         
-        // Override with official API list if it was accessible
         if (rawData.cost_centres && rawData.cost_centres.length > 0) {
             rawData.cost_centres.forEach(cc => ccMap.set(cc.id, cc.name));
         }
@@ -223,13 +220,11 @@ document.addEventListener('DOMContentLoaded', () => {
         targetCcSelect.innerHTML = '<option value="">Select Target...</option>' + ccOptions;
         currentCcFilter.innerHTML = '<option value="">All Cost Centres</option><option value="Unassigned">Unassigned</option>' + ccOptions;
 
-        // 2. Populate Sites
         const sites = new Set();
         rawData.assets.forEach(a => { if(a.site && a.site !== 'N/A') sites.add(a.site); });
         siteFilter.innerHTML = '<option value="">All Sites</option>' + 
             Array.from(sites).sort().map(s => `<option value="${s}">${s}</option>`).join('');
 
-        // 3. Populate Types intelligently using subTypes
         const types = new Set();
         rawData.assets.forEach(a => { if(a.subType) types.add(a.subType); });
         
