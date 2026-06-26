@@ -114,4 +114,8 @@ def create_app():
         from .cq_hours import routes as cq_hours_routes
         app.register_blueprint(cq_hours_routes.cq_hours_bp)
 
+        # Cost Centres routes
+        from .cost_centres import routes as cost_centres_routes
+        app.register_blueprint(cost_centres_routes.cost_centres_bp)
+
     return app
