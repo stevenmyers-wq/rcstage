@@ -16,20 +16,22 @@ def fetch_all_pages(endpoint, token, params=None):
         if not resp.get('navigation', {}).get('nextPage'): 
             break
         params['page'] += 1
-        time.sleep(0.05)  # Pace to avoid rate limits
+        time.sleep(0.05)
         
     return records
 
 def get_cost_centres_data(token):
-    # 1. Fetch available cost centres
-    cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
+    # 1. Fetch available cost centres - Safe fetch
+    try:
+        cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
+    except Exception:
+        cost_centres = []
     
     assets = []
     
     # 2. Fetch Extensions (Users, IVRs, Queues, etc.)
     extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token=token)
     for ext in extensions:
-        # We skip lines/ports that typically don't have cost centers assignable in bulk
         if ext.get('type') in ['Limited', 'ApplicationExtension']:
             continue
             
@@ -45,11 +47,10 @@ def get_cost_centres_data(token):
             'costCenterName': ext.get('costCenter', {}).get('name', 'Unassigned')
         })
 
-    # 3. Fetch Phone Numbers (Company numbers / Unassigned DIDs)
+    # 3. Fetch Phone Numbers
     phone_numbers = fetch_all_pages('/restapi/v1.0/account/~/phone-number', token=token)
     for pn in phone_numbers:
         usage = pn.get('usageType', '')
-        # Only grab numbers NOT tied to an extension (to avoid duplication with the extension list)
         if usage in ['CompanyNumber', 'MainCompanyNumber', 'DirectNumber'] and not pn.get('extension'):
             assets.append({
                 'id': str(pn.get('id')),
@@ -63,10 +64,9 @@ def get_cost_centres_data(token):
                 'costCenterName': pn.get('costCenter', {}).get('name', 'Unassigned')
             })
             
-    # 4. Fetch Devices (Unassigned hard phones)
+    # 4. Fetch Devices
     devices = fetch_all_pages('/restapi/v1.0/account/~/device', token=token)
     for dev in devices:
-        # Only grab unassigned devices
         if not dev.get('extension'):
             assets.append({
                 'id': str(dev.get('id')),
@@ -86,7 +86,6 @@ def update_asset_cost_centre(token, asset, cost_centre_id):
     asset_id = asset['id']
     asset_type = asset['type']
     
-    # RingCentral expects the ID as a string, but an empty string unassigns it (if supported)
     payload = {'costCenter': {'id': str(cost_centre_id)}}
     
     if asset_type == 'Extension':
@@ -102,10 +101,8 @@ def update_asset_cost_centre(token, asset, cost_centre_id):
     
     if not getattr(resp, 'ok', False):
         err = "Update failed"
-        try: 
-            err = resp.json().get('message', err)
-        except: 
-            pass
+        try: err = resp.json().get('message', err)
+        except: pass
         raise Exception(err)
         
     return True
