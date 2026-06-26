@@ -31,10 +31,13 @@ def get_cost_centres_data(token):
 
     # 2. Fetch Account Default Cost Centre
     account_default_cc_id = None
+    account_default_cc_name = 'Unknown'
     try:
         acc_info = rc_api_call('/restapi/v1.0/account/~', method='GET', token=token)
         if acc_info and acc_info.get('costCenter') and acc_info['costCenter'].get('id'):
             account_default_cc_id = str(acc_info['costCenter']['id'])
+            # Use the native name if provided, otherwise check the dictionary
+            account_default_cc_name = acc_info['costCenter'].get('name') or cc_map.get(account_default_cc_id, 'Unknown')
     except Exception:
         pass
 
@@ -44,7 +47,9 @@ def get_cost_centres_data(token):
         sites = fetch_all_pages('/restapi/v1.0/account/~/sites', token=token)
         for site in sites:
             if site.get('costCenter') and site['costCenter'].get('id'):
-                site_cc_map[str(site['id'])] = str(site['costCenter']['id'])
+                s_cc_id = str(site['costCenter']['id'])
+                s_cc_name = site['costCenter'].get('name') or cc_map.get(s_cc_id, 'Unknown')
+                site_cc_map[str(site['id'])] = {'id': s_cc_id, 'name': s_cc_name}
     except Exception:
         pass
 
@@ -53,17 +58,18 @@ def get_cost_centres_data(token):
         # A. Check explicit item assignment
         cc_id = str(item.get('costCenter', {}).get('id', ''))
         if cc_id:
-            return cc_id, cc_map.get(cc_id, 'Unknown')
+            # Use the name provided directly on the item first, fallback to the lookup map
+            cc_name = item.get('costCenter', {}).get('name') or cc_map.get(cc_id, 'Unknown')
+            return cc_id, cc_name
         
         # B. Check site assignment
         site_id = str(item.get('site', {}).get('id', ''))
         if site_id and site_id in site_cc_map:
-            s_cc_id = site_cc_map[site_id]
-            return s_cc_id, cc_map.get(s_cc_id, 'Unknown')
+            return site_cc_map[site_id]['id'], site_cc_map[site_id]['name']
         
         # C. Fallback to account default
         if account_default_cc_id:
-            return account_default_cc_id, cc_map.get(account_default_cc_id, 'Unknown')
+            return account_default_cc_id, account_default_cc_name
             
         return '', 'Unassigned'
 
