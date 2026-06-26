@@ -101,7 +101,7 @@
                 { 'id': 'cc_tools', 'title': 'CC Tools', 'tabs': [ ('cxone_audio_converter', 'CXone Audio Converter', 'Convert audio files to 8kHz, mono, u-law'), ('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts') ] },
                 { 'id': 'pm_tools', 'title': 'PM Tools', 'tabs': [ ('port_mapping', 'Port Mapping', 'Upload LOA and BRD to extract and map phone numbers') ] },
                 { 'id': 'se_tools', 'title': 'SE Tools', 'tabs': [ ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'), ('agent_form', 'Agent Form', 'AI-assisted personal injury triage form'), ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'), ('d365_ringcx', 'D365 RingCX Demo', 'D365 + RingCX outbound lead flow demo'), ('audio_streaming', 'RingCX Streaming', 'Live call audio streaming and transcription') ] },
-                { 'id': 'uc_tools', 'title': 'UC Tools', 'tabs': [ ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'), ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'), ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'), ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'), ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'), ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'), ('renamer', 'Extension Renamer', 'Bulk edit extension names'), ('live_events', 'Live Events', 'Real-time subscription listener'), ('message_management', 'Message Management', 'Download and upload custom audio greetings for Users, Call Queues, and IVRs'), ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'), ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'), ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'), ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'), ('account_migration', 'Account Migration', 'Export and Import full account configurations and audio'), ('cq_hours', 'Call Queue Manager', 'Bulk update Call Queue settings and business hours') ] }
+                { 'id': 'uc_tools', 'title': 'UC Tools', 'tabs': [ ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'), ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'), ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'), ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'), ('cost_centres', 'Cost Centres', 'Audit and update Cost Centre allocations for Extensions, Numbers, and Devices'), ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'), ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'), ('renamer', 'Extension Renamer', 'Bulk edit extension names'), ('live_events', 'Live Events', 'Real-time subscription listener'), ('message_management', 'Message Management', 'Download and upload custom audio greetings for Users, Call Queues, and IVRs'), ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'), ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'), ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'), ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'), ('account_migration', 'Account Migration', 'Export and Import full account configurations and audio'), ('cq_hours', 'Call Queue Manager', 'Bulk update Call Queue settings and business hours') ] }
               ] %}
 
               {% for group in nav_groups %}
@@ -137,7 +137,7 @@
 
           <div class="flex-1 w-full min-w-0">
             
-            {% set sm_auth_tabs = ['presence', 'bulk_opening', 'call_flow', 'custom_rules', 'device_swap', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'port_mapping'] %}
+            {% set sm_auth_tabs = ['presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'device_swap', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'port_mapping'] %}
             
             {% if current_tab in sm_auth_tabs %}
                 {% if not session.get('sm_employee_token') %}
@@ -192,7 +192,6 @@
                         }
                     </script>
                 {% else %}
-                    <!-- Active Bridge Banner -->
                     <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
                         <div>
                             <span class="text-[10px] font-bold text-blue-500 uppercase block tracking-wider">Active Impersonation Context</span>
@@ -205,6 +204,7 @@
                         {% if current_tab == 'presence' %} {% include 'includes/presence_tab.html' %} 
                         {% elif current_tab == 'bulk_opening' %} {% include 'includes/bulk_opening_tab.html' %}
                         {% elif current_tab == 'call_flow' %} {% include 'includes/call_flow_tab.html' %}
+                        {% elif current_tab == 'cost_centres' %} {% include 'includes/cost_centres_tab.html' %}
                         {% elif current_tab == 'custom_rules' %} {% include 'includes/custom_rules_tab.html' %}
                         {% elif current_tab == 'device_swap' %} {% include 'includes/device_swap_tab.html' %}
                         {% elif current_tab == 'renamer' %} {% include 'includes/extension_renamer_tab.html' %}
