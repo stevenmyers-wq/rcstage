@@ -27,7 +27,7 @@ def get_cost_centres_data(token):
     cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
     cc_map = {str(cc['id']): cc.get('name', f"Cost Centre {cc['id']}") for cc in cost_centres}
 
-    # 2. Build Site to Cost Centre Map from the Extensions list
+    # 2. Build Site to Cost Centre Map
     # We must fetch extensions first to map sites to their cost centres
     ext_params = {'status': ['Enabled', 'Disabled', 'NotActivated', 'Unassigned']}
     extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token=token, params=ext_params)
@@ -166,51 +166,33 @@ def get_cost_centres_data(token):
 
     return {'cost_centres': cost_centres, 'assets': assets}
 
+
 def update_asset_cost_centre(token, asset, cost_centre_id):
-    asset_id = asset['id']
+    asset_id = str(asset['id'])
     asset_type = asset['type']
     
-    # FIX: RingCentral API strictly defines CostCenterId as an Int64. 
-    # Passing it as a string results in the API silently ignoring the update.
-    cc_payload = {}
-    if cost_centre_id:
-        try:
-            cc_payload = {'id': int(cost_centre_id)}
-        except ValueError:
-            cc_payload = {'id': cost_centre_id}
-            
-    payload = {'costCenter': cc_payload}
+    # Force string representation to avoid Javascript Int64 precision loss in RC Backend
+    cc_id_str = str(cost_centre_id) if cost_centre_id else ""
     
     if asset_type == 'Extension':
         endpoint = f'/restapi/v1.0/account/~/extension/{asset_id}'
+        payload = {'costCenter': {'id': cc_id_str}} if cc_id_str else {'costCenter': {}}
+        rc_api_call(endpoint, method='PUT', json=payload, token=token, raise_error=True)
+        
     elif asset_type == 'PhoneNumber':
-        endpoint = f'/restapi/v1.0/account/~/phone-number/{asset_id}'
+        # The V1 Phone Number API silently ignores Cost Center updates. We MUST use V2 PATCH.
+        endpoint = f'/restapi/v2/accounts/~/phone-numbers/{asset_id}'
+        payload = {'costCenterId': cc_id_str} if cc_id_str else {'costCenterId': None}
+        rc_api_call(endpoint, method='PATCH', json=payload, token=token, raise_error=True)
+        
     elif asset_type == 'Device':
         endpoint = f'/restapi/v1.0/account/~/device/{asset_id}'
+        payload = {'costCenter': {'id': cc_id_str}} if cc_id_str else {'costCenter': {}}
+        rc_api_call(endpoint, method='PUT', json=payload, token=token, raise_error=True)
+        
     elif asset_type == 'License':
-        raise ValueError("RingCentral's API does not support updating Cost Centres for standalone licenses.")
+        raise ValueError("RingCentral API does not support updating Cost Centres for standalone licenses.")
     else:
         raise ValueError(f"Unknown asset type: {asset_type}")
-
-    resp = rc_api_call(endpoint, method='PUT', json=payload, token=token, return_response=True)
-    
-    if not getattr(resp, 'ok', False):
-        err = "Update failed"
-        try: 
-            err = resp.json().get('message', err)
-        except: 
-            pass
-        raise Exception(err)
-        
-    # FIX: Fallback for Phone Numbers. The V1 phone number API occasionally rejects cost centers 
-    # depending on the internal network topology. We double-fire it to the V2 API which guarantees it.
-    if asset_type == 'PhoneNumber' and cost_centre_id:
-        try:
-            v2_endpoint = f'/restapi/v2/accounts/~/phone-numbers/{asset_id}'
-            # V2 API uses a flattened schema for this property
-            v2_payload = {'costCenterId': cc_payload['id']}
-            rc_api_call(v2_endpoint, method='PATCH', json=v2_payload, token=token, return_response=True)
-        except Exception as e:
-            print(f"V2 Phone Number Cost Center fallback failed for {asset_id}: {e}")
 
     return True
