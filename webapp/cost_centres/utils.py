@@ -11,7 +11,6 @@ def fetch_all_pages(endpoint, token, params=None):
     while True:
         resp = rc_api_call(endpoint, method='GET', params=params, token=token, raise_error=False)
         if not resp: 
-            print(f"[Cost Centres] Endpoint {endpoint} returned empty or failed.")
             break
         if 'records' not in resp: 
             break
@@ -28,73 +27,54 @@ def get_cost_centres_data(token):
     cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
     cc_map = {str(cc['id']): cc.get('name', f"Cost Centre {cc['id']}") for cc in cost_centres}
 
-    # 2. Fetch Account Default Cost Centre
-    account_default_cc_id = None
-    account_default_cc_name = 'Account Default'
-    try:
-        acc_info = rc_api_call('/restapi/v1.0/account/~', method='GET', token=token)
-        if acc_info and acc_info.get('costCenter') and acc_info['costCenter'].get('id'):
-            account_default_cc_id = str(acc_info['costCenter']['id'])
-            account_default_cc_name = acc_info['costCenter'].get('name') or cc_map.get(account_default_cc_id, f"Cost Centre {account_default_cc_id}")
-    except Exception as e:
-        print(f"[Cost Centres] Failed to fetch account default CC: {e}")
-
-    def resolve_cost_centre(item):
-        """Resolves the effective Cost Centre: Explicit Assignment -> Account Default"""
-        # NO INHERITANCE GUESSING. Trust the payload explicitly.
-        cc_id = str(item.get('costCenter', {}).get('id', ''))
-        if cc_id:
-            cc_name = item.get('costCenter', {}).get('name') or cc_map.get(cc_id, f"Cost Centre {cc_id}")
-            return cc_id, cc_name
-            
-        # Fallback to Account Default if not explicitly assigned
-        if account_default_cc_id:
-            return account_default_cc_id, account_default_cc_name
-            
-        return '', 'Account Default'
-
     assets = []
     
-    # 3. Fetch ALL Extensions (crucially, we must request 'Unassigned' status explicitly)
+    # 2. Fetch Extensions (including explicitly requesting 'Unassigned')
     ext_params = {'status': ['Enabled', 'Disabled', 'NotActivated', 'Unassigned']}
     extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token=token, params=ext_params)
     
     for ext in extensions:
-        cc_id, cc_name = resolve_cost_centre(ext)
+        # Skip pure system objects
+        if ext.get('type') in ['ApplicationExtension']:
+            continue
+            
+        cc_id = str(ext.get('costCenter', {}).get('id', ''))
+        cc_name = ext.get('costCenter', {}).get('name') or cc_map.get(cc_id, 'Unassigned')
         
-        # Format name nicely for unassigned users
         name = ext.get('name', '')
         if not name:
             contact = ext.get('contact', {})
             name = f"{contact.get('firstName', '')} {contact.get('lastName', '')}".strip()
-        if not name:
-            name = "Unassigned / Unnamed Extension"
+            
+        if ext.get('status') == 'Unassigned':
+            name = f"[Unassigned] {name}" if name else "[Unassigned] Unknown Extension"
+        elif not name:
+            name = "Unnamed Extension"
             
         assets.append({
             'id': str(ext.get('id')),
             'type': 'Extension',
             'subType': ext.get('type', 'Unknown'),
-            'status': ext.get('status', 'Unknown'),
             'name': name,
             'number': ext.get('extensionNumber', 'N/A'),
-            'site': ext.get('site', {}).get('name', 'Main Site'),
+            'site': ext.get('site', {}).get('name', 'N/A'),
             'department': ext.get('contact', {}).get('department', 'N/A') or 'N/A',
             'costCenterId': cc_id,
             'costCenterName': cc_name
         })
 
-    # 4. Fetch Phone Numbers
+    # 3. Fetch Phone Numbers
     phone_numbers = fetch_all_pages('/restapi/v1.0/account/~/phone-number', token=token)
     for pn in phone_numbers:
         usage = pn.get('usageType', '')
         # ForwardedNumber is sometimes used for unassigned external routing logic
         if usage in ['CompanyNumber', 'MainCompanyNumber', 'DirectNumber', 'ForwardedNumber'] and not pn.get('extension'):
-            cc_id, cc_name = resolve_cost_centre(pn)
+            cc_id = str(pn.get('costCenter', {}).get('id', ''))
+            cc_name = pn.get('costCenter', {}).get('name') or cc_map.get(cc_id, 'Unassigned')
             assets.append({
                 'id': str(pn.get('id')),
                 'type': 'PhoneNumber',
                 'subType': usage,
-                'status': pn.get('status', 'Unknown'),
                 'name': pn.get('phoneNumber', ''),
                 'number': pn.get('phoneNumber', ''),
                 'site': 'N/A',
@@ -103,37 +83,37 @@ def get_cost_centres_data(token):
                 'costCenterName': cc_name
             })
             
-    # 5. Fetch Devices
+    # 4. Fetch Devices (Rental hardphones)
     devices = fetch_all_pages('/restapi/v1.0/account/~/device', token=token)
     for dev in devices:
         if not dev.get('extension'):
-            cc_id, cc_name = resolve_cost_centre(dev)
+            cc_id = str(dev.get('costCenter', {}).get('id', ''))
+            cc_name = dev.get('costCenter', {}).get('name') or cc_map.get(cc_id, 'Unassigned')
             assets.append({
                 'id': str(dev.get('id')),
                 'type': 'Device',
                 'subType': dev.get('type', 'Unknown'),
-                'status': dev.get('status', 'Unknown'),
                 'name': dev.get('name') or dev.get('model', {}).get('name', 'Unknown Device'),
                 'number': dev.get('serial', 'N/A'),
-                'site': dev.get('site', {}).get('name', 'Main Site'),
+                'site': dev.get('site', {}).get('name', 'N/A'),
                 'department': 'N/A',
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
 
-    # 6. Fetch Licenses (captures standalone ACE/Live Reports items that aren't extensions)
+    # 5. Fetch Billing Items / Licenses (ACE, Boosters, Plans)
     try:
         licenses = fetch_all_pages('/restapi/v1.0/account/~/licenses', token=token)
         for lic in licenses:
-            cc_id, cc_name = resolve_cost_centre(lic)
+            cc_id = str(lic.get('costCenter', {}).get('id', ''))
+            cc_name = lic.get('costCenter', {}).get('name') or cc_map.get(cc_id, 'Unassigned')
             l_type = lic.get('type', {}).get('name', 'License')
             assets.append({
                 'id': str(lic.get('id')),
                 'type': 'License',
-                'subType': l_type,
-                'status': 'Unassigned',
-                'name': f"{l_type} License",
-                'number': 'N/A',
+                'subType': 'Unassigned Licence',
+                'name': l_type,
+                'number': f"Qty: {lic.get('quantity', '1')}",
                 'site': 'N/A',
                 'department': 'N/A',
                 'costCenterId': cc_id,
