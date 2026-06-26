@@ -258,7 +258,11 @@ def run_cq_audit(task_id, queue_ids, token):
             succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/business-hours-rule', token=token)
             if succ:
                 q_set = rule.get('queue', {})
-                row["Ring Type"] = q_set.get('transferMode', 'Simultaneous')
+                
+                transfer_mode = q_set.get('transferMode', 'Simultaneous')
+                if transfer_mode == 'Rotating': row["Ring Type"] = "Rotating"
+                else: row["Ring Type"] = transfer_mode
+                
                 row["User Ring Time"] = format_sec(q_set.get('agentTimeout'))
                 row["Total Ring Time"] = format_sec(q_set.get('holdTime'))
                 row["Wrap Up Time"] = format_sec(q_set.get('wrapUpTime'))
@@ -354,7 +358,11 @@ def run_cq_audit(task_id, queue_ids, token):
                 else:
                     row["Voicemail Notifications"] = "Off"
                 
-                emails = vm_set.get('emailAddresses', [])
+                if notif.get('advancedMode'):
+                    emails = vm_set.get('advancedEmailAddresses', [])
+                else:
+                    emails = notif.get('emailAddresses', [])
+                    
                 if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
 
             rows.append(row)
@@ -507,14 +515,20 @@ def update_cq_batch(records, token, is_preview=False):
             else: break
         else: break
 
-    # Background fetch for Audio Greetings mapping
-    succ, dict_resp = safe_api_call('/restapi/v1.0/dictionary/greeting', method='GET', token=token)
+    # Background fetch for Audio Greetings mapping with STRICT usageType to ensure we grab Queue IDs, not User IDs.
     preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
-    if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
-        for rec in dict_resp['records']:
-            g_type = rec.get('type')
-            if g_type in preset_dict:
-                preset_dict[g_type][rec.get('name', '').lower()] = str(rec.get('id', ''))
+    for g_type in preset_dict.keys():
+        succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
+        if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
+            for rec in dict_resp['records']:
+                preset_dict[g_type][rec.get('name', '').lower().strip()] = str(rec.get('id', ''))
+                
+        succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
+        if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
+            for rec in dict_resp_fallback['records']:
+                k = rec.get('name', '').lower().strip()
+                if k not in preset_dict[g_type]:
+                    preset_dict[g_type][k] = str(rec.get('id', ''))
 
     def _resolve_ext(num):
         clean_num = str(num).split('.')[0].strip()
@@ -697,8 +711,10 @@ def update_cq_batch(records, token, is_preview=False):
                 
                 rt = get_val(row, 'Ring Type')
                 if rt:
-                    if rt.lower() == 'longest idle': rt = 'Rotating'
-                    q_set['transferMode'] = rt
+                    rt_lower = rt.lower()
+                    if 'simultaneous' in rt_lower: q_set['transferMode'] = 'Simultaneous'
+                    elif 'sequential' in rt_lower: q_set['transferMode'] = 'Sequential'
+                    elif 'rotating' in rt_lower or 'idle' in rt_lower: q_set['transferMode'] = 'Rotating'
                 
                 val_urt = get_val(row, 'User Ring Time')
                 if val_urt: 
@@ -724,6 +740,7 @@ def update_cq_batch(records, token, is_preview=False):
                 if val_ia:
                     if val_ia.lower() == 'never':
                         q_set['holdAudioInterruptionMode'] = 'Never'
+                        q_set.pop('holdAudioInterruptionPeriod', None)
                     else:
                         parsed = parse_time_to_seconds(val_ia)
                         if parsed is not None: 
@@ -769,10 +786,17 @@ def update_cq_batch(records, token, is_preview=False):
                     logs.append("Warning: Reverting 'Queue Full' to Voicemail (No valid destination)")
                     q_set['maxCallersAction'] = 'Voicemail'
 
+                # CRITICAL DOMINO FIX: If Simultaneous, strip agentTimeout to prevent RC from automatically flipping to Rotating and corrupting holdTime!
+                if q_set.get('transferMode') == 'Simultaneous':
+                    q_set.pop('agentTimeout', None)
+
                 rule['queue'] = q_set
                 old_q = orig_rule.get('queue', {})
                 
-                r_needs_update |= check_diff(changes, 'Ring Type', old_q.get('transferMode'), q_set.get('transferMode'))
+                old_tm = 'Rotating' if old_q.get('transferMode') == 'Rotating' else old_q.get('transferMode')
+                new_tm = 'Rotating' if q_set.get('transferMode') == 'Rotating' else q_set.get('transferMode')
+                r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
+                
                 r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
                 r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
                 r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
@@ -808,7 +832,6 @@ def update_cq_batch(records, token, is_preview=False):
                 orig_greetings = orig_rule.get('greetings', [])
                 new_greetings = []
                 
-                # Keep everything we aren't modifying untouched and clean
                 slots_to_mod = ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt', 'Voicemail']
                 for g in orig_greetings:
                     if g.get('type') not in slots_to_mod:
@@ -838,6 +861,9 @@ def update_cq_batch(records, token, is_preview=False):
                             new_greetings.append({"type": slot_type, "preset": {"id": matched_id}})
                         elif new_val == 'default':
                             new_greetings.append({"type": slot_type, "preset": {"id": "default"}})
+                        elif new_val == 'none' and 'none' not in preset_dict.get(slot_type, {}):
+                            # Failsafe: if the dictionary lacks "None", RC disables it if we omit the type entirely
+                            pass
                         elif new_val == 'custom':
                             orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
                             if orig_g and 'custom' in orig_g: new_greetings.append({"type": slot_type, "custom": {"id": orig_g['custom']['id']}})
@@ -954,7 +980,7 @@ def update_cq_batch(records, token, is_preview=False):
                         else: has_error = True; logs.append(f"Members Error: {err}")
 
         # --- F. VOICEMAIL NOTIFICATIONS ---
-        vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email']
+        vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
         if any(get_val(row, f) for f in vm_fields):
             get_succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='GET', token=token)
             if get_succ and isinstance(notif, dict):
@@ -973,28 +999,39 @@ def update_cq_batch(records, token, is_preview=False):
                     else:
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
                         
+                new_emails = []
                 if get_val(row, 'Voicemail Notifications Email'):
-                    emails = [e.strip() for e in get_val(row, 'Voicemail Notifications Email').split(',') if e.strip()]
-                    vm_set['emailAddresses'] = emails
+                    new_emails = [e.strip() for e in get_val(row, 'Voicemail Notifications Email').split(',') if e.strip()]
                     
-                # Prevent RC from throwing a 400 error by ensuring emailAddresses is populated if notifications are enabled
                 if vm_set.get('notifyByEmail'):
-                    if not vm_set.get('emailAddresses'):
+                    if not new_emails:
                         fallback = get_val(row, 'Queue Email')
                         if fallback:
-                            vm_set['emailAddresses'] = [fallback]
+                            new_emails = [e.strip() for e in fallback.split(',') if e.strip()]
                         else:
-                            vm_set['notifyByEmail'] = False
-                            vm_set['includeAttachment'] = False
-                            vm_set['markAsRead'] = False
+                            if notif.get('advancedMode') and vm_set.get('advancedEmailAddresses'):
+                                new_emails = vm_set.get('advancedEmailAddresses')
+                            elif not notif.get('advancedMode') and notif.get('emailAddresses'):
+                                new_emails = notif.get('emailAddresses')
+                            else:
+                                vm_set['notifyByEmail'] = False
+                                vm_set['includeAttachment'] = False
+                                vm_set['markAsRead'] = False
                 
+                if new_emails:
+                    notif['advancedMode'] = True
+                    vm_set['advancedEmailAddresses'] = new_emails
+                    
+                vm_set.pop('emailAddresses', None)
                 notif['voicemails'] = vm_set
                 
-                v_needs_update |= check_diff(changes, 'VM Email On', str(orig_notif.get('voicemails', {}).get('notifyByEmail')), str(vm_set.get('notifyByEmail')))
+                old_email_on = str(orig_notif.get('voicemails', {}).get('notifyByEmail'))
+                new_email_on = str(vm_set.get('notifyByEmail'))
+                v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
+                
                 v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
                 
-                old_emails = orig_notif.get('voicemails', {}).get('emailAddresses', [])
-                new_emails = vm_set.get('emailAddresses', [])
+                old_emails = orig_notif.get('voicemails', {}).get('advancedEmailAddresses', []) if orig_notif.get('advancedMode') else orig_notif.get('emailAddresses', [])
                 if set(old_emails) != set(new_emails):
                     v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
                 
