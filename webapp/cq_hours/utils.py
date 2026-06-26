@@ -29,7 +29,7 @@ def parse_time_to_seconds(val):
     return int(num * 60) if 'min' in val_str else int(num)
 
 def format_sec(val):
-    if val is None or str(val).strip() == "": return "None"
+    if val is None or str(val).strip() == "" or str(val).strip() == "None": return "None"
     try:
         v = int(float(val))
         if v == 0: return "0 Seconds"
@@ -161,11 +161,33 @@ def safe_api_call(endpoint, method='GET', json=None, token=None, max_retries=4):
         except Exception: time.sleep(2)
     return False, "Max retries exceeded due to rate limiting."
 
-def _safe_get_transfer_id(transfer_data):
+def _safe_get_transfer_id(transfer_data, action_type):
+    """Safely extracts the destination extension ID from a transfer array based on the RC action type."""
+    if not transfer_data: return ''
+    if isinstance(transfer_data, list):
+        for item in transfer_data:
+            if item.get('action') == action_type:
+                return str(item.get('extension', {}).get('id', ''))
+    return ''
+
+def _set_queue_transfer(q_set, action_type, ext_id):
+    """Safely updates or injects a destination object into the shared transfer array."""
+    if 'transfer' not in q_set or not isinstance(q_set['transfer'], list):
+        q_set['transfer'] = []
+    
+    q_set['transfer'] = [t for t in q_set['transfer'] if t.get('action') != action_type]
+    
+    if ext_id and ext_id != 'None':
+        q_set['transfer'].append({
+            "extension": {"id": ext_id},
+            "action": action_type
+        })
+
+def _safe_get_ah_transfer_id(transfer_data):
+    """After-Hours transfer lists don't use the action tag, so we just grab the first array element safely."""
+    if not transfer_data: return ''
     if isinstance(transfer_data, list) and len(transfer_data) > 0:
         return str(transfer_data[0].get('extension', {}).get('id', ''))
-    elif isinstance(transfer_data, dict):
-        return str(transfer_data.get('extension', {}).get('id', ''))
     return ''
 
 def fetch_all_queues(token):
@@ -269,14 +291,12 @@ def run_cq_audit(task_id, queue_ids, token):
                 row["Callers In Queue"] = q_set.get('maxCallers')
                 
                 row["When Queue is Full"] = q_set.get('maxCallersAction')
-                f_ext = str(q_set.get('maxCallersDestination', {}).get('extension', {}).get('id', ''))
-                if f_ext and f_ext != 'None':
-                    row["Queue Full Destination"] = ext_id_to_num.get(f_ext, f_ext)
+                f_ext = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers')
+                if f_ext: row["Queue Full Destination"] = ext_id_to_num.get(f_ext, f_ext)
 
                 row["When Max Time is Reached"] = q_set.get('holdTimeExpirationAction')
-                t_ext = _safe_get_transfer_id(q_set.get('transfer'))
-                if t_ext and t_ext != 'None':
-                    row["Time Reached Destination"] = ext_id_to_num.get(t_ext, t_ext)
+                t_ext = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration')
+                if t_ext: row["Time Reached Destination"] = ext_id_to_num.get(t_ext, t_ext)
 
                 mode = q_set.get('holdAudioInterruptionMode')
                 if mode == 'Never' or not mode:
@@ -317,7 +337,7 @@ def run_cq_audit(task_id, queue_ids, token):
             succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
             if succ:
                 row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
-                a_ext = _safe_get_transfer_id(ah_rule.get('transfer'))
+                a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
                 if a_ext and a_ext != 'None':
                     row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
                 
@@ -358,6 +378,7 @@ def run_cq_audit(task_id, queue_ids, token):
                 else:
                     row["Voicemail Notifications"] = "Off"
                 
+                # Accurately pull the override emails if Advanced Mode was correctly enabled previously
                 if notif.get('advancedMode'):
                     emails = vm_set.get('advancedEmailAddresses', [])
                 else:
@@ -413,7 +434,7 @@ def run_cq_audit(task_id, queue_ids, token):
                 "N": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
                 "O": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
                 "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default"',
+                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
                 "R": '"Simultaneous,Sequential,Rotating"', 
                 "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
                 "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
@@ -523,6 +544,7 @@ def update_cq_batch(records, token, is_preview=False):
             for rec in dict_resp['records']:
                 preset_dict[g_type][rec.get('name', '').lower().strip()] = str(rec.get('id', ''))
                 
+        # Fallback incase the dictionary is sparse
         succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
             for rec in dict_resp_fallback['records']:
@@ -753,14 +775,14 @@ def update_cq_batch(records, token, is_preview=False):
                         dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
                         if dest_id:
                             q_set['holdTimeExpirationAction'] = action
-                            q_set['transfer'] = [{'extension': {'id': dest_id}}]
+                            _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
                         else:
                             logs.append(f"Warning: Reverting 'Max Time' to Voicemail (Missing Dest in sheet)")
                             q_set['holdTimeExpirationAction'] = 'Voicemail'
-                            q_set.pop('transfer', None)
+                            _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
                     else:
                         q_set['holdTimeExpirationAction'] = action
-                        q_set.pop('transfer', None)
+                        _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
 
                 if get_val(row, 'When Queue is Full'):
                     action = get_val(row, 'When Queue is Full')
@@ -768,21 +790,21 @@ def update_cq_batch(records, token, is_preview=False):
                         dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
                         if dest_id:
                             q_set['maxCallersAction'] = action
-                            q_set['maxCallersDestination'] = {'extension': {'id': dest_id}}
+                            _set_queue_transfer(q_set, 'MaxCallers', dest_id)
                         else:
                             logs.append(f"Warning: Reverting 'Queue Full' to Voicemail (Missing Dest in sheet)")
                             q_set['maxCallersAction'] = 'Voicemail'
-                            q_set.pop('maxCallersDestination', None)
+                            _set_queue_transfer(q_set, 'MaxCallers', None)
                     else:
                         q_set['maxCallersAction'] = action
-                        q_set.pop('maxCallersDestination', None)
+                        _set_queue_transfer(q_set, 'MaxCallers', None)
                         
-                # Failsafe before updating logic in case the queue already lacked valid settings
-                if q_set.get('holdTimeExpirationAction') == 'TransferToExtension' and not q_set.get('transfer'):
+                # Failsafe: Avoid rejecting the entire object if missing the transfer node on an existing queue
+                if q_set.get('holdTimeExpirationAction') == 'TransferToExtension' and not _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration'):
                     logs.append("Warning: Reverting 'Max Time' to Voicemail (No valid destination)")
                     q_set['holdTimeExpirationAction'] = 'Voicemail'
                 
-                if q_set.get('maxCallersAction') == 'TransferToExtension' and not q_set.get('maxCallersDestination'):
+                if q_set.get('maxCallersAction') == 'TransferToExtension' and not _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers'):
                     logs.append("Warning: Reverting 'Queue Full' to Voicemail (No valid destination)")
                     q_set['maxCallersAction'] = 'Voicemail'
 
@@ -803,14 +825,16 @@ def update_cq_batch(records, token, is_preview=False):
                 r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
                 
                 r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
-                old_f_id = str(old_q.get('maxCallersDestination', {}).get('extension', {}).get('id', 'None'))
-                new_f_id = str(q_set.get('maxCallersDestination', {}).get('extension', {}).get('id', 'None'))
+                
+                old_f_id = _safe_get_transfer_id(old_q.get('transfer'), 'MaxCallers') or 'None'
+                new_f_id = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers') or 'None'
                 if old_f_id != new_f_id:
                     r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
 
                 r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
-                old_t_id = _safe_get_transfer_id(old_q.get('transfer')) or 'None'
-                new_t_id = _safe_get_transfer_id(q_set.get('transfer')) or 'None'
+                
+                old_t_id = _safe_get_transfer_id(old_q.get('transfer'), 'HoldTimeExpiration') or 'None'
+                new_t_id = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration') or 'None'
                 if old_t_id != new_t_id:
                     r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
 
@@ -861,9 +885,9 @@ def update_cq_batch(records, token, is_preview=False):
                             new_greetings.append({"type": slot_type, "preset": {"id": matched_id}})
                         elif new_val == 'default':
                             new_greetings.append({"type": slot_type, "preset": {"id": "default"}})
-                        elif new_val == 'none' and 'none' not in preset_dict.get(slot_type, {}):
-                            # Failsafe: if the dictionary lacks "None", RC disables it if we omit the type entirely
-                            pass
+                        elif new_val == 'none':
+                            # RC disables the greeting if you explicitly pass 'None'
+                            new_greetings.append({"type": slot_type, "preset": {"id": "None"}})
                         elif new_val == 'custom':
                             orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
                             if orig_g and 'custom' in orig_g: new_greetings.append({"type": slot_type, "custom": {"id": orig_g['custom']['id']}})
@@ -941,8 +965,8 @@ def update_cq_batch(records, token, is_preview=False):
                 
                 a_needs_update |= check_diff(changes, 'After Hours Behavior', orig_ah.get('callHandlingAction'), ah_rule.get('callHandlingAction'))
                 
-                old_a_id = _safe_get_transfer_id(orig_ah.get('transfer')) or 'None'
-                new_a_id = _safe_get_transfer_id(ah_rule.get('transfer')) or 'None'
+                old_a_id = _safe_get_ah_transfer_id(orig_ah.get('transfer')) or 'None'
+                new_a_id = _safe_get_ah_transfer_id(ah_rule.get('transfer')) or 'None'
                 if old_a_id != new_a_id:
                     a_needs_update |= check_diff(changes, 'After Hours Dest', ext_id_to_num.get(old_a_id, old_a_id), ext_id_to_num.get(new_a_id, new_a_id))
                 
