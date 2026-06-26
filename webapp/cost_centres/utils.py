@@ -4,13 +4,17 @@ from webapp.rc_api import rc_api_call
 def fetch_all_pages(endpoint, token, params=None):
     if params is None:
         params = {}
-    params['perPage'] = 1000
+    params['perPage'] = 250
     params['page'] = 1
     records = []
     
     while True:
-        resp = rc_api_call(endpoint, method='GET', params=params, token=token)
-        if not resp or 'records' not in resp: 
+        resp = rc_api_call(endpoint, method='GET', params=params, token=token, raise_error=False)
+        if not resp: 
+            print(f"[Cost Centres] Endpoint {endpoint} returned empty or failed.")
+            break
+        if 'records' not in resp: 
+            print(f"[Cost Centres] Endpoint {endpoint} did not return 'records'. Response: {str(resp)[:200]}")
             break
         records.extend(resp['records'])
         if not resp.get('navigation', {}).get('nextPage'): 
@@ -22,52 +26,53 @@ def fetch_all_pages(endpoint, token, params=None):
 
 def get_cost_centres_data(token):
     # 1. Fetch available cost centres and build a lookup map
-    try:
-        cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
-        cc_map = {str(cc['id']): cc.get('name', 'Unknown') for cc in cost_centres}
-    except Exception:
-        cost_centres = []
-        cc_map = {}
+    cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
+    cc_map = {str(cc['id']): cc.get('name', f"Cost Centre {cc['id']}") for cc in cost_centres}
 
-    # 2. Fetch Account Default Cost Centre
-    account_default_cc_id = None
-    account_default_cc_name = 'Unknown'
+    # 2. Fetch ALL Extensions
+    extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token=token)
+    
+    # 3. Build Site to Cost Centre Map from the Extensions list
+    site_cc_map = {}
+    main_site_cc_id = None
+    main_site_cc_name = None
+    
+    for ext in extensions:
+        if ext.get('type') == 'Site' or ext.get('id') == 'main-site':
+            site_id = str(ext.get('id', ''))
+            cc_id = str(ext.get('costCenter', {}).get('id', ''))
+            if cc_id:
+                cc_name = ext.get('costCenter', {}).get('name') or cc_map.get(cc_id, f"Cost Centre {cc_id}")
+                site_cc_map[site_id] = {'id': cc_id, 'name': cc_name}
+                if site_id == 'main-site' or ext.get('name') == 'Main Site':
+                    main_site_cc_id = cc_id
+                    main_site_cc_name = cc_name
+
+    # 4. Fetch Account Default Cost Centre
+    account_default_cc_id = main_site_cc_id
+    account_default_cc_name = main_site_cc_name
     try:
         acc_info = rc_api_call('/restapi/v1.0/account/~', method='GET', token=token)
         if acc_info and acc_info.get('costCenter') and acc_info['costCenter'].get('id'):
             account_default_cc_id = str(acc_info['costCenter']['id'])
-            # Use the native name if provided, otherwise check the dictionary
-            account_default_cc_name = acc_info['costCenter'].get('name') or cc_map.get(account_default_cc_id, 'Unknown')
-    except Exception:
-        pass
-
-    # 3. Fetch Sites and their associated Cost Centres
-    site_cc_map = {}
-    try:
-        sites = fetch_all_pages('/restapi/v1.0/account/~/sites', token=token)
-        for site in sites:
-            if site.get('costCenter') and site['costCenter'].get('id'):
-                s_cc_id = str(site['costCenter']['id'])
-                s_cc_name = site['costCenter'].get('name') or cc_map.get(s_cc_id, 'Unknown')
-                site_cc_map[str(site['id'])] = {'id': s_cc_id, 'name': s_cc_name}
-    except Exception:
-        pass
+            account_default_cc_name = acc_info['costCenter'].get('name') or cc_map.get(account_default_cc_id, f"Cost Centre {account_default_cc_id}")
+    except Exception as e:
+        print(f"[Cost Centres] Failed to fetch account default CC: {e}")
 
     def resolve_cost_centre(item):
         """Resolves the effective Cost Centre by checking Item -> Site -> Account inheritance"""
         # A. Check explicit item assignment
         cc_id = str(item.get('costCenter', {}).get('id', ''))
         if cc_id:
-            # Use the name provided directly on the item first, fallback to the lookup map
-            cc_name = item.get('costCenter', {}).get('name') or cc_map.get(cc_id, 'Unknown')
+            cc_name = item.get('costCenter', {}).get('name') or cc_map.get(cc_id, f"Cost Centre {cc_id}")
             return cc_id, cc_name
         
         # B. Check site assignment
         site_id = str(item.get('site', {}).get('id', ''))
         if site_id and site_id in site_cc_map:
             return site_cc_map[site_id]['id'], site_cc_map[site_id]['name']
-        
-        # C. Fallback to account default
+            
+        # C. Fallback to Main Site / Account default
         if account_default_cc_id:
             return account_default_cc_id, account_default_cc_name
             
@@ -75,8 +80,7 @@ def get_cost_centres_data(token):
 
     assets = []
     
-    # 4. Fetch Extensions (Users, IVRs, Queues, etc.)
-    extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token=token)
+    # 5. Process Extensions
     for ext in extensions:
         if ext.get('type') in ['Limited', 'ApplicationExtension']:
             continue
@@ -95,7 +99,7 @@ def get_cost_centres_data(token):
             'costCenterName': cc_name
         })
 
-    # 5. Fetch Phone Numbers
+    # 6. Fetch Phone Numbers
     phone_numbers = fetch_all_pages('/restapi/v1.0/account/~/phone-number', token=token)
     for pn in phone_numbers:
         usage = pn.get('usageType', '')
@@ -113,7 +117,7 @@ def get_cost_centres_data(token):
                 'costCenterName': cc_name
             })
             
-    # 6. Fetch Devices
+    # 7. Fetch Devices
     devices = fetch_all_pages('/restapi/v1.0/account/~/device', token=token)
     for dev in devices:
         if not dev.get('extension'):
