@@ -182,6 +182,9 @@ def _set_queue_transfer(q_set, action_type, ext_id):
             "extension": {"id": ext_id},
             "action": action_type
         })
+        
+    if len(q_set['transfer']) == 0:
+        q_set.pop('transfer', None)
 
 def _safe_get_ah_transfer_id(transfer_data):
     """After-Hours transfer lists don't use the action tag, so we just grab the first array element safely."""
@@ -517,8 +520,13 @@ def update_cq_batch(records, token, is_preview=False):
         succ, resp = safe_api_call(f'/restapi/v1.0/account/~/sites?perPage=1000&page={page}', method='GET', token=token)
         if succ and isinstance(resp, dict) and 'records' in resp:
             for s in resp['records']: 
-                site_map[str(s.get('name')).lower().strip()] = str(s['id'])
-                site_id_to_name[str(s['id'])] = str(s.get('name'))
+                s_id = str(s['id'])
+                s_name_dict = str(s.get('name')).lower().strip()
+                site_map[s_name_dict] = s_id
+                site_id_to_name[s_id] = str(s.get('name'))
+                if s.get('code') == 'main-site' or s_name_dict == 'main site':
+                    site_map['main site'] = s_id
+                    site_map['company'] = s_id
             if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
             else: break
         else: break
@@ -536,15 +544,9 @@ def update_cq_batch(records, token, is_preview=False):
         else: break
 
     # Background fetch for Audio Greetings mapping. 
-    # Fetch Generic User IDs first, then overwrite with strict Queue IDs to prevent Preset Mismatch 400 errors.
+    # CRITICAL FIX: STRICTLY Fetch ONLY DepartmentExtensionAnsweringRule IDs to prevent Preset Mismatch 400 errors.
     preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
-        succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
-        if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
-            for rec in dict_resp_fallback['records']:
-                k = rec.get('name', '').lower().strip()
-                preset_dict[g_type][k] = str(rec.get('id', ''))
-                
         succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
             for rec in dict_resp['records']:
@@ -552,8 +554,9 @@ def update_cq_batch(records, token, is_preview=False):
 
     def _resolve_ext(num):
         clean_num = str(num).split('.')[0].strip()
+        # RingEX UAT Compliance: If the queue is missing, pass the raw input value so the API natively rejects it exactly as expected.
         if clean_num in ext_map: return ext_map[clean_num]
-        return None
+        return clean_num
 
     for i, row in enumerate(records):
         logs = []
@@ -614,8 +617,8 @@ def update_cq_batch(records, token, is_preview=False):
                     yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {c_resp}", "changes": changes}, "is_preview": is_preview}
                     continue
 
-        # --- A. BASIC INFO UPDATE ---
-        basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
+        # --- A. BASIC INFO UPDATE (Split to support API strictness) ---
+        basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone']
         if any(get_val(row, f) for f in basic_fields):
             get_succ, old_basic = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='GET', token=token)
             if get_succ and isinstance(old_basic, dict):
@@ -634,22 +637,13 @@ def update_cq_batch(records, token, is_preview=False):
                     basic_payload['contact'] = old_basic.get('contact', {})
                     basic_payload['contact']['email'] = get_val(row, 'Queue Email')
                     b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
-                    
-                if get_val(row, 'Member Queue Status'):
-                    mem_status = get_val(row, 'Member Queue Status').lower()
-                    new_editable = True if 'allowed' in mem_status and 'not' not in mem_status else False
-                    basic_payload['editableMemberStatus'] = new_editable
-                    old_editable = old_basic.get('editableMemberStatus')
-                    old_status_str = 'Allowed' if old_editable else 'Not Allowed'
-                    new_status_str = 'Allowed' if new_editable else 'Not Allowed'
-                    b_needs_update |= check_diff(changes, 'Member Queue Status', old_status_str, new_status_str)
 
                 if get_val(row, 'Site'):
                     s_name = get_val(row, 'Site').lower()
                     if not site_map:
                         logs.append("Site ignored (Multi-site disabled)")
                     else:
-                        new_site_id = 'main-site' if s_name in ['main site', 'company'] else site_map.get(s_name)
+                        new_site_id = site_map.get(s_name)
                         if new_site_id: 
                             old_site_id = str(old_basic.get('site', {}).get('id', 'None'))
                             old_site_name = 'Main Site' if old_site_id == 'main-site' else site_id_to_name.get(old_site_id, old_site_id)
@@ -685,18 +679,32 @@ def update_cq_batch(records, token, is_preview=False):
                 if b_needs_update:
                     if not is_preview:
                         s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json=basic_payload, token=token)
-                        # Fallback for editableMemberStatus rejection
-                        if not s_succ and 'editableMemberStatus' in basic_payload:
-                            basic_payload.pop('editableMemberStatus')
-                            s_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json=basic_payload, token=token)
-                            if s_succ2: logs.append("Basic Info Updated (Member Status ignored)")
-                            else: has_error = True; logs.append(f"Basic Error: {err2}")
-                        elif s_succ:
+                        if s_succ:
                             logs.append("Basic Info Updated")
                         else:
                             has_error = True; logs.append(f"Basic Error: {err}")
                     else:
                         logs.append("Basic Info Evaluated")
+                        
+        # --- A.5 DEDICATED CALL QUEUE UPDATE (Isolating editableMemberStatus for strict RingEX APIs) ---
+        if get_val(row, 'Member Queue Status'):
+            get_succ, old_cq = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}', method='GET', token=token)
+            if get_succ and isinstance(old_cq, dict):
+                mem_status = get_val(row, 'Member Queue Status').lower()
+                new_editable = True if 'allowed' in mem_status and 'not' not in mem_status else False
+                
+                old_editable = old_cq.get('editableMemberStatus')
+                old_status_str = 'Allowed' if old_editable else 'Not Allowed'
+                new_status_str = 'Allowed' if new_editable else 'Not Allowed'
+                
+                if check_diff(changes, 'Member Queue Status', old_status_str, new_status_str):
+                    if not is_preview:
+                        cq_payload = {"editableMemberStatus": new_editable}
+                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}', method='PUT', json=cq_payload, token=token)
+                        if s_succ: logs.append("Member Queue Status Updated")
+                        else: has_error = True; logs.append(f"Member Status Error: {err}")
+                    else:
+                        logs.append("Member Queue Status Evaluated")
 
         # --- B. BUSINESS HOURS UPDATE ---
         hours_str = get_val(row, 'Hours')
@@ -782,17 +790,8 @@ def update_cq_batch(records, token, is_preview=False):
                     action = get_val(row, 'When Max Time is Reached')
                     if action == 'TransferToExtension':
                         dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
-                        if dest_id == q_id:
-                            logs.append(f"Warning: Cannot transfer queue to itself (Max Time). Reverting to Voicemail.")
-                            q_set['holdTimeExpirationAction'] = 'Voicemail'
-                            _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
-                        elif dest_id:
-                            q_set['holdTimeExpirationAction'] = action
-                            _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
-                        else:
-                            logs.append(f"Warning: Reverting 'Max Time' to Voicemail (Missing Dest in sheet)")
-                            q_set['holdTimeExpirationAction'] = 'Voicemail'
-                            _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
+                        q_set['holdTimeExpirationAction'] = action
+                        _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
                     else:
                         q_set['holdTimeExpirationAction'] = action
                         _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
@@ -801,31 +800,13 @@ def update_cq_batch(records, token, is_preview=False):
                     action = get_val(row, 'When Queue is Full')
                     if action == 'TransferToExtension':
                         dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
-                        if dest_id == q_id:
-                            logs.append(f"Warning: Cannot transfer queue to itself (Queue Full). Reverting to Voicemail.")
-                            q_set['maxCallersAction'] = 'Voicemail'
-                            _set_queue_transfer(q_set, 'MaxCallers', None)
-                        elif dest_id:
-                            q_set['maxCallersAction'] = action
-                            _set_queue_transfer(q_set, 'MaxCallers', dest_id)
-                        else:
-                            logs.append(f"Warning: Reverting 'Queue Full' to Voicemail (Missing Dest in sheet)")
-                            q_set['maxCallersAction'] = 'Voicemail'
-                            _set_queue_transfer(q_set, 'MaxCallers', None)
+                        q_set['maxCallersAction'] = action
+                        _set_queue_transfer(q_set, 'MaxCallers', dest_id)
                     else:
                         q_set['maxCallersAction'] = action
                         _set_queue_transfer(q_set, 'MaxCallers', None)
                         
-                # Failsafe: Avoid rejecting the entire object if missing the transfer node on an existing queue
-                if q_set.get('holdTimeExpirationAction') == 'TransferToExtension' and not _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration'):
-                    logs.append("Warning: Reverting 'Max Time' to Voicemail (No valid destination)")
-                    q_set['holdTimeExpirationAction'] = 'Voicemail'
-                
-                if q_set.get('maxCallersAction') == 'TransferToExtension' and not _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers'):
-                    logs.append("Warning: Reverting 'Queue Full' to Voicemail (No valid destination)")
-                    q_set['maxCallersAction'] = 'Voicemail'
-
-                # CRITICAL DOMINO FIX: If Simultaneous, strip agentTimeout to prevent RC from automatically flipping to Rotating and corrupting holdTime!
+                # CRITICAL DOMINO FIX: If Simultaneous, forcibly strip agentTimeout to prevent RC from automatically flipping to Rotating and corrupting holdTime!
                 if q_set.get('transferMode') == 'Simultaneous':
                     q_set.pop('agentTimeout', None)
 
@@ -965,24 +946,11 @@ def update_cq_batch(records, token, is_preview=False):
                     action = get_val(row, 'After Hours Behavior')
                     if action == 'TransferToExtension':
                         dest_id = _resolve_ext(get_val(row, 'After Hours Destination'))
-                        if dest_id == q_id:
-                            logs.append(f"Warning: Cannot transfer queue to itself (After Hours). Reverting to Voicemail.")
-                            ah_rule['callHandlingAction'] = 'Voicemail'
-                            ah_rule.pop('transfer', None)
-                        elif dest_id:
-                            ah_rule['callHandlingAction'] = action
-                            ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
-                        else:
-                            logs.append(f"Warning: Reverting 'After Hours Behavior' to Voicemail (Missing Dest in sheet)")
-                            ah_rule['callHandlingAction'] = 'Voicemail'
-                            ah_rule.pop('transfer', None)
+                        ah_rule['callHandlingAction'] = action
+                        if dest_id: ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
                     else:
                         ah_rule['callHandlingAction'] = action
                         ah_rule.pop('transfer', None)
-                        
-                if ah_rule.get('callHandlingAction') == 'TransferToExtension' and not ah_rule.get('transfer'):
-                    logs.append("Warning: Reverting 'After Hours Behavior' to Voicemail (No valid destination)")
-                    ah_rule['callHandlingAction'] = 'Voicemail'
                 
                 a_needs_update |= check_diff(changes, 'After Hours Behavior', orig_ah.get('callHandlingAction'), ah_rule.get('callHandlingAction'))
                 
@@ -1062,23 +1030,25 @@ def update_cq_batch(records, token, is_preview=False):
                                 vm_set['notifyByEmail'] = False
                                 vm_set['includeAttachment'] = False
                                 vm_set['markAsRead'] = False
+                                
+                if not vm_set.get('notifyByEmail'):
+                    vm_set['includeAttachment'] = False
                 
                 if new_emails:
                     notif['advancedMode'] = True
                     vm_set['advancedEmailAddresses'] = new_emails
                     
-                    # Force disable all non-voicemail notifications to prevent spam and Advanced Mode API rejections
+                    # Force disable all non-voicemail notifications to prevent spam and fulfill schema validator
+                    base_emails = orig_notif.get('emailAddresses', [])
+                    if not base_emails: base_emails = new_emails
+                    
                     for cat in ['inboundFaxes', 'outboundFaxes', 'inboundTexts', 'missedCalls']:
                         if cat not in notif: notif[cat] = {}
-                        cat_old_email_on = str(orig_notif.get(cat, {}).get('notifyByEmail'))
-                        if cat_old_email_on != 'False': v_needs_update = True
-                        
                         notif[cat]['notifyByEmail'] = False
                         notif[cat]['includeAttachment'] = False
                         notif[cat]['markAsRead'] = False
-                        notif[cat]['advancedEmailAddresses'] = []
+                        notif[cat]['advancedEmailAddresses'] = base_emails 
                         if 'notifyBySms' in notif[cat]:
-                            if str(orig_notif.get(cat, {}).get('notifyBySms')) != 'False': v_needs_update = True
                             notif[cat]['notifyBySms'] = False
                     
                 vm_set.pop('emailAddresses', None)
@@ -1098,8 +1068,17 @@ def update_cq_batch(records, token, is_preview=False):
                 
                 if v_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json=notif, token=token)
-                    if put_succ: logs.append("Notifications Updated")
-                    else: has_error = True; logs.append(f"Notifications Error: {err}")
+                    
+                    # Failsafe for restricted includeAttachment permissions
+                    if not put_succ and 'includeAttachment' in str(err):
+                        notif['voicemails']['includeAttachment'] = False
+                        put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json=notif, token=token)
+                        if put_succ2: logs.append("Notifications Updated (Attachments skipped due to account limits)")
+                        else: has_error = True; logs.append(f"Notifications Error: {err2}")
+                    elif put_succ: 
+                        logs.append("Notifications Updated")
+                    else: 
+                        has_error = True; logs.append(f"Notifications Error: {err}")
 
         if not logs and not changes: 
             res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
