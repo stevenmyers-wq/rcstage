@@ -522,6 +522,10 @@ def update_cq_batch(records, token, is_preview=False):
         return None
 
     for i, row in enumerate(records):
+        logs = []
+        changes = []
+        has_error = False
+        
         ext_raw = get_val(row, 'Extension') or get_val(row, 'Extension Number')
         if not ext_raw: 
             yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": "N/A", "status": "info", "message": "Skipped row", "changes": []}, "is_preview": is_preview}
@@ -574,10 +578,6 @@ def update_cq_batch(records, token, is_preview=False):
                 else:
                     yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {c_resp}", "changes": changes}, "is_preview": is_preview}
                     continue
-
-        logs = []
-        changes = []
-        has_error = False
 
         # --- A. BASIC INFO UPDATE ---
         basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
