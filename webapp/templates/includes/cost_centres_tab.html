@@ -1,0 +1,332 @@
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    <div class="mb-4 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-bold text-slate-800 mb-1">Cost Centres</h2>
+        <p class="text-slate-500 text-sm">Audit and update Cost Centre allocations for Extensions, Phone Numbers, and Devices.</p>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        
+        <div class="xl:col-span-3 bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-gray-800 text-lg">Filters</h3>
+                <button id="cc-refresh-btn" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-1.5 px-3 rounded transition shadow-sm border border-gray-300 text-sm">
+                    🔄 Refresh Data
+                </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label>
+                    <input type="text" id="cc-search" placeholder="Name or Number..." class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
+                    <select id="cc-filter-type" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
+                        <option value="">All Types</option>
+                        <option value="Extension">Extensions</option>
+                        <option value="PhoneNumber">Standalone Phone Numbers</option>
+                        <option value="Device">Unassigned Devices</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Site</label>
+                    <select id="cc-filter-site" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
+                        <option value="">All Sites</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Current Cost Centre</label>
+                    <select id="cc-filter-current" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
+                        <option value="">All Cost Centres</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-blue-50 p-5 rounded-xl shadow-sm border border-blue-200">
+            <h3 class="font-bold text-blue-800 text-lg mb-4">Bulk Transfer</h3>
+            <label class="block text-xs font-bold text-blue-700 uppercase mb-1">Target Cost Centre</label>
+            <select id="cc-target-select" class="w-full border border-blue-300 rounded p-2 text-sm focus:ring-blue-500 mb-4 bg-white">
+                <option value="">Select Target...</option>
+            </select>
+            <button id="cc-transfer-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                Transfer Selected
+            </button>
+            <div id="cc-selected-count" class="text-xs text-blue-700 font-semibold text-center mt-2">0 selected</div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+        <div id="cc-loader" class="absolute inset-0 bg-white bg-opacity-80 z-20 flex flex-col items-center justify-center">
+            <i class="fas fa-spinner fa-spin text-3xl text-blue-600 mb-2"></i>
+            <span id="cc-loader-text" class="font-semibold text-gray-700">Fetching account data...</span>
+        </div>
+
+        <div class="overflow-x-auto max-h-[600px]">
+            <table class="min-w-full text-sm text-left relative">
+                <thead class="bg-gray-50 text-xs text-gray-600 uppercase sticky top-0 z-10 shadow-sm select-none">
+                    <tr>
+                        <th class="px-4 py-3 w-12 text-center">
+                            <input type="checkbox" id="cc-select-all" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        </th>
+                        <th class="px-4 py-3 font-semibold">Name</th>
+                        <th class="px-4 py-3 font-semibold">Number</th>
+                        <th class="px-4 py-3 font-semibold">Type</th>
+                        <th class="px-4 py-3 font-semibold">Site</th>
+                        <th class="px-4 py-3 font-semibold">Department</th>
+                        <th class="px-4 py-3 font-semibold">Current Cost Centre</th>
+                    </tr>
+                </thead>
+                <tbody id="cc-tbody" class="divide-y divide-gray-100 text-gray-700">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // State
+    let rawData = { cost_centres: [], assets: [] };
+    let filteredAssets = [];
+    let selectedAssets = new Set(); // Stores full asset objects
+
+    // DOM Elements
+    const loader = document.getElementById('cc-loader');
+    const loaderText = document.getElementById('cc-loader-text');
+    const tbody = document.getElementById('cc-tbody');
+    
+    const searchInput = document.getElementById('cc-search');
+    const typeFilter = document.getElementById('cc-filter-type');
+    const siteFilter = document.getElementById('cc-filter-site');
+    const currentCcFilter = document.getElementById('cc-filter-current');
+    
+    const targetCcSelect = document.getElementById('cc-target-select');
+    const transferBtn = document.getElementById('cc-transfer-btn');
+    const refreshBtn = document.getElementById('cc-refresh-btn');
+    const selectAllCb = document.getElementById('cc-select-all');
+    const selectedCountLabel = document.getElementById('cc-selected-count');
+
+    // Init
+    loadData();
+
+    // Event Listeners
+    refreshBtn.addEventListener('click', loadData);
+    searchInput.addEventListener('input', applyFilters);
+    typeFilter.addEventListener('change', applyFilters);
+    siteFilter.addEventListener('change', applyFilters);
+    currentCcFilter.addEventListener('change', applyFilters);
+    
+    selectAllCb.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        const checkboxes = document.querySelectorAll('.cc-row-cb');
+        checkboxes.forEach(cb => {
+            cb.checked = isChecked;
+            handleRowSelection(cb);
+        });
+    });
+
+    tbody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('cc-row-cb')) {
+            handleRowSelection(e.target);
+            updateSelectAllState();
+        }
+    });
+
+    transferBtn.addEventListener('click', async () => {
+        const targetId = targetCcSelect.value;
+        const targetName = targetCcSelect.options[targetCcSelect.selectedIndex].text;
+        
+        if (!targetId) return alert('Please select a Target Cost Centre.');
+        if (selectedAssets.size === 0) return alert('Please select at least one asset to transfer.');
+
+        if (!confirm(`Are you sure you want to transfer ${selectedAssets.size} items to '${targetName}'?`)) return;
+
+        loaderText.textContent = `Transferring ${selectedAssets.size} items...`;
+        loader.classList.remove('hidden');
+
+        try {
+            const payload = {
+                target_cost_centre_id: targetId,
+                assets: Array.from(selectedAssets)
+            };
+
+            const res = await fetch('/api/cost_centres/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error || 'Transfer failed.');
+
+            if (data.results.errors.length > 0) {
+                alert(`Transfer completed with errors.\nSuccess: ${data.results.success}\nFailed: ${data.results.errors.length}\nCheck console for details.`);
+                console.error("Transfer Errors:", data.results.errors);
+            } else {
+                alert(`Successfully transferred ${data.results.success} items.`);
+            }
+
+            // Reload data to reflect new state
+            loadData();
+
+        } catch (e) {
+            alert(`Error: ${e.message}`);
+            loader.classList.add('hidden');
+        }
+    });
+
+    // Core Functions
+    async function loadData() {
+        loaderText.textContent = 'Fetching account data...';
+        loader.classList.remove('hidden');
+        selectedAssets.clear();
+        updateTransferUI();
+
+        try {
+            const res = await fetch('/api/cost_centres/data');
+            const data = await res.json();
+            
+            if (!res.ok) {
+                // Handle token expiration/bridge drop seamlessly
+                if (res.status === 401) {
+                    window.location.href = '/api/sm_auth/logout?tab=cost_centres';
+                }
+                throw new Error(data.error || 'Failed to load data.');
+            }
+
+            rawData = data.data;
+            populateDropdowns();
+            applyFilters();
+
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-red-500 font-medium">Error: ${e.message}</td></tr>`;
+        } finally {
+            loader.classList.add('hidden');
+        }
+    }
+
+    function populateDropdowns() {
+        // Populate Target and Current CC dropdowns
+        const ccOptions = rawData.cost_centres.map(cc => `<option value="${cc.id}">${cc.name}</option>`).join('');
+        
+        targetCcSelect.innerHTML = '<option value="">Select Target...</option>' + ccOptions;
+        currentCcFilter.innerHTML = '<option value="">All Cost Centres</option><option value="Unassigned">Unassigned</option>' + ccOptions;
+
+        // Populate Sites dropdown dynamically
+        const sites = new Set();
+        rawData.assets.forEach(a => { if(a.site && a.site !== 'N/A') sites.add(a.site); });
+        siteFilter.innerHTML = '<option value="">All Sites</option>' + 
+            Array.from(sites).sort().map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    function applyFilters() {
+        const term = searchInput.value.toLowerCase();
+        const tFilter = typeFilter.value;
+        const sFilter = siteFilter.value;
+        const cFilter = currentCcFilter.value;
+
+        filteredAssets = rawData.assets.filter(a => {
+            const matchSearch = (a.name.toLowerCase().includes(term) || a.number.toLowerCase().includes(term));
+            const matchType = tFilter === '' || a.type === tFilter;
+            const matchSite = sFilter === '' || a.site === sFilter;
+            
+            let matchCc = true;
+            if (cFilter === 'Unassigned') matchCc = (a.costCenterName === 'Unassigned' || a.costCenterId === '');
+            else if (cFilter !== '') matchCc = (a.costCenterId === cFilter);
+
+            return matchSearch && matchType && matchSite && matchCc;
+        });
+
+        renderTable();
+    }
+
+    function renderTable() {
+        tbody.innerHTML = '';
+        selectAllCb.checked = false;
+
+        if (filteredAssets.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 italic">No assets found matching filters.</td></tr>`;
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        filteredAssets.forEach(asset => {
+            const isChecked = Array.from(selectedAssets).some(sa => sa.id === asset.id);
+            
+            const tr = document.createElement('tr');
+            tr.className = `border-b border-gray-100 transition-colors hover:bg-gray-50 ${isChecked ? 'bg-blue-50' : ''}`;
+            
+            // Format Badge
+            let badgeClass = 'bg-gray-100 text-gray-600';
+            if (asset.type === 'Extension') badgeClass = 'bg-green-100 text-green-700';
+            else if (asset.type === 'PhoneNumber') badgeClass = 'bg-purple-100 text-purple-700';
+            else if (asset.type === 'Device') badgeClass = 'bg-amber-100 text-amber-700';
+
+            const assetJson = encodeURIComponent(JSON.stringify(asset));
+
+            tr.innerHTML = `
+                <td class="px-4 py-2 text-center">
+                    <input type="checkbox" class="cc-row-cb h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                           data-asset="${assetJson}" ${isChecked ? 'checked' : ''}>
+                </td>
+                <td class="px-4 py-2 font-medium text-gray-800">${asset.name}</td>
+                <td class="px-4 py-2 text-gray-600">${asset.number}</td>
+                <td class="px-4 py-2">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border shadow-sm ${badgeClass}">
+                        ${asset.subType || asset.type}
+                    </span>
+                </td>
+                <td class="px-4 py-2 text-gray-600 text-xs">${asset.site}</td>
+                <td class="px-4 py-2 text-gray-600 text-xs">${asset.department}</td>
+                <td class="px-4 py-2 font-medium ${asset.costCenterName === 'Unassigned' ? 'text-red-500 italic' : 'text-blue-700'}">
+                    ${asset.costCenterName}
+                </td>
+            `;
+            fragment.appendChild(tr);
+        });
+
+        tbody.appendChild(fragment);
+        updateSelectAllState();
+    }
+
+    function handleRowSelection(checkbox) {
+        const tr = checkbox.closest('tr');
+        const asset = JSON.parse(decodeURIComponent(checkbox.dataset.asset));
+        
+        if (checkbox.checked) {
+            tr.classList.add('bg-blue-50');
+            // Check if already in Set to avoid duplicates
+            if (!Array.from(selectedAssets).some(sa => sa.id === asset.id)) {
+                selectedAssets.add(asset);
+            }
+        } else {
+            tr.classList.remove('bg-blue-50');
+            // Remove from set
+            const toRemove = Array.from(selectedAssets).find(sa => sa.id === asset.id);
+            if (toRemove) selectedAssets.delete(toRemove);
+        }
+        
+        updateTransferUI();
+    }
+
+    function updateSelectAllState() {
+        const checkboxes = document.querySelectorAll('.cc-row-cb');
+        if (checkboxes.length === 0) {
+            selectAllCb.checked = false;
+            return;
+        }
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        selectAllCb.checked = allChecked;
+    }
+
+    function updateTransferUI() {
+        const count = selectedAssets.size;
+        selectedCountLabel.textContent = `${count} selected`;
+        transferBtn.disabled = count === 0 || !targetCcSelect.value;
+    }
+
+    targetCcSelect.addEventListener('change', updateTransferUI);
+});
+</script>
