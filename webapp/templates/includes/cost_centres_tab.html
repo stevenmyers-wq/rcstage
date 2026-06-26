@@ -22,22 +22,19 @@
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
                     <select id="cc-filter-type" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
                         <option value="">All Types</option>
-                        <option value="Extension">Extensions</option>
-                        <option value="PhoneNumber">Standalone Phone Numbers</option>
-                        <option value="Device">Unassigned Devices</option>
-                    </select>
+                        </select>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Site</label>
                     <select id="cc-filter-site" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
                         <option value="">All Sites</option>
-                    </select>
+                        </select>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Current Cost Centre</label>
                     <select id="cc-filter-current" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-blue-500">
                         <option value="">All Cost Centres</option>
-                    </select>
+                        </select>
                 </div>
             </div>
         </div>
@@ -47,7 +44,7 @@
             <label class="block text-xs font-bold text-blue-700 uppercase mb-1">Target Cost Centre</label>
             <select id="cc-target-select" class="w-full border border-blue-300 rounded p-2 text-sm focus:ring-blue-500 mb-4 bg-white">
                 <option value="">Select Target...</option>
-            </select>
+                </select>
             <button id="cc-transfer-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                 Transfer Selected
             </button>
@@ -88,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // State
     let rawData = { cost_centres: [], assets: [] };
     let filteredAssets = [];
-    let selectedAssets = new Set(); // Stores full asset objects
+    let selectedAssets = new Set(); 
 
     // DOM Elements
     const loader = document.getElementById('cc-loader');
@@ -167,8 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert(`Successfully transferred ${data.results.success} items.`);
             }
 
-            // Reload data to reflect new state
-            loadData();
+            loadData(); // Refresh UI after transfer
 
         } catch (e) {
             alert(`Error: ${e.message}`);
@@ -188,10 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             
             if (!res.ok) {
-                // Handle token expiration/bridge drop seamlessly
-                if (res.status === 401) {
-                    window.location.href = '/api/sm_auth/logout?tab=cost_centres';
-                }
+                if (res.status === 401) window.location.href = '/api/sm_auth/logout?tab=cost_centres';
                 throw new Error(data.error || 'Failed to load data.');
             }
 
@@ -207,17 +200,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateDropdowns() {
-        // Populate Target and Current CC dropdowns
-        const ccOptions = rawData.cost_centres.map(cc => `<option value="${cc.id}">${cc.name}</option>`).join('');
+        // 1. Populate Target and Current CC dropdowns with a robust fallback
+        const ccMap = new Map();
+        
+        // Extract dynamically from existing assets as a fallback
+        rawData.assets.forEach(a => {
+            if (a.costCenterId && a.costCenterName && a.costCenterName !== 'Unassigned') {
+                ccMap.set(a.costCenterId, a.costCenterName);
+            }
+        });
+        
+        // Override with official API list if it was accessible
+        if (rawData.cost_centres && rawData.cost_centres.length > 0) {
+            rawData.cost_centres.forEach(cc => ccMap.set(cc.id, cc.name));
+        }
+
+        const ccOptions = Array.from(ccMap.entries())
+            .sort((a, b) => a[1].localeCompare(b[1]))
+            .map(([id, name]) => `<option value="${id}">${name}</option>`)
+            .join('');
         
         targetCcSelect.innerHTML = '<option value="">Select Target...</option>' + ccOptions;
         currentCcFilter.innerHTML = '<option value="">All Cost Centres</option><option value="Unassigned">Unassigned</option>' + ccOptions;
 
-        // Populate Sites dropdown dynamically
+        // 2. Populate Sites
         const sites = new Set();
         rawData.assets.forEach(a => { if(a.site && a.site !== 'N/A') sites.add(a.site); });
         siteFilter.innerHTML = '<option value="">All Sites</option>' + 
             Array.from(sites).sort().map(s => `<option value="${s}">${s}</option>`).join('');
+
+        // 3. Populate Types intelligently using subTypes
+        const types = new Set();
+        rawData.assets.forEach(a => { if(a.subType) types.add(a.subType); });
+        
+        const formatTypeLabel = (type) => {
+            const labels = {
+                'Department': 'Call Queue',
+                'IvrMenu': 'IVR Menu',
+                'AnnouncementOnly': 'Announcement Only',
+                'Voicemail': 'Message Only',
+                'User': 'User',
+                'VirtualUser': 'Virtual User',
+                'DigitalUser': 'Digital User',
+                'CompanyNumber': 'Company Number',
+                'DirectNumber': 'Direct Number',
+                'MainCompanyNumber': 'Main Company Number',
+                'HardPhone': 'Hard Phone',
+                'SoftPhone': 'Soft Phone',
+                'Paging': 'Paging Device'
+            };
+            return labels[type] || type;
+        };
+
+        typeFilter.innerHTML = '<option value="">All Types</option>' + 
+            Array.from(types).sort().map(t => `<option value="${t}">${formatTypeLabel(t)}</option>`).join('');
     }
 
     function applyFilters() {
@@ -228,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         filteredAssets = rawData.assets.filter(a => {
             const matchSearch = (a.name.toLowerCase().includes(term) || a.number.toLowerCase().includes(term));
-            const matchType = tFilter === '' || a.type === tFilter;
+            const matchType = tFilter === '' || a.subType === tFilter;
             const matchSite = sFilter === '' || a.site === sFilter;
             
             let matchCc = true;
@@ -254,17 +290,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         filteredAssets.forEach(asset => {
             const isChecked = Array.from(selectedAssets).some(sa => sa.id === asset.id);
-            
             const tr = document.createElement('tr');
             tr.className = `border-b border-gray-100 transition-colors hover:bg-gray-50 ${isChecked ? 'bg-blue-50' : ''}`;
             
-            // Format Badge
             let badgeClass = 'bg-gray-100 text-gray-600';
             if (asset.type === 'Extension') badgeClass = 'bg-green-100 text-green-700';
             else if (asset.type === 'PhoneNumber') badgeClass = 'bg-purple-100 text-purple-700';
             else if (asset.type === 'Device') badgeClass = 'bg-amber-100 text-amber-700';
 
             const assetJson = encodeURIComponent(JSON.stringify(asset));
+            const formatTypeLabel = (type) => {
+                const labels = {'Department': 'Call Queue', 'IvrMenu': 'IVR Menu', 'AnnouncementOnly': 'Announcement Only', 'Voicemail': 'Message Only'};
+                return labels[type] || type;
+            };
 
             tr.innerHTML = `
                 <td class="px-4 py-2 text-center">
@@ -275,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="px-4 py-2 text-gray-600">${asset.number}</td>
                 <td class="px-4 py-2">
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border shadow-sm ${badgeClass}">
-                        ${asset.subType || asset.type}
+                        ${formatTypeLabel(asset.subType || asset.type)}
                     </span>
                 </td>
                 <td class="px-4 py-2 text-gray-600 text-xs">${asset.site}</td>
@@ -297,13 +335,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (checkbox.checked) {
             tr.classList.add('bg-blue-50');
-            // Check if already in Set to avoid duplicates
             if (!Array.from(selectedAssets).some(sa => sa.id === asset.id)) {
                 selectedAssets.add(asset);
             }
         } else {
             tr.classList.remove('bg-blue-50');
-            // Remove from set
             const toRemove = Array.from(selectedAssets).find(sa => sa.id === asset.id);
             if (toRemove) selectedAssets.delete(toRemove);
         }
@@ -313,12 +349,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateSelectAllState() {
         const checkboxes = document.querySelectorAll('.cc-row-cb');
-        if (checkboxes.length === 0) {
-            selectAllCb.checked = false;
-            return;
-        }
-        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-        selectAllCb.checked = allChecked;
+        if (checkboxes.length === 0) { selectAllCb.checked = false; return; }
+        selectAllCb.checked = Array.from(checkboxes).every(cb => cb.checked);
     }
 
     function updateTransferUI() {
