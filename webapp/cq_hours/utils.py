@@ -134,18 +134,23 @@ def parse_intuitive_hours(hours_str):
     return weekly_ranges
 
 def format_api_error(err_str):
+    if not err_str or str(err_str).strip() == "": 
+        return "Unknown API Error (Empty Response)"
     try:
         err_json = json.loads(err_str)
-        if 'errors' in err_json:
-            msgs = []
-            for e in err_json['errors']:
-                code = e.get('errorCode', 'Error')
-                msg = e.get('message', '')
-                param = e.get('parameterName', '')
-                if param: msgs.append(f"{code}: {msg} [{param}]")
-                else: msgs.append(f"{code}: {msg}")
-            return " | ".join(msgs)
-        return err_json.get('message', str(err_str))
+        if isinstance(err_json, dict):
+            if 'errors' in err_json and err_json['errors']:
+                msgs = []
+                for e in err_json['errors']:
+                    code = e.get('errorCode', 'Error')
+                    msg = e.get('message', '')
+                    param = e.get('parameterName', '')
+                    if param: msgs.append(f"{code}: {msg} [{param}]")
+                    else: msgs.append(f"{code}: {msg}")
+                return " | ".join(msgs)
+            msg = err_json.get('message', '')
+            if msg: return msg
+        return str(err_str)
     except:
         return str(err_str)
 
@@ -174,7 +179,8 @@ def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_ret
                 try: return True, resp.json() if resp.content else {}
                 except: return True, {}
             try: 
-                err_msg = json.dumps(resp.json())
+                err_dict = resp.json()
+                err_msg = json.dumps(err_dict)
             except: 
                 body_text = getattr(resp, 'text', '')
                 err_msg = body_text if body_text else f'HTTP {status_code} Error (empty response body)'
@@ -229,7 +235,6 @@ def _safe_get_ah_transfer_id(transfer_data):
     return ''
 
 def get_old_greeting_name(orig_rule, slot_type):
-    """Safely looks up legacy greeting names to power diff-checking."""
     for g in orig_rule.get('greetings', []):
         if g.get('type') == slot_type:
             if 'preset' in g:
@@ -558,17 +563,23 @@ def update_cq_batch(records, token, is_preview=False):
         return
 
     preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_id_to_name = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
         succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
             for rec in dict_resp_fallback['records']:
                 k = rec.get('name', '').lower().strip()
-                preset_dict[g_type][k] = str(rec.get('id', ''))
+                v = str(rec.get('id', ''))
+                preset_dict[g_type][k] = v
+                preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
                 
         succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
             for rec in dict_resp['records']:
-                preset_dict[g_type][rec.get('name', '').lower().strip()] = str(rec.get('id', ''))
+                k = rec.get('name', '').lower().strip()
+                v = str(rec.get('id', ''))
+                preset_dict[g_type][k] = v
+                preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
 
     def _resolve_ext(num):
         clean_num = str(num).split('.')[0].strip()
@@ -905,6 +916,7 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
+            # Prevent answering-rule from rejecting the payload by dropping the main greetings
             if 'greetings' in rule:
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
@@ -920,7 +932,9 @@ def update_cq_batch(records, token, is_preview=False):
                 if vm_new_val in ['off', 'none', 'disable', 'disabled']:
                     pass 
                 elif vm_new_val == 'default':
-                    rule['greetings'].append({"type": "Voicemail", "preset": {"id": "Default"}})
+                    def_id = preset_dict.get('Voicemail', {}).get('default')
+                    if def_id:
+                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(def_id)}})
                 elif matched_id:
                     rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
                 else:
@@ -987,7 +1001,7 @@ def update_cq_batch(records, token, is_preview=False):
                     else:
                         preset_id = existing_act.get('greeting', {}).get('preset', {}).get('id')
                         if preset_id:
-                            old_val_str = preset_dict.get(dict_type, {}).get(str(preset_id), "Custom")
+                            old_val_str = preset_id_to_name.get(dict_type, {}).get(str(preset_id), "Custom")
                         else:
                             old_val_str = "Default"
                 else:
@@ -1002,8 +1016,15 @@ def update_cq_batch(records, token, is_preview=False):
                 if new_val in ['off', 'none', 'disable', 'disabled']:
                     if act.get('enabled') is not False:
                         act['enabled'] = False
-                        if 'greeting' not in act:
-                            act['greeting'] = {"effectiveGreetingType": "Default"}
+                        if 'greeting' not in act or not act['greeting']:
+                            def_id = preset_dict.get(dict_type, {}).get('default')
+                            if def_id:
+                                act['greeting'] = {
+                                    "effectiveGreetingType": "Preset",
+                                    "preset": {"id": str(def_id)}
+                                }
+                            else:
+                                act['greeting'] = {"effectiveGreetingType": "Default"}
                         vir_needs_update = True
                     if check_diff(changes, col_name, old_val_str, "Off"):
                         vir_needs_update = True
@@ -1028,7 +1049,7 @@ def update_cq_batch(records, token, is_preview=False):
                         "preset": { "id": str(matched_id) }
                     }
                     vir_needs_update = True
-                    new_val_str = preset_dict.get(dict_type, {}).get(str(matched_id), val)
+                    new_val_str = val.title() if new_val != 'default' else 'Default'
                     check_diff(changes, col_name, old_val_str, new_val_str)
 
             apply_vir_greeting('Greeting', 'PlayWelcomePromptAction', 'Introductory', 'Introductory')
