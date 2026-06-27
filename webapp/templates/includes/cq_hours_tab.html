@@ -1,1206 +1,526 @@
-import re
-import copy
-import time
-import io
-import json
-import pandas as pd
-import requests
-from datetime import datetime
-from webapp.rc_api import rc_api_call
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    <div class="mb-4 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-bold text-slate-800 mb-1">Omni Call Queue Manager</h2>
+        <p class="text-slate-500 text-sm">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
+    </div>
 
-audit_progress_store = {}
+    <div class="mb-6 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Call Queue Manager</h2>
+        <p class="text-sm text-gray-600 mb-4">
+            Use this tool to bulk update your Call Queue configurations. <strong>You do not need to update the queue wholly.</strong> Simply leave a column blank to ignore that specific setting, and only the filled cells will be processed.
+        </p>
+        <div class="bg-blue-50 p-4 rounded text-sm text-blue-800 border border-blue-100">
+            <h4 class="font-bold mb-1">Acceptable Hours Formatting:</h4>
+            <ul class="list-disc pl-5 space-y-1">
+                <li><code>8:00AM-5:00PM Mon-Fri</code></li>
+                <li><code>9:00AM-12:00PM Mon, 1:00PM-5:00PM Tue-Fri</code></li>
+                <li><code>24/7</code></li>
+            </ul>
+        </div>
+    </div>
 
-DAY_ABBR = {
-    "mon": "monday", "tue": "tuesday", "wed": "wednesday", 
-    "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"
-}
-
-_READ_ONLY = ('uri', 'id', 'type', 'name', 'creationTime', 'lastModifiedTime')
-
-def to_int(val):
-    try: return int(float(val))
-    except (TypeError, ValueError): return None
-
-def parse_time_to_seconds(val):
-    if pd.isna(val) or val == '': return None
-    val_str = str(val).lower().strip()
-    match = re.search(r'([\d.]+)', val_str)
-    if not match: return None
-    num = float(match.group(1))
-    return int(num * 60) if 'min' in val_str else int(num)
-
-def format_sec(val):
-    if val is None or str(val).strip() == "" or str(val).strip() == "None": return "None"
-    try:
-        v = int(float(val))
-        if v == 0: return "0 Seconds"
-        if v >= 60 and v % 60 == 0:
-            mins = v // 60
-            return f"{mins} Minute{'s' if mins > 1 else ''}"
-        return f"{v} Seconds"
-    except: return str(val)
-
-def format_schedule(schedule_dict):
-    if not schedule_dict: return "24/7"
-    day_order = {"monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6, "sunday": 7}
-    sorted_days = sorted(schedule_dict.items(), key=lambda x: day_order.get(x[0].lower(), 99))
-    
-    days = []
-    for day, times in sorted_days:
-        time_strs = []
-        for t in times:
-            if t['from'] == "00:00" and t['to'] == "23:59": time_strs.append("24/7")
-            else: time_strs.append(f"{t['from']}-{t['to']}")
-        days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
-    return " | ".join(days)
-
-def get_impersonation_token(employee_token, target_account_id):
-    exchange_url = "https://auth.ps.ringcentral.com/jwks"
-    headers = {"Accept": "application/json", "Content-Type": "application/json", "access_token": employee_token}
-    payload = {"accountId": str(target_account_id), "appName": "brd"}
-    try:
-        resp = requests.post(exchange_url, headers=headers, json=payload)
-        if resp.ok: return resp.json().get("access_token")
-    except: pass
-    return None
-
-def to_24h(time_str):
-    time_str = time_str.replace(" ", "").lower()
-    if "am" in time_str or "pm" in time_str:
-        fmt = "%I:%M%p" if ":" in time_str else "%I%p"
-        return datetime.strptime(time_str, fmt).strftime("%H:%M")
-    return datetime.strptime(time_str, "%H:%M").strftime("%H:%M")
-
-def parse_intuitive_hours(hours_str):
-    hours_str = str(hours_str).lower().strip().replace("\n", " ").replace("–", "-").replace("—", "-")
-    hours_str = re.sub(r'(?<!\d)(\d{1,2})\.(\d{2})\s*([ap]m)?', r'\1:\2\3', hours_str)
-    hours_str = re.sub(r'(?<!\d)(\d{1,2}(?::\d{2})?)\s*(?:-|to|thru|through)\s*(\d{1,2}(?::\d{2})?\s*pm)', r'\1am-\2', hours_str)
-    
-    if hours_str in ['24/7', '24x7', '24-7', '24 7']: return "24/7"
-    if not hours_str or hours_str in ['closed', 'none', 'n/a', 'off']: return {} 
-        
-    time_pattern = r'(?:\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})\s*(?:-|to|thru|through)\s*(?:\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})'
-    parts = re.split(f'({time_pattern})', hours_str)
-    if len(parts) == 1: raise ValueError(f"Could not detect valid time ranges in text: '{hours_str}'.")
-        
-    times = [parts[i] for i in range(1, len(parts), 2)]
-    texts = [parts[i] for i in range(0, len(parts), 2)]
-    
-    day_map = {
-        r'\bmonday\b': 'mon', r'\bm\b': 'mon', r'\btuesday\b': 'tue', r'\btues\b': 'tue', r'\btu\b': 'tue',
-        r'\bwednesday\b': 'wed', r'\bw\b': 'wed', r'\bthursday\b': 'thu', r'\bthurs\b': 'thu', r'\bthu\b': 'thu', r'\bth\b': 'thu',
-        r'\bfriday\b': 'fri', r'\bf\b': 'fri', r'\bsaturday\b': 'sat', r'\bsa\b': 'sat', r'\bsunday\b': 'sun', r'\bsu\b': 'sun'
-    }
-    
-    days_before = False
-    if texts and texts[0].strip():
-        days_before = bool(re.search(r'\b(m|tu|tue|tues|w|wed|th|thu|thurs|f|fri|sa|sat|su|sun|mon|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', texts[0]))
-
-    weekly_ranges = {}
-    keys = list(DAY_ABBR.keys())
-    
-    for i, t in enumerate(times):
-        assoc_text = texts[i] if days_before else texts[i+1]
-        for pat, rep in day_map.items(): assoc_text = re.sub(pat, rep, assoc_text)
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="card p-6 border shadow-sm flex flex-col h-full hover:shadow-lg transition-shadow">
+            <h3 class="font-bold text-gray-800 mb-2 text-lg flex items-center gap-2">
+                <span class="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span> 
+                Audit & Export
+            </h3>
+            <p class="text-sm text-gray-600 mb-4">Extract current queue configurations into the master template.</p>
             
-        time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})\s*(?:-|to|thru|through)\s*(\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})', t)
-        if not time_match: continue
-        start_24 = to_24h(time_match.group(1))
-        end_24 = to_24h(time_match.group(2))
-        
-        day_tokens = re.findall(r'(mon|tue|wed|thu|fri|sat|sun)', assoc_text)
-        day_ranges = re.findall(r'(mon|tue|wed|thu|fri|sat|sun)\s*(?:-|to|thru|through)\s*(mon|tue|wed|thu|fri|sat|sun)', assoc_text)
-        
-        days_to_apply = set()
-        if day_ranges:
-            for d_start, d_end in day_ranges:
-                idx_start, idx_end = keys.index(d_start), keys.index(d_end)
-                if idx_start <= idx_end:
-                    for j in range(idx_start, idx_end + 1): days_to_apply.add(keys[j])
-                else: 
-                    for j in range(idx_start, 7): days_to_apply.add(keys[j])
-                    for j in range(0, idx_end + 1): days_to_apply.add(keys[j])
-        elif day_tokens:
-            for dt in day_tokens: days_to_apply.add(dt)
-        else:
-            if i == 0 and len(times) == 1: days_to_apply = set(keys)
+            <button id="cq-load-btn" class="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold py-2.5 px-4 rounded-lg transition mb-4 shadow-sm">Load Call Queues</button>
             
-        for d in days_to_apply:
-            full_day = DAY_ABBR[d]
-            if full_day not in weekly_ranges: weekly_ranges[full_day] = []
-            weekly_ranges[full_day].append({"from": start_24, "to": end_24})
-            
-    if not weekly_ranges: raise ValueError("Could not detect any valid days associated with the provided times.")
-    return weekly_ranges
+            <div id="cq-filter-section" class="hidden flex-col gap-3 flex-grow">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search Queues</label>
+                    <input type="text" id="cq-search" placeholder="Search by name or extension..." class="border border-gray-300 p-2.5 rounded-lg text-sm w-full focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex-grow">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Filter by Site</label>
+                    <select id="cq-site-filter" class="border border-gray-300 p-2.5 rounded-lg text-sm w-full focus:ring-blue-500 focus:border-blue-500 h-32" multiple size="4">
+                    </select>
+                    <p class="text-xs text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple sites.</p>
+                </div>
+                <div class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded border border-blue-100 text-center" id="cq-count-label">0 queues selected</div>
+            </div>
 
-def format_api_error(err_str):
-    try:
-        err_json = json.loads(err_str)
-        if 'errors' in err_json:
-            msgs = []
-            for e in err_json['errors']:
-                code = e.get('errorCode', 'Error')
-                msg = e.get('message', '')
-                param = e.get('parameterName', '')
-                if param: msgs.append(f"{code}: {msg} [{param}]")
-                else: msgs.append(f"{code}: {msg}")
-            return " | ".join(msgs)
-        return err_json.get('message', str(err_str))
-    except:
-        return str(err_str)
+            <div class="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                <button id="cq-export-btn" class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-sm flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download Filtered Audit
+                </button>
+                <a href="/api/cq_hours/template" class="block text-center text-xs font-semibold text-gray-500 hover:text-blue-600 transition">Or download a blank template</a>
+            </div>
+        </div>
 
-def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_retries=4):
-    if 'mock_' in str(endpoint):
-        if method == 'GET':
-            if 'business-hours' in str(endpoint): return True, {"schedule": {"weeklyRanges": {}}}
-            if 'answering-rule' in str(endpoint): return True, {"queue": {}}
-            if 'notification-settings' in str(endpoint): return True, {"voicemails": {}}
-            if 'members' in str(endpoint): return True, {"records": []}
-            if 'managers' in str(endpoint): return True, {"records": []}
-            return True, {"name": "New Queue", "status": "NotActivated", "contact": {}}
-        return True, {}
-
-    for attempt in range(max_retries):
-        try:
-            resp = rc_api_call(endpoint, method=method, json=json_payload, token=token, return_response=True)
-            status_code = getattr(resp, 'status_code', None)
-            if status_code == 429:
-                try: retry_after = int(resp.headers.get('Retry-After', 60))
-                except: retry_after = 60
-                time.sleep(retry_after + 1)
-                continue
-            if resp and getattr(resp, 'ok', False):
-                try: return True, resp.json() if resp.content else {}
-                except: return True, {}
-            try: err_msg = json.dumps(resp.json())
-            except: err_msg = getattr(resp, 'text', f'HTTP {status_code} Error')
-            return False, err_msg
-        except Exception as e: 
-            time.sleep(2)
-    return False, "Max retries exceeded due to rate limiting."
-
-def _safe_get_transfer_id(transfer_data, action_type):
-    if not transfer_data: return ''
-    if isinstance(transfer_data, list):
-        for item in transfer_data:
-            if item.get('action') == action_type:
-                return str(item.get('extension', {}).get('id', ''))
-    return ''
-
-def _set_queue_transfer(q_set, action_type, ext_id):
-    if 'transfer' not in q_set or not isinstance(q_set['transfer'], list):
-        q_set['transfer'] = []
-    
-    q_set['transfer'] = [t for t in q_set['transfer'] if t.get('action') != action_type]
-    
-    if ext_id and ext_id != 'None':
-        q_set['transfer'].append({
-            "extension": {"id": ext_id},
-            "action": action_type
-        })
-        
-    if len(q_set['transfer']) == 0:
-        q_set.pop('transfer', None)
-
-def _safe_get_ah_transfer_id(transfer_data):
-    if not transfer_data: return ''
-    if isinstance(transfer_data, list) and len(transfer_data) > 0:
-        return str(transfer_data[0].get('extension', {}).get('id', ''))
-    return ''
-
-def fetch_all_queues(token):
-    queues = []
-    page = 1
-    site_map = {}
-    
-    succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
-    if succ and 'records' in sites_resp:
-        site_map = {str(s['id']): s['name'] for s in sites_resp['records']}
-
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', token=token)
-        if not succ or 'records' not in resp: break
-        for q in resp['records']:
-            site_id = str(q.get('site', {}).get('id', ''))
-            site_name = site_map.get(site_id, 'Main Site') if site_id else 'Main Site'
-            queues.append({
-                'id': q['id'],
-                'name': q.get('name', 'Unknown'),
-                'extensionNumber': q.get('extensionNumber', ''),
-                'site': site_name
-            })
-        if 'navigation' in resp and resp['navigation'].get('nextPage'): page += 1
-        else: break
-    return queues
-
-def get_old_greeting_name(orig_rule, slot_type):
-    for g in orig_rule.get('greetings', []):
-        if g.get('type') == slot_type:
-            if 'preset' in g:
-                name = g['preset'].get('name', 'Default')
-                if name.lower() == 'none': return 'Off'
-                return name
-            elif 'custom' in g:
-                return 'Custom'
-    return 'Default'
-
-def run_cq_audit(task_id, queue_ids, token):
-    audit_progress_store[task_id] = {'current': 0, 'total': len(queue_ids), 'status': 'running', 'file_ready': False}
-    try:
-        ext_id_to_num = {}
-        page = 1
-        while True:
-            succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', token=token)
-            if succ and 'records' in resp:
-                for e in resp['records']:
-                    ext_id_to_num[str(e['id'])] = str(e.get('extensionNumber', ''))
-                if 'navigation' in resp and resp['navigation'].get('nextPage'): page += 1
-                else: break
-            else: break
-
-        succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
-        site_map = {str(s['id']): s['name'] for s in sites_resp.get('records', [])} if succ else {}
-
-        succ, tz_resp = safe_api_call('/restapi/v1.0/dictionary/timezone?perPage=1000', token=token)
-        tz_map = {str(t['id']): t['name'] for t in tz_resp.get('records', [])} if succ else {}
-
-        rows = []
-        for idx, qid in enumerate(queue_ids):
-            audit_progress_store[task_id]['current'] = idx + 1
-            row = {}
-            
-            succ, base = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}', token=token)
-            if not succ: continue
-            
-            row["Queue Name"] = base.get('name', '')
-            row["Extension"] = base.get('extensionNumber', '')
-            row["Status"] = base.get('status', '').capitalize()
-            row["Queue Email"] = base.get('contact', {}).get('email', '')
-            
-            editable = base.get('editableMemberStatus')
-            if editable is True:
-                row["Member Queue Status"] = "Allowed"
-            elif editable is False:
-                row["Member Queue Status"] = "Not Allowed"
-            
-            site_id = str(base.get('site', {}).get('id', ''))
-            row["Site"] = site_map.get(site_id, site_id) if site_id else 'Main Site'
-            
-            tz_id = str(base.get('regionalSettings', {}).get('timezone', {}).get('id', ''))
-            row["Timezone"] = tz_map.get(tz_id, tz_id)
-
-            succ, bh = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/business-hours', token=token)
-            if succ and bh.get('schedule', {}).get('weeklyRanges'):
-                row["Hours"] = format_schedule(bh['schedule']['weeklyRanges'])
-            else:
-                row["Hours"] = "24/7"
-
-            succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/business-hours-rule', token=token)
-            if succ:
-                q_set = rule.get('queue', {})
+        <div class="card p-6 border shadow-sm flex flex-col h-full hover:shadow-lg transition-shadow">
+            <div>
+                <h3 class="font-bold text-gray-800 mb-2 text-lg flex items-center gap-2">
+                    <span class="bg-green-100 text-green-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span> 
+                    Upload & Process
+                </h3>
+                <p class="text-sm text-gray-600 mb-4">Upload your configured Excel file to safely preview and patch the queues.</p>
+                <input type="file" id="cq-hours-file" accept=".xlsx,.csv" class="mb-4 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer">
                 
-                transfer_mode = q_set.get('transferMode', 'Simultaneous')
-                if transfer_mode == 'Rotating': row["Ring Type"] = "Rotating"
-                else: row["Ring Type"] = transfer_mode
-                
-                row["User Ring Time"] = format_sec(q_set.get('agentTimeout'))
-                row["Total Ring Time"] = format_sec(q_set.get('holdTime'))
-                row["Wrap Up Time"] = format_sec(q_set.get('wrapUpTime'))
-                row["Callers In Queue"] = q_set.get('maxCallers')
-                
-                row["When Queue is Full"] = q_set.get('maxCallersAction')
-                f_ext = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers')
-                if f_ext: row["Queue Full Destination"] = ext_id_to_num.get(f_ext, f_ext)
+                <div id="cq-sheet-container" class="hidden mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wide">Target Worksheet</label>
+                    <select id="cq-sheet-select" class="w-full border border-gray-300 rounded p-2 text-sm text-gray-800 shadow-sm focus:ring-green-500 focus:border-green-500">
+                        <option value="">Loading sheets...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex space-x-3 mt-auto pt-4">
+                <button id="cq-preview-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    Preview Changes
+                </button>
+                <button id="cq-sync-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-sm disabled:opacity-50 hidden flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    Confirm & Sync
+                </button>
+            </div>
+        </div>
+    </div>
 
-                row["When Max Time is Reached"] = q_set.get('holdTimeExpirationAction')
-                t_ext = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration')
-                if t_ext: row["Time Reached Destination"] = ext_id_to_num.get(t_ext, t_ext)
-
-                mode = q_set.get('holdAudioInterruptionMode')
-                if mode == 'Never' or not mode:
-                    row["Interrupt Audio"] = "Never"
-                else:
-                    row["Interrupt Audio"] = format_sec(q_set.get('holdAudioInterruptionPeriod'))
-
-                for g in rule.get('greetings', []):
-                    g_type = g.get('type')
-                    if 'custom' in g and g.get('custom', {}).get('name'):
-                        g_name = 'Custom'
-                    elif 'preset' in g and g.get('preset', {}).get('name'):
-                        g_name = g['preset']['name']
-                        if g_name.lower() == 'none': g_name = 'Off'
-                    else:
-                        g_name = 'Default'
-
-                    if g_type == 'Introductory':
-                        row["Greeting"] = g_name
-                    elif g_type == 'ConnectingAudio':
-                        row["Audio While Connecting"] = g_name
-                    elif g_type == 'HoldMusic':
-                        row["Hold Music"] = g_name
-                    elif g_type == 'Voicemail':
-                        row["Voicemail Greeting"] = g_name
-                    elif g_type == 'InterruptPrompt':
-                        raw_name = g_name.lower()
-                        if 'patience' in raw_name: row["Interrupt Prompt"] = "Thank you for your patience"
-                        elif 'volume' in raw_name: row["Interrupt Prompt"] = "Higher than normal volume"
-                        elif 'busy' in raw_name: row["Interrupt Prompt"] = "Agents are currently busy"
-                        elif 'important' in raw_name: row["Interrupt Prompt"] = "Call is very important to us"
-                        else: row["Interrupt Prompt"] = "Custom" if 'custom' in g else "Default"
-
-                vm_recip = str(rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
-                if vm_recip and vm_recip != 'None':
-                    row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip, vm_recip)
-
-            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
-            if succ:
-                row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
-                a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
-                if a_ext and a_ext != 'None':
-                    row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
-                
-                if not row.get("Voicemail Recipients"):
-                    vm_recip_ah = str(ah_rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
-                    if vm_recip_ah and vm_recip_ah != 'None':
-                        row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip_ah, vm_recip_ah)
-
-                if not row.get("Voicemail Greeting"):
-                    for g in ah_rule.get('greetings', []):
-                        if g.get('type') == 'Voicemail':
-                            if 'custom' in g and g.get('custom', {}).get('name'):
-                                row["Voicemail Greeting"] = 'Custom'
-                            elif 'preset' in g and g.get('preset', {}).get('name'):
-                                row["Voicemail Greeting"] = g['preset']['name']
-                            else:
-                                row["Voicemail Greeting"] = 'Default'
-
-            succ, mgr_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/managers', token=token)
-            if succ and mgr_resp.get('records'):
-                mgrs = [ext_id_to_num.get(str(m.get('id', '')), '') for m in mgr_resp['records']]
-                mgrs = [m for m in mgrs if m]
-                if mgrs:
-                    row["Queue Manager"] = ", ".join(mgrs)
-
-            succ, mem_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/members', token=token)
-            if succ and mem_resp.get('records'):
-                mems = [str(m.get('extensionNumber')) for m in mem_resp['records'] if m.get('extensionNumber')]
-                row["Members (Ext)"] = ", ".join(mems)
-
-            succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/notification-settings', token=token)
-            if succ:
-                vm_set = notif.get('voicemails', {})
-                if vm_set.get('notifyByEmail'):
-                    if vm_set.get('markAsRead'): row["Voicemail Notifications"] = "Notify Attach & Read"
-                    elif vm_set.get('includeAttachment'): row["Voicemail Notifications"] = "Notify & Attach"
-                    else: row["Voicemail Notifications"] = "Notify by Email"
-                else:
-                    row["Voicemail Notifications"] = "Off"
-                
-                if notif.get('advancedMode'):
-                    emails = vm_set.get('advancedEmailAddresses', [])
-                else:
-                    emails = notif.get('emailAddresses', [])
-                    
-                if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
-
-            rows.append(row)
-            time.sleep(0.35) 
-
-        df = pd.DataFrame(rows)
-        template_cols = [
-            "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number", 
-            "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours", 
-            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Audio", "Interrupt Prompt", 
-            "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status", 
-            "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached", 
-            "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients", 
-            "Voicemail Notifications", "Voicemail Notifications Email", "After Hours Behavior", 
-            "After Hours Destination"
-        ]
+    <div class="mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         
-        for col in template_cols:
-            if col not in df.columns:
-                df[col] = ""
-        df = df[template_cols]
+        <div id="cq-progress-container" class="hidden px-4 pt-4 pb-4 bg-gray-50 border-b border-gray-200">
+            <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
+                <span id="cq-progress-text">Initializing...</span>
+                <span id="cq-progress-percent">0%</span>
+            </div>
+            <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
+                <div id="cq-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+            </div>
+        </div>
 
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Queue Config')
+        <div class="border-b border-gray-200 bg-gray-50 px-4">
+            <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn border-green-500 text-green-600 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    Messages
+                </button>
+                <button onclick="switchTabCQ('system-log')" id="btn-system-log" class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    System Log
+                </button>
+            </nav>
+        </div>
+
+        <div id="tab-messages" class="tab-content block overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-left text-sm">
+                <thead class="bg-gray-50 sticky top-0 shadow-sm">
+                    <tr>
+                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">Extension</th>
+                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">Parameter</th>
+                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">Old Value</th>
+                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">New Value</th>
+                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="changes-table-body" class="bg-white divide-y divide-gray-100">
+                    <tr><td colspan="5" class="px-6 py-12 text-center text-gray-400 italic">Waiting for batch upload...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="tab-system-log" class="tab-content hidden">
+            <div class="bg-gray-800 text-gray-200 px-4 py-2 text-xs font-mono flex justify-between items-center">
+                <span class="font-bold">RAW API LOG</span>
+                <button onclick="document.getElementById('cq-hours-log').innerHTML=''" class="text-xs text-gray-400 hover:text-white transition-colors">Clear</button>
+            </div>
+            <div id="cq-hours-log" class="bg-gray-900 text-green-400 p-4 font-mono text-sm h-[463px] overflow-y-auto leading-relaxed">
+                <div class="text-gray-500 italic opacity-50">Waiting for batch upload...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="cq-modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200">
+            <h3 class="font-bold text-gray-800 text-lg mb-2" id="cq-progress-title">Compiling Audit...</h3>
+            <p class="text-sm text-gray-500 mb-6">Extracting configuration data. Please do not close this window.</p>
             
-            global_timezones = [
-                "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
-                "Canada/Eastern", "Canada/Central", "Canada/Mountain", "Canada/Pacific", "Canada/Atlantic",
-                "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Athens", "Europe/Moscow",
-                "GMT", "UTC", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Hong_Kong",
-                "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Adelaide", "Australia/Perth",
-                "Pacific/Auckland", "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City"
-            ]
-            tz_df = pd.DataFrame({"ValidTimezones": global_timezones})
-            tz_df.to_excel(writer, index=False, sheet_name='Timezone_Ref')
+            <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
+                <div id="cq-audit-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div class="text-xs font-bold text-gray-700 text-right" id="cq-audit-progress-pct">0/0</div>
+        </div>
+    </div>
+
+    <script>
+        function switchTabCQ(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('block'); el.classList.add('hidden'); });
+            document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('border-green-500', 'text-green-600'); el.classList.add('border-transparent', 'text-gray-500'); });
             
-            workbook = writer.book
-            config_ws = workbook['Queue Config']
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            document.getElementById('tab-' + tabId).classList.add('block');
+            document.getElementById('btn-' + tabId).classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('btn-' + tabId).classList.add('border-green-500', 'text-green-600');
+        }
+        
+        function openModal(id) {
+            const m = document.getElementById(id);
+            m.classList.remove('hidden');
+            setTimeout(() => {
+                m.classList.remove('opacity-0');
+                m.querySelector('div').classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeModal(id) {
+            const m = document.getElementById(id);
+            m.classList.add('opacity-0');
+            m.querySelector('div').classList.add('scale-95');
+            setTimeout(() => m.classList.add('hidden'), 200);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const previewBtn = document.getElementById('cq-preview-btn');
+            const syncBtn = document.getElementById('cq-sync-btn');
+            const fileInput = document.getElementById('cq-hours-file');
             
-            from openpyxl.worksheet.datavalidation import DataValidation
-            dv_tz = DataValidation(type="list", formula1="=Timezone_Ref!$A$2:$A$" + str(len(global_timezones) + 1), allow_blank=True)
-            config_ws.add_data_validation(dv_tz)
-            dv_tz.add("K2:K1000") 
+            const sheetContainer = document.getElementById('cq-sheet-container');
+            const sheetSelect = document.getElementById('cq-sheet-select');
             
-            schema_validations = {
-                "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"',
-                "N": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
-                "O": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
-                "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
-                "R": '"Simultaneous,Sequential,Rotating"', 
-                "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
-                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
-                "V": '"Allowed,Not Allowed"',
-                "W": '"5,10,15,20,25"', 
-                "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
-                "AB": '"Default,Custom,Off"',
-                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+            const logBox = document.getElementById('cq-hours-log');
+            const tableBody = document.getElementById('changes-table-body');
+            
+            const progressContainer = document.getElementById('cq-progress-container');
+            const progressBar = document.getElementById('cq-progress-bar');
+            const progressText = document.getElementById('cq-progress-text');
+            const progressPercent = document.getElementById('cq-progress-percent');
+            
+            // Audit Features
+            let allQueues = [];
+            const btnLoadQueues = document.getElementById('cq-load-btn');
+            const btnExport = document.getElementById('cq-export-btn');
+            const filterSection = document.getElementById('cq-filter-section');
+            const siteFilter = document.getElementById('cq-site-filter');
+            const searchInput = document.getElementById('cq-search');
+            const countLabel = document.getElementById('cq-count-label');
+
+            if (!previewBtn || !fileInput || !logBox) return;
+
+            function logEvent(msg, type = 'info') {
+                if (logBox.children.length === 1 && logBox.children[0].classList.contains('text-gray-500')) logBox.innerHTML = '';
+                const entry = document.createElement('div');
+                entry.innerHTML = `<span class="text-gray-500">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+                if (type === 'success') entry.classList.add('text-green-400');
+                else if (type === 'error') entry.classList.add('text-red-400');
+                else entry.classList.add('text-blue-300');
+                
+                logBox.appendChild(entry);
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+            
+            // --- AUDIT LOGIC ---
+            if (btnLoadQueues) {
+                btnLoadQueues.addEventListener('click', async () => {
+                    btnLoadQueues.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading Accounts...';
+                    btnLoadQueues.disabled = true;
+                    try {
+                        const res = await fetch('/api/cq_hours/queues');
+                        if (res.status === 401) {
+                            window.location.reload();
+                            return;
+                        }
+                        const data = await res.json();
+                        if(data.success) {
+                            allQueues = data.queues;
+                            const sites = new Set(allQueues.map(q => q.site));
+                            siteFilter.innerHTML = '';
+                            Array.from(sites).sort().forEach(s => {
+                                siteFilter.appendChild(new Option(s, s));
+                            });
+                            
+                            filterSection.classList.remove('hidden');
+                            filterSection.classList.add('flex');
+                            btnExport.classList.remove('hidden');
+                            btnLoadQueues.classList.add('hidden'); 
+                            updateQueueCount();
+                        } else {
+                            alert(data.error);
+                            btnLoadQueues.innerHTML = 'Load Call Queues';
+                            btnLoadQueues.disabled = false;
+                        }
+                    } catch (e) {
+                        alert("Failed to load queues.");
+                        btnLoadQueues.innerHTML = 'Load Call Queues';
+                        btnLoadQueues.disabled = false;
+                    } 
+                });
             }
 
-            for col_letter, formula_string in schema_validations.items():
-                dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
-                config_ws.add_data_validation(dv)
-                dv.add(f"{col_letter}2:{col_letter}1000")
+            function getFilteredQueues() {
+                const term = searchInput.value.toLowerCase();
+                const selectedSites = Array.from(siteFilter.selectedOptions).map(opt => opt.value);
                 
-            for col in config_ws.columns:
-                for cell in col:
-                    cell.number_format = '@'
+                return allQueues.filter(q => {
+                    const matchTerm = q.name.toLowerCase().includes(term) || q.extensionNumber.includes(term);
+                    const matchSite = selectedSites.length === 0 || selectedSites.includes(q.site);
+                    return matchTerm && matchSite;
+                });
+            }
 
-        output.seek(0)
-        audit_progress_store[task_id]['file_data'] = output.getvalue()
-        audit_progress_store[task_id]['status'] = 'completed'
-        audit_progress_store[task_id]['file_ready'] = True
+            function updateQueueCount() {
+                const count = getFilteredQueues().length;
+                countLabel.innerText = `${count} queues selected for export`;
+            }
 
-    except Exception as e:
-        audit_progress_store[task_id]['status'] = 'error'
-        audit_progress_store[task_id]['error'] = str(e)
+            if (searchInput) searchInput.addEventListener('input', updateQueueCount);
+            if (siteFilter) siteFilter.addEventListener('change', updateQueueCount);
 
-def get_val(row, key):
-    clean_key = str(key).strip().lower()
-    for k, v in row.items():
-        if str(k).strip().lower() == clean_key:
-            if pd.notna(v) and str(v).strip().lower() != 'nan': return str(v).strip()
-    return None
+            if (btnExport) {
+                btnExport.addEventListener('click', async () => {
+                    const filtered = getFilteredQueues();
+                    if(filtered.length === 0) return alert("No queues selected.");
+                    const ids = filtered.map(q => q.id);
 
-def check_diff(changes_list, param_name, old_val, new_val):
-    old_str = str(old_val).strip() if old_val is not None and str(old_val).strip() != '' else "None"
-    new_str = str(new_val).strip() if new_val is not None and str(new_val).strip() != '' else "None"
-    if old_str != new_str:
-        changes_list.append({"parameter": param_name, "old": old_str, "new": new_str})
-        return True
-    return False
+                    openModal('cq-modal-progress');
+                    document.getElementById('cq-progress-title').textContent = "Compiling Audit...";
+                    document.getElementById('cq-audit-progress-bar').style.width = '0%';
+                    document.getElementById('cq-audit-progress-bar').className = 'bg-blue-600 h-3 rounded-full transition-all duration-300';
+                    document.getElementById('cq-audit-progress-pct').textContent = `0/${ids.length}`;
+                    
+                    try {
+                        const res = await fetch('/api/cq_hours/audit', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({queue_ids: ids})
+                        });
+                        const data = await res.json();
+                        if(data.success) {
+                            pollAuditProgress(data.task_id);
+                        } else {
+                            throw new Error(data.error);
+                        }
+                    } catch(e) {
+                        alert("Error starting audit: " + e.message);
+                        closeModal('cq-modal-progress');
+                    }
+                });
+            }
 
-def update_cq_batch(records, token, is_preview=False):
-    total_records = len(records)
-    yield {"type": "start", "total": total_records, "message": "Fetching Account Directories..."}
-    
-    queue_map, ext_map, site_map, site_id_to_name = {}, {}, {}, {}
-    tz_map, tz_id_to_name = {}, {}
-    ext_id_to_num = {}
-    
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for q in resp['records']:
-                if 'extensionNumber' in q: 
-                    queue_map[str(q['extensionNumber'])] = str(q['id'])
-                    ext_id_to_num[str(q['id'])] = str(q['extensionNumber'])
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
+            function pollAuditProgress(taskId) {
+                const interval = setInterval(async () => {
+                    try {
+                        const res = await fetch(`/api/cq_hours/audit/status?task_id=${taskId}`);
+                        const data = await res.json();
+                        if(data.total > 0) {
+                            const pct = Math.round((data.current / data.total) * 100);
+                            document.getElementById('cq-audit-progress-bar').style.width = `${pct}%`;
+                            document.getElementById('cq-audit-progress-pct').textContent = `${data.current}/${data.total}`;
+                        }
+                        if(data.status === 'completed') {
+                            clearInterval(interval);
+                            document.getElementById('cq-progress-title').textContent = "Done!";
+                            document.getElementById('cq-audit-progress-bar').className = 'bg-green-500 h-3 rounded-full transition-all duration-300';
+                            
+                            const link = document.createElement('a');
+                            link.href = `/api/cq_hours/audit/download?task_id=${taskId}`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            
+                            setTimeout(() => closeModal('cq-modal-progress'), 1500);
+                        } else if (data.status === 'error') {
+                            clearInterval(interval);
+                            document.getElementById('cq-progress-title').textContent = "Failed";
+                            document.getElementById('cq-audit-progress-bar').className = 'bg-red-500 h-3 rounded-full transition-all duration-300';
+                            alert("Error during audit: " + data.error);
+                            setTimeout(() => closeModal('cq-modal-progress'), 1500);
+                        }
+                    } catch (e) {}
+                }, 1000);
+            }
 
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for e in resp['records']:
-                if 'extensionNumber' in e: 
-                    ext_map[str(e['extensionNumber'])] = str(e['id'])
-                    ext_id_to_num[str(e['id'])] = str(e['extensionNumber'])
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
-
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/sites?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for s in resp['records']: 
-                s_id = str(s['id'])
-                s_name_dict = str(s.get('name')).lower().strip()
-                site_map[s_name_dict] = s_id
-                site_id_to_name[s_id] = str(s.get('name'))
-                if s.get('code') == 'main-site' or s_name_dict == 'main site':
-                    site_map['main site'] = s_id
-                    site_map['company'] = s_id
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
-
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/dictionary/timezone?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for tz in resp['records']:
-                tz_map[str(tz.get('name')).lower().strip()] = str(tz['id'])
-                tz_map[str(tz.get('id'))] = str(tz['id'])
-                tz_id_to_name[str(tz['id'])] = str(tz.get('name'))
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
-
-    # Fetch Generic User IDs first, then overwrite with strict Queue IDs to prevent Preset Mismatch 400 errors.
-    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
-    for g_type in preset_dict.keys():
-        succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
-        if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
-            for rec in dict_resp_fallback['records']:
-                k = rec.get('name', '').lower().strip()
-                preset_dict[g_type][k] = str(rec.get('id', ''))
+            // --- UPLOAD LOGIC ---
+            fileInput.addEventListener('change', async () => {
+                syncBtn.classList.add('hidden');
+                previewBtn.classList.remove('hidden');
+                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400 italic">Waiting for batch upload...</td></tr>`;
+                progressContainer.classList.add('hidden');
                 
-        succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
-        if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
-            for rec in dict_resp['records']:
-                preset_dict[g_type][rec.get('name', '').lower().strip()] = str(rec.get('id', ''))
-
-    def _resolve_ext(num):
-        clean_num = str(num).split('.')[0].strip()
-        if clean_num in ext_map: return ext_map[clean_num]
-        return clean_num
-
-    for i, row in enumerate(records):
-        logs = []
-        changes = []
-        has_error = False
-        
-        ext_raw = get_val(row, 'Extension') or get_val(row, 'Extension Number')
-        if not ext_raw: 
-            yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": "N/A", "status": "info", "message": "Skipped row", "changes": []}, "is_preview": is_preview}
-            continue
-            
-        ext_num = str(ext_raw).split('.')[0].strip()
-        q_id = queue_map.get(ext_num)
-        
-        if not q_id:
-            succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?extensionNumber={ext_num}', method='GET', token=token)
-            if succ and isinstance(resp, dict) and resp.get('records'):
-                for rec in resp['records']:
-                    if rec.get('type') == 'Department':
-                        q_id = str(rec['id'])
-                        queue_map[ext_num] = q_id
-                        break
-                        
-        if not q_id:
-            q_name = get_val(row, 'Queue Name')
-            if not q_name:
-                yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": "Call Queue not found. 'Queue Name' is required to create a new one.", "changes": []}, "is_preview": is_preview}
-                continue
-                
-            if is_preview:
-                q_id = f"mock_{ext_num}"
-                queue_map[ext_num] = q_id
-                ext_id_to_num[q_id] = ext_num
-                changes.append({"parameter": "Queue", "old": "Missing", "new": "Will be created"})
-                logs.append("Queue will be created")
-            else:
-                create_payload = {
-                    "type": "Department",
-                    "extensionNumber": ext_num,
-                    "contact": { "firstName": q_name }
+                if (!fileInput.files[0]) {
+                    sheetContainer.classList.add('hidden');
+                    return;
                 }
-                c_status = get_val(row, 'Status')
-                if c_status: create_payload['status'] = c_status.capitalize()
                 
-                c_email = get_val(row, 'Queue Email')
-                if c_email: create_payload['contact']['email'] = c_email
-                    
-                succ, c_resp = safe_api_call('/restapi/v1.0/account/~/extension', method='POST', json_payload=create_payload, token=token)
-                if succ and isinstance(c_resp, dict) and c_resp.get('id'):
-                    q_id = str(c_resp['id'])
-                    queue_map[ext_num] = q_id
-                    ext_map[ext_num] = q_id
-                    ext_id_to_num[q_id] = ext_num
-                    changes.append({"parameter": "Queue", "old": "Missing", "new": "Created"})
-                    logs.append("Queue Created")
-                    time.sleep(1.0)
-                else:
-                    yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {format_api_error(c_resp)}", "changes": changes}, "is_preview": is_preview}
-                    continue
-
-        # --- A. BASIC INFO UPDATE ---
-        basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
-        if any(get_val(row, f) for f in basic_fields):
-            get_succ, old_basic = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='GET', token=token)
-            if get_succ and isinstance(old_basic, dict):
-                basic_payload = {}
-                b_needs_update = False
+                const file = fileInput.files[0];
+                if (file.name.endsWith('.csv')) {
+                    sheetContainer.classList.add('hidden');
+                    return;
+                }
                 
-                if get_val(row, 'Queue Name'): 
-                    basic_payload['name'] = get_val(row, 'Queue Name')
-                    b_needs_update |= check_diff(changes, 'Queue Name', old_basic.get('name'), basic_payload['name'])
+                sheetContainer.classList.remove('hidden');
+                sheetSelect.innerHTML = `<option value="">Reading file...</option>`;
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    const res = await fetch('/api/cq_hours/sheets', { method: 'POST', body: formData });
+                    const sheets = await res.json();
                     
-                if get_val(row, 'Status'): 
-                    basic_payload['status'] = get_val(row, 'Status').capitalize()
-                    b_needs_update |= check_diff(changes, 'Status', old_basic.get('status'), basic_payload['status'])
-                    
-                if get_val(row, 'Queue Email'): 
-                    basic_payload['contact'] = old_basic.get('contact', {})
-                    basic_payload['contact']['email'] = get_val(row, 'Queue Email')
-                    b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
+                    if (res.ok && Array.isArray(sheets)) {
+                        sheetSelect.innerHTML = '';
+                        sheets.forEach(sheet => {
+                            const opt = document.createElement('option');
+                            opt.value = sheet;
+                            opt.textContent = sheet;
+                            if (sheet === 'Queue Config' || sheet === 'Sheet1') opt.selected = true;
+                            sheetSelect.appendChild(opt);
+                        });
+                    } else {
+                        sheetSelect.innerHTML = `<option value="">Failed to load sheets</option>`;
+                    }
+                } catch (e) {
+                    sheetSelect.innerHTML = `<option value="">Error reading sheets</option>`;
+                }
+            });
 
-                if get_val(row, 'Site'):
-                    s_name = get_val(row, 'Site').lower()
-                    if not site_map:
-                        logs.append("Site ignored (Multi-site disabled)")
-                    else:
-                        new_site_id = site_map.get(s_name)
-                        if new_site_id: 
-                            old_site_obj = old_basic.get('site', {})
-                            old_site_id = str(old_site_obj.get('id', '')) if old_site_obj else ''
-                            
-                            if not old_site_id or old_site_id == 'None':
-                                old_site_id = site_map.get('main site', 'main-site')
+            async function runBatchProcess(action) {
+                if (!fileInput.files[0]) return alert("Please select a file to upload.");
 
-                            old_site_name = 'Main Site' if old_site_id in ('main-site', site_map.get('main site')) else site_id_to_name.get(old_site_id, old_site_id)
-                            new_site_name = 'Main Site' if new_site_id == site_map.get('main site') else site_id_to_name.get(new_site_id, new_site_id)
-                            
-                            if check_diff(changes, 'Site', old_site_name, new_site_name):
-                                if new_site_id == 'main-site':
-                                    logs.append("Site already Main Site (sentinel id, skipped to avoid malformed PUT)")
-                                else:
-                                    basic_payload['site'] = {'id': new_site_id}
-                                    b_needs_update = True
-                        else:
-                            has_error = True
-                            logs.append(f"Invalid Site: '{get_val(row, 'Site')}'")
+                const activeBtn = action === 'preview' ? previewBtn : syncBtn;
+                const inactiveBtn = action === 'preview' ? syncBtn : previewBtn;
+                
+                activeBtn.disabled = true;
+                inactiveBtn.disabled = true;
+                activeBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>${action === 'preview' ? 'Analyzing...' : 'Syncing...'}`;
+                
+                if(action === 'preview') switchTabCQ('messages');
+                
+                progressContainer.classList.remove('hidden');
+                progressBar.style.width = '0%';
+                progressBar.classList.toggle('bg-green-500', action === 'preview');
+                progressBar.classList.toggle('bg-blue-500', action === 'sync');
+                
+                progressText.innerText = 'Uploading file...';
+                progressPercent.innerText = '0%';
+                tableBody.innerHTML = '';
+
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('action', action);
+                
+                if (!sheetContainer.classList.contains('hidden')) {
+                    formData.append('sheet_name', sheetSelect.value);
+                }
+
+                try {
+                    const res = await fetch('/api/cq_hours/upload', { method: 'POST', body: formData });
+                    if (!res.ok) {
+                        const errorData = await res.json();
+                        logEvent(`Error: ${errorData.message || res.statusText}`, "error");
+                        if (res.status === 401) setTimeout(() => window.location.href = '/api/sm_auth/logout?tab=cq_hours', 2000);
+                        throw new Error("Server rejected upload.");
+                    }
+
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder("utf-8");
+                    let buffer = "";
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
                         
-                tz_raw = get_val(row, 'Timezone') or get_val(row, 'Time Zone')
-                if tz_raw:
-                    tz_key = tz_raw.lower()
-                    if tz_key in tz_map:
-                        if 'regionalSettings' not in basic_payload: basic_payload['regionalSettings'] = {}
-                        new_tz_id = tz_map[tz_key]
-                        basic_payload['regionalSettings']['timezone'] = {'id': new_tz_id}
-                        
-                        old_tz_id = str(old_basic.get('regionalSettings', {}).get('timezone', {}).get('id', ''))
-                        old_tz_name = tz_id_to_name.get(old_tz_id, old_tz_id) if old_tz_id else "None"
-                        new_tz_name = tz_id_to_name.get(new_tz_id, new_tz_id)
-                        
-                        b_needs_update |= check_diff(changes, 'Timezone', old_tz_name, new_tz_name)
-                    else:
-                        has_error = True; logs.append(f"Invalid Timezone: '{tz_raw}'")
+                        buffer += decoder.decode(value, { stream: true });
+                        let lines = buffer.split("\n");
+                        buffer = lines.pop(); 
 
-                if b_needs_update:
-                    if not is_preview:
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json_payload=basic_payload, token=token)
-                        if s_succ:
-                            logs.append("Basic Info Updated")
-                        else:
-                            has_error = True
-                            logs.append(f"Basic Error: {format_api_error(err)} | Sent: {json.dumps(basic_payload)}")
-                    else:
-                        logs.append("Basic Info Evaluated")
-                        
-        # --- A.5 DEDICATED CALL QUEUE UPDATE (Isolating editableMemberStatus) ---
-        if get_val(row, 'Member Queue Status'):
-            get_succ, old_cq = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}', method='GET', token=token)
-            if get_succ and isinstance(old_cq, dict):
-                mem_status = get_val(row, 'Member Queue Status').lower()
-                new_editable = True if 'allowed' in mem_status and 'not' not in mem_status else False
-                
-                old_editable = old_cq.get('editableMemberStatus')
-                old_status_str = 'Allowed' if old_editable else 'Not Allowed'
-                new_status_str = 'Allowed' if new_editable else 'Not Allowed'
-                
-                if check_diff(changes, 'Member Queue Status', old_status_str, new_status_str):
-                    if not is_preview:
-                        cq_payload = {"editableMemberStatus": new_editable}
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}', method='PUT', json_payload=cq_payload, token=token)
-                        if s_succ: 
-                            logs.append("Member Queue Status Updated")
-                        else: 
-                            has_error = True
-                            logs.append(f"Member Status Error: {format_api_error(err)} | Sent: {json.dumps(cq_payload)}")
-                    else:
-                        logs.append("Member Queue Status Evaluated")
-
-        # --- B. BUSINESS HOURS UPDATE ---
-        hours_str = get_val(row, 'Hours')
-        if hours_str:
-            try:
-                weekly_ranges = parse_intuitive_hours(hours_str)
-                old_hours_str = "Unknown"
-                get_succ, old_hours_resp = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/business-hours', method='GET', token=token)
-                
-                if get_succ and isinstance(old_hours_resp, dict):
-                    old_ranges = old_hours_resp.get('schedule', {}).get('weeklyRanges', {})
-                    if not old_ranges and 'schedule' in old_hours_resp: old_hours_str = "24/7"
-                    else: old_hours_str = format_schedule(old_ranges)
-
-                new_hours_str = "24/7" if weekly_ranges == "24/7" else format_schedule(weekly_ranges)
-                
-                if old_hours_str != new_hours_str:
-                    changes.append({"parameter": "Business Hours", "old": old_hours_str, "new": new_hours_str})
-                    if not is_preview:
-                        payload = {"schedule": {}} if weekly_ranges == "24/7" else {"schedule": {"weeklyRanges": weekly_ranges}}
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/business-hours', method='PUT', json_payload=payload, token=token)
-                        if s_succ: 
-                            logs.append("Hours Updated")
-                        else: 
-                            has_error = True
-                            logs.append(f"Hours Error: {format_api_error(err)} | Sent: {json.dumps(payload)}")
-                    else:
-                        logs.append("Hours Evaluated")
-            except Exception as e:
-                has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
-
-        # --- C. ROUTING & TIMERS ---
-        routing_fields = [
-            'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
-            'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
-            'Interrupt Audio', 'Interrupt Prompt', 'Time Reached Destination',
-            'Queue Full Destination', 'Voicemail Recipients', 'Audio While Connecting', 'Hold Music', 'Greeting', 'Voicemail Greeting'
-        ]
-        
-        if any(get_val(row, f) for f in routing_fields):
-            get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
-            if get_succ and isinstance(rule, dict):
-                orig_rule = copy.deepcopy(rule)
-                q_set = rule.get('queue', {})
-                r_needs_update = False
-                
-                rt = get_val(row, 'Ring Type')
-                if rt:
-                    rt_lower = rt.lower()
-                    if 'simultaneous' in rt_lower: q_set['transferMode'] = 'Simultaneous'
-                    elif 'sequential' in rt_lower: q_set['transferMode'] = 'Sequential'
-                    elif 'rotating' in rt_lower or 'idle' in rt_lower: q_set['transferMode'] = 'Rotating'
-                
-                val_urt = get_val(row, 'User Ring Time')
-                if val_urt: 
-                    parsed = parse_time_to_seconds(val_urt)
-                    if parsed is not None: q_set['agentTimeout'] = parsed
-                    
-                val_trt = get_val(row, 'Total Ring Time')
-                if val_trt:
-                    parsed = parse_time_to_seconds(val_trt)
-                    if parsed is not None: q_set['holdTime'] = parsed
-                    
-                val_wut = get_val(row, 'Wrap Up Time')
-                if val_wut:
-                    parsed = parse_time_to_seconds(val_wut)
-                    if parsed is not None: q_set['wrapUpTime'] = parsed
-                    
-                val_ciq = get_val(row, 'Callers In Queue')
-                if val_ciq:
-                    parsed = to_int(val_ciq)
-                    if parsed is not None: q_set['maxCallers'] = parsed
-                    
-                val_ia = get_val(row, 'Interrupt Audio')
-                if val_ia:
-                    if val_ia.lower() == 'never':
-                        q_set['holdAudioInterruptionMode'] = 'Never'
-                        q_set.pop('holdAudioInterruptionPeriod', None)
-                    else:
-                        parsed = parse_time_to_seconds(val_ia)
-                        if parsed is not None: 
-                            q_set['holdAudioInterruptionMode'] = 'Periodically'
-                            q_set['holdAudioInterruptionPeriod'] = parsed
-
-                if get_val(row, 'When Max Time is Reached'):
-                    action = get_val(row, 'When Max Time is Reached')
-                    if action == 'TransferToExtension':
-                        dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
-                        q_set['holdTimeExpirationAction'] = action
-                        _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
-                    else:
-                        q_set['holdTimeExpirationAction'] = action
-                        _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
-
-                if get_val(row, 'When Queue is Full'):
-                    action = get_val(row, 'When Queue is Full')
-                    if action == 'TransferToExtension':
-                        dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
-                        q_set['maxCallersAction'] = action
-                        _set_queue_transfer(q_set, 'MaxCallers', dest_id)
-                    else:
-                        q_set['maxCallersAction'] = action
-                        _set_queue_transfer(q_set, 'MaxCallers', None)
-                        
-                if q_set.get('transferMode') == 'Simultaneous':
-                    q_set.pop('agentTimeout', None)
-
-                rule['queue'] = q_set
-                old_q = orig_rule.get('queue', {})
-                
-                old_tm = 'Rotating' if old_q.get('transferMode') == 'Rotating' else old_q.get('transferMode')
-                new_tm = 'Rotating' if q_set.get('transferMode') == 'Rotating' else q_set.get('transferMode')
-                r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
-                
-                r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
-                r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
-                r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
-                r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
-                
-                r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
-                
-                old_f_id = _safe_get_transfer_id(old_q.get('transfer'), 'MaxCallers') or 'None'
-                new_f_id = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers') or 'None'
-                if old_f_id != new_f_id:
-                    r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
-
-                r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
-                
-                old_t_id = _safe_get_transfer_id(old_q.get('transfer'), 'HoldTimeExpiration') or 'None'
-                new_t_id = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration') or 'None'
-                if old_t_id != new_t_id:
-                    r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
-
-                old_ia_mode = old_q.get('holdAudioInterruptionMode')
-                if old_ia_mode == 'Never' or not old_ia_mode:
-                    old_ia_str = "Never"
-                else:
-                    old_ia_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
-                    
-                new_ia_mode = q_set.get('holdAudioInterruptionMode')
-                if new_ia_mode == 'Never' or not new_ia_mode:
-                    new_ia_str = "Never"
-                else:
-                    new_ia_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
-                    
-                r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
-
-                # --- NEW: Safe Greeting Repackaging ---
-                orig_greetings = orig_rule.get('greetings', [])
-                new_greetings = []
-                
-                slots_to_mod = ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt', 'Voicemail']
-                for g in orig_greetings:
-                    if g.get('type') not in slots_to_mod:
-                        clean_g = {"type": g.get("type")}
-                        if 'preset' in g: clean_g['preset'] = {'id': g['preset']['id']}
-                        elif 'custom' in g: clean_g['custom'] = {'id': g['custom']['id']}
-                        new_greetings.append(clean_g)
-
-                def apply_greeting(col_name, slot_type):
-                    nonlocal r_needs_update
-                    val = get_val(row, col_name)
-                    if val:
-                        new_val = val.lower().strip()
-                        matched_id = None
-                        
-                        if slot_type == 'InterruptPrompt' and new_val not in ['default', 'custom', 'off', 'none']:
-                            for name, gid in preset_dict['InterruptPrompt'].items():
-                                if "patience" in new_val and "patience" in name: matched_id = gid
-                                elif "volume" in new_val and "volume" in name: matched_id = gid
-                                elif "busy" in new_val and "busy" in name: matched_id = gid
-                                elif "important" in new_val and "important" in name: matched_id = gid
-                        else:
-                            matched_id = preset_dict.get(slot_type, {}).get(new_val)
-                        
-                        if new_val in ['off', 'none']:
-                            off_id = preset_dict.get(slot_type, {}).get('none')
-                            if off_id:
-                                new_greetings.append({"type": slot_type, "preset": {"id": off_id}})
-                            else:
-                                new_greetings.append({"type": slot_type, "preset": {"id": "None"}})
-                                logs.append(f"Warning: No explicit 'Off' preset ID found for {slot_type}; injecting literal 'None'.")
-                        elif matched_id:
-                            new_greetings.append({"type": slot_type, "preset": {"id": matched_id}})
-                        elif new_val == 'default':
-                            new_greetings.append({"type": slot_type, "preset": {"id": "default"}})
-                        elif new_val == 'custom':
-                            orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
-                            if orig_g and 'custom' in orig_g: new_greetings.append({"type": slot_type, "custom": {"id": orig_g['custom']['id']}})
-                        
-                        old_val_name = get_old_greeting_name(orig_rule, slot_type)
-                        if slot_type == 'InterruptPrompt' and old_val_name not in ['Default', 'Custom', 'Off']:
-                            n_lower = old_val_name.lower()
-                            if 'patience' in n_lower: old_val_name = "Thank you for your patience"
-                            elif 'volume' in n_lower: old_val_name = "Higher than normal volume"
-                            elif 'busy' in n_lower: old_val_name = "Agents are currently busy"
-                            elif 'important' in n_lower: old_val_name = "Call is very important to us"
-                        
-                        r_needs_update |= check_diff(changes, col_name, old_val_name, val)
-                    else:
-                        orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
-                        if orig_g:
-                            clean_g = {"type": slot_type}
-                            if 'preset' in orig_g: clean_g['preset'] = {'id': orig_g['preset']['id']}
-                            elif 'custom' in orig_g: clean_g['custom'] = {'id': orig_g['custom']['id']}
-                            new_greetings.append(clean_g)
-
-                apply_greeting('Greeting', 'Introductory')
-                apply_greeting('Audio While Connecting', 'ConnectingAudio')
-                apply_greeting('Hold Music', 'HoldMusic')
-                apply_greeting('Interrupt Prompt', 'InterruptPrompt')
-                apply_greeting('Voicemail Greeting', 'Voicemail')
-                
-                rule['greetings'] = new_greetings
-                
-                vm_recip_raw = get_val(row, 'Voicemail Recipients')
-                if vm_recip_raw:
-                    vm_ext_id = _resolve_ext(vm_recip_raw)
-                    if vm_ext_id:
-                        if 'voicemail' not in rule: rule['voicemail'] = {}
-                        rule['voicemail']['recipient'] = {'id': vm_ext_id}
-                        old_vm = str(orig_rule.get('voicemail', {}).get('recipient', {}).get('id', 'None'))
-                        r_needs_update |= check_diff(changes, 'VM Recipient', ext_id_to_num.get(old_vm, old_vm), ext_id_to_num.get(vm_ext_id, vm_ext_id))
-
-                for field in _READ_ONLY: rule.pop(field, None)
-                for field in _READ_ONLY: 
-                    if 'queue' in rule: rule['queue'].pop(field, None)
-                rule.pop('callers', None); rule.pop('calledNumbers', None)
-                
-                if r_needs_update and not is_preview:
-                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-                    
-                    # Failsafe 1: Invalid/deprecated greeting IDs existing on the rule
-                    attempt = 0
-                    while not put_succ and 'AWR-123' in str(err) and attempt < 5:
-                        attempt += 1
-                        try:
-                            err_json = json.loads(err)
-                            bad_types = {e.get('greetingType') for e in err_json.get('errors', []) if e.get('errorCode') == 'AWR-123'}
-                        except:
-                            bad_types = set(re.findall(r'greeting type \[([^\]]+)\]', str(err)))
-
-                        if not bad_types: break
-
-                        for g in rule.get('greetings', []):
-                            if g.get('type') in bad_types:
-                                g.pop('preset', None)
-                                g.pop('custom', None)
-                                g['preset'] = {'id': 'default'}
-
-                        logs.append(f"Reset deprecated preset(s) for: {', '.join(bad_types)}")
-                        put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-
-                    # Failsafe 2: Invalid extensions passed in the Transfer nodes
-                    if not put_succ and 'queue.transfer.extension.id' in str(err):
-                        rule['queue'].pop('transfer', None)
-                        if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
-                        if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
-                        
-                        put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-                        if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                        else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)} | Sent: {json.dumps(rule)}")
-                    
-                    elif put_succ: 
-                        logs.append("Routing Updated")
-                    else: 
-                        has_error = True
-                        logs.append(f"Routing Error: {format_api_error(err)} | Sent: {json.dumps(rule)}")
-
-        # --- D. AFTER HOURS RULE ---
-        ah_fields = ['After Hours Behavior', 'After Hours Destination']
-        if any(get_val(row, f) for f in ah_fields):
-            get_succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='GET', token=token)
-            if get_succ and isinstance(ah_rule, dict):
-                orig_ah = copy.deepcopy(ah_rule)
-                a_needs_update = False
-                
-                if get_val(row, 'After Hours Behavior'): 
-                    action = get_val(row, 'After Hours Behavior')
-                    if action == 'TransferToExtension':
-                        dest_id = _resolve_ext(get_val(row, 'After Hours Destination'))
-                        ah_rule['callHandlingAction'] = action
-                        if dest_id: ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
-                    else:
-                        ah_rule['callHandlingAction'] = action
-                        ah_rule.pop('transfer', None)
-                
-                a_needs_update |= check_diff(changes, 'After Hours Behavior', orig_ah.get('callHandlingAction'), ah_rule.get('callHandlingAction'))
-                
-                old_a_id = _safe_get_ah_transfer_id(orig_ah.get('transfer')) or 'None'
-                new_a_id = _safe_get_ah_transfer_id(ah_rule.get('transfer')) or 'None'
-                if old_a_id != new_a_id:
-                    a_needs_update |= check_diff(changes, 'After Hours Dest', ext_id_to_num.get(old_a_id, old_a_id), ext_id_to_num.get(new_a_id, new_a_id))
-                
-                for field in _READ_ONLY: ah_rule.pop(field, None)
-                ah_rule.pop('greetings', None); ah_rule.pop('callers', None); ah_rule.pop('calledNumbers', None)
-                
-                if a_needs_update and not is_preview:
-                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
-                    
-                    attempt = 0
-                    while not put_succ and 'AWR-123' in str(err) and attempt < 5:
-                        attempt += 1
-                        try:
-                            err_json = json.loads(err)
-                            bad_types = {e.get('greetingType') for e in err_json.get('errors', []) if e.get('errorCode') == 'AWR-123'}
-                        except:
-                            bad_types = set(re.findall(r'greeting type \[([^\]]+)\]', str(err)))
-
-                        if not bad_types: break
-
-                        for g in ah_rule.get('greetings', []):
-                            if g.get('type') in bad_types:
-                                g.pop('preset', None)
-                                g.pop('custom', None)
-                                g['preset'] = {'id': 'default'}
-
-                        logs.append(f"Reset deprecated AH preset(s) for: {', '.join(bad_types)}")
-                        put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
-                    
-                    if not put_succ and 'transfer.extension.id' in str(err):
-                        ah_rule.pop('transfer', None)
-                        ah_rule['callHandlingAction'] = 'Voicemail'
-                        put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
-                        if put_succ2: logs.append("After Hours Updated (Invalid transfer stripped & reverted to Voicemail)")
-                        else: has_error = True; logs.append(f"After Hours Error: {format_api_error(err2)} | Sent: {json.dumps(ah_rule)}")
-                        
-                    elif put_succ: 
-                        logs.append("After Hours Updated")
-                    else: 
-                        has_error = True
-                        logs.append(f"After Hours Error: {format_api_error(err)} | Sent: {json.dumps(ah_rule)}")
-
-        # --- E. MEMBERS ---
-        if get_val(row, 'Members (Ext)'):
-            mem_str = get_val(row, 'Members (Ext)')
-            mem_exts = [e.strip() for e in mem_str.split(',')]
-            added_ids = []
-            for m in mem_exts:
-                m_id = _resolve_ext(m)
-                if m_id: added_ids.append({"id": m_id})
-            
-            if added_ids:
-                old_mems_str = "None"
-                get_succ, old_mems_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/members', method='GET', token=token)
-                if get_succ and isinstance(old_mems_resp, dict):
-                    old_mem_list = [str(m.get('extensionNumber')) for m in old_mems_resp.get('records', []) if m.get('extensionNumber')]
-                    if old_mem_list: old_mems_str = ", ".join(old_mem_list)
-                
-                new_mems_str = ", ".join(mem_exts)
-                
-                if set(old_mem_list) != set(mem_exts):
-                    changes.append({"parameter": "Queue Members", "old": old_mems_str, "new": new_mems_str})
-                    if not is_preview:
-                        mem_payload = {"addedExtensionIds": [a['id'] for a in added_ids]}
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json_payload=mem_payload, token=token)
-                        if s_succ: 
-                            logs.append("Members Updated")
-                        else: 
-                            has_error = True
-                            logs.append(f"Members Error: {format_api_error(err)} | Sent: {json.dumps(mem_payload)}")
-
-        # --- F. VOICEMAIL NOTIFICATIONS ---
-        vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
-        if any(get_val(row, f) for f in vm_fields):
-            get_succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='GET', token=token)
-            if get_succ and isinstance(notif, dict):
-                orig_notif = copy.deepcopy(notif)
-                vm_set = notif.get('voicemails', {})
-                v_needs_update = False
-                
-                if get_val(row, 'Voicemail Notifications'):
-                    vm_val = get_val(row, 'Voicemail Notifications').lower()
-                    if vm_val in ['off', 'false', 'no']:
-                        vm_set['notifyByEmail'] = False; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
-                    elif 'read' in vm_val:
-                        vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = True
-                    elif 'attach' in vm_val:
-                        vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = False
-                    else:
-                        vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
-                        
-                new_emails = []
-                if get_val(row, 'Voicemail Notifications Email'):
-                    new_emails = [e.strip() for e in get_val(row, 'Voicemail Notifications Email').split(',') if e.strip()]
-                    
-                if vm_set.get('notifyByEmail'):
-                    if not new_emails:
-                        fallback = get_val(row, 'Queue Email')
-                        if fallback:
-                            new_emails = [e.strip() for e in fallback.split(',') if e.strip()]
-                        else:
-                            if notif.get('advancedMode') and vm_set.get('advancedEmailAddresses'):
-                                new_emails = vm_set.get('advancedEmailAddresses')
-                            elif not notif.get('advancedMode') and notif.get('emailAddresses'):
-                                new_emails = notif.get('emailAddresses')
-                            else:
-                                vm_set['notifyByEmail'] = False
-                                vm_set['includeAttachment'] = False
-                                vm_set['markAsRead'] = False
+                        for (let line of lines) {
+                            if (!line.trim()) continue;
+                            try {
+                                const data = JSON.parse(line);
                                 
-                if not vm_set.get('notifyByEmail'):
-                    vm_set['includeAttachment'] = False
-                
-                if new_emails:
-                    notif['advancedMode'] = True
-                    vm_set['advancedEmailAddresses'] = new_emails
-                    
-                    base_emails = orig_notif.get('emailAddresses', [])
-                    if not base_emails: base_emails = new_emails
-                    
-                    for cat in ['inboundFaxes', 'outboundFaxes', 'inboundTexts', 'missedCalls']:
-                        if cat not in notif: notif[cat] = {}
-                        notif[cat]['notifyByEmail'] = False
-                        
-                        # CRITICAL FIX: Only voicemails accepts attachment fields! Completely pop them out of other categories.
-                        notif[cat].pop('includeAttachment', None)
-                        notif[cat].pop('markAsRead', None)
-                        notif[cat].pop('includeTranscription', None)
-                        
-                        notif[cat]['advancedEmailAddresses'] = base_emails 
-                        if 'notifyBySms' in notif[cat]:
-                            notif[cat]['notifyBySms'] = False
-                    
-                vm_set.pop('emailAddresses', None)
-                notif['voicemails'] = vm_set
-                
-                old_email_on = str(orig_notif.get('voicemails', {}).get('notifyByEmail'))
-                new_email_on = str(vm_set.get('notifyByEmail'))
-                v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
-                
-                v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
-                
-                old_emails = orig_notif.get('voicemails', {}).get('advancedEmailAddresses', []) if orig_notif.get('advancedMode') else orig_notif.get('emailAddresses', [])
-                if set(old_emails) != set(new_emails):
-                    v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
-                
-                for field in _READ_ONLY: notif.pop(field, None)
-                
-                if v_needs_update and not is_preview:
-                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=notif, token=token)
-                    
-                    if not put_succ and 'includeAttachment' in str(err):
-                        for cat in ['voicemails', 'inboundFaxes', 'outboundFaxes', 'inboundTexts', 'missedCalls']:
-                            if cat in notif:
-                                notif[cat].pop('includeAttachment', None)
-                                notif[cat].pop('markAsRead', None)
-                                notif[cat].pop('includeTranscription', None)
-                        
-                        put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=notif, token=token)
-                        if put_succ2: 
-                            logs.append("Notifications Updated (Attachments popped due to account limits)")
-                        else: 
-                            has_error = True
-                            logs.append(f"Notifications Error: {format_api_error(err2)} | Sent: {json.dumps(notif)}")
-                    elif put_succ: 
-                        logs.append("Notifications Updated")
-                    else: 
-                        has_error = True
-                        logs.append(f"Notifications Error: {format_api_error(err)} | Sent: {json.dumps(notif)}")
+                                if (data.type === 'start') {
+                                    logEvent(data.message, 'info');
+                                    progressText.innerText = data.message;
+                                } 
+                                else if (data.type === 'progress') {
+                                    const r = data.result;
+                                    logEvent(`Ext ${r.ext}: ${r.message}`, r.status);
+                                    
+                                    // 1. Structure Fix: Independently append changes
+                                    if (r.changes && r.changes.length > 0) {
+                                        r.changes.forEach(change => {
+                                            let statusUi = '';
+                                            if (data.is_preview) {
+                                                statusUi = `<span class="inline-flex items-center text-xs font-bold text-blue-600"><i class="fas fa-clock mr-1"></i>Pending</span>`;
+                                            } else if (r.status === 'error') {
+                                                statusUi = `<span class="inline-flex items-center text-xs font-bold text-yellow-600"><i class="fas fa-exclamation-triangle mr-1"></i>Aborted</span>`;
+                                            } else {
+                                                statusUi = `<span class="inline-flex items-center text-xs font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Applied</span>`;
+                                            }
+                                                
+                                            const tr = document.createElement('tr');
+                                            tr.innerHTML = `
+                                                <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">${r.ext}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-gray-600 font-semibold">${change.parameter}</td>
+                                                <td class="px-6 py-4"><span class="bg-red-50 text-red-700 px-2 py-1 rounded border border-red-100 text-xs">${change.old || 'None'}</span></td>
+                                                <td class="px-6 py-4"><span class="bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 text-xs">${change.new || 'None'}</span></td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-right">${statusUi}</td>
+                                            `;
+                                            tableBody.appendChild(tr);
+                                        });
+                                    }
+                                    
+                                    // 2. Structure Fix: Independently append errors without else-if swallowing
+                                    if (r.status === 'error') {
+                                         const tr = document.createElement('tr');
+                                         tr.innerHTML = `
+                                            <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">${r.ext}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-gray-600 font-semibold">System API</td>
+                                            <td class="px-6 py-4 text-red-600 bg-red-50 text-xs italic" colspan="2">${r.message}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-right"><span class="inline-flex items-center text-xs font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Failed</span></td>
+                                         `;
+                                         tableBody.appendChild(tr);
+                                    }
 
-        if not logs and not changes: 
-            res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
-        elif has_error: 
-            res_dict = {"ext": ext_num, "status": "error", "message": " | ".join(logs) or "Unknown Error", "changes": changes}
-        else: 
-            res_dict = {"ext": ext_num, "status": "success", "message": "Evaluated successfully." if is_preview else "Changes synced.", "changes": changes}
-            
-        yield {"type": "progress", "current": i + 1, "total": total_records, "result": res_dict, "is_preview": is_preview}
-        time.sleep(1.5) 
-            
-    yield {"type": "done", "is_preview": is_preview}
+                                    const pct = Math.round((data.current / data.total) * 100);
+                                    progressBar.style.width = `${pct}%`;
+                                    progressText.innerText = `Processing... ${data.current}/${data.total}`;
+                                    progressPercent.innerText = `${pct}%`;
+                                } 
+                                else if (data.type === 'done') {
+                                    logEvent(data.is_preview ? "Preview Complete." : "Batch Sync Complete.", "success");
+                                    progressBar.style.width = `100%`;
+                                    progressText.innerText = `Complete`;
+                                    progressPercent.innerText = `100%`;
+                                    
+                                    if (tableBody.children.length === 0) {
+                                        tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400 italic">No modifications detected.</td></tr>`;
+                                    } else if (data.is_preview) {
+                                        syncBtn.classList.remove('hidden');
+                                        previewBtn.classList.add('hidden');
+                                    }
+                                } 
+                                else if (data.type === 'error') {
+                                    logEvent(`Fatal Error: ${data.message}`, "error");
+                                    if (data.message.includes('Unauthorized')) setTimeout(() => window.location.href = '/api/sm_auth/logout?tab=cq_hours', 2000);
+                                }
+                            } catch (err) { console.error("Stream parse error:", line); }
+                        }
+                    }
+                } catch (err) {
+                    if (err.message !== "Server rejected upload.") logEvent(`Network Error: ${err.message}`, "error");
+                } finally {
+                    activeBtn.disabled = false;
+                    inactiveBtn.disabled = false;
+                    previewBtn.innerHTML = `<i class="fas fa-search mr-2"></i>Preview Changes`;
+                    syncBtn.innerHTML = `<i class="fas fa-cloud-upload-alt mr-2"></i>Confirm & Sync`;
+                    
+                    if (action === 'sync') {
+                        syncBtn.classList.add('hidden');
+                        previewBtn.classList.remove('hidden');
+                        fileInput.value = '';
+                        sheetContainer.classList.add('hidden');
+                    }
+                }
+            }
+
+            previewBtn.addEventListener('click', () => runBatchProcess('preview'));
+            syncBtn.addEventListener('click', () => runBatchProcess('sync'));
+        });
+    </script>
+</div>
