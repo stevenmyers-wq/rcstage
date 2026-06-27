@@ -663,21 +663,25 @@ def update_cq_batch(records, token, is_preview=False):
                 basic_payload = {}
                 b_needs_update = False
                 
-                if get_val(row, 'Queue Name'): 
-                    basic_payload['name'] = get_val(row, 'Queue Name')
+                val_qn = get_val(row, 'Queue Name')
+                if val_qn is not None: 
+                    basic_payload['name'] = val_qn
                     b_needs_update |= check_diff(changes, 'Queue Name', old_basic.get('name'), basic_payload['name'])
                     
-                if get_val(row, 'Status'): 
-                    basic_payload['status'] = get_val(row, 'Status').capitalize()
+                val_st = get_val(row, 'Status')
+                if val_st is not None: 
+                    basic_payload['status'] = val_st.capitalize()
                     b_needs_update |= check_diff(changes, 'Status', old_basic.get('status'), basic_payload['status'])
                     
-                if get_val(row, 'Queue Email'): 
+                val_qe = get_val(row, 'Queue Email')
+                if val_qe is not None: 
                     basic_payload['contact'] = old_basic.get('contact', {})
-                    basic_payload['contact']['email'] = get_val(row, 'Queue Email')
+                    basic_payload['contact']['email'] = val_qe
                     b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
 
-                if get_val(row, 'Site'):
-                    s_name = get_val(row, 'Site').lower()
+                val_site = get_val(row, 'Site')
+                if val_site is not None:
+                    s_name = val_site.lower()
                     if not site_map:
                         pass
                     else:
@@ -700,10 +704,10 @@ def update_cq_batch(records, token, is_preview=False):
                                     b_needs_update = True
                         else:
                             has_error = True
-                            logs.append(f"Invalid Site: '{get_val(row, 'Site')}'")
+                            logs.append(f"Invalid Site: '{val_site}'")
                         
                 tz_raw = get_val(row, 'Timezone') or get_val(row, 'Time Zone')
-                if tz_raw:
+                if tz_raw is not None:
                     tz_key = tz_raw.lower()
                     if tz_key in tz_map:
                         if 'regionalSettings' not in basic_payload: basic_payload['regionalSettings'] = {}
@@ -735,10 +739,11 @@ def update_cq_batch(records, token, is_preview=False):
                     else:
                         logs.append("Basic Info Evaluated")
                         
-        if get_val(row, 'Member Queue Status'):
+        val_mqs = get_val(row, 'Member Queue Status')
+        if val_mqs is not None:
             get_succ, old_cq = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}', method='GET', token=token)
             if get_succ and isinstance(old_cq, dict):
-                mem_status = get_val(row, 'Member Queue Status').lower()
+                mem_status = val_mqs.lower()
                 new_editable = True if 'allowed' in mem_status and 'not' not in mem_status else False
                 
                 old_editable = old_cq.get('editableMemberStatus')
@@ -759,7 +764,7 @@ def update_cq_batch(records, token, is_preview=False):
 
         # --- B. BUSINESS HOURS UPDATE ---
         hours_str = get_val(row, 'Hours')
-        if hours_str:
+        if hours_str is not None:
             try:
                 weekly_ranges = parse_intuitive_hours(hours_str)
                 old_hours_str = "Unknown"
@@ -787,7 +792,7 @@ def update_cq_batch(records, token, is_preview=False):
             except Exception as e:
                 has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
 
-        # --- C. ROUTING & TIMERS (Answering Rule) ---
+        # --- C. ROUTING & TIMERS ---
         routing_fields = [
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
@@ -868,41 +873,41 @@ def update_cq_batch(records, token, is_preview=False):
                 old_tm = 'Rotating' if old_q.get('transferMode') == 'Rotating' else old_q.get('transferMode')
                 new_tm = 'Rotating' if q_set.get('transferMode') == 'Rotating' else q_set.get('transferMode')
                 
-                if rt is not None:
-                    r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
+                if rt is not None: r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
+                if val_urt is not None: r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
+                if val_trt is not None: r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
+                if val_wut is not None: r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
+                if val_ciq is not None: r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
                 
-                if val_urt is not None:
-                    r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
-                
-                if val_trt is not None:
-                    r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
-                
-                if val_wut is not None:
-                    r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
-                
-                if val_ciq is not None:
-                    r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
-                
-                if val_wqf is not None:
-                    r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
+                if val_wqf is not None: r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
                 
                 old_f_id = _safe_get_transfer_id(old_q.get('transfer'), 'MaxCallers') or 'None'
                 new_f_id = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers') or 'None'
                 if get_val(row, 'Queue Full Destination') is not None:
                     r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
 
-                if val_wmtr is not None:
-                    r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
+                if val_wmtr is not None: r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
                 
                 old_t_id = _safe_get_transfer_id(old_q.get('transfer'), 'HoldTimeExpiration') or 'None'
                 new_t_id = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration') or 'None'
                 if get_val(row, 'Time Reached Destination') is not None:
                     r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
 
+                old_ia_mode = old_q.get('holdAudioInterruptionMode')
+                if old_ia_mode == 'Never' or not old_ia_mode:
+                    old_ia_str = "Never"
+                else:
+                    old_ia_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
+                    
+                new_ia_mode = q_set.get('holdAudioInterruptionMode')
+                if new_ia_mode == 'Never' or not new_ia_mode:
+                    new_ia_str = "Never"
+                else:
+                    new_ia_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
+                    
                 if val_ia is not None:
                     r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-                # Prevent answering-rule from rejecting the payload by dropping the main greetings
                 if 'greetings' in rule:
                     rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
