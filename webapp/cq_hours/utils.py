@@ -252,7 +252,7 @@ def run_cq_audit(task_id, queue_ids, token):
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
-        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         for g_type in preset_dict.keys():
             succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
@@ -348,7 +348,7 @@ def run_cq_audit(task_id, queue_ids, token):
                             g_name = "Custom" if act.get('greeting', {}).get('custom') else "Default"
                         else:
                             dict_type = 'Introductory' if a_type == 'PlayWelcomePromptAction' else \
-                                        'ConnectingAudio' if a_type == 'PlayConnectingMessageAction' else \
+                                        'ConnectingMessage' if a_type == 'PlayConnectingMessageAction' else \
                                         'HoldMusic' if a_type == 'PlayHoldMusicAction' else \
                                         'InterruptPrompt' if a_type == 'PlayInterruptPromptAction' else 'Introductory'
                             
@@ -399,7 +399,7 @@ def run_cq_audit(task_id, queue_ids, token):
                     row["Voicemail Notifications"] = "Off"
                 
                 if notif.get('advancedMode'):
-                    emails = vm_set.get('advancedEmailAddresses', [])
+                    emails = vm_set.get('emailAddresses', [])
                 else:
                     emails = notif.get('emailAddresses', [])
                     
@@ -554,7 +554,7 @@ def update_cq_batch(records, token, is_preview=False):
         yield {"type": "error", "message": "Failed to load timezone dictionary."}
         return
 
-    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
         succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
@@ -648,7 +648,7 @@ def update_cq_batch(records, token, is_preview=False):
 
         # --- A. BASIC INFO UPDATE ---
         basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
-        if any(get_val(row, f) for f in basic_fields):
+        if any(get_val(row, f) is not None for f in basic_fields):
             get_succ, old_basic = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='GET', token=token)
             if get_succ and isinstance(old_basic, dict):
                 basic_payload = {}
@@ -819,8 +819,8 @@ def update_cq_batch(records, token, is_preview=False):
             val_ia = get_val(row, 'Interrupt Audio')
             if val_ia is not None:
                 if val_ia.lower() == 'never':
-                    q_set['holdAudioInterruptionMode'] = 'Never'
-                    q_set.pop('holdAudioInterruptionPeriod', None)
+                        q_set['holdAudioInterruptionMode'] = 'Never'
+                        q_set.pop('holdAudioInterruptionPeriod', None)
                 else:
                     parsed = parse_time_to_seconds(val_ia)
                     if parsed is not None: 
@@ -902,6 +902,7 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
+            # Prevent answering-rule from rejecting the payload by dropping the main greetings
             if 'greetings' in rule:
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
@@ -995,6 +996,8 @@ def update_cq_batch(records, token, is_preview=False):
                 if new_val in ['off', 'none', 'disable', 'disabled']:
                     if act.get('enabled') is not False:
                         act['enabled'] = False
+                        if 'greeting' not in act:
+                            act['greeting'] = {"effectiveGreetingType": "Default"}
                         vir_needs_update = True
                     if check_diff(changes, col_name, old_val_str, "Off"):
                         vir_needs_update = True
@@ -1023,7 +1026,7 @@ def update_cq_batch(records, token, is_preview=False):
                     check_diff(changes, col_name, old_val_str, new_val_str)
 
             apply_vir_greeting('Greeting', 'PlayWelcomePromptAction', 'Introductory', 'Introductory')
-            apply_vir_greeting('Audio While Connecting', 'PlayConnectingMessageAction', 'ConnectingAudio', 'ConnectingAudio')
+            apply_vir_greeting('Audio While Connecting', 'PlayConnectingMessageAction', 'ConnectingMessage', 'ConnectingAudio')
             apply_vir_greeting('Hold Music', 'PlayHoldMusicAction', 'HoldMusic', 'HoldMusic')
             apply_vir_greeting('Interrupt Prompt', 'PlayInterruptPromptAction', 'InterruptPrompt', 'InterruptPrompt')
 
@@ -1144,8 +1147,8 @@ def update_cq_batch(records, token, is_preview=False):
                         if fallback:
                             new_emails = [e.strip() for e in fallback.split(',') if e.strip()]
                         else:
-                            if notif.get('advancedMode') and vm_set.get('advancedEmailAddresses'):
-                                new_emails = vm_set.get('advancedEmailAddresses')
+                            if notif.get('advancedMode') and vm_set.get('emailAddresses'):
+                                new_emails = vm_set.get('emailAddresses')
                             elif not notif.get('advancedMode') and notif.get('emailAddresses'):
                                 new_emails = notif.get('emailAddresses')
                             else:
@@ -1163,9 +1166,11 @@ def update_cq_batch(records, token, is_preview=False):
                     }
                 }
                 
-                if orig_notif.get('advancedMode', False):
-                    new_notif['voicemails']['advancedEmailAddresses'] = new_emails
+                if orig_notif.get('advancedMode', False) or new_emails:
+                    new_notif['advancedMode'] = True
+                    new_notif['voicemails']['emailAddresses'] = new_emails
                 else:
+                    new_notif['advancedMode'] = False
                     new_notif['emailAddresses'] = new_emails
 
                 if vm_set.get('notifyByEmail'):
@@ -1178,7 +1183,7 @@ def update_cq_batch(records, token, is_preview=False):
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
                     v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
                 
-                old_emails = orig_notif.get('voicemails', {}).get('advancedEmailAddresses', []) if orig_notif.get('advancedMode') else orig_notif.get('emailAddresses', [])
+                old_emails = orig_notif.get('voicemails', {}).get('emailAddresses', []) if orig_notif.get('advancedMode') else orig_notif.get('emailAddresses', [])
                 if val_vne is not None or get_val(row, 'Queue Email') is not None:
                     if set(old_emails) != set(new_emails):
                         v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
