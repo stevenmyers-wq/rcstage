@@ -235,6 +235,7 @@ def _safe_get_ah_transfer_id(transfer_data):
     return ''
 
 def get_old_greeting_name(orig_rule, slot_type):
+    """Safely looks up legacy greeting names to power diff-checking."""
     for g in orig_rule.get('greetings', []):
         if g.get('type') == slot_type:
             if 'preset' in g:
@@ -928,6 +929,8 @@ def update_cq_batch(records, token, is_preview=False):
                 # Safely clear out the old Voicemail greeting before appending the new one to prevent AWR-106 duplicates
                 if 'greetings' in rule:
                     rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
+                else:
+                    rule['greetings'] = []
 
                 if vm_new_val in ['off', 'none', 'disable', 'disabled']:
                     pass 
