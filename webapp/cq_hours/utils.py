@@ -250,17 +250,6 @@ def fetch_all_queues(token):
         else: break
     return queues
 
-def get_old_greeting_name(orig_rule, slot_type):
-    for g in orig_rule.get('greetings', []):
-        if g.get('type') == slot_type:
-            if 'preset' in g:
-                name = g['preset'].get('name', 'Default')
-                if name.lower() == 'none': return 'Off'
-                return name
-            elif 'custom' in g:
-                return 'Custom'
-    return 'Default'
-
 def run_cq_audit(task_id, queue_ids, token):
     audit_progress_store[task_id] = {'current': 0, 'total': len(queue_ids), 'status': 'running', 'file_ready': False}
     try:
@@ -902,10 +891,27 @@ def update_cq_batch(records, token, is_preview=False):
                     
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-                # Ensure greetings aren't passed to answering-rule payload if we are using voice-interaction-rules
+                # Strip out the 4 main audio prompts from the legacy Answering Rule payload to prevent conflicts
                 if 'greetings' in rule:
                     rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
+                # Update Voicemail greeting inside answering rule if requested
+                vm_greet_val = get_val(row, 'Voicemail Greeting')
+                if vm_greet_val:
+                    vm_new_val = vm_greet_val.lower().strip()
+                    matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
+                    
+                    if vm_new_val == 'default':
+                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": "default"}})
+                    elif matched_id:
+                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": matched_id}})
+                    else:
+                        orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
+                        if orig_g: rule['greetings'].append(orig_g)
+                        
+                    old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
+                    r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
+                
                 vm_recip_raw = get_val(row, 'Voicemail Recipients')
                 if vm_recip_raw:
                     vm_ext_id = _resolve_ext(vm_recip_raw)
@@ -938,7 +944,7 @@ def update_cq_batch(records, token, is_preview=False):
                         has_error = True
                         logs.append(f"Routing Error: {format_api_error(err)}")
 
-        # --- D. VOICE INTERACTION RULES (Greetings) ---
+        # --- D. VOICE INTERACTION RULES (Greetings UAT Implementation) ---
         vir_fields = ['Greeting', 'Audio While Connecting', 'Hold Music', 'Interrupt Prompt']
         if any(get_val(row, f) for f in vir_fields):
             vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
@@ -952,10 +958,10 @@ def update_cq_batch(records, token, is_preview=False):
                     if not val: return
                     
                     new_val = val.lower().strip()
-                    act = next((a for a in actions if a.get('type') == act_type), None)
                     
+                    act = next((a for a in actions if a.get('type') == act_type), None)
                     if not act:
-                        act = {"type": act_type, "enabled": True, "greeting": {"effectiveGreetingType": "Preset", "preset": {}}}
+                        act = {"type": act_type}
                         actions.append(act)
 
                     # Explicit Disable
@@ -973,23 +979,16 @@ def update_cq_batch(records, token, is_preview=False):
                         matched_id = preset_dict.get(dict_type, {}).get('default')
                     else:
                         matched_id = preset_dict.get(dict_type, {}).get(new_val)
-                        if dict_type == 'InterruptPrompt' and not matched_id:
-                            for name, gid in preset_dict['InterruptPrompt'].items():
-                                if "patience" in new_val and "patience" in name: matched_id = gid
-                                elif "volume" in new_val and "volume" in name: matched_id = gid
-                                elif "busy" in new_val and "busy" in name: matched_id = gid
-                                elif "important" in new_val and "important" in name: matched_id = gid
 
                     if matched_id:
-                        if 'greeting' not in act: act['greeting'] = {}
-                        act['greeting']['effectiveGreetingType'] = 'Preset'
-                        if 'preset' not in act['greeting']: act['greeting']['preset'] = {}
-                        
-                        curr_id = str(act['greeting']['preset'].get('id', ''))
-                        if curr_id != str(matched_id):
-                            act['greeting']['preset']['id'] = str(matched_id)
-                            vir_needs_update = True
-                            check_diff(changes, col_name, "Unknown", val)
+                        act['greeting'] = {
+                            "effectiveGreetingType": "Preset",
+                            "preset": {
+                                "id": str(matched_id)
+                            }
+                        }
+                        vir_needs_update = True
+                        check_diff(changes, col_name, "Unknown", val)
 
                 apply_vir_greeting('Greeting', 'PlayWelcomePromptAction', 'Introductory')
                 apply_vir_greeting('Audio While Connecting', 'PlayConnectingMessageAction', 'ConnectingAudio')
