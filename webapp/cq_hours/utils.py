@@ -173,8 +173,11 @@ def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_ret
             if resp and getattr(resp, 'ok', False):
                 try: return True, resp.json() if resp.content else {}
                 except: return True, {}
-            try: err_msg = json.dumps(resp.json())
-            except: err_msg = getattr(resp, 'text', f'HTTP {status_code} Error')
+            try: 
+                err_msg = json.dumps(resp.json())
+            except: 
+                body_text = getattr(resp, 'text', '')
+                err_msg = body_text if body_text else f'HTTP {status_code} Error (empty response body)'
             return False, err_msg
         except Exception as e: 
             time.sleep(2)
@@ -910,6 +913,10 @@ def update_cq_batch(records, token, is_preview=False):
                 vm_new_val = vm_greet_val.lower().strip()
                 matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
                 
+                # Safely clear out the old Voicemail greeting before appending the new one to prevent AWR-106 duplicates
+                if 'greetings' in rule:
+                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
+
                 if vm_new_val in ['off', 'none', 'disable', 'disabled']:
                     pass 
                 elif vm_new_val == 'default':
@@ -1159,15 +1166,15 @@ def update_cq_batch(records, token, is_preview=False):
                     vm_set['includeAttachment'] = False
                     vm_set['markAsRead'] = False
 
-                # UAT Logic: Respect the existing advancedMode state.
-                new_notif = {
-                    "advancedMode": orig_notif.get('advancedMode', False),
-                    "voicemails": {
-                        "notifyByEmail": vm_set.get('notifyByEmail', False)
-                    }
-                }
+                new_notif = copy.deepcopy(orig_notif)
+                for field in _READ_ONLY: new_notif.pop(field, None)
+
+                if 'voicemails' not in new_notif:
+                    new_notif['voicemails'] = {}
+
+                new_notif['voicemails']['notifyByEmail'] = vm_set.get('notifyByEmail', False)
                 
-                if new_notif['advancedMode']:
+                if new_notif.get('advancedMode'):
                     new_notif['voicemails']['emailAddresses'] = new_emails
                 else:
                     new_notif['emailAddresses'] = new_emails
@@ -1175,6 +1182,9 @@ def update_cq_batch(records, token, is_preview=False):
                 if vm_set.get('notifyByEmail'):
                     new_notif['voicemails']['includeAttachment'] = vm_set.get('includeAttachment', False)
                     new_notif['voicemails']['markAsRead'] = vm_set.get('markAsRead', False)
+                else:
+                    new_notif['voicemails'].pop('includeAttachment', None)
+                    new_notif['voicemails'].pop('markAsRead', None)
                 
                 old_email_on = str(orig_notif.get('voicemails', {}).get('notifyByEmail'))
                 new_email_on = str(vm_set.get('notifyByEmail'))
