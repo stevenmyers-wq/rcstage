@@ -180,6 +180,22 @@ def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_ret
             time.sleep(2)
     return False, "Max retries exceeded due to rate limiting."
 
+def fetch_directory(endpoint, token):
+    records = []
+    page = 1
+    while True:
+        sep = "&" if "?" in endpoint else "?"
+        succ, resp = safe_api_call(f'{endpoint}{sep}perPage=1000&page={page}', method='GET', token=token)
+        if not succ:
+            return False, resp
+        if isinstance(resp, dict) and 'records' in resp:
+            records.extend(resp['records'])
+            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
+            else: break
+        else:
+            break
+    return True, records
+
 def _safe_get_transfer_id(transfer_data, action_type):
     if not transfer_data: return ''
     if isinstance(transfer_data, list):
@@ -249,34 +265,28 @@ def run_cq_audit(task_id, queue_ids, token):
     audit_progress_store[task_id] = {'current': 0, 'total': len(queue_ids), 'status': 'running', 'file_ready': False}
     try:
         ext_id_to_num = {}
-        page = 1
-        while True:
-            succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', token=token)
-            if succ and 'records' in resp:
-                for e in resp['records']:
-                    ext_id_to_num[str(e['id'])] = str(e.get('extensionNumber', ''))
-                if 'navigation' in resp and resp['navigation'].get('nextPage'): page += 1
-                else: break
-            else: break
+        succ, ext_records = fetch_directory('/restapi/v1.0/account/~/extension', token)
+        if succ:
+            for e in ext_records:
+                ext_id_to_num[str(e['id'])] = str(e.get('extensionNumber', ''))
 
         succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
         site_map = {str(s['id']): s['name'] for s in sites_resp.get('records', [])} if succ else {}
 
-        succ, tz_resp = safe_api_call('/restapi/v1.0/dictionary/timezone?perPage=1000', token=token)
-        tz_map = {str(t['id']): t['name'] for t in tz_resp.get('records', [])} if succ else {}
+        succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
+        tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
         preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         for g_type in preset_dict.keys():
             succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
                 for rec in dict_resp_fallback['records']:
-                    k = rec.get('name', '').lower().strip()
-                    preset_dict[g_type][k] = str(rec.get('id', ''))
+                    preset_dict[g_type][str(rec.get('id', ''))] = str(rec.get('name', '')).title()
                     
             succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
                 for rec in dict_resp['records']:
-                    preset_dict[g_type][rec.get('name', '').lower().strip()] = str(rec.get('id', ''))
+                    preset_dict[g_type][str(rec.get('id', ''))] = str(rec.get('name', '')).title()
 
         rows = []
         for idx, qid in enumerate(queue_ids):
@@ -518,61 +528,55 @@ def update_cq_batch(records, token, is_preview=False):
     total_records = len(records)
     yield {"type": "start", "total": total_records, "message": "Fetching Account Directories..."}
     
+    succ, test_resp = safe_api_call('/restapi/v1.0/account/~', token=token)
+    if not succ:
+        yield {"type": "error", "message": f"Unauthorized. Token expired or invalid. Details: {format_api_error(test_resp)}"}
+        return
+
     queue_map, ext_map, site_map, site_id_to_name = {}, {}, {}, {}
     tz_map, tz_id_to_name = {}, {}
     ext_id_to_num = {}
     
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for q in resp['records']:
-                if 'extensionNumber' in q: 
-                    queue_map[str(q['extensionNumber'])] = str(q['id'])
-                    ext_id_to_num[str(q['id'])] = str(q['extensionNumber'])
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
+    succ, q_records = fetch_directory('/restapi/v1.0/account/~/call-queues', token)
+    if succ:
+        for q in q_records:
+            if 'extensionNumber' in q: 
+                queue_map[str(q['extensionNumber'])] = str(q['id'])
+                ext_id_to_num[str(q['id'])] = str(q['extensionNumber'])
+    else:
+        yield {"type": "error", "message": "Failed to load queues directory."}
+        return
 
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for e in resp['records']:
-                if 'extensionNumber' in e: 
-                    ext_map[str(e['extensionNumber'])] = str(e['id'])
-                    ext_id_to_num[str(e['id'])] = str(e['extensionNumber'])
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
+    succ, e_records = fetch_directory('/restapi/v1.0/account/~/extension', token)
+    if succ:
+        for e in e_records:
+            if 'extensionNumber' in e: 
+                ext_map[str(e['extensionNumber'])] = str(e['id'])
+                ext_id_to_num[str(e['id'])] = str(e['extensionNumber'])
+    else:
+        yield {"type": "error", "message": "Failed to load extensions directory."}
+        return
 
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/sites?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for s in resp['records']: 
-                s_id = str(s['id'])
-                s_name_dict = str(s.get('name')).lower().strip()
-                site_map[s_name_dict] = s_id
-                site_id_to_name[s_id] = str(s.get('name'))
-                if s.get('code') == 'main-site' or s_name_dict == 'main site':
-                    site_map['main site'] = s_id
-                    site_map['company'] = s_id
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
+    succ, s_records = fetch_directory('/restapi/v1.0/account/~/sites', token)
+    if succ:
+        for s in s_records:
+            s_id = str(s['id'])
+            s_name_dict = str(s.get('name')).lower().strip()
+            site_map[s_name_dict] = s_id
+            site_id_to_name[s_id] = str(s.get('name'))
+            if s.get('code') == 'main-site' or s_name_dict == 'main site':
+                site_map['main site'] = s_id
+                site_map['company'] = s_id
 
-    page = 1
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/dictionary/timezone?perPage=1000&page={page}', method='GET', token=token)
-        if succ and isinstance(resp, dict) and 'records' in resp:
-            for tz in resp['records']:
-                tz_map[str(tz.get('name')).lower().strip()] = str(tz['id'])
-                tz_map[str(tz.get('id'))] = str(tz['id'])
-                tz_id_to_name[str(tz['id'])] = str(tz.get('name'))
-            if 'navigation' in resp and 'nextPage' in resp.get('navigation', {}): page += 1
-            else: break
-        else: break
+    succ, tz_records = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
+    if succ:
+        for tz in tz_records:
+            tz_map[str(tz.get('name')).lower().strip()] = str(tz['id'])
+            tz_map[str(tz.get('id'))] = str(tz['id'])
+            tz_id_to_name[str(tz['id'])] = str(tz.get('name'))
+    else:
+        yield {"type": "error", "message": "Failed to load timezone dictionary."}
+        return
 
     preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
@@ -790,7 +794,7 @@ def update_cq_batch(records, token, is_preview=False):
             'Interrupt Audio', 'Time Reached Destination', 'Queue Full Destination', 'Voicemail Recipients'
         ]
         
-        if any(get_val(row, f) for f in routing_fields) or get_val(row, 'Voicemail Greeting'):
+        if any(get_val(row, f) for f in routing_fields):
             get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
             if get_succ and isinstance(rule, dict):
                 orig_rule = copy.deepcopy(rule)
@@ -898,27 +902,10 @@ def update_cq_batch(records, token, is_preview=False):
                     
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-                # Strip out the 4 main audio prompts from the legacy Answering Rule payload to prevent conflicts
+                # Ensure greetings aren't passed to answering-rule payload if we are using voice-interaction-rules
                 if 'greetings' in rule:
                     rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
-                # Update Voicemail greeting inside answering rule if requested
-                vm_greet_val = get_val(row, 'Voicemail Greeting')
-                if vm_greet_val:
-                    vm_new_val = vm_greet_val.lower().strip()
-                    matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
-                    
-                    if vm_new_val == 'default':
-                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": "default"}})
-                    elif matched_id:
-                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": matched_id}})
-                    else:
-                        orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
-                        if orig_g: rule['greetings'].append(orig_g)
-                        
-                    old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
-                    r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
-                
                 vm_recip_raw = get_val(row, 'Voicemail Recipients')
                 if vm_recip_raw:
                     vm_ext_id = _resolve_ext(vm_recip_raw)
@@ -936,7 +923,7 @@ def update_cq_batch(records, token, is_preview=False):
                 if r_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                     
-                    if not put_succ and 'transfer' in str(err):
+                    if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
                         rule['queue'].pop('transfer', None)
                         if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
                         if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
@@ -944,6 +931,7 @@ def update_cq_batch(records, token, is_preview=False):
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                         if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
                         else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
+                    
                     elif put_succ: 
                         logs.append("Routing Updated")
                     else: 
@@ -964,14 +952,14 @@ def update_cq_batch(records, token, is_preview=False):
                     if not val: return
                     
                     new_val = val.lower().strip()
-                    
                     act = next((a for a in actions if a.get('type') == act_type), None)
+                    
                     if not act:
                         act = {"type": act_type, "enabled": True, "greeting": {"effectiveGreetingType": "Preset", "preset": {}}}
                         actions.append(act)
 
                     # Explicit Disable
-                    if new_val in ['off', 'none']:
+                    if new_val in ['off', 'none', 'disable', 'disabled']:
                         if act.get('enabled') is not False:
                             act['enabled'] = False
                             vir_needs_update = True
@@ -985,7 +973,6 @@ def update_cq_batch(records, token, is_preview=False):
                         matched_id = preset_dict.get(dict_type, {}).get('default')
                     else:
                         matched_id = preset_dict.get(dict_type, {}).get(new_val)
-                        
                         if dict_type == 'InterruptPrompt' and not matched_id:
                             for name, gid in preset_dict['InterruptPrompt'].items():
                                 if "patience" in new_val and "patience" in name: matched_id = gid
@@ -1049,7 +1036,7 @@ def update_cq_batch(records, token, is_preview=False):
                 if a_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
                     
-                    if not put_succ and 'transfer' in str(err):
+                    if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
                         ah_rule.pop('transfer', None)
                         ah_rule['callHandlingAction'] = 'Voicemail'
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
