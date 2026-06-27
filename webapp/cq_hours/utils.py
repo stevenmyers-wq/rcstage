@@ -225,32 +225,8 @@ def _safe_get_ah_transfer_id(transfer_data):
         return str(transfer_data[0].get('extension', {}).get('id', ''))
     return ''
 
-def fetch_all_queues(token):
-    queues = []
-    page = 1
-    site_map = {}
-    
-    succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
-    if succ and 'records' in sites_resp:
-        site_map = {str(s['id']): s['name'] for s in sites_resp['records']}
-
-    while True:
-        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues?perPage=1000&page={page}', token=token)
-        if not succ or 'records' not in resp: break
-        for q in resp['records']:
-            site_id = str(q.get('site', {}).get('id', ''))
-            site_name = site_map.get(site_id, 'Main Site') if site_id else 'Main Site'
-            queues.append({
-                'id': q['id'],
-                'name': q.get('name', 'Unknown'),
-                'extensionNumber': q.get('extensionNumber', ''),
-                'site': site_name
-            })
-        if 'navigation' in resp and resp['navigation'].get('nextPage'): page += 1
-        else: break
-    return queues
-
 def get_old_greeting_name(orig_rule, slot_type):
+    """Safely looks up legacy greeting names to power diff-checking."""
     for g in orig_rule.get('greetings', []):
         if g.get('type') == slot_type:
             if 'preset' in g:
@@ -655,6 +631,21 @@ def update_cq_batch(records, token, is_preview=False):
                     yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {format_api_error(c_resp)}", "changes": changes}, "is_preview": is_preview}
                     continue
 
+        # --- PRE-FETCH LEGACY ANSWERING RULE FOR DIFFING ---
+        routing_fields = [
+            'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
+            'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
+            'Interrupt Audio', 'Time Reached Destination', 'Queue Full Destination', 'Voicemail Recipients', 'Voicemail Greeting'
+        ]
+        vir_fields = ['Greeting', 'Audio While Connecting', 'Hold Music', 'Interrupt Prompt']
+        all_routing_fields = routing_fields + vir_fields
+        
+        orig_rule = {}
+        if any(get_val(row, f) is not None for f in all_routing_fields):
+            get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
+            if get_succ and isinstance(rule, dict):
+                orig_rule = copy.deepcopy(rule)
+
         # --- A. BASIC INFO UPDATE ---
         basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
         if any(get_val(row, f) for f in basic_fields):
@@ -792,238 +783,258 @@ def update_cq_batch(records, token, is_preview=False):
             except Exception as e:
                 has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
 
-        # --- C. ROUTING & TIMERS ---
-        routing_fields = [
-            'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
-            'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
-            'Interrupt Audio', 'Time Reached Destination', 'Queue Full Destination', 'Voicemail Recipients', 'Voicemail Greeting'
-        ]
-        
-        if any(get_val(row, f) is not None for f in routing_fields):
-            get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
-            if get_succ and isinstance(rule, dict):
-                orig_rule = copy.deepcopy(rule)
-                q_set = rule.get('queue', {})
-                r_needs_update = False
+        # --- C. ROUTING & TIMERS (Answering Rule) ---
+        if any(get_val(row, f) is not None for f in routing_fields) and orig_rule:
+            rule = copy.deepcopy(orig_rule)
+            q_set = rule.get('queue', {})
+            r_needs_update = False
+            
+            rt = get_val(row, 'Ring Type')
+            if rt is not None:
+                rt_lower = rt.lower()
+                if 'simultaneous' in rt_lower: q_set['transferMode'] = 'Simultaneous'
+                elif 'sequential' in rt_lower: q_set['transferMode'] = 'Sequential'
+                elif 'rotating' in rt_lower or 'idle' in rt_lower: q_set['transferMode'] = 'Rotating'
+            
+            val_urt = get_val(row, 'User Ring Time')
+            if val_urt is not None: 
+                parsed = parse_time_to_seconds(val_urt)
+                if parsed is not None: q_set['agentTimeout'] = parsed
                 
-                rt = get_val(row, 'Ring Type')
-                if rt is not None:
-                    rt_lower = rt.lower()
-                    if 'simultaneous' in rt_lower: q_set['transferMode'] = 'Simultaneous'
-                    elif 'sequential' in rt_lower: q_set['transferMode'] = 'Sequential'
-                    elif 'rotating' in rt_lower or 'idle' in rt_lower: q_set['transferMode'] = 'Rotating'
+            val_trt = get_val(row, 'Total Ring Time')
+            if val_trt is not None:
+                parsed = parse_time_to_seconds(val_trt)
+                if parsed is not None: q_set['holdTime'] = parsed
                 
-                val_urt = get_val(row, 'User Ring Time')
-                if val_urt is not None: 
-                    parsed = parse_time_to_seconds(val_urt)
-                    if parsed is not None: q_set['agentTimeout'] = parsed
-                    
-                val_trt = get_val(row, 'Total Ring Time')
-                if val_trt is not None:
-                    parsed = parse_time_to_seconds(val_trt)
-                    if parsed is not None: q_set['holdTime'] = parsed
-                    
-                val_wut = get_val(row, 'Wrap Up Time')
-                if val_wut is not None:
-                    parsed = parse_time_to_seconds(val_wut)
-                    if parsed is not None: q_set['wrapUpTime'] = parsed
-                    
-                val_ciq = get_val(row, 'Callers In Queue')
-                if val_ciq is not None:
-                    parsed = to_int(val_ciq)
-                    if parsed is not None: q_set['maxCallers'] = parsed
-                    
-                val_ia = get_val(row, 'Interrupt Audio')
-                if val_ia is not None:
-                    if val_ia.lower() == 'never':
-                        q_set['holdAudioInterruptionMode'] = 'Never'
-                        q_set.pop('holdAudioInterruptionPeriod', None)
-                    else:
-                        parsed = parse_time_to_seconds(val_ia)
-                        if parsed is not None: 
-                            q_set['holdAudioInterruptionMode'] = 'Periodically'
-                            q_set['holdAudioInterruptionPeriod'] = parsed
-
-                val_wmtr = get_val(row, 'When Max Time is Reached')
-                if val_wmtr is not None:
-                    if val_wmtr == 'TransferToExtension':
-                        dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
-                        q_set['holdTimeExpirationAction'] = val_wmtr
-                        _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
-                    else:
-                        q_set['holdTimeExpirationAction'] = val_wmtr
-                        _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
-
-                val_wqf = get_val(row, 'When Queue is Full')
-                if val_wqf is not None:
-                    if val_wqf == 'TransferToExtension':
-                        dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
-                        q_set['maxCallersAction'] = val_wqf
-                        _set_queue_transfer(q_set, 'MaxCallers', dest_id)
-                    else:
-                        q_set['maxCallersAction'] = val_wqf
-                        _set_queue_transfer(q_set, 'MaxCallers', None)
-                        
-                if q_set.get('transferMode') == 'Simultaneous':
-                    q_set.pop('agentTimeout', None)
-
-                rule['queue'] = q_set
-                old_q = orig_rule.get('queue', {})
+            val_wut = get_val(row, 'Wrap Up Time')
+            if val_wut is not None:
+                parsed = parse_time_to_seconds(val_wut)
+                if parsed is not None: q_set['wrapUpTime'] = parsed
                 
-                old_tm = 'Rotating' if old_q.get('transferMode') == 'Rotating' else old_q.get('transferMode')
-                new_tm = 'Rotating' if q_set.get('transferMode') == 'Rotating' else q_set.get('transferMode')
+            val_ciq = get_val(row, 'Callers In Queue')
+            if val_ciq is not None:
+                parsed = to_int(val_ciq)
+                if parsed is not None: q_set['maxCallers'] = parsed
                 
-                if rt is not None: r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
-                if val_urt is not None: r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
-                if val_trt is not None: r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
-                if val_wut is not None: r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
-                if val_ciq is not None: r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
-                
-                if val_wqf is not None: r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
-                
-                old_f_id = _safe_get_transfer_id(old_q.get('transfer'), 'MaxCallers') or 'None'
-                new_f_id = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers') or 'None'
-                if get_val(row, 'Queue Full Destination') is not None:
-                    r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
-
-                if val_wmtr is not None: r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
-                
-                old_t_id = _safe_get_transfer_id(old_q.get('transfer'), 'HoldTimeExpiration') or 'None'
-                new_t_id = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration') or 'None'
-                if get_val(row, 'Time Reached Destination') is not None:
-                    r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
-
-                old_ia_mode = old_q.get('holdAudioInterruptionMode')
-                if old_ia_mode == 'Never' or not old_ia_mode:
-                    old_ia_str = "Never"
+            val_ia = get_val(row, 'Interrupt Audio')
+            if val_ia is not None:
+                if val_ia.lower() == 'never':
+                    q_set['holdAudioInterruptionMode'] = 'Never'
+                    q_set.pop('holdAudioInterruptionPeriod', None)
                 else:
-                    old_ia_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
-                    
-                new_ia_mode = q_set.get('holdAudioInterruptionMode')
-                if new_ia_mode == 'Never' or not new_ia_mode:
-                    new_ia_str = "Never"
+                    parsed = parse_time_to_seconds(val_ia)
+                    if parsed is not None: 
+                        q_set['holdAudioInterruptionMode'] = 'Periodically'
+                        q_set['holdAudioInterruptionPeriod'] = parsed
+
+            val_wmtr = get_val(row, 'When Max Time is Reached')
+            if val_wmtr is not None:
+                if val_wmtr == 'TransferToExtension':
+                    dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
+                    q_set['holdTimeExpirationAction'] = val_wmtr
+                    _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
                 else:
-                    new_ia_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
-                    
-                if val_ia is not None:
-                    r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
+                    q_set['holdTimeExpirationAction'] = val_wmtr
+                    _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
 
-                if 'greetings' in rule:
-                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
-
-                vm_greet_val = get_val(row, 'Voicemail Greeting')
-                if vm_greet_val is not None:
-                    vm_new_val = vm_greet_val.lower().strip()
-                    matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
+            val_wqf = get_val(row, 'When Queue is Full')
+            if val_wqf is not None:
+                if val_wqf == 'TransferToExtension':
+                    dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
+                    q_set['maxCallersAction'] = val_wqf
+                    _set_queue_transfer(q_set, 'MaxCallers', dest_id)
+                else:
+                    q_set['maxCallersAction'] = val_wqf
+                    _set_queue_transfer(q_set, 'MaxCallers', None)
                     
-                    if vm_new_val in ['off', 'none', 'disable', 'disabled']:
-                        pass 
-                    elif vm_new_val == 'default':
-                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": "Default"}})
-                    elif matched_id:
-                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
-                    else:
-                        orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
-                        if orig_g: rule['greetings'].append(orig_g)
-                        
-                    old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
-                    r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
+            if q_set.get('transferMode') == 'Simultaneous':
+                q_set.pop('agentTimeout', None)
+
+            rule['queue'] = q_set
+            old_q = orig_rule.get('queue', {})
+            
+            old_tm = 'Rotating' if old_q.get('transferMode') == 'Rotating' else old_q.get('transferMode')
+            new_tm = 'Rotating' if q_set.get('transferMode') == 'Rotating' else q_set.get('transferMode')
+            
+            if rt is not None:
+                r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
+            
+            if val_urt is not None:
+                r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
+            
+            if val_trt is not None:
+                r_needs_update |= check_diff(changes, 'Total Ring Time', format_sec(old_q.get('holdTime')), format_sec(q_set.get('holdTime')))
+            
+            if val_wut is not None:
+                r_needs_update |= check_diff(changes, 'Wrap Up Time', format_sec(old_q.get('wrapUpTime')), format_sec(q_set.get('wrapUpTime')))
+            
+            if val_ciq is not None:
+                r_needs_update |= check_diff(changes, 'Max Callers', old_q.get('maxCallers'), q_set.get('maxCallers'))
+            
+            if val_wqf is not None:
+                r_needs_update |= check_diff(changes, 'Max Callers Action', old_q.get('maxCallersAction'), q_set.get('maxCallersAction'))
+            
+            old_f_id = _safe_get_transfer_id(old_q.get('transfer'), 'MaxCallers') or 'None'
+            new_f_id = _safe_get_transfer_id(q_set.get('transfer'), 'MaxCallers') or 'None'
+            if get_val(row, 'Queue Full Destination') is not None:
+                r_needs_update |= check_diff(changes, 'Queue Full Dest', ext_id_to_num.get(old_f_id, old_f_id), ext_id_to_num.get(new_f_id, new_f_id))
+
+            if val_wmtr is not None:
+                r_needs_update |= check_diff(changes, 'Max Time Action', old_q.get('holdTimeExpirationAction'), q_set.get('holdTimeExpirationAction'))
+            
+            old_t_id = _safe_get_transfer_id(old_q.get('transfer'), 'HoldTimeExpiration') or 'None'
+            new_t_id = _safe_get_transfer_id(q_set.get('transfer'), 'HoldTimeExpiration') or 'None'
+            if get_val(row, 'Time Reached Destination') is not None:
+                r_needs_update |= check_diff(changes, 'Max Time Dest', ext_id_to_num.get(old_t_id, old_t_id), ext_id_to_num.get(new_t_id, new_t_id))
+
+            old_ia_mode = old_q.get('holdAudioInterruptionMode')
+            if old_ia_mode == 'Never' or not old_ia_mode:
+                old_ia_str = "Never"
+            else:
+                old_ia_str = format_sec(old_q.get('holdAudioInterruptionPeriod'))
                 
-                vm_recip_raw = get_val(row, 'Voicemail Recipients')
-                if vm_recip_raw is not None:
-                    vm_ext_id = _resolve_ext(vm_recip_raw)
-                    if vm_ext_id:
-                        if 'voicemail' not in rule: rule['voicemail'] = {}
-                        rule['voicemail']['recipient'] = {'id': vm_ext_id}
-                        old_vm = str(orig_rule.get('voicemail', {}).get('recipient', {}).get('id', 'None'))
-                        r_needs_update |= check_diff(changes, 'VM Recipient', ext_id_to_num.get(old_vm, old_vm), ext_id_to_num.get(vm_ext_id, vm_ext_id))
-
-                for field in _READ_ONLY: rule.pop(field, None)
-                for field in _READ_ONLY: 
-                    if 'queue' in rule: rule['queue'].pop(field, None)
-                rule.pop('callers', None); rule.pop('calledNumbers', None)
+            new_ia_mode = q_set.get('holdAudioInterruptionMode')
+            if new_ia_mode == 'Never' or not new_ia_mode:
+                new_ia_str = "Never"
+            else:
+                new_ia_str = format_sec(q_set.get('holdAudioInterruptionPeriod'))
                 
-                if r_needs_update and not is_preview:
-                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
+            if val_ia is not None:
+                r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
+
+            if 'greetings' in rule:
+                rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
+
+            vm_greet_val = get_val(row, 'Voicemail Greeting')
+            if vm_greet_val is not None:
+                vm_new_val = vm_greet_val.lower().strip()
+                matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
+                
+                if vm_new_val in ['off', 'none', 'disable', 'disabled']:
+                    pass 
+                elif vm_new_val == 'default':
+                    rule['greetings'].append({"type": "Voicemail", "preset": {"id": "Default"}})
+                elif matched_id:
+                    rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
+                else:
+                    orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
+                    if orig_g: rule['greetings'].append(orig_g)
                     
-                    if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
-                        rule['queue'].pop('transfer', None)
-                        if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
-                        if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
-                        
-                        put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-                        if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                        else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
+                old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
+                r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
+            
+            vm_recip_raw = get_val(row, 'Voicemail Recipients')
+            if vm_recip_raw is not None:
+                vm_ext_id = _resolve_ext(vm_recip_raw)
+                if vm_ext_id:
+                    if 'voicemail' not in rule: rule['voicemail'] = {}
+                    rule['voicemail']['recipient'] = {'id': vm_ext_id}
+                    old_vm = str(orig_rule.get('voicemail', {}).get('recipient', {}).get('id', 'None'))
+                    r_needs_update |= check_diff(changes, 'VM Recipient', ext_id_to_num.get(old_vm, old_vm), ext_id_to_num.get(vm_ext_id, vm_ext_id))
+
+            for field in _READ_ONLY: rule.pop(field, None)
+            for field in _READ_ONLY: 
+                if 'queue' in rule: rule['queue'].pop(field, None)
+            rule.pop('callers', None); rule.pop('calledNumbers', None)
+            
+            if r_needs_update and not is_preview:
+                put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
+                
+                if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
+                    rule['queue'].pop('transfer', None)
+                    if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
+                    if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
                     
-                    elif put_succ: 
-                        logs.append("Routing Updated")
-                    else: 
-                        has_error = True
-                        logs.append(f"Routing Error: {format_api_error(err)}")
+                    put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
+                    if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
+                    else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
+                
+                elif put_succ: 
+                    logs.append("Routing Updated")
+                else: 
+                    has_error = True
+                    logs.append(f"Routing Error: {format_api_error(err)}")
 
         # --- D. VOICE INTERACTION RULES (Greetings) ---
-        vir_fields = ['Greeting', 'Audio While Connecting', 'Hold Music', 'Interrupt Prompt']
         if any(get_val(row, f) is not None for f in vir_fields):
             vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
+            
+            actions = []
             if vir_succ and isinstance(vir_rule, dict):
                 actions = vir_rule.get('dispatching', {}).get('actions', [])
-                vir_needs_update = False
+            
+            vir_needs_update = False
+            
+            def apply_vir_greeting(col_name, act_type, dict_type, legacy_type):
+                nonlocal vir_needs_update
+                val = get_val(row, col_name)
+                if not val: return
                 
-                def apply_vir_greeting(col_name, act_type, dict_type):
-                    nonlocal vir_needs_update
-                    val = get_val(row, col_name)
-                    if not val: return
-                    
-                    new_val = val.lower().strip()
-                    
-                    act = next((a for a in actions if a.get('type') == act_type), None)
-                    if not act:
-                        act = {"type": act_type}
-                        actions.append(act)
-
-                    if new_val in ['off', 'none', 'disable', 'disabled']:
-                        if act.get('enabled') is not False:
-                            act['enabled'] = False
-                            vir_needs_update = True
-                            check_diff(changes, col_name, "Unknown", "Off")
-                        return
-
-                    act['enabled'] = True
-                    matched_id = None
-                    if new_val == 'default':
-                        matched_id = preset_dict.get(dict_type, {}).get('default')
+                new_val = val.lower().strip()
+                
+                old_val_str = "Unknown"
+                existing_act = next((a for a in actions if a.get('type') == act_type), None)
+                if existing_act:
+                    if existing_act.get('enabled') is False:
+                        old_val_str = "Off"
                     else:
-                        matched_id = preset_dict.get(dict_type, {}).get(new_val)
-                        if dict_type == 'InterruptPrompt' and not matched_id:
-                            for name, gid in preset_dict['InterruptPrompt'].items():
-                                if "patience" in new_val and "patience" in name: matched_id = gid
-                                elif "volume" in new_val and "volume" in name: matched_id = gid
-                                elif "busy" in new_val and "busy" in name: matched_id = gid
-                                elif "important" in new_val and "important" in name: matched_id = gid
+                        preset_id = existing_act.get('greeting', {}).get('preset', {}).get('id')
+                        if preset_id:
+                            old_val_str = preset_dict.get(dict_type, {}).get(str(preset_id), "Custom")
+                        else:
+                            old_val_str = "Default"
+                else:
+                    if orig_rule:
+                        old_val_str = get_old_greeting_name(orig_rule, legacy_type)
 
-                    if matched_id:
-                        act['greeting'] = {
-                            "effectiveGreetingType": "Preset",
-                            "preset": {
-                                "id": str(matched_id)
-                            }
-                        }
+                act = next((a for a in actions if a.get('type') == act_type), None)
+                if not act:
+                    act = {"type": act_type}
+                    actions.append(act)
+
+                if new_val in ['off', 'none', 'disable', 'disabled']:
+                    if act.get('enabled') is not False:
+                        act['enabled'] = False
                         vir_needs_update = True
-                        check_diff(changes, col_name, "Unknown", val)
+                    if check_diff(changes, col_name, old_val_str, "Off"):
+                        vir_needs_update = True
+                    return
 
-                apply_vir_greeting('Greeting', 'PlayWelcomePromptAction', 'Introductory')
-                apply_vir_greeting('Audio While Connecting', 'PlayConnectingMessageAction', 'ConnectingAudio')
-                apply_vir_greeting('Hold Music', 'PlayHoldMusicAction', 'HoldMusic')
-                apply_vir_greeting('Interrupt Prompt', 'PlayInterruptPromptAction', 'InterruptPrompt')
+                act['enabled'] = True
+                matched_id = None
+                if new_val == 'default':
+                    matched_id = preset_dict.get(dict_type, {}).get('default')
+                else:
+                    matched_id = preset_dict.get(dict_type, {}).get(new_val)
+                    if dict_type == 'InterruptPrompt' and not matched_id:
+                        for name, gid in preset_dict['InterruptPrompt'].items():
+                            if "patience" in new_val and "patience" in name: matched_id = gid
+                            elif "volume" in new_val and "volume" in name: matched_id = gid
+                            elif "busy" in new_val and "busy" in name: matched_id = gid
+                            elif "important" in new_val and "important" in name: matched_id = gid
 
-                if vir_needs_update and not is_preview:
-                    vir_payload = {"dispatching": {"actions": actions}}
-                    v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
-                    if v_succ:
-                        logs.append("Audio Prompts Updated")
-                    else:
-                        has_error = True
-                        logs.append(f"Audio Prompts Error: {format_api_error(v_err)}")
+                if matched_id:
+                    act['greeting'] = {
+                        "effectiveGreetingType": "Preset",
+                        "preset": { "id": str(matched_id) }
+                    }
+                    vir_needs_update = True
+                    new_val_str = preset_dict.get(dict_type, {}).get(str(matched_id), val)
+                    check_diff(changes, col_name, old_val_str, new_val_str)
+
+            apply_vir_greeting('Greeting', 'PlayWelcomePromptAction', 'Introductory', 'Introductory')
+            apply_vir_greeting('Audio While Connecting', 'PlayConnectingMessageAction', 'ConnectingAudio', 'ConnectingAudio')
+            apply_vir_greeting('Hold Music', 'PlayHoldMusicAction', 'HoldMusic', 'HoldMusic')
+            apply_vir_greeting('Interrupt Prompt', 'PlayInterruptPromptAction', 'InterruptPrompt', 'InterruptPrompt')
+
+            if vir_needs_update and not is_preview:
+                vir_payload = {"dispatching": {"actions": actions}}
+                v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
+                if v_succ:
+                    logs.append("Audio Prompts Updated")
+                else:
+                    has_error = True
+                    logs.append(f"Audio Prompts Error: {format_api_error(v_err)}")
 
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
