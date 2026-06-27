@@ -252,7 +252,7 @@ def run_cq_audit(task_id, queue_ids, token):
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
-        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         for g_type in preset_dict.keys():
             succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
@@ -554,7 +554,7 @@ def update_cq_batch(records, token, is_preview=False):
         yield {"type": "error", "message": "Failed to load timezone dictionary."}
         return
 
-    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
         succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
@@ -819,8 +819,8 @@ def update_cq_batch(records, token, is_preview=False):
             val_ia = get_val(row, 'Interrupt Audio')
             if val_ia is not None:
                 if val_ia.lower() == 'never':
-                        q_set['holdAudioInterruptionMode'] = 'Never'
-                        q_set.pop('holdAudioInterruptionPeriod', None)
+                    q_set['holdAudioInterruptionMode'] = 'Never'
+                    q_set.pop('holdAudioInterruptionPeriod', None)
                 else:
                     parsed = parse_time_to_seconds(val_ia)
                     if parsed is not None: 
@@ -902,7 +902,6 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # Prevent answering-rule from rejecting the payload by dropping the main greetings
             if 'greetings' in rule:
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
@@ -1160,17 +1159,17 @@ def update_cq_batch(records, token, is_preview=False):
                     vm_set['includeAttachment'] = False
                     vm_set['markAsRead'] = False
 
+                # UAT Logic: Respect the existing advancedMode state.
                 new_notif = {
+                    "advancedMode": orig_notif.get('advancedMode', False),
                     "voicemails": {
                         "notifyByEmail": vm_set.get('notifyByEmail', False)
                     }
                 }
                 
-                if orig_notif.get('advancedMode', False) or new_emails:
-                    new_notif['advancedMode'] = True
+                if new_notif['advancedMode']:
                     new_notif['voicemails']['emailAddresses'] = new_emails
                 else:
-                    new_notif['advancedMode'] = False
                     new_notif['emailAddresses'] = new_emails
 
                 if vm_set.get('notifyByEmail'):
