@@ -668,7 +668,7 @@ def update_cq_batch(records, token, is_preview=False):
                             
                             if check_diff(changes, 'Site', old_site_name, new_site_name):
                                 if new_site_id == 'main-site' or new_site_id == site_map.get('main site'):
-                                    pass # Prevent CMN-102 error by omitting string ID and relying on native API default
+                                    pass 
                                 else:
                                     basic_payload['site'] = {'id': new_site_id}
                                     b_needs_update = True
@@ -694,8 +694,14 @@ def update_cq_batch(records, token, is_preview=False):
 
                 if b_needs_update:
                     if not is_preview:
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json_payload=basic_payload, token=token)
-                        if s_succ:
+                        put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json_payload=basic_payload, token=token)
+                        attempt = 0
+                        while not put_succ and 'extensionId' in str(err) and attempt < 3:
+                            time.sleep(2.0)
+                            attempt += 1
+                            put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}', method='PUT', json_payload=basic_payload, token=token)
+                        
+                        if put_succ:
                             logs.append("Basic Info Updated")
                         else:
                             has_error = True
@@ -896,11 +902,13 @@ def update_cq_batch(records, token, is_preview=False):
                             matched_id = preset_dict.get(slot_type, {}).get(new_val)
                         
                         if new_val in ['off', 'none']:
-                            pass # UAT logic simply excludes the object from the array entirely to disable it.
+                            pass # UAT Logic: Empty array cleanly disables greeting
                         elif matched_id:
                             new_greetings.append({"type": slot_type, "preset": {"id": matched_id}})
                         elif new_val == 'default':
-                            new_greetings.append({"type": slot_type, "preset": {"id": "default"}})
+                            def_id = preset_dict.get(slot_type, {}).get('default')
+                            if def_id:
+                                new_greetings.append({"type": slot_type, "preset": {"id": def_id}})
                         elif new_val == 'custom':
                             orig_g = next((g for g in orig_greetings if g.get('type') == slot_type), None)
                             if orig_g and 'custom' in orig_g: new_greetings.append({"type": slot_type, "custom": {"id": orig_g['custom']['id']}})
@@ -947,23 +955,7 @@ def update_cq_batch(records, token, is_preview=False):
                 if r_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                     
-                    attempt = 0
-                    while not put_succ and 'AWR-123' in str(err) and attempt < 5:
-                        attempt += 1
-                        try:
-                            err_json = json.loads(err)
-                            bad_types = {e.get('greetingType') for e in err_json.get('errors', []) if e.get('errorCode') == 'AWR-123'}
-                        except:
-                            bad_types = set(re.findall(r'greeting type \[([^\]]+)\]', str(err)))
-
-                        if not bad_types: break
-
-                        rule['greetings'] = [g for g in rule.get('greetings', []) if g.get('type') not in bad_types]
-
-                        logs.append(f"Restored default for unsupported greeting types: {', '.join(bad_types)}")
-                        put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-
-                    if not put_succ and 'queue.transfer.extension.id' in str(err):
+                    if not put_succ and 'transfer.extension.id' in str(err):
                         rule['queue'].pop('transfer', None)
                         if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
                         if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
@@ -976,7 +968,7 @@ def update_cq_batch(records, token, is_preview=False):
                         logs.append("Routing Updated")
                     else: 
                         has_error = True
-                        logs.append(f"Routing Error: {format_api_error(err)}")
+                        logs.append(f"Routing Error: {format_api_error(err)} | Sent: {json.dumps(rule)}")
 
         # --- D. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
@@ -1009,34 +1001,18 @@ def update_cq_batch(records, token, is_preview=False):
                 if a_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
                     
-                    attempt = 0
-                    while not put_succ and 'AWR-123' in str(err) and attempt < 5:
-                        attempt += 1
-                        try:
-                            err_json = json.loads(err)
-                            bad_types = {e.get('greetingType') for e in err_json.get('errors', []) if e.get('errorCode') == 'AWR-123'}
-                        except:
-                            bad_types = set(re.findall(r'greeting type \[([^\]]+)\]', str(err)))
-
-                        if not bad_types: break
-                        
-                        ah_rule['greetings'] = [g for g in ah_rule.get('greetings', []) if g.get('type') not in bad_types]
-
-                        logs.append(f"Restored default for unsupported AH greetings: {', '.join(bad_types)}")
-                        put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
-                    
                     if not put_succ and 'transfer.extension.id' in str(err):
                         ah_rule.pop('transfer', None)
                         ah_rule['callHandlingAction'] = 'Voicemail'
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
                         if put_succ2: logs.append("After Hours Updated (Invalid transfer stripped & reverted to Voicemail)")
-                        else: has_error = True; logs.append(f"After Hours Error: {format_api_error(err2)}")
+                        else: has_error = True; logs.append(f"After Hours Error: {format_api_error(err2)} | Sent: {json.dumps(ah_rule)}")
                         
                     elif put_succ: 
                         logs.append("After Hours Updated")
                     else: 
                         has_error = True
-                        logs.append(f"After Hours Error: {format_api_error(err)}")
+                        logs.append(f"After Hours Error: {format_api_error(err)} | Sent: {json.dumps(ah_rule)}")
 
         # --- E. MEMBERS ---
         if get_val(row, 'Members (Ext)'):
@@ -1049,10 +1025,11 @@ def update_cq_batch(records, token, is_preview=False):
             
             if added_ids:
                 old_mems_str = "None"
+                old_mem_list = []
                 get_succ, old_mems_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/members', method='GET', token=token)
                 if get_succ and isinstance(old_mems_resp, dict):
                     old_mem_list = [str(m.get('extensionNumber')) for m in old_mems_resp.get('records', []) if m.get('extensionNumber')]
-                    if old_mem_list: old_mems_str = ", ".join(old_mems_list)
+                    if old_mem_list: old_mems_str = ", ".join(old_mem_list)
                 
                 new_mems_str = ", ".join(mem_exts)
                 
@@ -1065,7 +1042,7 @@ def update_cq_batch(records, token, is_preview=False):
                             logs.append("Members Updated")
                         else: 
                             has_error = True
-                            logs.append(f"Members Error: {format_api_error(err)}")
+                            logs.append(f"Members Error: {format_api_error(err)} | Sent: {json.dumps(mem_payload)}")
 
         # --- F. VOICEMAIL NOTIFICATIONS ---
         vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
@@ -1110,7 +1087,7 @@ def update_cq_batch(records, token, is_preview=False):
                     vm_set['includeAttachment'] = False
                     vm_set['markAsRead'] = False
 
-                # UAT Strict Construction: Apply emails globally, avoiding advancedMode restrictions on queues.
+                # UAT Logic: Set advancedMode to False and place emails globally. Do not send fax/text objects to Queues.
                 new_notif = {
                     "advancedMode": False,
                     "emailAddresses": new_emails if new_emails else [],
@@ -1145,12 +1122,12 @@ def update_cq_batch(records, token, is_preview=False):
                             logs.append("Notifications Updated (Attachments popped due to account limits)")
                         else: 
                             has_error = True
-                            logs.append(f"Notifications Error: {format_api_error(err2)}")
+                            logs.append(f"Notifications Error: {format_api_error(err2)} | Sent: {json.dumps(new_notif)}")
                     elif put_succ: 
                         logs.append("Notifications Updated")
                     else: 
                         has_error = True
-                        logs.append(f"Notifications Error: {format_api_error(err)}")
+                        logs.append(f"Notifications Error: {format_api_error(err)} | Sent: {json.dumps(new_notif)}")
 
         if not logs and not changes: 
             res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
