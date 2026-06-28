@@ -645,7 +645,7 @@ def update_cq_batch(records, token, is_preview=False):
                     yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {format_api_error(c_resp)}", "changes": changes}, "is_preview": is_preview}
                     continue
 
-        # --- PRE-FETCH LEGACY ANSWERING RULE FOR DIFFING ---
+        # --- PRE-FETCH LEGACY ANSWERING RULE & VIR FOR DIFFING & ROUTING ---
         routing_fields = [
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
@@ -655,10 +655,14 @@ def update_cq_batch(records, token, is_preview=False):
         all_routing_fields = routing_fields + vir_fields
         
         orig_rule = {}
+        use_vir = False
         if any(get_val(row, f) is not None for f in all_routing_fields):
             get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
             if get_succ and isinstance(rule, dict):
                 orig_rule = copy.deepcopy(rule)
+                
+            vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
+            use_vir = vir_succ and isinstance(vir_rule, dict) and 'dispatching' in vir_rule
 
         # --- A. BASIC INFO UPDATE ---
         basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
@@ -916,15 +920,58 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # Drop ALL greetings by default to prevent answering-rule from rejecting the payload with AWR-123
-            rule.pop('greetings', None)
+            # ONLY strip the legacy greetings if the modern VIR endpoint is active for this queue.
+            if use_vir:
+                if 'greetings' in rule:
+                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
+            else:
+                def apply_legacy_greeting(col_name, slot_type, dict_type):
+                    nonlocal r_needs_update
+                    val = get_val(row, col_name)
+                    if not val: return
+                    new_val = val.lower().strip()
+                    
+                    old_val_str = get_old_greeting_name(orig_rule, slot_type)
+
+                    if 'greetings' not in rule: rule['greetings'] = []
+                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
+
+                    if new_val in ['off', 'none', 'disable', 'disabled']:
+                        r_needs_update = True
+                        check_diff(changes, col_name, old_val_str, "Off")
+                    elif new_val == 'default':
+                        def_id = preset_dict.get(dict_type, {}).get('default')
+                        if def_id:
+                            rule['greetings'].append({"type": slot_type, "preset": {"id": str(def_id)}})
+                            r_needs_update = True
+                            check_diff(changes, col_name, old_val_str, "Default")
+                    else:
+                        matched_id = preset_dict.get(dict_type, {}).get(new_val)
+                        if dict_type == 'InterruptPrompt' and not matched_id:
+                            for name, gid in preset_dict['InterruptPrompt'].items():
+                                if "patience" in new_val and "patience" in name: matched_id = gid
+                                elif "volume" in new_val and "volume" in name: matched_id = gid
+                                elif "busy" in new_val and "busy" in name: matched_id = gid
+                                elif "important" in new_val and "important" in name: matched_id = gid
+                        if matched_id:
+                            rule['greetings'].append({"type": slot_type, "preset": {"id": str(matched_id)}})
+                            r_needs_update = True
+                            new_val_str = val.title() if new_val != 'default' else 'Default'
+                            check_diff(changes, col_name, old_val_str, new_val_str)
+
+                apply_legacy_greeting('Greeting', 'Introductory', 'Introductory')
+                apply_legacy_greeting('Audio While Connecting', 'ConnectingAudio', 'ConnectingMessage')
+                apply_legacy_greeting('Hold Music', 'HoldMusic', 'HoldMusic')
+                apply_legacy_greeting('Interrupt Prompt', 'InterruptPrompt', 'InterruptPrompt')
 
             vm_greet_val = get_val(row, 'Voicemail Greeting')
             if vm_greet_val is not None:
-                rule['greetings'] = []
                 vm_new_val = vm_greet_val.lower().strip()
                 matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
                 
+                if 'greetings' not in rule: rule['greetings'] = []
+                rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
+
                 if vm_new_val in ['off', 'none', 'disable', 'disabled']:
                     pass 
                 elif vm_new_val == 'default':
@@ -933,6 +980,9 @@ def update_cq_batch(records, token, is_preview=False):
                         rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(def_id)}})
                 elif matched_id:
                     rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
+                else:
+                    orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
+                    if orig_g: rule['greetings'].append(orig_g)
                     
                 old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
                 r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
@@ -954,22 +1004,17 @@ def update_cq_batch(records, token, is_preview=False):
             if r_needs_update and not is_preview:
                 put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                 
-                # Propagation delay retry if the rule doesn't exist yet
-                attempt = 0
-                while not put_succ and 'not found' in str(err).lower() and attempt < 3:
-                    time.sleep(2.0)
-                    attempt += 1
-                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-
                 if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
                     rule['queue'].pop('transfer', None)
                     if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
                     if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
                     
                     put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-                    if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                    else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
-                
+                    if put_succ2: 
+                        logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
+                    else: 
+                        has_error = True
+                        logs.append(f"Routing Error: {format_api_error(err2)}")
                 elif put_succ: 
                     logs.append("Routing Updated")
                 else: 
@@ -977,13 +1022,8 @@ def update_cq_batch(records, token, is_preview=False):
                     logs.append(f"Routing Error: {format_api_error(err)}")
 
         # --- D. VOICE INTERACTION RULES (Greetings) ---
-        if any(get_val(row, f) is not None for f in vir_fields):
-            vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
-            
-            actions = []
-            if vir_succ and isinstance(vir_rule, dict):
-                actions = vir_rule.get('dispatching', {}).get('actions', [])
-            
+        if any(get_val(row, f) is not None for f in vir_fields) and use_vir:
+            actions = vir_rule.get('dispatching', {}).get('actions', [])
             vir_needs_update = False
             
             def apply_vir_greeting(col_name, act_type, dict_type, legacy_type):
