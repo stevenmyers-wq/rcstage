@@ -235,7 +235,6 @@ def _safe_get_ah_transfer_id(transfer_data):
     return ''
 
 def get_old_greeting_name(orig_rule, slot_type):
-    """Safely looks up legacy greeting names to power diff-checking."""
     for g in orig_rule.get('greetings', []):
         if g.get('type') == slot_type:
             if 'preset' in g:
@@ -641,7 +640,7 @@ def update_cq_batch(records, token, is_preview=False):
                     ext_id_to_num[q_id] = ext_num
                     changes.append({"parameter": "Queue", "old": "Missing", "new": "Created"})
                     logs.append("Queue Created")
-                    time.sleep(1.0)
+                    time.sleep(2.0)
                 else:
                     yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {format_api_error(c_resp)}", "changes": changes}, "is_preview": is_preview}
                     continue
@@ -917,21 +916,15 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # Prevent answering-rule from rejecting the payload by dropping the main greetings
-            if 'greetings' in rule:
-                rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
+            # Drop ALL greetings by default to prevent answering-rule from rejecting the payload with AWR-123
+            rule.pop('greetings', None)
 
             vm_greet_val = get_val(row, 'Voicemail Greeting')
             if vm_greet_val is not None:
+                rule['greetings'] = []
                 vm_new_val = vm_greet_val.lower().strip()
                 matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
                 
-                # Safely clear out the old Voicemail greeting before appending the new one to prevent AWR-106 duplicates
-                if 'greetings' in rule:
-                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
-                else:
-                    rule['greetings'] = []
-
                 if vm_new_val in ['off', 'none', 'disable', 'disabled']:
                     pass 
                 elif vm_new_val == 'default':
@@ -940,9 +933,6 @@ def update_cq_batch(records, token, is_preview=False):
                         rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(def_id)}})
                 elif matched_id:
                     rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
-                else:
-                    orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
-                    if orig_g: rule['greetings'].append(orig_g)
                     
                 old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
                 r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
@@ -964,6 +954,13 @@ def update_cq_batch(records, token, is_preview=False):
             if r_needs_update and not is_preview:
                 put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                 
+                # Propagation delay retry if the rule doesn't exist yet
+                attempt = 0
+                while not put_succ and 'not found' in str(err).lower() and attempt < 3:
+                    time.sleep(2.0)
+                    attempt += 1
+                    put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
+
                 if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
                     rule['queue'].pop('transfer', None)
                     if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
@@ -1063,6 +1060,13 @@ def update_cq_batch(records, token, is_preview=False):
             if vir_needs_update and not is_preview:
                 vir_payload = {"dispatching": {"actions": actions}}
                 v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
+                
+                attempt = 0
+                while not v_succ and 'not found' in str(v_err).lower() and attempt < 3:
+                    time.sleep(2.0)
+                    attempt += 1
+                    v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
+
                 if v_succ:
                     logs.append("Audio Prompts Updated")
                 else:
