@@ -42,7 +42,7 @@ def dial_number():
     if not rex_email:
         return jsonify({'error': f"Extension {agent_ext} does not have an email address configured."}), 400
 
-    # 2. Construct the RingCX Username mathematically (bypasses the 500 crashing endpoint)
+    # 2. Construct the RingCX Username mathematically
     try:
         local_part, domain = rex_email.split('@', 1)
         # Format: localPart + accountId_extInternalId @ domain
@@ -57,17 +57,18 @@ def dial_number():
         'Content-Type': 'application/json'
     }
     
-    params = {
+    payload = {
         'username': rcx_username,
         'destination': destination,
         'ringDuration': ring_duration
     }
     
     if caller_id:
-        params['callerId'] = caller_id
+        payload['callerId'] = caller_id
     
     try:
-        resp = requests.post(call_url, headers=headers, params=params)
+        # FIXED: Changed params=payload to json=payload to send a proper JSON body
+        resp = requests.post(call_url, headers=headers, json=payload)
         if not resp.ok:
             return jsonify({'error': f"RingCX API Error: {resp.text}"}), resp.status_code
             
