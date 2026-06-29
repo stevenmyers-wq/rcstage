@@ -21,7 +21,7 @@ def dial_number():
     ring_duration = data.get('ringDuration', 30)
     
     ringcx_token = session.get('ringcx_access_token')
-    account_id = session.get('ringcx_account_id')
+    account_id = str(session.get('ringcx_account_id'))
     
     if not ringcx_token or not account_id:
         return jsonify({'error': 'Not connected to RingCX. Please click Connect to RingCX first.'}), 401
@@ -29,47 +29,33 @@ def dial_number():
     if not destination or not agent_ext:
         return jsonify({'error': 'Destination phone number and Agent Extension are required.'}), 400
 
-    # 1. Lookup the base email from RingEX
+    # 1. Lookup the extension from RingEX
     ext_lookup = rc_api_call('/restapi/v1.0/account/~/extension', params={'extensionNumber': agent_ext})
     
     if not ext_lookup or 'records' not in ext_lookup or len(ext_lookup['records']) == 0:
         return jsonify({'error': f"Could not find extension {agent_ext} in the RingCentral account."}), 404
         
-    rex_email = ext_lookup['records'][0].get('contact', {}).get('email')
+    ext_record = ext_lookup['records'][0]
+    rex_email = ext_record.get('contact', {}).get('email')
+    ext_internal_id = str(ext_record.get('id', ''))
     
     if not rex_email:
         return jsonify({'error': f"Extension {agent_ext} does not have an email address configured."}), 400
 
-    # 2. Query RingCX Users list to find the matching username (FIXED: changed /agents to /users)
-    users_url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/users'
-    headers = {
-        'Authorization': f'Bearer {ringcx_token}', 
-        'Accept': 'application/json'
-    }
-    
+    # 2. Construct the RingCX Username mathematically (bypasses the 500 crashing endpoint)
     try:
-        users_resp = requests.get(users_url, headers=headers)
-        users_resp.raise_for_status()
-        
-        # Engage Voice can sometimes wrap arrays or return them directly depending on the version
-        resp_json = users_resp.json()
-        users_list = resp_json if isinstance(resp_json, list) else resp_json.get('users', [])
-    except Exception as e:
-        return jsonify({'error': f"Failed to fetch RingCX users: {str(e)}"}), 500
-        
-    # Match the user by email to extract their exact RingCX username
-    rcx_username = None
-    for user in users_list:
-        if user.get('email', '').lower() == rex_email.lower():
-            rcx_username = user.get('username')
-            break
-            
-    if not rcx_username:
-        return jsonify({'error': f"Could not find a RingCX agent matching the email {rex_email}."}), 404
+        local_part, domain = rex_email.split('@', 1)
+        # Format: localPart + accountId_extInternalId @ domain
+        rcx_username = f"{local_part}+{account_id}_{ext_internal_id}@{domain}"
+    except Exception:
+        return jsonify({'error': 'Failed to parse extension email address.'}), 500
 
     # 3. Trigger the RingCX call
     call_url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/activeCalls/createManualAgentCall'
-    headers['Content-Type'] = 'application/json'
+    headers = {
+        'Authorization': f'Bearer {ringcx_token}', 
+        'Content-Type': 'application/json'
+    }
     
     params = {
         'username': rcx_username,
