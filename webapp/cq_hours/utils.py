@@ -454,9 +454,10 @@ def run_cq_audit(task_id, queue_ids, token):
             dv_tz.add("K2:K1000") 
             
             schema_validations = {
-                "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"',
-                "N": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
-                "O": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
+                "E": '"Enabled,Disabled"', 
+                "M": '"Default,Custom,Off"',
+                "N": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
+                "O": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
                 "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
                 "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
                 "R": '"Simultaneous,Sequential,Rotating"', 
