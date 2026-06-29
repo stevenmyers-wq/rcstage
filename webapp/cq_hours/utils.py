@@ -159,7 +159,6 @@ def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_ret
         if method == 'GET':
             if 'business-hours' in str(endpoint): return True, {"schedule": {"weeklyRanges": {}}}
             if 'answering-rule' in str(endpoint): return True, {"queue": {}}
-            if 'voice-interaction-rules' in str(endpoint): return True, {"dispatching": {"actions": []}}
             if 'notification-settings' in str(endpoint): return True, {"voicemails": {}}
             if 'members' in str(endpoint): return True, {"records": []}
             if 'managers' in str(endpoint): return True, {"records": []}
@@ -260,12 +259,16 @@ def run_cq_audit(task_id, queue_ids, token):
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
-        preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         for g_type in preset_dict.keys():
             succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
                 for rec in dict_resp['records']:
-                    preset_dict[g_type][str(rec.get('id', ''))] = str(rec.get('name', '')).title()
+                    k = rec.get('name', '').lower().strip()
+                    v = str(rec.get('id', ''))
+                    preset_dict[g_type][k] = v
+                    preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
 
         rows = []
         for idx, qid in enumerate(queue_ids):
@@ -329,45 +332,37 @@ def run_cq_audit(task_id, queue_ids, token):
                 if vm_recip and vm_recip != 'None':
                     row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip, vm_recip)
 
+                # Pure legacy greeting read logic - completely bypasses VIR
                 for g in rule.get('greetings', []):
-                    if g.get('type') == 'Voicemail':
-                        if 'custom' in g and g.get('custom', {}).get('name'): row["Voicemail Greeting"] = 'Custom'
-                        elif 'preset' in g and g.get('preset', {}).get('name'): row["Voicemail Greeting"] = g['preset']['name']
-                        else: row["Voicemail Greeting"] = 'Default'
-
-            # Audit VIR for Greetings
-            succ, vir = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/voice-interaction-rules/business-hours-rule', token=token)
-            if succ:
-                actions = vir.get('dispatching', {}).get('actions', [])
-                for act in actions:
-                    a_type = act.get('type')
-                    is_on = act.get('enabled', True)
+                    g_type = g.get('type')
+                    g_id = str(g.get('preset', {}).get('id', ''))
                     
-                    if not is_on:
-                        g_name = "Off"
+                    if g_id:
+                        if g_type == 'Introductory':
+                            g_name = preset_id_to_name.get('Introductory', {}).get(g_id, 'Default')
+                        elif g_type in ['ConnectingAudio', 'ConnectingMessage']:
+                            g_name = preset_id_to_name.get('ConnectingMessage', {}).get(g_id, preset_id_to_name.get('ConnectingAudio', {}).get(g_id, 'Default'))
+                        elif g_type == 'HoldMusic':
+                            g_name = preset_id_to_name.get('HoldMusic', {}).get(g_id, 'Default')
+                        elif g_type == 'InterruptPrompt':
+                            g_name = preset_id_to_name.get('InterruptPrompt', {}).get(g_id, 'Default')
+                        elif g_type == 'Voicemail':
+                            g_name = preset_id_to_name.get('Voicemail', {}).get(g_id, 'Default')
                     else:
-                        g_id = act.get('greeting', {}).get('preset', {}).get('id')
-                        if not g_id:
-                            g_name = "Custom" if act.get('greeting', {}).get('custom') else "Default"
-                        else:
-                            dict_type = 'Introductory' if a_type == 'PlayWelcomePromptAction' else \
-                                        'ConnectingMessage' if a_type == 'PlayConnectingMessageAction' else \
-                                        'HoldMusic' if a_type == 'PlayHoldMusicAction' else \
-                                        'InterruptPrompt' if a_type == 'PlayInterruptPromptAction' else 'Introductory'
-                            
-                            g_name = preset_dict.get(dict_type, {}).get(str(g_id), "Default")
+                        g_name = 'Custom' if 'custom' in g else 'Default'
                     
-                    if a_type == 'PlayWelcomePromptAction': row["Greeting"] = g_name.title() if g_name != 'Off' else g_name
-                    elif a_type == 'PlayConnectingMessageAction': row["Audio While Connecting"] = g_name.title() if g_name != 'Off' else g_name
-                    elif a_type == 'PlayHoldMusicAction': row["Hold Music"] = g_name.title() if g_name != 'Off' else g_name
-                    elif a_type == 'PlayInterruptPromptAction': 
+                    if g_type == 'Introductory': row["Greeting"] = g_name
+                    elif g_type in ['ConnectingAudio', 'ConnectingMessage']: row["Audio While Connecting"] = g_name
+                    elif g_type == 'HoldMusic': row["Hold Music"] = g_name
+                    elif g_type == 'InterruptPrompt':
                         if 'patience' in g_name.lower(): row["Interrupt Prompt"] = "Thank you for your patience"
                         elif 'volume' in g_name.lower(): row["Interrupt Prompt"] = "Higher than normal volume"
                         elif 'busy' in g_name.lower(): row["Interrupt Prompt"] = "Agents are currently busy"
                         elif 'important' in g_name.lower(): row["Interrupt Prompt"] = "Call is very important to us"
-                        else: row["Interrupt Prompt"] = g_name.title() if g_name != 'Off' else g_name
+                        else: row["Interrupt Prompt"] = g_name
+                    elif g_type == 'Voicemail': row["Voicemail Greeting"] = g_name
 
-            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
+            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', token=token)
             if succ:
                 row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
                 a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
@@ -560,8 +555,8 @@ def update_cq_batch(records, token, is_preview=False):
         yield {"type": "error", "message": "Failed to load timezone dictionary."}
         return
 
-    preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
-    preset_id_to_name = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
         succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
@@ -635,17 +630,16 @@ def update_cq_batch(records, token, is_preview=False):
                     yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": ext_num, "status": "error", "message": f"Failed to create Queue: {format_api_error(c_resp)}", "changes": changes}, "is_preview": is_preview}
                     continue
 
-        # --- PRE-FETCH LEGACY ANSWERING RULE FOR DIFFING ---
         routing_fields = [
             'Ring Type', 'User Ring Time', 'Total Ring Time', 'Wrap Up Time', 
             'When Max Time is Reached', 'When Queue is Full', 'Callers In Queue', 
-            'Interrupt Audio', 'Time Reached Destination', 'Queue Full Destination', 'Voicemail Recipients', 'Voicemail Greeting'
+            'Interrupt Audio', 'Time Reached Destination', 'Queue Full Destination', 
+            'Voicemail Recipients', 'Voicemail Greeting', 'Greeting', 'Audio While Connecting', 
+            'Hold Music', 'Interrupt Prompt'
         ]
-        vir_fields = ['Greeting', 'Audio While Connecting', 'Hold Music', 'Interrupt Prompt']
-        all_routing_fields = routing_fields + vir_fields
         
         orig_rule = {}
-        if any(get_val(row, f) is not None for f in all_routing_fields):
+        if any(get_val(row, f) is not None for f in routing_fields):
             get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
             if get_succ and isinstance(rule, dict):
                 orig_rule = copy.deepcopy(rule)
@@ -787,7 +781,7 @@ def update_cq_batch(records, token, is_preview=False):
             except Exception as e:
                 has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
 
-        # --- C. ROUTING & TIMERS (Answering Rule) ---
+        # --- C. ROUTING & TIMERS & AUDIO ---
         if any(get_val(row, f) is not None for f in routing_fields) and orig_rule:
             rule = copy.deepcopy(orig_rule)
             q_set = rule.get('queue', {})
@@ -910,49 +904,58 @@ def update_cq_batch(records, token, is_preview=False):
             if 'greetings' in rule:
                 safe_greetings = []
                 for g in rule['greetings']:
-                    g_type = g.get('type')
-                    if g_type in ['Introductory', 'ConnectingAudio', 'ConnectingMessage', 'HoldMusic', 'InterruptPrompt']:
-                        continue # Let VIR handle these
-                    
-                    if g_type == 'Voicemail':
-                        g_id = str(g.get('preset', {}).get('id', ''))
-                        if g_id in ['139008', '134401', '131847', '131843', '131853']: 
-                            # If RC corrupted the queue with an Introductory ID in the Voicemail slot, forcefully heal it with a valid Voicemail ID.
-                            valid_def = preset_dict.get('Voicemail', {}).get('default')
-                            if valid_def:
-                                g = {"type": "Voicemail", "preset": {"id": str(valid_def)}}
-                            else:
-                                continue 
+                    g_id = str(g.get('preset', {}).get('id', ''))
+                    # Unconditionally drop toxic presets that cause validation errors
+                    if g_id in ['139008', '134401', '131847', '131843', '131853']: 
+                        continue
                     safe_greetings.append(g)
                 rule['greetings'] = safe_greetings
 
-            vm_greet_val = get_val(row, 'Voicemail Greeting')
-            if vm_greet_val is not None:
-                vm_new_val = vm_greet_val.lower().strip()
-                matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
+            def apply_legacy_audio(col_name, slot_type, dict_type):
+                nonlocal r_needs_update
+                val = get_val(row, col_name)
+                if val is None: return
                 
-                if 'greetings' in rule:
-                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
-                else:
-                    rule['greetings'] = []
+                new_val = val.lower().strip()
+                
+                if 'greetings' not in rule: rule['greetings'] = []
+                # Safely clear out the old greeting of this type so we don't send duplicates
+                rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
+                
+                if slot_type == 'ConnectingMessage':
+                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'ConnectingAudio']
 
-                if vm_new_val in ['off', 'none', 'disable', 'disabled']:
+                # "Off" or "Default" in legacy simply means omitting the object
+                if new_val in ['off', 'none', 'disable', 'disabled', 'default']:
                     pass 
-                elif vm_new_val == 'default':
-                    def_id = preset_dict.get('Voicemail', {}).get('default')
-                    if def_id:
-                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(def_id)}})
-                elif matched_id:
-                    rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
                 else:
-                    orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
-                    if orig_g:
-                        old_id = str(orig_g.get('preset', {}).get('id', ''))
-                        if old_id not in ['139008', '134401']:
-                            rule['greetings'].append(orig_g)
-                    
-                old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
-                r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
+                    matched_id = preset_dict.get(dict_type, {}).get(new_val)
+                    if not matched_id and dict_type == 'InterruptPrompt':
+                        for n, gid in preset_dict['InterruptPrompt'].items():
+                            if "patience" in new_val and "patience" in n: matched_id = gid
+                            elif "volume" in new_val and "volume" in n: matched_id = gid
+                            elif "busy" in new_val and "busy" in n: matched_id = gid
+                            elif "important" in new_val and "important" in n: matched_id = gid
+                            
+                    if matched_id:
+                        rule['greetings'].append({"type": slot_type, "preset": {"id": str(matched_id)}})
+                    else:
+                        # Fallback to keep existing custom greetings safe if no dictionary match is found
+                        orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == slot_type), None)
+                        if orig_g:
+                            old_id = str(orig_g.get('preset', {}).get('id', ''))
+                            if old_id not in ['139008', '134401', '131847', '131843', '131853']:
+                                rule['greetings'].append(orig_g)
+                
+                old_val_name = get_old_greeting_name(orig_rule, slot_type)
+                new_val_str = val.title() if new_val not in ['off', 'none', 'disable', 'disabled', 'default'] else 'Default'
+                r_needs_update |= check_diff(changes, col_name, old_val_name, new_val_str)
+
+            apply_legacy_audio('Greeting', 'Introductory', 'Introductory')
+            apply_legacy_audio('Audio While Connecting', 'ConnectingMessage', 'ConnectingMessage')
+            apply_legacy_audio('Hold Music', 'HoldMusic', 'HoldMusic')
+            apply_legacy_audio('Interrupt Prompt', 'InterruptPrompt', 'InterruptPrompt')
+            apply_legacy_audio('Voicemail Greeting', 'Voicemail', 'Voicemail')
             
             vm_recip_raw = get_val(row, 'Voicemail Recipients')
             if vm_recip_raw is not None:
@@ -978,111 +981,13 @@ def update_cq_batch(records, token, is_preview=False):
                     
                     put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                     if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                    else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)} | Sent: {json.dumps(rule)}")
+                    else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
                 
                 elif put_succ: 
                     logs.append("Routing Updated")
                 else: 
                     has_error = True
-                    logs.append(f"Routing Error: {format_api_error(err)} | Sent: {json.dumps(rule)}")
-
-        # --- D. VOICE INTERACTION RULES (Greetings) ---
-        if any(get_val(row, f) is not None for f in vir_fields):
-            vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
-            
-            # Massive wait loop to ensure newly created queues have time to generate their VIR endpoint
-            attempt = 0
-            while not vir_succ and attempt < 6:
-                time.sleep(3.5)
-                attempt += 1
-                vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
-
-            if not vir_succ:
-                logs.append("Audio Prompts Warning: Database sync delayed. Re-run tool later to link Prompts.")
-            else:
-                actions = vir_rule.get('dispatching', {}).get('actions', [])
-                vir_needs_update = False
-                
-                def apply_vir_greeting(col_name, act_type, dict_type, legacy_type):
-                    nonlocal vir_needs_update
-                    val = get_val(row, col_name)
-                    if not val: return
-                    
-                    new_val = val.lower().strip()
-                    
-                    old_val_str = "Unknown"
-                    existing_act = next((a for a in actions if a.get('type') == act_type), None)
-                    if existing_act:
-                        if existing_act.get('enabled') is False:
-                            old_val_str = "Off"
-                        else:
-                            preset_id = existing_act.get('greeting', {}).get('preset', {}).get('id')
-                            if preset_id:
-                                old_val_str = preset_id_to_name.get(dict_type, {}).get(str(preset_id), "Custom")
-                            else:
-                                old_val_str = "Default"
-                    else:
-                        if orig_rule:
-                            old_val_str = get_old_greeting_name(orig_rule, legacy_type)
-
-                    act = next((a for a in actions if a.get('type') == act_type), None)
-                    if not act:
-                        act = {"type": act_type}
-                        actions.append(act)
-
-                    if new_val in ['off', 'none', 'disable', 'disabled']:
-                        if act.get('enabled') is not False:
-                            act['enabled'] = False
-                            if 'greeting' not in act or not act['greeting']:
-                                def_id = preset_dict.get(dict_type, {}).get('default')
-                                if def_id:
-                                    act['greeting'] = {
-                                        "effectiveGreetingType": "Preset",
-                                        "preset": {"id": str(def_id)}
-                                    }
-                                else:
-                                    act['greeting'] = {"effectiveGreetingType": "Default"}
-                            vir_needs_update = True
-                        if check_diff(changes, col_name, old_val_str, "Off"):
-                            vir_needs_update = True
-                        return
-
-                    act['enabled'] = True
-                    matched_id = None
-                    if new_val == 'default':
-                        matched_id = preset_dict.get(dict_type, {}).get('default')
-                    else:
-                        matched_id = preset_dict.get(dict_type, {}).get(new_val)
-                        if dict_type == 'InterruptPrompt' and not matched_id:
-                            for name, gid in preset_dict['InterruptPrompt'].items():
-                                if "patience" in new_val and "patience" in name: matched_id = gid
-                                elif "volume" in new_val and "volume" in name: matched_id = gid
-                                elif "busy" in new_val and "busy" in name: matched_id = gid
-                                elif "important" in new_val and "important" in name: matched_id = gid
-
-                    if matched_id:
-                        act['greeting'] = {
-                            "effectiveGreetingType": "Preset",
-                            "preset": { "id": str(matched_id) }
-                        }
-                        vir_needs_update = True
-                        new_val_str = val.title() if new_val != 'default' else 'Default'
-                        check_diff(changes, col_name, old_val_str, new_val_str)
-
-                apply_vir_greeting('Greeting', 'PlayWelcomePromptAction', 'Introductory', 'Introductory')
-                apply_vir_greeting('Audio While Connecting', 'PlayConnectingMessageAction', 'ConnectingMessage', 'ConnectingAudio')
-                apply_vir_greeting('Hold Music', 'PlayHoldMusicAction', 'HoldMusic', 'HoldMusic')
-                apply_vir_greeting('Interrupt Prompt', 'PlayInterruptPromptAction', 'InterruptPrompt', 'InterruptPrompt')
-
-                if vir_needs_update and not is_preview:
-                    vir_payload = {"dispatching": {"actions": actions}}
-                    v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
-                    
-                    if v_succ:
-                        logs.append("Audio Prompts Updated")
-                    else:
-                        has_error = True
-                        logs.append(f"Audio Prompts Error: {format_api_error(v_err)} | Sent: {json.dumps(vir_payload)}")
+                    logs.append(f"Routing Error: {format_api_error(err)}")
 
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
