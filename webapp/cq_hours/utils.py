@@ -259,10 +259,10 @@ def run_cq_audit(task_id, queue_ids, token):
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
-        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
-        preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         
-        # Two-part fetch: Gets Queue-specific audio AND globally available uncustomizable presets
+        # Two-part fetch ensures we get both answering rule defaults AND global presets
         for g_type in preset_dict.keys():
             succ1, dict1 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
             succ2, dict2 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
@@ -348,7 +348,7 @@ def run_cq_audit(task_id, queue_ids, token):
                         if g_type == 'Introductory':
                             g_name = preset_id_to_name.get('Introductory', {}).get(g_id, 'Default')
                         elif g_type in ['ConnectingAudio', 'ConnectingMessage']:
-                            g_name = preset_id_to_name.get('ConnectingMessage', {}).get(g_id, preset_id_to_name.get('ConnectingAudio', {}).get(g_id, 'Default'))
+                            g_name = preset_id_to_name.get('ConnectingAudio', {}).get(g_id, 'Default')
                         elif g_type == 'HoldMusic':
                             g_name = preset_id_to_name.get('HoldMusic', {}).get(g_id, 'Default')
                         elif g_type == 'InterruptPrompt':
@@ -453,6 +453,7 @@ def run_cq_audit(task_id, queue_ids, token):
             config_ws.add_data_validation(dv_tz)
             dv_tz.add("K2:K1000") 
             
+            # The Expanded Schema Validations including the full global music catalog!
             schema_validations = {
                 "E": '"Enabled,Disabled"', 
                 "M": '"Default,Custom,Off"',
@@ -563,10 +564,9 @@ def update_cq_batch(records, token, is_preview=False):
         yield {"type": "error", "message": "Failed to load timezone dictionary."}
         return
 
-    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
-    preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     
-    # Two-part fetch: Gets Queue-specific audio AND globally available uncustomizable presets (like Hold Music)
     for g_type in preset_dict.keys():
         succ1, dict1 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
         succ2, dict2 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
@@ -798,7 +798,7 @@ def update_cq_batch(records, token, is_preview=False):
             except Exception as e:
                 has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
 
-        # --- C. ROUTING & TIMERS & LEGACY AUDIO ---
+        # --- C. ROUTING, TIMERS & LEGACY AUDIO ---
         if any(get_val(row, f) is not None for f in routing_fields) and orig_rule:
             rule = {}
             q_set = orig_rule.get('queue', {})
@@ -862,6 +862,7 @@ def update_cq_batch(records, token, is_preview=False):
                     q_set['maxCallersAction'] = val_wqf
                     _set_queue_transfer(q_set, 'MaxCallers', None)
                     
+            # Lean payload: Strip everything we aren't specifically allowed to touch from the deep copy
             for f in ['fixedOrderAgents', 'positionInQueue', 'callback', 'callers', 'calledNumbers']:
                 q_set.pop(f, None)
             
@@ -904,7 +905,6 @@ def update_cq_batch(records, token, is_preview=False):
             for g in orig_rule.get('greetings', []):
                 g_type = g.get('type')
                 g_id = str(g.get('preset', {}).get('id', ''))
-                if g_type == 'ConnectingMessage': continue 
                 if g_id in ['139008', '134401', '131847', '131843', '131853']: continue
                 safe_greetings.append(g)
             
@@ -918,6 +918,7 @@ def update_cq_batch(records, token, is_preview=False):
                 new_val = val.lower().strip()
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
                 
+                # Treat "Default" or "Off" as omitting the payload object entirely
                 if new_val in ['off', 'none', 'disable', 'disabled', 'default']:
                     pass 
                 else:
@@ -959,44 +960,30 @@ def update_cq_batch(records, token, is_preview=False):
                     old_vm = str(orig_rule.get('voicemail', {}).get('recipient', {}).get('id', 'None'))
                     r_needs_update |= check_diff(changes, 'VM Recipient', ext_id_to_num.get(old_vm, old_vm), ext_id_to_num.get(vm_ext_id, vm_ext_id))
             
+            for field in _READ_ONLY: rule.pop(field, None)
+            for field in _READ_ONLY: 
+                if 'queue' in rule: rule['queue'].pop(field, None)
+            
             if r_needs_update and not is_preview:
-                
-                # Split ConnectingMessage into isolated payload to prevent API drop
-                cm_entry = None
-                if 'greetings' in rule:
-                    cm_entry = next((g for g in rule['greetings'] if g.get('type') == 'ConnectingMessage'), None)
-                    main_rule = copy.deepcopy(rule)
-                    main_rule['greetings'] = [g for g in main_rule['greetings'] if g.get('type') != 'ConnectingMessage']
-                else:
-                    main_rule = rule
-
-                put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=main_rule, token=token)
+                put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                 
                 if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
-                    main_rule['queue'].pop('transfer', None)
-                    if main_rule['queue'].get('maxCallersAction') == 'TransferToExtension': main_rule['queue']['maxCallersAction'] = 'Voicemail'
-                    if main_rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': main_rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
+                    rule['queue'].pop('transfer', None)
+                    if rule['queue'].get('maxCallersAction') == 'TransferToExtension': rule['queue']['maxCallersAction'] = 'Voicemail'
+                    if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
                     
-                    put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=main_rule, token=token)
+                    put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                     if put_succ2: 
                         logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                        put_succ = True
                     else: 
-                        has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
+                        has_error = True
+                        logs.append(f"Routing Error: {format_api_error(err2)}")
                 
                 elif put_succ: 
                     logs.append("Routing Updated")
                 else: 
                     has_error = True
                     logs.append(f"Routing Error: {format_api_error(err)}")
-
-                if put_succ and cm_entry:
-                    cm_succ, cm_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload={"greetings": [cm_entry]}, token=token)
-                    if cm_succ:
-                        logs.append("Audio While Connecting Updated")
-                    else:
-                        has_error = True
-                        logs.append(f"Audio While Connecting Error: {format_api_error(cm_err)}")
 
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
@@ -1146,6 +1133,11 @@ def update_cq_batch(records, token, is_preview=False):
                 if val_vn is not None:
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
                     v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
+                    
+                    # Voicemail transcription diff checker
+                    old_trans = str(orig_notif.get('voicemails', {}).get('includeTranscription', False))
+                    new_trans = "True" if vm_set.get('notifyByEmail') else "False"
+                    v_needs_update |= check_diff(changes, 'VM Transcription', old_trans, new_trans)
                 
                 old_emails = orig_notif.get('voicemails', {}).get('emailAddresses', []) if orig_notif.get('advancedMode') else orig_notif.get('emailAddresses', [])
                 if val_vne is not None or get_val(row, 'Queue Email') is not None:
@@ -1155,13 +1147,14 @@ def update_cq_batch(records, token, is_preview=False):
                 if v_needs_update and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
                     
-                    if not put_succ and ('includeAttachment' in str(err) or 'markAsRead' in str(err)):
+                    if not put_succ and ('includeAttachment' in str(err) or 'markAsRead' in str(err) or 'includeTranscription' in str(err)):
                         new_notif['voicemails'].pop('includeAttachment', None)
                         new_notif['voicemails'].pop('markAsRead', None)
+                        new_notif['voicemails'].pop('includeTranscription', None)
                         
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
                         if put_succ2: 
-                            logs.append("Notifications Updated (Attachments popped due to account limits)")
+                            logs.append("Notifications Updated (Attachments/Transcription popped due to account limits)")
                         else: 
                             has_error = True
                             logs.append(f"Notifications Error: {format_api_error(err2)}")
