@@ -1,4 +1,4 @@
-<div class="space-y-6 animate-fade-in p-4 w-full max-w-3xl mx-auto">
+		<div class="space-y-6 animate-fade-in p-4 w-full max-w-3xl mx-auto">
     <div class="mb-4 border-b border-gray-200 pb-4">
         <h2 class="text-3xl font-bold text-slate-800 mb-1">Click to Call Demo</h2>
         <p class="text-slate-500 text-sm">Programmatically trigger an outbound call on behalf of a RingCX agent.</p>
@@ -25,25 +25,23 @@
         <h3 class="font-bold text-slate-800 mb-4 text-lg">Initiate Outbound Call</h3>
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            
             <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Agent Extension <span class="text-red-500">*</span></label>
-                <input type="text" id="c2c-agent-ext" placeholder="e.g. 11110020" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono">
-                <p class="text-xs text-gray-400 mt-1">The system will dynamically query the RingCX agent list to find the matching username.</p>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Agent Username (Email)</label>
+                <input type="text" id="c2c-username" placeholder="agent@company.com" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-400 mt-1">The agent must be logged in and "Available" in their RingCX softphone.</p>
             </div>
 
-            <div class="mt-2">
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Destination Number <span class="text-red-500">*</span></label>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Destination Number</label>
                 <input type="text" id="c2c-destination" placeholder="+61400000000" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono">
             </div>
 
-            <div class="mt-2">
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outbound Caller ID <span class="text-red-500">*</span></label>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outbound Caller ID <span class="text-gray-400 font-normal"></span></label>
                 <input type="text" id="c2c-caller-id" placeholder="+61200000000" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono">
-                <p class="text-xs text-gray-400 mt-1">Required by RingCX API.</p>
             </div>
 
-            <div class="md:col-span-2 mt-2">
+            <div class="md:col-span-2">
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Ring Duration (Seconds)</label>
                 <input type="number" id="c2c-ring-duration" value="30" min="5" max="120" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-blue-500 focus:border-blue-500">
                 <p class="text-xs text-gray-400 mt-1">How long the agent's softphone will ring before the system abandons the outbound attempt.</p>
@@ -66,13 +64,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const dialBtn = document.getElementById('c2c-dial-btn');
     
     // Inputs
-    const agentExtInput = document.getElementById('c2c-agent-ext');
+    const usernameInput = document.getElementById('c2c-username');
     const destinationInput = document.getElementById('c2c-destination');
     const callerIdInput = document.getElementById('c2c-caller-id');
     const ringDurationInput = document.getElementById('c2c-ring-duration');
 
     if (!connectBtn) return;
 
+    // Pre-fill username with the logged-in Google email if available
+    fetch('/api/auth/status').then(r => r.json()).then(data => {
+        if (data.user_email) {
+            usernameInput.value = data.user_email;
+        }
+    }).catch(e => console.log('Could not fetch user status'));
+
+    // Check existing session status on load
     checkRingCXStatus();
 
     async function checkRingCXStatus() {
@@ -121,13 +127,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     dialBtn.addEventListener('click', async () => {
-        const agentExt = agentExtInput.value.trim();
+        const username = usernameInput.value.trim();
         const destination = destinationInput.value.trim();
         const callerId = callerIdInput.value.trim();
         const ringDuration = parseInt(ringDurationInput.value.trim(), 10) || 30;
 
-        if (!agentExt || !destination || !callerId) {
-            showMessage('Agent Extension, Destination Number, and Caller ID are strictly required.', true);
+        if (!username || !destination) {
+            showMessage('Agent Username and Destination Number are required.', true);
             return;
         }
 
@@ -135,11 +141,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dialBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Initiating...';
 
         const payload = {
-            agentExt: agentExt,
+            username: username,
             destination: destination,
-            callerId: callerId,
             ringDuration: ringDuration
         };
+        if (callerId) payload.callerId = callerId;
 
         try {
             const response = await fetch('/api/click_to_call/dial', {
@@ -150,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (response.ok) {
-                showMessage(`Call initiated! Softphone for ${data.resolved_username} should be ringing...`);
+                showMessage(`Call initiated! ${username}'s softphone should be ringing...`);
                 destinationInput.value = '';
             } else {
                 showMessage(data.error || 'Failed to initiate call.', true);
