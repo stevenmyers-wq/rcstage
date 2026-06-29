@@ -2,6 +2,7 @@ import requests
 from flask import Blueprint, jsonify, request, session
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
+from webapp.rc_api import rc_api_call
 
 click_to_call_bp = Blueprint(
     'click_to_call_bp', __name__,
@@ -12,33 +13,63 @@ click_to_call_bp = Blueprint(
 @require_rc_token
 @track_usage('Click to Call Demo')
 def dial_number():
-    """Triggers a 2-legged RingCX outbound call."""
     data = request.get_json()
     
     destination = data.get('destination')
-    username = data.get('username')
+    agent_ext = data.get('agentExt')
     caller_id = data.get('callerId')
     ring_duration = data.get('ringDuration', 30)
     
-    # We still need the RingCX session token to make Engage Voice API calls
     ringcx_token = session.get('ringcx_access_token')
     account_id = session.get('ringcx_account_id')
     
     if not ringcx_token or not account_id:
         return jsonify({'error': 'Not connected to RingCX. Please click Connect to RingCX first.'}), 401
         
-    if not destination or not username:
-        return jsonify({'error': 'Destination phone number and Agent Username are required.'}), 400
+    if not destination or not agent_ext:
+        return jsonify({'error': 'Destination phone number and Agent Extension are required.'}), 400
+
+    # 1. Lookup the base email from RingEX
+    ext_lookup = rc_api_call('/restapi/v1.0/account/~/extension', params={'extensionNumber': agent_ext})
+    
+    if not ext_lookup or 'records' not in ext_lookup or len(ext_lookup['records']) == 0:
+        return jsonify({'error': f"Could not find extension {agent_ext} in the RingCentral account."}), 404
         
-    # FIXED: Added /createManualAgentCall to the endpoint URL
-    url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/activeCalls/createManualAgentCall'
+    rex_email = ext_lookup['records'][0].get('contact', {}).get('email')
+    
+    if not rex_email:
+        return jsonify({'error': f"Extension {agent_ext} does not have an email address configured."}), 400
+
+    # 2. Query RingCX Agents list to find the matching username
+    agents_url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/agents'
     headers = {
         'Authorization': f'Bearer {ringcx_token}', 
-        'Content-Type': 'application/json'
+        'Accept': 'application/json'
     }
     
+    try:
+        agents_resp = requests.get(agents_url, headers=headers)
+        agents_resp.raise_for_status()
+        agents_list = agents_resp.json()
+    except Exception as e:
+        return jsonify({'error': f"Failed to fetch RingCX agents: {str(e)}"}), 500
+        
+    # Match the agent by email to extract the exact username
+    rcx_username = None
+    for agent in agents_list:
+        if agent.get('email', '').lower() == rex_email.lower():
+            rcx_username = agent.get('username')
+            break
+            
+    if not rcx_username:
+        return jsonify({'error': f"Could not find a RingCX agent matching the email {rex_email}."}), 404
+
+    # 3. Trigger the RingCX call
+    call_url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/activeCalls/createManualAgentCall'
+    headers['Content-Type'] = 'application/json'
+    
     params = {
-        'username': username,
+        'username': rcx_username,
         'destination': destination,
         'ringDuration': ring_duration
     }
@@ -47,10 +78,10 @@ def dial_number():
         params['callerId'] = caller_id
     
     try:
-        resp = requests.post(url, headers=headers, params=params)
+        resp = requests.post(call_url, headers=headers, params=params)
         if not resp.ok:
             return jsonify({'error': f"RingCX API Error: {resp.text}"}), resp.status_code
             
-        return jsonify({'status': 'success', 'data': resp.json()})
+        return jsonify({'status': 'success', 'data': resp.json(), 'resolved_username': rcx_username})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
