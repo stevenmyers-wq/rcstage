@@ -117,5 +117,9 @@ def create_app():
         # Cost Centres routes
         from .cost_centres import routes as cost_centres_routes
         app.register_blueprint(cost_centres_routes.cost_centres_bp)
+        
+        # Click to Call Demo routes
+        from .click_to_call import routes as click_to_call_routes
+        app.register_blueprint(click_to_call_routes.click_to_call_bp)
 
     return app
