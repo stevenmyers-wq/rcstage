@@ -863,9 +863,6 @@ def update_cq_batch(records, token, is_preview=False):
                 else:
                     q_set['maxCallersAction'] = val_wqf
                     _set_queue_transfer(q_set, 'MaxCallers', None)
-                    
-            if q_set.get('transferMode') == 'Simultaneous':
-                q_set.pop('agentTimeout', None)
 
             rule['queue'] = q_set
             old_q = orig_rule.get('queue', {})
@@ -919,76 +916,35 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # Unconditionally wipe all greetings from the legacy payload to stop toxic auto-echoes.
-            rule.pop('greetings', None)
-            
-            legacy_greetings = []
-            for g in orig_rule.get('greetings', []):
-                g_type = g.get('type')
-                g_id = str(g.get('preset', {}).get('id', ''))
-                # Purge toxic RingCentral defaults
-                if g_type == 'Voicemail' and g_id in ['139008', '134401']:
-                    continue
-                if g_type == 'ConnectingMessage':
-                    g['type'] = 'ConnectingAudio'
-                legacy_greetings.append({"type": g['type'], **{k: v for k, v in g.items() if k != 'type'}})
+            # --- AUDIO CONFLICT PURGE ---
+            # Unconditionally strip VIR audio prompts from the legacy Answering Rule payload so they never throw AWR-123 validation errors.
+            if 'greetings' in rule:
+                rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
 
-            has_legacy_audio = False
-
-            # Check if Voicemail greeting needs processing
             vm_greet_val = get_val(row, 'Voicemail Greeting')
             if vm_greet_val is not None:
-                has_legacy_audio = True
-                legacy_greetings = [g for g in legacy_greetings if g.get('type') != 'Voicemail']
-                
                 vm_new_val = vm_greet_val.lower().strip()
-                if vm_new_val not in ['off', 'none', 'disable', 'disabled']:
-                    matched_id = preset_dict.get('Voicemail', {}).get('default') if vm_new_val == 'default' else preset_dict.get('Voicemail', {}).get(vm_new_val)
-                    if matched_id:
-                        legacy_greetings.append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
+                matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
                 
+                if 'greetings' in rule:
+                    rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
+                else:
+                    rule['greetings'] = []
+
+                if vm_new_val in ['off', 'none', 'disable', 'disabled']:
+                    pass 
+                elif vm_new_val == 'default':
+                    def_id = preset_dict.get('Voicemail', {}).get('default')
+                    if def_id:
+                        rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(def_id)}})
+                elif matched_id:
+                    rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
+                else:
+                    orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
+                    if orig_g: rule['greetings'].append(orig_g)
+                    
                 old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
                 r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
-
-            # --- Check if VIR is active. If not, apply Hybrid Fallback ---
-            vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
-            use_vir = vir_succ and isinstance(vir_rule, dict) and 'dispatching' in vir_rule
-
-            if any(get_val(row, f) is not None for f in vir_fields):
-                if use_vir:
-                    # Strip legacy audio prompts just in case they survived the pop
-                    legacy_greetings = [g for g in legacy_greetings if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
-                else:
-                    has_legacy_audio = True
-                    def apply_legacy_audio(col_name, legacy_type, dict_type):
-                        val = get_val(row, col_name)
-                        if not val: return
-                        new_val = val.lower().strip()
-                        
-                        nonlocal legacy_greetings
-                        legacy_greetings = [g for g in legacy_greetings if g.get('type') != legacy_type]
-                        
-                        if new_val not in ['off', 'none', 'disable', 'disabled']:
-                            matched_id = preset_dict.get(dict_type, {}).get('default') if new_val == 'default' else preset_dict.get(dict_type, {}).get(new_val)
-                            if not matched_id and dict_type == 'InterruptPrompt':
-                                for n, gid in preset_dict['InterruptPrompt'].items():
-                                    if "patience" in new_val and "patience" in n: matched_id = gid
-                                    elif "volume" in new_val and "volume" in n: matched_id = gid
-                                    elif "busy" in new_val and "busy" in n: matched_id = gid
-                                    elif "important" in new_val and "important" in n: matched_id = gid
-                            if matched_id:
-                                legacy_greetings.append({"type": legacy_type, "preset": {"id": str(matched_id)}})
-                        
-                        old_val_name = get_old_greeting_name(orig_rule, legacy_type)
-                        check_diff(changes, col_name, old_val_name, val)
-
-                    apply_legacy_audio('Greeting', 'Introductory', 'Introductory')
-                    apply_legacy_audio('Audio While Connecting', 'ConnectingAudio', 'ConnectingMessage')
-                    apply_legacy_audio('Hold Music', 'HoldMusic', 'HoldMusic')
-                    apply_legacy_audio('Interrupt Prompt', 'InterruptPrompt', 'InterruptPrompt')
-
-            if has_legacy_audio:
-                rule['greetings'] = legacy_greetings
             
             vm_recip_raw = get_val(row, 'Voicemail Recipients')
             if vm_recip_raw is not None:
@@ -1023,8 +979,20 @@ def update_cq_batch(records, token, is_preview=False):
                     logs.append(f"Routing Error: {format_api_error(err)}")
 
         # --- D. VOICE INTERACTION RULES (Greetings) ---
-        if any(get_val(row, f) is not None for f in vir_fields) and use_vir:
-            actions = vir_rule.get('dispatching', {}).get('actions', [])
+        if any(get_val(row, f) is not None for f in vir_fields):
+            vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
+            
+            # Target retry loop for brand new queues that haven't generated their VIR endpoint yet
+            attempt = 0
+            while not vir_succ and 'not found' in str(vir_rule).lower() and attempt < 3:
+                time.sleep(2.0)
+                attempt += 1
+                vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
+
+            actions = []
+            if vir_succ and isinstance(vir_rule, dict):
+                actions = vir_rule.get('dispatching', {}).get('actions', [])
+            
             vir_needs_update = False
             
             def apply_vir_greeting(col_name, act_type, dict_type, legacy_type):
