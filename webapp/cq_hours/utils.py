@@ -260,7 +260,7 @@ def run_cq_audit(task_id, queue_ids, token):
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
-        preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+        preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         for g_type in preset_dict.keys():
             succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
@@ -560,8 +560,8 @@ def update_cq_batch(records, token, is_preview=False):
         yield {"type": "error", "message": "Failed to load timezone dictionary."}
         return
 
-    preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
-    preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
+    preset_id_to_name = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
         succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
@@ -906,18 +906,23 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # --- AUDIO CONFLICT PURGE ---
-            # Unconditionally strip VIR audio prompts from the legacy Answering Rule payload so they never throw AWR-123 validation errors.
+            # --- TOXIC PRESET PURGE ---
             if 'greetings' in rule:
                 safe_greetings = []
                 for g in rule['greetings']:
                     g_type = g.get('type')
-                    if g_type in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']:
-                        continue
+                    if g_type in ['Introductory', 'ConnectingAudio', 'ConnectingMessage', 'HoldMusic', 'InterruptPrompt']:
+                        continue # Let VIR handle these
+                    
                     if g_type == 'Voicemail':
                         g_id = str(g.get('preset', {}).get('id', ''))
-                        if g_id in ['139008', '134401']: 
-                            continue # Purge toxic auto-assigned voicemail ID generated on new queues
+                        if g_id in ['139008', '134401', '131847', '131843', '131853']: 
+                            # If RC corrupted the queue with an Introductory ID in the Voicemail slot, forcefully heal it with a valid Voicemail ID.
+                            valid_def = preset_dict.get('Voicemail', {}).get('default')
+                            if valid_def:
+                                g = {"type": "Voicemail", "preset": {"id": str(valid_def)}}
+                            else:
+                                continue 
                     safe_greetings.append(g)
                 rule['greetings'] = safe_greetings
 
@@ -926,7 +931,6 @@ def update_cq_batch(records, token, is_preview=False):
                 vm_new_val = vm_greet_val.lower().strip()
                 matched_id = preset_dict.get('Voicemail', {}).get(vm_new_val)
                 
-                # Safely clear out the old Voicemail greeting before appending the new one
                 if 'greetings' in rule:
                     rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != 'Voicemail']
                 else:
@@ -974,22 +978,22 @@ def update_cq_batch(records, token, is_preview=False):
                     
                     put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
                     if put_succ2: logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                    else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)}")
+                    else: has_error = True; logs.append(f"Routing Error: {format_api_error(err2)} | Sent: {json.dumps(rule)}")
                 
                 elif put_succ: 
                     logs.append("Routing Updated")
                 else: 
                     has_error = True
-                    logs.append(f"Routing Error: {format_api_error(err)}")
+                    logs.append(f"Routing Error: {format_api_error(err)} | Sent: {json.dumps(rule)}")
 
         # --- D. VOICE INTERACTION RULES (Greetings) ---
         if any(get_val(row, f) is not None for f in vir_fields):
             vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
             
-            # Database sync wait for brand new queues
+            # Massive wait loop to ensure newly created queues have time to generate their VIR endpoint
             attempt = 0
-            while not vir_succ and attempt < 3:
-                time.sleep(2.5)
+            while not vir_succ and attempt < 6:
+                time.sleep(3.5)
                 attempt += 1
                 vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
 
@@ -1078,7 +1082,7 @@ def update_cq_batch(records, token, is_preview=False):
                         logs.append("Audio Prompts Updated")
                     else:
                         has_error = True
-                        logs.append(f"Audio Prompts Error: {format_api_error(v_err)}")
+                        logs.append(f"Audio Prompts Error: {format_api_error(v_err)} | Sent: {json.dumps(vir_payload)}")
 
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
