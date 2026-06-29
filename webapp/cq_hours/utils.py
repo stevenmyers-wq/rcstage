@@ -1100,6 +1100,7 @@ def update_cq_batch(records, token, is_preview=False):
                 if vm_set.get('notifyByEmail'):
                     new_notif['voicemails']['includeAttachment'] = vm_set.get('includeAttachment', False)
                     new_notif['voicemails']['markAsRead'] = vm_set.get('markAsRead', False)
+                    new_notif['voicemails']['includeTranscription'] = True
                 else:
                     new_notif['voicemails'].pop('includeAttachment', None)
                     new_notif['voicemails'].pop('markAsRead', None)
