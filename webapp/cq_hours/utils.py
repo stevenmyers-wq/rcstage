@@ -263,16 +263,19 @@ def run_cq_audit(task_id, queue_ids, token):
         preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         
         for g_type in preset_dict.keys():
-            succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
-            if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
-                for rec in dict_resp['records']:
-                    rec_type = rec.get('type')
-                    if rec_type and rec_type != g_type:
-                        continue 
-                    k = rec.get('name', '').lower().strip()
-                    v = str(rec.get('id', ''))
-                    preset_dict[g_type][k] = v
-                    preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
+            succ1, dict1 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
+            succ2, dict2 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
+            
+            for dict_resp in [dict1, dict2]:
+                if dict_resp and isinstance(dict_resp, dict) and 'records' in dict_resp:
+                    for rec in dict_resp['records']:
+                        rec_type = rec.get('type')
+                        if rec_type and rec_type != g_type:
+                            continue 
+                        k = rec.get('name', '').lower().strip()
+                        v = str(rec.get('id', ''))
+                        preset_dict[g_type][k] = v
+                        preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
 
         rows = []
         for idx, qid in enumerate(queue_ids):
@@ -341,16 +344,7 @@ def run_cq_audit(task_id, queue_ids, token):
                     g_id = str(g.get('preset', {}).get('id', ''))
                     
                     if g_id:
-                        if g_type == 'Introductory':
-                            g_name = preset_id_to_name.get('Introductory', {}).get(g_id, 'Default')
-                        elif g_type == 'ConnectingAudio':
-                            g_name = preset_id_to_name.get('ConnectingAudio', {}).get(g_id, 'Default')
-                        elif g_type == 'HoldMusic':
-                            g_name = preset_id_to_name.get('HoldMusic', {}).get(g_id, 'Default')
-                        elif g_type == 'InterruptPrompt':
-                            g_name = preset_id_to_name.get('InterruptPrompt', {}).get(g_id, 'Default')
-                        elif g_type == 'Voicemail':
-                            g_name = preset_id_to_name.get('Voicemail', {}).get(g_id, 'Default')
+                        g_name = preset_id_to_name.get(g_type, {}).get(g_id, 'Default')
                     else:
                         g_name = 'Custom' if 'custom' in g else 'Default'
                     
@@ -365,7 +359,7 @@ def run_cq_audit(task_id, queue_ids, token):
                         else: row["Interrupt Prompt"] = g_name
                     elif g_type == 'Voicemail': row["Voicemail Greeting"] = g_name
 
-            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
+            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', token=token)
             if succ:
                 row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
                 a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
@@ -562,16 +556,19 @@ def update_cq_batch(records, token, is_preview=False):
     preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     
     for g_type in preset_dict.keys():
-        succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
-        if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
-            for rec in dict_resp['records']:
-                rec_type = rec.get('type')
-                if rec_type and rec_type != g_type:
-                    continue 
-                k = rec.get('name', '').lower().strip()
-                v = str(rec.get('id', ''))
-                preset_dict[g_type][k] = v
-                preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
+        succ1, dict1 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
+        succ2, dict2 = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
+        
+        for dict_resp in [dict1, dict2]:
+            if dict_resp and isinstance(dict_resp, dict) and 'records' in dict_resp:
+                for rec in dict_resp['records']:
+                    rec_type = rec.get('type')
+                    if rec_type and rec_type != g_type:
+                        continue 
+                    k = rec.get('name', '').lower().strip()
+                    v = str(rec.get('id', ''))
+                    preset_dict[g_type][k] = v
+                    preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
 
     def _resolve_ext(num):
         clean_num = str(num).split('.')[0].strip()
@@ -890,12 +887,11 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # Purge toxic and incompatible presets before mapping
+            # Purge toxic presets before mapping
             safe_greetings = []
             for g in orig_rule.get('greetings', []):
                 g_type = g.get('type')
                 g_id = str(g.get('preset', {}).get('id', ''))
-                if g_type == 'ConnectingMessage': continue 
                 if g_id in ['139008', '134401', '131847', '131843', '131853']: continue
                 safe_greetings.append(g)
             
@@ -909,12 +905,8 @@ def update_cq_batch(records, token, is_preview=False):
                 new_val = val.lower().strip()
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
                 
-                if new_val in ['off', 'none', 'disable', 'disabled']:
-                    def_id = preset_dict.get(dict_type, {}).get('none') or preset_dict.get(dict_type, {}).get('off') or preset_dict.get(dict_type, {}).get('default')
-                    if def_id: rule['greetings'].append({"type": slot_type, "preset": {"id": str(def_id)}})
-                elif new_val == 'default':
-                    def_id = preset_dict.get(dict_type, {}).get('default')
-                    if def_id: rule['greetings'].append({"type": slot_type, "preset": {"id": str(def_id)}})
+                if new_val in ['off', 'none', 'disable', 'disabled', 'default']:
+                    pass 
                 else:
                     matched_id = preset_dict.get(dict_type, {}).get(new_val)
                     if not matched_id and dict_type == 'InterruptPrompt':
@@ -934,7 +926,8 @@ def update_cq_batch(records, token, is_preview=False):
                                 rule['greetings'].append(orig_g)
                 
                 old_val_name = get_old_greeting_name(orig_rule, slot_type)
-                new_val_str = val.title() if new_val not in ['off', 'none', 'disable', 'disabled'] else 'Off'
+                new_val_str = val.title() if new_val not in ['off', 'none', 'disable', 'disabled', 'default'] else 'Default'
+                if new_val in ['off', 'none', 'disable', 'disabled']: new_val_str = 'Off'
                 r_needs_update |= check_diff(changes, col_name, old_val_name, new_val_str)
 
             apply_legacy_audio('Greeting', 'Introductory', 'Introductory')
