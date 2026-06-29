@@ -262,11 +262,7 @@ def run_cq_audit(task_id, queue_ids, token):
 
         preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         for g_type in preset_dict.keys():
-            succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
-            if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
-                for rec in dict_resp_fallback['records']:
-                    preset_dict[g_type][str(rec.get('id', ''))] = str(rec.get('name', '')).title()
-                    
+            # Only pull strictly legal Department Answering Rule presets
             succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
             if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
                 for rec in dict_resp['records']:
@@ -568,14 +564,7 @@ def update_cq_batch(records, token, is_preview=False):
     preset_dict = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     preset_id_to_name = {'Introductory': {}, 'ConnectingMessage': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
     for g_type in preset_dict.keys():
-        succ, dict_resp_fallback = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&perPage=1000', method='GET', token=token)
-        if succ and isinstance(dict_resp_fallback, dict) and 'records' in dict_resp_fallback:
-            for rec in dict_resp_fallback['records']:
-                k = rec.get('name', '').lower().strip()
-                v = str(rec.get('id', ''))
-                preset_dict[g_type][k] = v
-                preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
-                
+        # Pure dictionary fetch to guarantee only valid RC presets are loaded
         succ, dict_resp = safe_api_call(f'/restapi/v1.0/dictionary/greeting?greetingType={g_type}&usageType=DepartmentExtensionAnsweringRule&perPage=1000', method='GET', token=token)
         if succ and isinstance(dict_resp, dict) and 'records' in dict_resp:
             for rec in dict_resp['records']:
@@ -863,6 +852,9 @@ def update_cq_batch(records, token, is_preview=False):
                 else:
                     q_set['maxCallersAction'] = val_wqf
                     _set_queue_transfer(q_set, 'MaxCallers', None)
+                    
+            if q_set.get('transferMode') == 'Simultaneous':
+                q_set.pop('agentTimeout', None)
 
             rule['queue'] = q_set
             old_q = orig_rule.get('queue', {})
@@ -916,10 +908,19 @@ def update_cq_batch(records, token, is_preview=False):
             if val_ia is not None:
                 r_needs_update |= check_diff(changes, 'Interrupt Audio', old_ia_str, new_ia_str)
 
-            # --- AUDIO CONFLICT PURGE ---
-            # Unconditionally strip VIR audio prompts from the legacy Answering Rule payload so they never throw AWR-123 validation errors.
+            # Strip VIR audio prompts from the legacy Answering Rule payload to explicitly prevent AWR-123 validation conflicts
             if 'greetings' in rule:
-                rule['greetings'] = [g for g in rule['greetings'] if g.get('type') not in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']]
+                safe_greetings = []
+                for g in rule['greetings']:
+                    g_type = g.get('type')
+                    if g_type in ['Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt']:
+                        continue
+                    if g_type == 'Voicemail':
+                        g_id = str(g.get('preset', {}).get('id', ''))
+                        if g_id in ['139008', '134401']: # Unconditionally strip toxic default Voicemail IDs generated on new queues
+                            continue
+                    safe_greetings.append(g)
+                rule['greetings'] = safe_greetings
 
             vm_greet_val = get_val(row, 'Voicemail Greeting')
             if vm_greet_val is not None:
@@ -940,8 +941,12 @@ def update_cq_batch(records, token, is_preview=False):
                 elif matched_id:
                     rule['greetings'].append({"type": "Voicemail", "preset": {"id": str(matched_id)}})
                 else:
+                    # Fallback for unmapped custom strings if valid
                     orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == 'Voicemail'), None)
-                    if orig_g: rule['greetings'].append(orig_g)
+                    if orig_g:
+                        old_id = str(orig_g.get('preset', {}).get('id', ''))
+                        if old_id not in ['139008', '134401']:
+                            rule['greetings'].append(orig_g)
                     
                 old_val_name = get_old_greeting_name(orig_rule, 'Voicemail')
                 r_needs_update |= check_diff(changes, 'Voicemail Greeting', old_val_name, vm_greet_val)
@@ -982,10 +987,10 @@ def update_cq_batch(records, token, is_preview=False):
         if any(get_val(row, f) is not None for f in vir_fields):
             vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
             
-            # Target retry loop for brand new queues that haven't generated their VIR endpoint yet
+            # Smart retry loop for brand new queues that haven't generated their VIR endpoint yet
             attempt = 0
-            while not vir_succ and 'not found' in str(vir_rule).lower() and attempt < 3:
-                time.sleep(2.0)
+            while not vir_succ and attempt < 4:
+                time.sleep(2.5)
                 attempt += 1
                 vir_succ, vir_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='GET', token=token)
 
@@ -1067,14 +1072,17 @@ def update_cq_batch(records, token, is_preview=False):
             apply_vir_greeting('Interrupt Prompt', 'PlayInterruptPromptAction', 'InterruptPrompt', 'InterruptPrompt')
 
             if vir_needs_update and not is_preview:
-                vir_payload = {"dispatching": {"actions": actions}}
-                v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
-                
-                if v_succ:
-                    logs.append("Audio Prompts Updated")
+                if vir_succ:
+                    vir_payload = {"dispatching": {"actions": actions}}
+                    v_succ, v_err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/voice-interaction-rules/business-hours-rule', method='PUT', json_payload=vir_payload, token=token)
+                    if v_succ:
+                        logs.append("Audio Prompts Updated")
+                    else:
+                        has_error = True
+                        logs.append(f"Audio Prompts Error: {format_api_error(v_err)}")
                 else:
                     has_error = True
-                    logs.append(f"Audio Prompts Error: {format_api_error(v_err)}")
+                    logs.append("Audio Prompts Error: Database sync timeout. Re-run tool to link Prompts.")
 
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
