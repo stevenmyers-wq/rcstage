@@ -30,7 +30,8 @@ def dial_number():
     if not destination or not username:
         return jsonify({'error': 'Destination phone number and Agent Username are required.'}), 400
         
-    url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/activeCalls'
+    # FIXED: Added /createManualAgentCall to the endpoint URL
+    url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/activeCalls/createManualAgentCall'
     headers = {
         'Authorization': f'Bearer {ringcx_token}', 
         'Content-Type': 'application/json'
