@@ -75,22 +75,23 @@ def download_template():
         dv_tz.add("K2:K1000") 
         
         schema_validations = {
-            "E": '"Enabled,Disabled"', "M": '"Default,Custom,Off"',
-            "N": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
-            "O": '"Default,Ring tones,Acoustic,Beautiful,Corporate,Custom,Off"',
-            "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-            "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default"',
-            "R": '"Simultaneous,Sequential,Rotating"', 
-            "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
-            "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-            "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
-            "V": '"Allowed,Not Allowed"',
-            "W": '"5,10,15,20,25"', 
-            "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-            "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
-            "AB": '"Default,Custom,Off"',
-            "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-            "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+                "E": '"Enabled,Disabled"', 
+                "M": '"Default,Custom,Off"',
+                "N": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
+                "O": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
+                "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
+                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
+                "R": '"Simultaneous,Sequential,Rotating"', 
+                "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
+                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
+                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
+                "V": '"Allowed,Not Allowed"',
+                "W": '"5,10,15,20,25"', 
+                "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
+                "AB": '"Default,Custom,Off"',
+                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
+                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
         }
 
         for col_letter, formula_string in schema_validations.items():
