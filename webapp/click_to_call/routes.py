@@ -40,25 +40,28 @@ def dial_number():
     if not rex_email:
         return jsonify({'error': f"Extension {agent_ext} does not have an email address configured."}), 400
 
-    # 2. Query RingCX Agents list to find the matching username
-    agents_url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/agents'
+    # 2. Query RingCX Users list to find the matching username (FIXED: changed /agents to /users)
+    users_url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/users'
     headers = {
         'Authorization': f'Bearer {ringcx_token}', 
         'Accept': 'application/json'
     }
     
     try:
-        agents_resp = requests.get(agents_url, headers=headers)
-        agents_resp.raise_for_status()
-        agents_list = agents_resp.json()
-    except Exception as e:
-        return jsonify({'error': f"Failed to fetch RingCX agents: {str(e)}"}), 500
+        users_resp = requests.get(users_url, headers=headers)
+        users_resp.raise_for_status()
         
-    # Match the agent by email to extract the exact username
+        # Engage Voice can sometimes wrap arrays or return them directly depending on the version
+        resp_json = users_resp.json()
+        users_list = resp_json if isinstance(resp_json, list) else resp_json.get('users', [])
+    except Exception as e:
+        return jsonify({'error': f"Failed to fetch RingCX users: {str(e)}"}), 500
+        
+    # Match the user by email to extract their exact RingCX username
     rcx_username = None
-    for agent in agents_list:
-        if agent.get('email', '').lower() == rex_email.lower():
-            rcx_username = agent.get('username')
+    for user in users_list:
+        if user.get('email', '').lower() == rex_email.lower():
+            rcx_username = user.get('username')
             break
             
     if not rcx_username:
