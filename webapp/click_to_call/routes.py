@@ -14,34 +14,38 @@ click_to_call_bp = Blueprint(
 def dial_number():
     """Triggers a 2-legged RingCX outbound call."""
     data = request.get_json()
+    
     destination = data.get('destination')
+    username = data.get('username')
+    caller_id = data.get('callerId')
     ring_duration = data.get('ringDuration', 30)
     
-    # The agent's RingCX username is typically their RingEX email (from SSO)
-    username = session.get('user_email', '')
-    
+    # We still need the RingCX session token to make Engage Voice API calls
     ringcx_token = session.get('ringcx_access_token')
     account_id = session.get('ringcx_account_id')
     
     if not ringcx_token or not account_id:
-        return jsonify({'error': 'Not connected to RingCX. Please connect first.'}), 401
+        return jsonify({'error': 'Not connected to RingCX. Please click Connect to RingCX first.'}), 401
         
-    if not destination:
-        return jsonify({'error': 'Destination phone number is required.'}), 400
+    if not destination or not username:
+        return jsonify({'error': 'Destination phone number and Agent Username are required.'}), 400
         
     url = f'https://engage.ringcentral.com/voice/api/v1/admin/accounts/{account_id}/activeCalls'
     headers = {
         'Authorization': f'Bearer {ringcx_token}', 
         'Content-Type': 'application/json'
     }
+    
     params = {
         'username': username,
         'destination': destination,
         'ringDuration': ring_duration
     }
     
+    if caller_id:
+        params['callerId'] = caller_id
+    
     try:
-        # Using requests directly as this hits engage.ringcentral.com, not platform.ringcentral.com
         resp = requests.post(url, headers=headers, params=params)
         if not resp.ok:
             return jsonify({'error': f"RingCX API Error: {resp.text}"}), resp.status_code
