@@ -39,4 +39,114 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/click_to_call.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const connectBtn = document.getElementById('c2c-connect-btn');
+    const disconnectBtn = document.getElementById('c2c-disconnect-btn');
+    const statusBadge = document.getElementById('c2c-status-badge');
+    const dialerCard = document.getElementById('c2c-dialer-card');
+    const dialBtn = document.getElementById('c2c-dial-btn');
+    const destinationInput = document.getElementById('c2c-destination');
+
+    if (!connectBtn) return;
+
+    // Check existing session status on load
+    checkRingCXStatus();
+
+    async function checkRingCXStatus() {
+        try {
+            const response = await fetch('/api/audio_streaming/ringcx-status');
+            const data = await response.json();
+            if (data.connected) {
+                setConnectedState();
+            } else {
+                setDisconnectedState();
+            }
+        } catch {
+            setDisconnectedState();
+        }
+    }
+
+    connectBtn.addEventListener('click', async () => {
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting...';
+        try {
+            // Re-using the audio_streaming module's auth endpoint to keep code DRY
+            const response = await fetch('/api/audio_streaming/ringcx-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setConnectedState();
+                showMessage('Connected to RingCX successfully.');
+            } else if (response.status === 401) {
+                showMessage('Please connect to RingCentral first via the RC Auth tab.', true);
+                setDisconnectedState();
+            } else {
+                showMessage(data.error || 'Failed to connect to RingCX.', true);
+                setDisconnectedState();
+            }
+        } catch {
+            showMessage('Network error connecting to RingCX.', true);
+            setDisconnectedState();
+        }
+    });
+
+    disconnectBtn.addEventListener('click', async () => {
+        try { await fetch('/api/audio_streaming/ringcx-disconnect', { method: 'POST' }); } catch {}
+        setDisconnectedState();
+        showMessage('Disconnected from RingCX.');
+    });
+
+    dialBtn.addEventListener('click', async () => {
+        const destination = destinationInput.value.trim();
+        if (!destination) {
+            showMessage('Please enter a destination number.', true);
+            return;
+        }
+
+        dialBtn.disabled = true;
+        dialBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Initiating...';
+
+        try {
+            const response = await fetch('/api/click_to_call/dial', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ destination })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                showMessage(`Call initiated successfully to ${destination}. Your softphone should be ringing.`);
+                destinationInput.value = '';
+            } else {
+                showMessage(data.error || 'Failed to initiate call.', true);
+            }
+        } catch (err) {
+            showMessage('Network error initiating call.', true);
+        } finally {
+            dialBtn.disabled = false;
+            dialBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg> Initiate Call';
+        }
+    });
+
+    function setConnectedState() {
+        statusBadge.textContent = 'Connected';
+        statusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
+        connectBtn.classList.add('hidden');
+        disconnectBtn.classList.remove('hidden');
+        dialerCard.classList.remove('hidden');
+    }
+
+    function setDisconnectedState() {
+        statusBadge.textContent = 'Disconnected';
+        statusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600';
+        connectBtn.disabled = false;
+        connectBtn.textContent = 'Connect to RingCX';
+        connectBtn.classList.remove('hidden');
+        disconnectBtn.classList.add('hidden');
+        dialerCard.classList.add('hidden');
+    }
+});
+</script>
