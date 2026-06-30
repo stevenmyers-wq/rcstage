@@ -2,20 +2,18 @@
     
     <div class="mb-4 border-b border-gray-200 pb-4">
         <h2 class="text-3xl font-bold text-slate-800 mb-1">AIR (AI Receptionist) Manager</h2>
-        <p class="text-slate-500 text-sm">Audit, Create, or Modify AI Receptionists in bulk using Excel.</p>
+        <p class="text-slate-500 text-sm">Audit, Create, or Modify AI Receptionists (and their Skills) in bulk using Excel.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit AIR</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive Excel report of ALL AI Receptionists on the account. Use this file to modify existing agents.
+                Generate a comprehensive Excel report of ALL AI Receptionists and their active Skills (Greetings, KB, Routing).
             </p>
             <button onclick="auditAir()" id="airAuditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                 Generate Report
@@ -24,9 +22,7 @@
 
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Create AIR</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
@@ -45,13 +41,11 @@
 
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Update AIR</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Use the "Audit" report, modify properties like Prompts or Company Descriptions, and upload here to sync changes.
+                Use the "Audit" report, modify properties like Prompts or Transfer Logic, and upload here to sync changes.
             </p>
             <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">
                 Upload to Update
@@ -89,7 +83,7 @@
         btn.disabled = true;
         btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
         
-        logAir("Starting Audit... fetching data from RingCentral.");
+        logAir("Starting Audit... fetching data and nested Skills from RingCentral.");
 
         try {
             const res = await fetch('/api/air/audit');
@@ -98,7 +92,6 @@
                 throw new Error(err.error || "Audit failed");
             }
             
-            // Trigger Download
             const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -124,7 +117,7 @@
         const formData = new FormData();
         formData.append('file', file);
         
-        logAir(`Uploading ${file.name}... parsing rules.`);
+        logAir(`Uploading ${file.name}... parsing rules and skills.`);
         
         try {
             const res = await fetch('/api/air/upload', { method: 'POST', body: formData });
@@ -142,7 +135,6 @@
             logAir(`Upload Failed: ${e.message}`, 'error');
         }
         
-        // Reset input so same file can be selected again
         input.value = '';
     }
 </script>
