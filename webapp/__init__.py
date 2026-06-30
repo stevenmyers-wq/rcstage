@@ -121,5 +121,9 @@ def create_app():
         # Click to Call Demo routes
         from .click_to_call import routes as click_to_call_routes
         app.register_blueprint(click_to_call_routes.click_to_call_bp)
+        
+        # AIR Management routes
+        from .air_management import routes as air_management_routes
+        app.register_blueprint(air_management_routes.air_management_bp)
 
     return app
