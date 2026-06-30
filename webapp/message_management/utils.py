@@ -338,7 +338,7 @@ def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and cl
     tts_prompt = f"Voice instruction: You MUST speak with a clear Australian English accent and a {style} style. Do NOT include any breathing sounds, sighs, gasps, or audio artefacts. Deliver the text naturally and smoothly.\nText to speak: {text}"
     
     response = client.models.generate_content(
-        model='gemini-2.5-flash-preview-tts',
+        model='gemini-3.1-flash-tts-preview',
         contents=tts_prompt,
         config=types.GenerateContentConfig(
             response_modalities=["AUDIO"],
