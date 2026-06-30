@@ -73,4 +73,76 @@
 
 </div>
 
-<script src="{{ url_for('static', filename='js/air_management.js') }}"></script>
+<script>
+    function logAir(msg, type='info') {
+        const box = document.getElementById('airLogs');
+        if (!box) return;
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function auditAir() {
+        const btn = document.getElementById('airAuditBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+        
+        logAir("Starting Audit... fetching data from RingCentral.");
+
+        try {
+            const res = await fetch('/api/air/audit');
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Audit failed");
+            }
+            
+            // Trigger Download
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `AIR_Audit_${new Date().toISOString().slice(0,10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            logAir("Audit Complete! Downloading file...", "success");
+        } catch (e) {
+            logAir(`Audit Failed: ${e.message}`, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Generate Report";
+        }
+    }
+
+    async function uploadAir(input) {
+        if (!input.files || !input.files[0]) return;
+        
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        logAir(`Uploading ${file.name}... parsing rules.`);
+        
+        try {
+            const res = await fetch('/api/air/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if (data.logs) {
+                data.logs.forEach(l => {
+                    const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
+                    logAir(l, type);
+                });
+            } else if (data.error) {
+                logAir(data.error, 'error');
+            }
+        } catch (e) {
+            logAir(`Upload Failed: ${e.message}`, 'error');
+        }
+        
+        // Reset input so same file can be selected again
+        input.value = '';
+    }
+</script>
