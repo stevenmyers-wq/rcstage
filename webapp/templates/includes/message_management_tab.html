@@ -958,9 +958,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Generate meaningful filename based on endpoint
             const endpointObj = allEndpoints.find(e => String(e.id) === String(extId));
-            const endpointName = endpointObj && endpointObj.name ? endpointObj.name.replace(/[^a-zA-Z0-9_\-]/g, '_') : extId;
+            let endpointName = endpointObj && endpointObj.name ? endpointObj.name : extId;
+            endpointName = endpointName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
             const cleanType = greetingType.split(':').pop();
-            const fileName = `AI_${cleanType}_${endpointName}.wav`;
+            const fileName = `${endpointName}_${cleanType}.wav`;
             
             const file = new File([audioBlob], fileName, { type: 'audio/wav' });
             const formData = new FormData();
