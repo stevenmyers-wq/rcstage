@@ -1,12 +1,12 @@
 import pandas as pd
 from webapp.rc_api import rc_api_call
 
-def fetch_all_assistants():
+def fetch_all_assistants(token=None):
     """Fetch all AIR instances from the account."""
     assistants = []
     page = 1
     while True:
-        resp = rc_api_call(f'/ai/iva/v1/accounts/~/assistants?perPage=100&page={page}', raise_error=False)
+        resp = rc_api_call(f'/ai/iva/v1/accounts/~/assistants?perPage=100&page={page}', token=token, raise_error=False)
         if not resp or 'records' not in resp:
             break
         assistants.extend(resp['records'])
@@ -15,11 +15,11 @@ def fetch_all_assistants():
         page += 1
     return assistants
 
-def fetch_skill_details(skill_id):
+def fetch_skill_details(skill_id, token=None):
     """Fetch the specific details of a skill."""
-    return rc_api_call(f'/ai/iva/v1/accounts/~/skills/{skill_id}', raise_error=False)
+    return rc_api_call(f'/ai/iva/v1/accounts/~/skills/{skill_id}', token=token, raise_error=False)
 
-def parse_assistant_to_row(assistant):
+def parse_assistant_to_row(assistant, token=None):
     """Flatten an Assistant object and its active Skills into an Excel row."""
     sys_settings = assistant.get('systemSettings', {})
     fallback = assistant.get('fallbackExtension', {})
@@ -63,9 +63,9 @@ def parse_assistant_to_row(assistant):
         row[f'Context {i} Disabled (Yes/No)'] = ''
 
     # Fetch and map active skills
-    if 'skills' in assistant:
+    if 'skills' in assistant and token:
         for s_stub in assistant['skills']:
-            skill_detail = fetch_skill_details(s_stub['id'])
+            skill_detail = fetch_skill_details(s_stub['id'], token)
             if not skill_detail or 'skill' not in skill_detail: continue
             
             skill = skill_detail['skill']
@@ -112,6 +112,13 @@ def parse_assistant_to_row(assistant):
 
     return row
 
+def safe_str(val, default=''):
+    """Safely extracts string values from Pandas, filtering out NaN artifacts."""
+    if pd.isna(val): return default
+    s = str(val).strip()
+    if s.lower() == 'nan': return default
+    return s
+
 def clean_ext_num(val):
     if pd.isna(val): return ""
     s = str(val).strip()
@@ -121,23 +128,30 @@ def clean_ext_num(val):
 
 def build_assistant_payload(row):
     """Build the core API payload for the base Assistant."""
+    
+    sys_type = safe_str(row.get('System Type'), 'PBX_VOICE')
+    if not sys_type: sys_type = 'PBX_VOICE'
+
+    voice_name = safe_str(row.get('Voice Name'), 'Kore')
+    if not voice_name: voice_name = 'Kore'
+
     payload = {
-        "name": str(row.get('Name', '')).strip(),
+        "name": safe_str(row.get('Name')),
         "extensionNumber": clean_ext_num(row.get('Extension Number')),
-        "companyDescription": str(row.get('Company Description', '')).strip(),
+        "companyDescription": safe_str(row.get('Company Description')),
         "systemSettings": {
-            "systemType": str(row.get('System Type', 'PBX_VOICE')).strip(),
-            "voiceName": str(row.get('Voice Name', 'Kore')).strip()
+            "systemType": sys_type,
+            "voiceName": voice_name
         }
     }
     
-    langs = str(row.get('Languages', '')).strip()
-    if langs and langs.lower() != 'nan':
+    langs = safe_str(row.get('Languages'))
+    if langs:
         payload["languages"] = [l.strip() for l in langs.split(',') if l.strip()]
 
     def add_str(field, key):
-        val = str(row.get(field, '')).strip()
-        if val and val.lower() != 'nan': payload[key] = val
+        val = safe_str(row.get(field))
+        if val: payload[key] = val
 
     add_str('Site ID', 'siteId')
     add_str('Prompt Template', 'promptTemplate')
@@ -147,20 +161,25 @@ def build_assistant_payload(row):
     if fallback_id:
         payload["fallbackExtension"] = {"id": fallback_id}
         
-    bh_act = str(row.get('Idle Action (BH)', '')).strip()
+    bh_act = safe_str(row.get('Idle Action (BH)'))
     bh_tgt = clean_ext_num(row.get('Idle Target (BH)'))
-    ah_act = str(row.get('Idle Action (AH)', '')).strip()
+    ah_act = safe_str(row.get('Idle Action (AH)'))
     ah_tgt = clean_ext_num(row.get('Idle Target (AH)'))
 
     if bh_act or ah_act:
         idle_rule = {}
+        
         bh_final = bh_act if bh_act else 'Disconnect'
         idle_rule['businessHours'] = {'actionType': bh_final}
-        if bh_final == 'Extension' and bh_tgt: idle_rule['businessHours']['extension'] = {'id': bh_tgt}
+        if bh_final == 'Extension':
+            if not bh_tgt: raise ValueError("Idle Target (BH) is required when Idle Action is 'Extension'")
+            idle_rule['businessHours']['extension'] = {'id': bh_tgt}
             
         ah_final = ah_act if ah_act else 'Disconnect'
         idle_rule['closedHours'] = {'actionType': ah_final}
-        if ah_final == 'Extension' and ah_tgt: idle_rule['closedHours']['extension'] = {'id': ah_tgt}
+        if ah_final == 'Extension':
+            if not ah_tgt: raise ValueError("Idle Target (AH) is required when Idle Action is 'Extension'")
+            idle_rule['closedHours']['extension'] = {'id': ah_tgt}
             
         payload['idleCallerRule'] = idle_rule
         
@@ -171,17 +190,17 @@ def build_skills_payloads(row):
     skills = {}
 
     # 1. GREETING
-    bh_greet = str(row.get('Greeting (BH Text)', '')).strip()
-    ah_greet = str(row.get('Greeting (AH Text)', '')).strip()
-    if (bh_greet and bh_greet.lower() != 'nan') or (ah_greet and ah_greet.lower() != 'nan'):
+    bh_greet = safe_str(row.get('Greeting (BH Text)'))
+    ah_greet = safe_str(row.get('Greeting (AH Text)'))
+    if bh_greet or ah_greet:
         greet_payload = {"skillType": "GREETING"}
-        if bh_greet and bh_greet.lower() != 'nan': greet_payload["businessHours"] = {"text": bh_greet}
-        if ah_greet and ah_greet.lower() != 'nan': greet_payload["closedHours"] = {"text": ah_greet}
+        if bh_greet: greet_payload["businessHours"] = {"text": bh_greet}
+        if ah_greet: greet_payload["closedHours"] = {"text": ah_greet}
         skills["GREETING"] = greet_payload
 
     # 2. LOCATION & BUSINESS HOURS
-    bh_str = str(row.get('Business Hours Schedule', '')).strip()
-    if bh_str and bh_str.lower() != 'nan' and bh_str != 'Configured (Requires Manual Update if Changing)':
+    bh_str = safe_str(row.get('Business Hours Schedule'))
+    if bh_str and bh_str != 'Configured (Requires Manual Update if Changing)':
         from webapp.cq_hours.utils import parse_intuitive_hours
         try:
             weekly_ranges = parse_intuitive_hours(bh_str)
@@ -198,20 +217,20 @@ def build_skills_payloads(row):
             pass # Ignore malformed hours
 
     # 3. BOOKING
-    booking_link = str(row.get('Booking Link', '')).strip()
-    if booking_link and booking_link.lower() != 'nan':
+    booking_link = safe_str(row.get('Booking Link'))
+    if booking_link:
         skills["BOOKING"] = {
             "skillType": "BOOKING",
             "link": booking_link
         }
 
     # 4. CONTACT DIRECTORY
-    sync_dir = str(row.get('Sync Directory (Yes/No)', '')).strip().lower()
-    restricted_exts = str(row.get('Directory Restricted Ext IDs', '')).strip()
-    if (sync_dir and sync_dir != 'nan') or (restricted_exts and restricted_exts != 'nan'):
+    sync_dir = safe_str(row.get('Sync Directory (Yes/No)')).lower()
+    restricted_exts = safe_str(row.get('Directory Restricted Ext IDs'))
+    if sync_dir or restricted_exts:
         cd_payload = {"skillType": "CONTACT_DIRECTORY"}
         cd_payload["syncDialByNameDirectory"] = (sync_dir in ['yes', 'y', 'true', '1'])
-        if restricted_exts and restricted_exts != 'nan':
+        if restricted_exts:
             ids = [x.strip() for x in restricted_exts.split(',') if x.strip()]
             cd_payload["restrictedExtensions"] = [{"id": x} for x in ids]
         skills["CONTACT_DIRECTORY"] = cd_payload
@@ -219,16 +238,16 @@ def build_skills_payloads(row):
     # 5. QA (FAQs)
     corpus = []
     for i in range(1, 4):
-        q = str(row.get(f'FAQ {i} Question', '')).strip()
-        a = str(row.get(f'FAQ {i} Answer', '')).strip()
-        if q and q.lower() != 'nan' and a and a.lower() != 'nan':
+        q = safe_str(row.get(f'FAQ {i} Question'))
+        a = safe_str(row.get(f'FAQ {i} Answer'))
+        if q and a:
             corpus.append({"question": q, "answer": a, "origin": "MANUAL"})
     if corpus:
         skills["QA"] = {"skillType": "QA", "corpus": corpus}
 
     # 6. KNOWLEDGE BASE
-    kb_str = str(row.get('Knowledge Base IDs', '')).strip()
-    if kb_str and kb_str.lower() != 'nan':
+    kb_str = safe_str(row.get('Knowledge Base IDs'))
+    if kb_str:
         contexts = [{"contextId": k.strip()} for k in kb_str.split(',') if k.strip()]
         if contexts:
             skills["KNOWLEDGE_BASE"] = {"skillType": "KNOWLEDGE_BASE", "contexts": contexts}
@@ -236,11 +255,11 @@ def build_skills_payloads(row):
     # 7. CALL ROUTING (Transfer by Context)
     rules = []
     for i in range(1, 11): 
-        rule_text = str(row.get(f'Context {i} Rule', '')).strip()
+        rule_text = safe_str(row.get(f'Context {i} Rule'))
         target = clean_ext_num(row.get(f'Context {i} Target'))
-        is_disabled = str(row.get(f'Context {i} Disabled (Yes/No)', '')).strip().lower() in ['yes', 'y', 'true', '1']
+        is_disabled = safe_str(row.get(f'Context {i} Disabled (Yes/No)')).lower() in ['yes', 'y', 'true', '1']
         
-        if rule_text and rule_text.lower() != 'nan' and target and target.lower() != 'nan':
+        if rule_text and target:
             rule_obj = {
                 "rule": rule_text, 
                 "disabled": is_disabled 
