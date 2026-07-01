@@ -13,9 +13,9 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit AIR</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive Excel report of ALL AI Receptionists and their active Skills (Greetings, KB, Routing).
+                Generate a comprehensive Excel report of ALL AI Receptionists and their active Skills (Greetings, KB, Routing Contexts).
             </p>
-            <button onclick="auditAir()" id="airAuditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+            <button id="airAuditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                 Generate Report
             </button>
         </div>
@@ -34,7 +34,7 @@
                 </a>
                 <label class="block w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors cursor-pointer">
                     2. Upload & Create
-                    <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadAir(this)">
+                    <input type="file" id="airCreateUpload" class="hidden" accept=".xlsx,.csv">
                 </label>
             </div>
         </div>
@@ -45,11 +45,11 @@
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Update AIR</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Use the "Audit" report, modify properties like Prompts or Transfer Logic, and upload here to sync changes.
+                Use the "Audit" report, modify properties like Transfer Logic or Context Targets, and upload here to sync changes.
             </p>
             <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">
                 Upload to Update
-                <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadAir(this)">
+                <input type="file" id="airUpdateUpload" class="hidden" accept=".xlsx,.csv">
             </label>
         </div>
 
@@ -58,7 +58,7 @@
     <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
         <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
             <span class="font-mono font-bold text-sm">PROVISIONING LOGS</span>
-            <button onclick="document.getElementById('airLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+            <button id="airClearLogsBtn" class="text-xs text-gray-400 hover:text-white">Clear</button>
         </div>
         <div id="airLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
             Ready for action...
@@ -67,74 +67,4 @@
 
 </div>
 
-<script>
-    function logAir(msg, type='info') {
-        const box = document.getElementById('airLogs');
-        if (!box) return;
-        const entry = document.createElement('div');
-        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
-        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        box.appendChild(entry);
-        box.scrollTop = box.scrollHeight;
-    }
-
-    async function auditAir() {
-        const btn = document.getElementById('airAuditBtn');
-        btn.disabled = true;
-        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
-        
-        logAir("Starting Audit... fetching data and nested Skills from RingCentral.");
-
-        try {
-            const res = await fetch('/api/air/audit');
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || "Audit failed");
-            }
-            
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `AIR_Audit_${new Date().toISOString().slice(0,10)}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            
-            logAir("Audit Complete! Downloading file...", "success");
-        } catch (e) {
-            logAir(`Audit Failed: ${e.message}`, "error");
-        } finally {
-            btn.disabled = false;
-            btn.innerText = "Generate Report";
-        }
-    }
-
-    async function uploadAir(input) {
-        if (!input.files || !input.files[0]) return;
-        
-        const file = input.files[0];
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        logAir(`Uploading ${file.name}... parsing rules and skills.`);
-        
-        try {
-            const res = await fetch('/api/air/upload', { method: 'POST', body: formData });
-            const data = await res.json();
-            
-            if (data.logs) {
-                data.logs.forEach(l => {
-                    const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
-                    logAir(l, type);
-                });
-            } else if (data.error) {
-                logAir(data.error, 'error');
-            }
-        } catch (e) {
-            logAir(`Upload Failed: ${e.message}`, 'error');
-        }
-        
-        input.value = '';
-    }
-</script>
+<script src="{{ url_for('static', filename='js/air_management.js') }}"></script>
