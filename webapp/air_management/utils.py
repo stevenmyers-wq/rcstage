@@ -1,13 +1,12 @@
-# webapp/air_management/utils.py
 import pandas as pd
 from webapp.rc_api import rc_api_call
 
-def fetch_all_assistants(token=None):
+def fetch_all_assistants():
     """Fetch all AIR instances from the account."""
     assistants = []
     page = 1
     while True:
-        resp = rc_api_call(f'/ai/iva/v1/accounts/~/assistants?perPage=100&page={page}', token=token, raise_error=False)
+        resp = rc_api_call(f'/ai/iva/v1/accounts/~/assistants?perPage=100&page={page}', raise_error=False)
         if not resp or 'records' not in resp:
             break
         assistants.extend(resp['records'])
@@ -16,11 +15,11 @@ def fetch_all_assistants(token=None):
         page += 1
     return assistants
 
-def fetch_skill_details(skill_id, token=None):
+def fetch_skill_details(skill_id):
     """Fetch the specific details of a skill."""
-    return rc_api_call(f'/ai/iva/v1/accounts/~/skills/{skill_id}', token=token, raise_error=False)
+    return rc_api_call(f'/ai/iva/v1/accounts/~/skills/{skill_id}', raise_error=False)
 
-def parse_assistant_to_row(assistant, token=None):
+def parse_assistant_to_row(assistant):
     """Flatten an Assistant object and its active Skills into an Excel row."""
     sys_settings = assistant.get('systemSettings', {})
     fallback = assistant.get('fallbackExtension', {})
@@ -47,16 +46,26 @@ def parse_assistant_to_row(assistant, token=None):
         'Idle Target (AH)': ah_action.get('extension', {}).get('id', ''),
         'Greeting (BH Text)': '',
         'Greeting (AH Text)': '',
+        'Business Hours Schedule': '',
+        'Booking Link': '',
+        'Sync Directory (Yes/No)': '',
+        'Directory Restricted Ext IDs': '',
         'Knowledge Base IDs': '',
-        'Routing Rule 1': '', 'Routing Target 1': '',
-        'Routing Rule 2': '', 'Routing Target 2': '',
-        'Routing Rule 3': '', 'Routing Target 3': ''
+        'FAQ 1 Question': '', 'FAQ 1 Answer': '',
+        'FAQ 2 Question': '', 'FAQ 2 Answer': '',
+        'FAQ 3 Question': '', 'FAQ 3 Answer': ''
     }
 
+    # Initialize columns for up to 10 context rules
+    for i in range(1, 11):
+        row[f'Context {i} Rule'] = ''
+        row[f'Context {i} Target'] = ''
+        row[f'Context {i} Disabled (Yes/No)'] = ''
+
     # Fetch and map active skills
-    if 'skills' in assistant and token:
+    if 'skills' in assistant:
         for s_stub in assistant['skills']:
-            skill_detail = fetch_skill_details(s_stub['id'], token)
+            skill_detail = fetch_skill_details(s_stub['id'])
             if not skill_detail or 'skill' not in skill_detail: continue
             
             skill = skill_detail['skill']
@@ -66,18 +75,40 @@ def parse_assistant_to_row(assistant, token=None):
                 row['Greeting (BH Text)'] = skill.get('businessHours', {}).get('text', '')
                 row['Greeting (AH Text)'] = skill.get('closedHours', {}).get('text', '')
             
+            elif stype == 'LOCATION_AND_BH':
+                row['Business Hours Schedule'] = 'Configured (Requires Manual Update if Changing)'
+                
+            elif stype == 'BOOKING':
+                row['Booking Link'] = skill.get('link', '')
+                
+            elif stype == 'CONTACT_DIRECTORY':
+                row['Sync Directory (Yes/No)'] = 'Yes' if skill.get('syncDialByNameDirectory') else 'No'
+                restricted = skill.get('restrictedExtensions', [])
+                row['Directory Restricted Ext IDs'] = ', '.join([str(e.get('id', '')) for e in restricted])
+                
+            elif stype == 'QA':
+                corpus = skill.get('corpus', [])
+                for i, qa in enumerate(corpus[:3]): 
+                    row[f'FAQ {i+1} Question'] = qa.get('question', '')
+                    row[f'FAQ {i+1} Answer'] = qa.get('answer', '')
+
             elif stype == 'KNOWLEDGE_BASE':
                 contexts = skill.get('contexts', [])
                 row['Knowledge Base IDs'] = ', '.join([c.get('contextId', '') for c in contexts])
                 
             elif stype == 'CALL_ROUTING':
                 rules = skill.get('rules', [])
-                for i, r in enumerate(rules[:3]): # Map up to 3 routing rules
-                    row[f'Routing Rule {i+1}'] = r.get('rule', '')
+                for i, r in enumerate(rules[:10]): 
+                    row[f'Context {i+1} Rule'] = r.get('rule', '')
+                    row[f'Context {i+1} Disabled (Yes/No)'] = 'Yes' if r.get('disabled') else 'No'
+                    
                     target = r.get('externalNumber', '')
                     if not target and r.get('extension'):
                         target = r['extension'].get('id', '')
-                    row[f'Routing Target {i+1}'] = target
+                    if not target and r.get('contactCenterNumber'):
+                        target = r['contactCenterNumber'].get('phoneNumber', '')
+                        
+                    row[f'Context {i+1} Target'] = target
 
     return row
 
@@ -116,7 +147,6 @@ def build_assistant_payload(row):
     if fallback_id:
         payload["fallbackExtension"] = {"id": fallback_id}
         
-    # Idle Caller Rules
     bh_act = str(row.get('Idle Action (BH)', '')).strip()
     bh_tgt = clean_ext_num(row.get('Idle Target (BH)'))
     ah_act = str(row.get('Idle Action (AH)', '')).strip()
@@ -149,20 +179,72 @@ def build_skills_payloads(row):
         if ah_greet and ah_greet.lower() != 'nan': greet_payload["closedHours"] = {"text": ah_greet}
         skills["GREETING"] = greet_payload
 
-    # 2. KNOWLEDGE BASE
+    # 2. LOCATION & BUSINESS HOURS
+    bh_str = str(row.get('Business Hours Schedule', '')).strip()
+    if bh_str and bh_str.lower() != 'nan' and bh_str != 'Configured (Requires Manual Update if Changing)':
+        from webapp.cq_hours.utils import parse_intuitive_hours
+        try:
+            weekly_ranges = parse_intuitive_hours(bh_str)
+            if weekly_ranges != "24/7":
+                skills["LOCATION_AND_BH"] = {
+                    "skillType": "LOCATION_AND_BH",
+                    "customLocations": [{
+                        "disabled": False,
+                        "schedule": {"weeklyRanges": weekly_ranges},
+                        "location": {"businessAddress": {}} 
+                    }]
+                }
+        except Exception:
+            pass # Ignore malformed hours
+
+    # 3. BOOKING
+    booking_link = str(row.get('Booking Link', '')).strip()
+    if booking_link and booking_link.lower() != 'nan':
+        skills["BOOKING"] = {
+            "skillType": "BOOKING",
+            "link": booking_link
+        }
+
+    # 4. CONTACT DIRECTORY
+    sync_dir = str(row.get('Sync Directory (Yes/No)', '')).strip().lower()
+    restricted_exts = str(row.get('Directory Restricted Ext IDs', '')).strip()
+    if (sync_dir and sync_dir != 'nan') or (restricted_exts and restricted_exts != 'nan'):
+        cd_payload = {"skillType": "CONTACT_DIRECTORY"}
+        cd_payload["syncDialByNameDirectory"] = (sync_dir in ['yes', 'y', 'true', '1'])
+        if restricted_exts and restricted_exts != 'nan':
+            ids = [x.strip() for x in restricted_exts.split(',') if x.strip()]
+            cd_payload["restrictedExtensions"] = [{"id": x} for x in ids]
+        skills["CONTACT_DIRECTORY"] = cd_payload
+
+    # 5. QA (FAQs)
+    corpus = []
+    for i in range(1, 4):
+        q = str(row.get(f'FAQ {i} Question', '')).strip()
+        a = str(row.get(f'FAQ {i} Answer', '')).strip()
+        if q and q.lower() != 'nan' and a and a.lower() != 'nan':
+            corpus.append({"question": q, "answer": a, "origin": "MANUAL"})
+    if corpus:
+        skills["QA"] = {"skillType": "QA", "corpus": corpus}
+
+    # 6. KNOWLEDGE BASE
     kb_str = str(row.get('Knowledge Base IDs', '')).strip()
     if kb_str and kb_str.lower() != 'nan':
         contexts = [{"contextId": k.strip()} for k in kb_str.split(',') if k.strip()]
         if contexts:
             skills["KNOWLEDGE_BASE"] = {"skillType": "KNOWLEDGE_BASE", "contexts": contexts}
 
-    # 3. CALL ROUTING (Transfer by Context)
+    # 7. CALL ROUTING (Transfer by Context)
     rules = []
-    for i in range(1, 4):
-        rule_text = str(row.get(f'Routing Rule {i}', '')).strip()
-        target = clean_ext_num(row.get(f'Routing Target {i}'))
+    for i in range(1, 11): 
+        rule_text = str(row.get(f'Context {i} Rule', '')).strip()
+        target = clean_ext_num(row.get(f'Context {i} Target'))
+        is_disabled = str(row.get(f'Context {i} Disabled (Yes/No)', '')).strip().lower() in ['yes', 'y', 'true', '1']
+        
         if rule_text and rule_text.lower() != 'nan' and target and target.lower() != 'nan':
-            rule_obj = {"rule": rule_text, "disabled": False}
+            rule_obj = {
+                "rule": rule_text, 
+                "disabled": is_disabled 
+            }
             if target.startswith('+') or len(target) >= 10:
                 rule_obj["externalNumber"] = target
             else:
