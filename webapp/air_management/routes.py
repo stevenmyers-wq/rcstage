@@ -2,7 +2,7 @@ import io
 import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
-from webapp.auth_utils import require_rc_token
+from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
 from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads
@@ -13,13 +13,14 @@ air_management_bp = Blueprint('air_management_bp', __name__, url_prefix='/api/ai
 @require_rc_token
 @track_usage('AIR Management - Audit')
 def audit_air():
+    token = get_rc_access_token()
     try:
-        assistants = fetch_all_assistants()
+        assistants = fetch_all_assistants(token)
         
         if not assistants:
             audit_data = [{'AIR ID (Leave blank for new)': 'No Data', 'Name': 'No AI Receptionists Found'}]
         else:
-            audit_data = [parse_assistant_to_row(a) for a in assistants]
+            audit_data = [parse_assistant_to_row(a, token) for a in assistants]
 
         df = pd.DataFrame(audit_data)
         
@@ -40,7 +41,6 @@ def audit_air():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @air_management_bp.route('/template', methods=['GET'])
 @require_rc_token
@@ -68,12 +68,16 @@ def download_template():
         'AIR ID (Leave blank for new)': '',
         'Name': 'New AI Receptionist (Example)',
         'Extension Number': '8001',
-        'Company Description': 'We are a dental clinic.',
+        'Company Description': 'We are a dental clinic. We help patients book appointments.',
         'System Type': 'PBX_VOICE',
         'Voice Name': 'Kore',
         'Languages': 'en-AU',
         'Fallback Extension ID': '1001',
-        'Greeting (BH Text)': 'Thanks for calling. How can I help?',
+        'Greeting (BH Text)': 'Thanks for calling Acme Corp. How can I help?',
+        'Business Hours Schedule': '9:00AM-5:00PM Mon-Fri',
+        'Sync Directory (Yes/No)': 'Yes',
+        'FAQ 1 Question': 'Where are you located?',
+        'FAQ 1 Answer': 'We are located at 123 George Street, Sydney.',
         'Context 1 Rule': 'If the caller asks for the billing department or has a question about an invoice.',
         'Context 1 Target': '1002',
         'Context 1 Disabled (Yes/No)': 'No',
@@ -82,7 +86,6 @@ def download_template():
         'Context 2 Disabled (Yes/No)': 'No'
     }
     
-    # Fill remaining columns with empty strings
     for col in columns:
         if col not in example_row:
             example_row[col] = ''
@@ -120,6 +123,7 @@ def download_template():
 @require_rc_token
 @track_usage('AIR Management - Upload')
 def upload_air():
+    token = get_rc_access_token()
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     
     file = request.files['file']
@@ -132,23 +136,24 @@ def upload_air():
     results = []
     for index, row in df.iterrows():
         name = row.get('Name')
-        if pd.isna(name): continue
+        if pd.isna(name) or str(name).strip().lower() == 'nan': continue
         
         try:
             # 1. Base Assistant Payload
             payload = build_assistant_payload(row)
             air_id = str(row.get('AIR ID (Leave blank for new)', '')).replace('.0', '').strip()
+            if air_id.lower() == 'nan': air_id = ''
             
-            if air_id and air_id.lower() != 'nan':
+            if air_id:
                 if 'fallbackExtension' not in payload:
                     results.append(f"Row {index+2} ({name}): ⚠️ Fallback Extension ID is required to update.")
                     continue
                 url = f"/ai/iva/v1/accounts/~/assistants/{air_id}"
-                rc_api_call(url, method="PUT", json=payload, raise_error=True)
+                rc_api_call(url, method="PUT", json=payload, token=token, raise_error=True)
                 results.append(f"✅ Updated Base AIR: {name}")
             else:
                 url = "/ai/iva/v1/accounts/~/assistants"
-                new_air = rc_api_call(url, method="POST", json=payload, raise_error=True)
+                new_air = rc_api_call(url, method="POST", json=payload, token=token, raise_error=True)
                 air_id = new_air.get('id')
                 results.append(f"✅ Created New Base AIR: {name}")
 
@@ -156,7 +161,7 @@ def upload_air():
             if air_id:
                 skills_to_sync = build_skills_payloads(row)
                 if skills_to_sync:
-                    existing_skills_resp = rc_api_call(f"/ai/iva/v1/accounts/~/assistants/{air_id}/skills", raise_error=False)
+                    existing_skills_resp = rc_api_call(f"/ai/iva/v1/accounts/~/assistants/{air_id}/skills", token=token, raise_error=False)
                     existing_skills = existing_skills_resp.get('records', []) if existing_skills_resp else []
                     
                     skill_map = {}
@@ -167,10 +172,10 @@ def upload_air():
                     for sk_type, sk_payload in skills_to_sync.items():
                         if sk_type in skill_map:
                             skill_id = skill_map[sk_type]
-                            rc_api_call(f"/ai/iva/v1/accounts/~/skills/{skill_id}", method="PUT", json={"disabled": False, "skill": sk_payload}, raise_error=True)
+                            rc_api_call(f"/ai/iva/v1/accounts/~/skills/{skill_id}", method="PUT", json={"disabled": False, "skill": sk_payload}, token=token, raise_error=True)
                             results.append(f"   ↳ Updated Skill: {sk_type}")
                         else:
-                            rc_api_call(f"/ai/iva/v1/accounts/~/skills", method="POST", json={"assistantId": air_id, "skill": sk_payload}, raise_error=True)
+                            rc_api_call(f"/ai/iva/v1/accounts/~/skills", method="POST", json={"assistantId": air_id, "skill": sk_payload}, token=token, raise_error=True)
                             results.append(f"   ↳ Added New Skill: {sk_type}")
 
         except Exception as e:
