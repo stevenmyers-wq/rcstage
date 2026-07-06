@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
-from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads
+from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory
 
 air_management_bp = Blueprint('air_management_bp', __name__, url_prefix='/api/air')
 
@@ -22,14 +22,15 @@ def audit_air():
             audit_data = [{'AIR ID (Leave blank for new)': 'No Data', 'Name': 'No AI Receptionists Found'}]
             df = pd.DataFrame(audit_data)
         else:
-            audit_data = [parse_assistant_to_row(a, token) for a in assistants]
+            dir_map = get_ext_directory(token)
+            audit_data = [parse_assistant_to_row(a, dir_map, token) for a in assistants]
             df = pd.DataFrame(audit_data)
 
             # Sort columns so dynamic FAQ and Contexts group naturally
             base_cols = [
                 'AIR ID (Leave blank for new)', 'Name', 'Extension Number', 
                 'Company Description', 'System Type', 'Voice Name', 'Languages', 
-                'Fallback Extension ID', 'Site ID', 'Website', 'Prompt Template',
+                'Fallback Extension', 'Site ID', 'Website', 'Prompt Template',
                 'Idle Action (BH)', 'Idle Target (BH)', 'Idle Action (AH)', 'Idle Target (AH)',
                 'Greeting (BH Text)', 'Greeting (AH Text)', 'Business Hours Schedule',
                 'Booking Link', 'Sync Directory (Yes/No)', 'Directory Restricted Ext IDs', 
@@ -44,13 +45,10 @@ def audit_air():
                 elif re.match(r'^Context \d+', col):
                     ctx_cols.append(col)
             
-            # Natural sort (1, 2, 10 instead of 1, 10, 2)
             faq_cols.sort(key=lambda x: int(re.search(r'\d+', x).group()))
             ctx_cols.sort(key=lambda x: int(re.search(r'\d+', x).group()))
             
             final_cols = [c for c in base_cols if c in df.columns] + faq_cols + ctx_cols
-            
-            # Catch any stray columns
             for c in df.columns:
                 if c not in final_cols:
                     final_cols.append(c)
@@ -81,18 +79,17 @@ def download_template():
     columns = [
         'AIR ID (Leave blank for new)', 'Name', 'Extension Number', 
         'Company Description', 'System Type', 'Voice Name', 'Languages', 
-        'Fallback Extension ID', 'Site ID', 'Website', 'Prompt Template',
+        'Fallback Extension', 'Site ID', 'Website', 'Prompt Template',
         'Idle Action (BH)', 'Idle Target (BH)', 'Idle Action (AH)', 'Idle Target (AH)',
         'Greeting (BH Text)', 'Greeting (AH Text)', 'Business Hours Schedule',
         'Booking Link', 'Sync Directory (Yes/No)', 'Directory Restricted Ext IDs', 
         'Knowledge Base IDs'
     ]
     
-    # Provide a starter structure of 5 FAQs and 5 Contexts (users can add more)
-    for i in range(1, 6):
+    for i in range(1, 4):
         columns.extend([f'FAQ {i} Question', f'FAQ {i} Answer'])
-    for i in range(1, 6):
-        columns.extend([f'Context {i} Rule', f'Context {i} Target', f'Context {i} Disabled (Yes/No)'])
+    for i in range(1, 4):
+        columns.extend([f'Context {i} Rule', f'Context {i} Action', f'Context {i} Target', f'Context {i} Disabled (Yes/No)'])
     
     df_template = pd.DataFrame(columns=columns)
     
@@ -104,18 +101,24 @@ def download_template():
         'System Type': 'PBX_VOICE',
         'Voice Name': 'Kore',
         'Languages': 'en-AU',
-        'Fallback Extension ID': '1001',
+        'Fallback Extension': '1001',
         'Greeting (BH Text)': 'Thanks for calling Acme Corp. How can I help?',
         'Business Hours Schedule': '9:00AM-5:00PM Mon-Fri',
         'Sync Directory (Yes/No)': 'Yes',
         'FAQ 1 Question': 'Where are you located?',
         'FAQ 1 Answer': 'We are located at 123 George Street, Sydney.',
-        'Context 1 Rule': 'If the caller asks for the billing department or has a question about an invoice.',
+        'Context 1 Rule': 'If the caller asks for the billing department or an invoice.',
+        'Context 1 Action': 'Extension',
         'Context 1 Target': '1002',
         'Context 1 Disabled (Yes/No)': 'No',
         'Context 2 Rule': 'If the caller has a medical emergency outside of standard appointments.',
+        'Context 2 Action': 'External',
         'Context 2 Target': '+61400000000',
-        'Context 2 Disabled (Yes/No)': 'No'
+        'Context 2 Disabled (Yes/No)': 'No',
+        'Context 3 Rule': 'If the caller requests technical support.',
+        'Context 3 Action': 'Contact Centre',
+        'Context 3 Target': '+611300000000',
+        'Context 3 Disabled (Yes/No)': 'No'
     }
     
     for col in columns:
@@ -126,13 +129,13 @@ def download_template():
 
     instructions_data = [
         {"Column": "AIR ID", "Notes": "Leave blank to CREATE. Provide ID to UPDATE."},
-        {"Column": "Fallback Extension ID", "Notes": "Required for updates. Route if AI fails."},
+        {"Column": "Fallback Extension", "Notes": "Required for updates. Provide the ID or Ext Number (e.g. '1001' or 'John Doe (Ext 1001)')."},
         {"Column": "Idle Action (BH/AH)", "Notes": "Must be exactly 'Disconnect' or 'Extension'."},
         {"Column": "Business Hours Schedule", "Notes": "Uses natural language e.g., '9:00AM-5:00PM Mon-Fri' or '24/7'."},
         {"Column": "Knowledge Base IDs", "Notes": "Comma-separated context IDs for KB grounding."},
-        {"Column": "FAQ Question / Answer", "Notes": "Hardcoded responses. You can dynamically create as many FAQ columns as needed (e.g. 'FAQ 6 Question')."},
-        {"Column": "Context Rule", "Notes": "You can dynamically create as many Context columns as needed (e.g. 'Context 6 Rule', 'Context 6 Target')."},
-        {"Column": "Context Target", "Notes": "The Extension ID or E.164 external number to transfer the caller to."},
+        {"Column": "FAQ Question / Answer", "Notes": "Hardcoded responses. You can dynamically create as many FAQ columns as needed (e.g. 'FAQ 4 Question')."},
+        {"Column": "Context Action", "Notes": "Must be one of: 'Extension', 'External', or 'Contact Centre'."},
+        {"Column": "Context Target", "Notes": "The Extension ID/Number or E.164 external number to transfer the caller to."},
         {"Column": "Context Disabled", "Notes": "'Yes' disables the routing rule without deleting it. Defaults to 'No'."}
     ]
     df_instructions = pd.DataFrame(instructions_data)
@@ -164,20 +167,22 @@ def upload_air():
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
+    dir_map = get_ext_directory(token)
     results = []
+
     for index, row in df.iterrows():
         name = row.get('Name')
         if pd.isna(name) or str(name).strip().lower() == 'nan': continue
         
         try:
             # 1. Base Assistant Payload
-            payload = build_assistant_payload(row)
+            payload = build_assistant_payload(row, dir_map)
             air_id = str(row.get('AIR ID (Leave blank for new)', '')).replace('.0', '').strip()
             if air_id.lower() == 'nan': air_id = ''
             
             if air_id:
                 if 'fallbackExtension' not in payload:
-                    results.append(f"Row {index+2} ({name}): ⚠️ Fallback Extension ID is required to update.")
+                    results.append(f"Row {index+2} ({name}): ⚠️ Fallback Extension is required to update.")
                     continue
                 url = f"/ai/iva/v1/accounts/~/assistants/{air_id}"
                 rc_api_call(url, method="PUT", json=payload, token=token, raise_error=True)
@@ -190,7 +195,7 @@ def upload_air():
 
             # 2. Skills Processing
             if air_id:
-                skills_to_sync = build_skills_payloads(row)
+                skills_to_sync = build_skills_payloads(row, dir_map)
                 if skills_to_sync:
                     existing_skills_resp = rc_api_call(f"/ai/iva/v1/accounts/~/assistants/{air_id}/skills", token=token, raise_error=False)
                     existing_skills = existing_skills_resp.get('records', []) if existing_skills_resp else []
