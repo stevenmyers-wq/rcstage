@@ -1,5 +1,6 @@
 import io
 import pandas as pd
+import re
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
@@ -19,10 +20,42 @@ def audit_air():
         
         if not assistants:
             audit_data = [{'AIR ID (Leave blank for new)': 'No Data', 'Name': 'No AI Receptionists Found'}]
+            df = pd.DataFrame(audit_data)
         else:
             audit_data = [parse_assistant_to_row(a, token) for a in assistants]
+            df = pd.DataFrame(audit_data)
 
-        df = pd.DataFrame(audit_data)
+            # Sort columns so dynamic FAQ and Contexts group naturally
+            base_cols = [
+                'AIR ID (Leave blank for new)', 'Name', 'Extension Number', 
+                'Company Description', 'System Type', 'Voice Name', 'Languages', 
+                'Fallback Extension ID', 'Site ID', 'Website', 'Prompt Template',
+                'Idle Action (BH)', 'Idle Target (BH)', 'Idle Action (AH)', 'Idle Target (AH)',
+                'Greeting (BH Text)', 'Greeting (AH Text)', 'Business Hours Schedule',
+                'Booking Link', 'Sync Directory (Yes/No)', 'Directory Restricted Ext IDs', 
+                'Knowledge Base IDs'
+            ]
+            
+            faq_cols = []
+            ctx_cols = []
+            for col in df.columns:
+                if re.match(r'^FAQ \d+', col):
+                    faq_cols.append(col)
+                elif re.match(r'^Context \d+', col):
+                    ctx_cols.append(col)
+            
+            # Natural sort (1, 2, 10 instead of 1, 10, 2)
+            faq_cols.sort(key=lambda x: int(re.search(r'\d+', x).group()))
+            ctx_cols.sort(key=lambda x: int(re.search(r'\d+', x).group()))
+            
+            final_cols = [c for c in base_cols if c in df.columns] + faq_cols + ctx_cols
+            
+            # Catch any stray columns
+            for c in df.columns:
+                if c not in final_cols:
+                    final_cols.append(c)
+                    
+            df = df[final_cols]
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -52,14 +85,13 @@ def download_template():
         'Idle Action (BH)', 'Idle Target (BH)', 'Idle Action (AH)', 'Idle Target (AH)',
         'Greeting (BH Text)', 'Greeting (AH Text)', 'Business Hours Schedule',
         'Booking Link', 'Sync Directory (Yes/No)', 'Directory Restricted Ext IDs', 
-        'Knowledge Base IDs',
-        'FAQ 1 Question', 'FAQ 1 Answer',
-        'FAQ 2 Question', 'FAQ 2 Answer',
-        'FAQ 3 Question', 'FAQ 3 Answer'
+        'Knowledge Base IDs'
     ]
     
-    # Add the 10 context columns dynamically
-    for i in range(1, 11):
+    # Provide a starter structure of 5 FAQs and 5 Contexts (users can add more)
+    for i in range(1, 6):
+        columns.extend([f'FAQ {i} Question', f'FAQ {i} Answer'])
+    for i in range(1, 6):
         columns.extend([f'Context {i} Rule', f'Context {i} Target', f'Context {i} Disabled (Yes/No)'])
     
     df_template = pd.DataFrame(columns=columns)
@@ -97,11 +129,10 @@ def download_template():
         {"Column": "Fallback Extension ID", "Notes": "Required for updates. Route if AI fails."},
         {"Column": "Idle Action (BH/AH)", "Notes": "Must be exactly 'Disconnect' or 'Extension'."},
         {"Column": "Business Hours Schedule", "Notes": "Uses natural language e.g., '9:00AM-5:00PM Mon-Fri' or '24/7'."},
-        {"Column": "Sync Directory", "Notes": "'Yes' allows the AI to transfer calls by name to staff members."},
         {"Column": "Knowledge Base IDs", "Notes": "Comma-separated context IDs for KB grounding."},
-        {"Column": "FAQ Question / Answer", "Notes": "Hardcoded responses for specific questions."},
-        {"Column": "Context Rule (1-10)", "Notes": "The natural language instruction for the AI (e.g., 'If they ask for sales'). Maps to 'Transfer by Context'."},
-        {"Column": "Context Target (1-10)", "Notes": "The Extension ID or E.164 external number to transfer the caller to if the rule is triggered."},
+        {"Column": "FAQ Question / Answer", "Notes": "Hardcoded responses. You can dynamically create as many FAQ columns as needed (e.g. 'FAQ 6 Question')."},
+        {"Column": "Context Rule", "Notes": "You can dynamically create as many Context columns as needed (e.g. 'Context 6 Rule', 'Context 6 Target')."},
+        {"Column": "Context Target", "Notes": "The Extension ID or E.164 external number to transfer the caller to."},
         {"Column": "Context Disabled", "Notes": "'Yes' disables the routing rule without deleting it. Defaults to 'No'."}
     ]
     df_instructions = pd.DataFrame(instructions_data)
