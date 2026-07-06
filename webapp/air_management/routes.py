@@ -6,9 +6,35 @@ from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
-from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory
+from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory, get_air_graph
 
 air_management_bp = Blueprint('air_management_bp', __name__, url_prefix='/api/air')
+
+@air_management_bp.route('/list', methods=['GET'])
+@require_rc_token
+def list_air():
+    token = get_rc_access_token()
+    try:
+        assistants = fetch_all_assistants(token)
+        simple_list = [
+            {"id": a['id'], "name": a.get('name', 'Unknown'), "ext": a.get('extensionNumber', '')} 
+            for a in assistants
+        ]
+        return jsonify({"success": True, "assistants": simple_list})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@air_management_bp.route('/visualize/<air_id>', methods=['GET'])
+@require_rc_token
+@track_usage('AIR Management - Visualize')
+def visualize_air(air_id):
+    token = get_rc_access_token()
+    try:
+        dir_map = get_ext_directory(token)
+        graph_data = get_air_graph(air_id, dir_map, token)
+        return jsonify({"success": True, "graph_data": graph_data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @air_management_bp.route('/audit', methods=['GET'])
 @require_rc_token
@@ -26,7 +52,6 @@ def audit_air():
             audit_data = [parse_assistant_to_row(a, dir_map, token) for a in assistants]
             df = pd.DataFrame(audit_data)
 
-            # Sort columns so dynamic FAQ and Contexts group naturally
             base_cols = [
                 'AIR ID (Leave blank for new)', 'Name', 'Extension Number', 
                 'Company Description', 'System Type', 'Voice Name', 'Languages', 
@@ -40,18 +65,15 @@ def audit_air():
             faq_cols = []
             ctx_cols = []
             for col in df.columns:
-                if re.match(r'^FAQ \d+', col):
-                    faq_cols.append(col)
-                elif re.match(r'^Context \d+', col):
-                    ctx_cols.append(col)
+                if re.match(r'^FAQ \d+', col): faq_cols.append(col)
+                elif re.match(r'^Context \d+', col): ctx_cols.append(col)
             
             faq_cols.sort(key=lambda x: int(re.search(r'\d+', x).group()))
             ctx_cols.sort(key=lambda x: int(re.search(r'\d+', x).group()))
             
             final_cols = [c for c in base_cols if c in df.columns] + faq_cols + ctx_cols
             for c in df.columns:
-                if c not in final_cols:
-                    final_cols.append(c)
+                if c not in final_cols: final_cols.append(c)
                     
             df = df[final_cols]
         
@@ -86,10 +108,8 @@ def download_template():
         'Knowledge Base IDs'
     ]
     
-    for i in range(1, 4):
-        columns.extend([f'FAQ {i} Question', f'FAQ {i} Answer'])
-    for i in range(1, 4):
-        columns.extend([f'Context {i} Rule', f'Context {i} Action', f'Context {i} Target', f'Context {i} Disabled (Yes/No)'])
+    for i in range(1, 4): columns.extend([f'FAQ {i} Question', f'FAQ {i} Answer'])
+    for i in range(1, 4): columns.extend([f'Context {i} Rule', f'Context {i} Action', f'Context {i} Target', f'Context {i} Disabled (Yes/No)'])
     
     df_template = pd.DataFrame(columns=columns)
     
@@ -122,8 +142,7 @@ def download_template():
     }
     
     for col in columns:
-        if col not in example_row:
-            example_row[col] = ''
+        if col not in example_row: example_row[col] = ''
             
     df_template.loc[0] = example_row
 
@@ -175,7 +194,6 @@ def upload_air():
         if pd.isna(name) or str(name).strip().lower() == 'nan': continue
         
         try:
-            # 1. Base Assistant Payload
             payload = build_assistant_payload(row, dir_map)
             air_id = str(row.get('AIR ID (Leave blank for new)', '')).replace('.0', '').strip()
             if air_id.lower() == 'nan': air_id = ''
@@ -193,7 +211,6 @@ def upload_air():
                 air_id = new_air.get('id')
                 results.append(f"✅ Created New Base AIR: {name}")
 
-            # 2. Skills Processing
             if air_id:
                 skills_to_sync = build_skills_payloads(row, dir_map)
                 if skills_to_sync:
