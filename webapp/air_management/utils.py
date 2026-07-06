@@ -42,17 +42,14 @@ def extract_id(val, dir_map):
     if not val: return ''
     val = str(val).strip()
     
-    # Try to extract number from formatted "Name (Ext 101)" string
     m = re.search(r'\(Ext (\d+)\)', val, re.IGNORECASE)
     if m:
         ext_num = m.group(1)
         if dir_map and ext_num in dir_map: return dir_map[ext_num]['id']
         
-    # Try exact match in map (either ID or Ext Num)
     if dir_map and val in dir_map:
         return dir_map[val]['id']
         
-    # Fallback to the raw value
     return val
 
 def fetch_all_assistants(token=None):
@@ -335,8 +332,6 @@ def build_skills_payloads(row, dir_map):
             if 'external' in action:
                 rule_obj["externalNumber"] = target
             elif 'contact centre' in action or 'contact center' in action:
-                # The schema requires an ID, but CXone Phone Numbers don't strictly align.
-                # Supplying the PhoneNumber and attempting ID cast if numeric to prevent API rejection.
                 if target.isdigit():
                     try:
                         rule_obj["contactCenterNumber"] = {"id": int(target), "phoneNumber": target}
@@ -344,7 +339,7 @@ def build_skills_payloads(row, dir_map):
                         rule_obj["contactCenterNumber"] = {"phoneNumber": target}
                 else:
                     rule_obj["contactCenterNumber"] = {"phoneNumber": target}
-            else: # Default to Extension
+            else: 
                 rule_obj["extension"] = {"id": extract_id(target, dir_map)}
                 
             rules.append(rule_obj)
@@ -353,3 +348,114 @@ def build_skills_payloads(row, dir_map):
         skills["CALL_ROUTING"] = {"skillType": "CALL_ROUTING", "rules": rules}
 
     return skills
+
+def get_air_graph(air_id, dir_map, token=None):
+    """Builds a node and edge graph for a specific AIR to render in Cytoscape."""
+    assistant = rc_api_call(f'/ai/iva/v1/accounts/~/assistants/{air_id}', token=token, raise_error=True)
+    
+    nodes = []
+    edges = []
+    node_ids = set()
+    
+    def add_node(nid, label, ntype, sublabel="", tooltip=""):
+        if nid not in node_ids:
+            nodes.append({
+                "data": {"id": str(nid), "label": str(label), "type": ntype, "sublabel": str(sublabel), "tooltip": str(tooltip)}
+            })
+            node_ids.add(str(nid))
+            
+    def add_edge(src, tgt, label):
+        # Truncate long context rules to prevent messy graphs
+        safe_label = str(label)
+        if len(safe_label) > 40:
+            safe_label = safe_label[:37] + "..."
+        edges.append({"data": {"source": str(src), "target": str(tgt), "label": safe_label}})
+        
+    name = assistant.get('name', 'Unknown AIR')
+    ext_num = assistant.get('extensionNumber', '')
+    
+    tooltip = []
+    tooltip.append(f"System Type: {assistant.get('systemSettings', {}).get('systemType', '')}")
+    tooltip.append(f"Voice: {assistant.get('systemSettings', {}).get('voiceName', '')}")
+    
+    skills_resp = rc_api_call(f'/ai/iva/v1/accounts/~/assistants/{air_id}/skills', token=token, raise_error=False)
+    skills = skills_resp.get('records', []) if skills_resp else []
+    
+    for s in skills:
+        skill_detail = fetch_skill_details(s['id'], token)
+        if not skill_detail or 'skill' not in skill_detail: continue
+        sk = skill_detail['skill']
+        stype = sk.get('skillType')
+        
+        if stype == 'GREETING':
+            tooltip.append(f"Greeting (BH): {sk.get('businessHours', {}).get('text', 'None')}")
+        elif stype == 'QA':
+            tooltip.append(f"FAQs Configured: {len(sk.get('corpus', []))}")
+        elif stype == 'KNOWLEDGE_BASE':
+            ctxs = sk.get('contexts', [])
+            tooltip.append(f"Knowledge Bases Attached: {len(ctxs)}")
+            
+    add_node(air_id, name, "autoreceptionist", sublabel=f"AIR Ext {ext_num}", tooltip="\n".join(tooltip))
+    
+    # Map Fallback
+    fallback = assistant.get('fallbackExtension', {}).get('id')
+    if fallback:
+        add_node(fallback, format_ext_display(fallback, dir_map), "user", sublabel="Fallback Destination")
+        add_edge(air_id, fallback, "Fallback")
+        
+    # Map Idle Rules
+    idle = assistant.get('idleCallerRule', {})
+    bh = idle.get('businessHours', {})
+    ah = idle.get('closedHours', {})
+    
+    if bh.get('actionType') == 'Extension' and bh.get('extension', {}).get('id'):
+        tgt = bh['extension']['id']
+        add_node(tgt, format_ext_display(tgt, dir_map), "user", sublabel="Idle Timeout (BH)")
+        add_edge(air_id, tgt, "Idle (BH)")
+    elif bh.get('actionType') == 'Disconnect':
+        add_node(f"disc_bh_{air_id}", "Disconnect", "external")
+        add_edge(air_id, f"disc_bh_{air_id}", "Idle (BH)")
+
+    if ah.get('actionType') == 'Extension' and ah.get('extension', {}).get('id'):
+        tgt = ah['extension']['id']
+        add_node(tgt, format_ext_display(tgt, dir_map), "user", sublabel="Idle Timeout (AH)")
+        add_edge(air_id, tgt, "Idle (AH)")
+    elif ah.get('actionType') == 'Disconnect':
+        add_node(f"disc_ah_{air_id}", "Disconnect", "external")
+        add_edge(air_id, f"disc_ah_{air_id}", "Idle (AH)")
+        
+    # Map Context Routing Rules
+    for s in skills:
+        skill_detail = fetch_skill_details(s['id'], token)
+        if not skill_detail or 'skill' not in skill_detail: continue
+        sk = skill_detail['skill']
+        
+        if sk.get('skillType') == 'CALL_ROUTING':
+            rules = sk.get('rules', [])
+            for i, r in enumerate(rules):
+                if r.get('disabled'): continue
+                
+                tgt_id = None
+                tgt_name = None
+                ntype = "user"
+                
+                if r.get('extension'):
+                    tgt_id = str(r['extension'].get('id', ''))
+                    tgt_name = format_ext_display(tgt_id, dir_map)
+                elif r.get('externalNumber'):
+                    # To prevent identical external numbers merging nodes and messing up edges, prepend context id
+                    tgt_id = f"ext_{r['externalNumber']}_{i}" 
+                    tgt_name = r['externalNumber']
+                    ntype = "external"
+                elif r.get('contactCenterNumber'):
+                    c_num = r['contactCenterNumber']
+                    raw_tgt = str(c_num.get('id') or c_num.get('phoneNumber', ''))
+                    tgt_id = f"cx_{raw_tgt}_{i}"
+                    tgt_name = f"CXone: {c_num.get('phoneNumber', raw_tgt)}"
+                    ntype = "queue"
+                    
+                if tgt_id:
+                    add_node(tgt_id, tgt_name, ntype, sublabel="Context Target")
+                    add_edge(air_id, tgt_id, r.get('rule', f'Context {i+1}'))
+                    
+    return {"nodes": nodes, "edges": edges}
