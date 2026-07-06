@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 from webapp.rc_api import rc_api_call
 
 def fetch_all_assistants(token=None):
@@ -50,17 +51,8 @@ def parse_assistant_to_row(assistant, token=None):
         'Booking Link': '',
         'Sync Directory (Yes/No)': '',
         'Directory Restricted Ext IDs': '',
-        'Knowledge Base IDs': '',
-        'FAQ 1 Question': '', 'FAQ 1 Answer': '',
-        'FAQ 2 Question': '', 'FAQ 2 Answer': '',
-        'FAQ 3 Question': '', 'FAQ 3 Answer': ''
+        'Knowledge Base IDs': ''
     }
-
-    # Initialize columns for up to 10 context rules
-    for i in range(1, 11):
-        row[f'Context {i} Rule'] = ''
-        row[f'Context {i} Target'] = ''
-        row[f'Context {i} Disabled (Yes/No)'] = ''
 
     # Fetch and map active skills
     if 'skills' in assistant and token:
@@ -88,7 +80,8 @@ def parse_assistant_to_row(assistant, token=None):
                 
             elif stype == 'QA':
                 corpus = skill.get('corpus', [])
-                for i, qa in enumerate(corpus[:3]): 
+                # Dynamically handle unlimited FAQs
+                for i, qa in enumerate(corpus): 
                     row[f'FAQ {i+1} Question'] = qa.get('question', '')
                     row[f'FAQ {i+1} Answer'] = qa.get('answer', '')
 
@@ -98,7 +91,8 @@ def parse_assistant_to_row(assistant, token=None):
                 
             elif stype == 'CALL_ROUTING':
                 rules = skill.get('rules', [])
-                for i, r in enumerate(rules[:10]): 
+                # Dynamically handle unlimited Context Rules
+                for i, r in enumerate(rules): 
                     row[f'Context {i+1} Rule'] = r.get('rule', '')
                     row[f'Context {i+1} Disabled (Yes/No)'] = 'Yes' if r.get('disabled') else 'No'
                     
@@ -214,7 +208,7 @@ def build_skills_payloads(row):
                     }]
                 }
         except Exception:
-            pass # Ignore malformed hours
+            pass 
 
     # 3. BOOKING
     booking_link = safe_str(row.get('Booking Link'))
@@ -235,13 +229,17 @@ def build_skills_payloads(row):
             cd_payload["restrictedExtensions"] = [{"id": x} for x in ids]
         skills["CONTACT_DIRECTORY"] = cd_payload
 
-    # 5. QA (FAQs)
+    # 5. QA (FAQs) - Dynamically discover maximum number of FAQs in the provided sheet
     corpus = []
-    for i in range(1, 4):
+    faq_indices = [int(re.search(r'\d+', str(k)).group()) for k in row.keys() if re.match(r'^FAQ \d+ Question$', str(k).strip())]
+    max_faq = max(faq_indices) if faq_indices else 0
+    
+    for i in range(1, max_faq + 1):
         q = safe_str(row.get(f'FAQ {i} Question'))
         a = safe_str(row.get(f'FAQ {i} Answer'))
         if q and a:
             corpus.append({"question": q, "answer": a, "origin": "MANUAL"})
+            
     if corpus:
         skills["QA"] = {"skillType": "QA", "corpus": corpus}
 
@@ -252,9 +250,12 @@ def build_skills_payloads(row):
         if contexts:
             skills["KNOWLEDGE_BASE"] = {"skillType": "KNOWLEDGE_BASE", "contexts": contexts}
 
-    # 7. CALL ROUTING (Transfer by Context)
+    # 7. CALL ROUTING (Transfer by Context) - Dynamically discover rules
     rules = []
-    for i in range(1, 11): 
+    ctx_indices = [int(re.search(r'\d+', str(k)).group()) for k in row.keys() if re.match(r'^Context \d+ Rule$', str(k).strip())]
+    max_ctx = max(ctx_indices) if ctx_indices else 0
+    
+    for i in range(1, max_ctx + 1): 
         rule_text = safe_str(row.get(f'Context {i} Rule'))
         target = clean_ext_num(row.get(f'Context {i} Target'))
         is_disabled = safe_str(row.get(f'Context {i} Disabled (Yes/No)')).lower() in ['yes', 'y', 'true', '1']
