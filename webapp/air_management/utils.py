@@ -365,10 +365,9 @@ def get_air_graph(air_id, dir_map, token=None):
             node_ids.add(str(nid))
             
     def add_edge(src, tgt, label):
-        # Truncate long context rules to prevent messy graphs
         safe_label = str(label)
-        if len(safe_label) > 40:
-            safe_label = safe_label[:37] + "..."
+        if len(safe_label) > 100:
+            safe_label = safe_label[:97] + "..."
         edges.append({"data": {"source": str(src), "target": str(tgt), "label": safe_label}})
         
     name = assistant.get('name', 'Unknown AIR')
@@ -443,7 +442,6 @@ def get_air_graph(air_id, dir_map, token=None):
                     tgt_id = str(r['extension'].get('id', ''))
                     tgt_name = format_ext_display(tgt_id, dir_map)
                 elif r.get('externalNumber'):
-                    # To prevent identical external numbers merging nodes and messing up edges, prepend context id
                     tgt_id = f"ext_{r['externalNumber']}_{i}" 
                     tgt_name = r['externalNumber']
                     ntype = "external"
