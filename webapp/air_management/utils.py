@@ -1,6 +1,59 @@
 import pandas as pd
 import re
+import time
 from webapp.rc_api import rc_api_call
+
+MAX_FAQS = 25
+MAX_ROUTING = 25
+
+def get_ext_directory(token=None):
+    """Fetches the account directory to map Extension Numbers to internal IDs."""
+    exts = []
+    page = 1
+    while True:
+        resp = rc_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', token=token, raise_error=False)
+        if not resp or 'records' not in resp: break
+        exts.extend(resp['records'])
+        if not resp.get('navigation', {}).get('nextPage'): break
+        page += 1
+        time.sleep(0.05)
+        
+    dir_map = {}
+    for e in exts:
+        eid = str(e.get('id', ''))
+        enum = str(e.get('extensionNumber', ''))
+        name = str(e.get('name', ''))
+        if eid: dir_map[eid] = {'id': eid, 'ext': enum, 'name': name}
+        if enum: dir_map[enum] = {'id': eid, 'ext': enum, 'name': name}
+    return dir_map
+
+def format_ext_display(ext_id, dir_map):
+    """Converts an internal ID to a human-readable Name (Ext Number) format."""
+    if not ext_id: return ""
+    ext_id = str(ext_id)
+    if dir_map and ext_id in dir_map:
+        info = dir_map[ext_id]
+        if info['ext']: return f"{info['name']} (Ext {info['ext']})"
+        return info['name']
+    return ext_id
+
+def extract_id(val, dir_map):
+    """Safely extracts the internal Extension ID from a string, number, or formatted name."""
+    if not val: return ''
+    val = str(val).strip()
+    
+    # Try to extract number from formatted "Name (Ext 101)" string
+    m = re.search(r'\(Ext (\d+)\)', val, re.IGNORECASE)
+    if m:
+        ext_num = m.group(1)
+        if dir_map and ext_num in dir_map: return dir_map[ext_num]['id']
+        
+    # Try exact match in map (either ID or Ext Num)
+    if dir_map and val in dir_map:
+        return dir_map[val]['id']
+        
+    # Fallback to the raw value
+    return val
 
 def fetch_all_assistants(token=None):
     """Fetch all AIR instances from the account."""
@@ -20,7 +73,7 @@ def fetch_skill_details(skill_id, token=None):
     """Fetch the specific details of a skill."""
     return rc_api_call(f'/ai/iva/v1/accounts/~/skills/{skill_id}', token=token, raise_error=False)
 
-def parse_assistant_to_row(assistant, token=None):
+def parse_assistant_to_row(assistant, dir_map, token=None):
     """Flatten an Assistant object and its active Skills into an Excel row."""
     sys_settings = assistant.get('systemSettings', {})
     fallback = assistant.get('fallbackExtension', {})
@@ -37,14 +90,14 @@ def parse_assistant_to_row(assistant, token=None):
         'System Type': sys_settings.get('systemType', 'PBX_VOICE'),
         'Voice Name': sys_settings.get('voiceName', 'Kore'),
         'Languages': ', '.join(languages) if languages else 'en-US',
-        'Fallback Extension ID': fallback.get('id', ''),
+        'Fallback Extension': format_ext_display(fallback.get('id'), dir_map),
         'Site ID': assistant.get('siteId', ''),
         'Website': assistant.get('website', ''),
         'Prompt Template': assistant.get('promptTemplate', ''),
         'Idle Action (BH)': bh_action.get('actionType', ''),
-        'Idle Target (BH)': bh_action.get('extension', {}).get('id', ''),
+        'Idle Target (BH)': format_ext_display(bh_action.get('extension', {}).get('id'), dir_map),
         'Idle Action (AH)': ah_action.get('actionType', ''),
-        'Idle Target (AH)': ah_action.get('extension', {}).get('id', ''),
+        'Idle Target (AH)': format_ext_display(ah_action.get('extension', {}).get('id'), dir_map),
         'Greeting (BH Text)': '',
         'Greeting (AH Text)': '',
         'Business Hours Schedule': '',
@@ -54,7 +107,16 @@ def parse_assistant_to_row(assistant, token=None):
         'Knowledge Base IDs': ''
     }
 
-    # Fetch and map active skills
+    for i in range(1, MAX_FAQS + 1):
+        row[f'FAQ {i} Question'] = ''
+        row[f'FAQ {i} Answer'] = ''
+
+    for i in range(1, MAX_ROUTING + 1):
+        row[f'Context {i} Rule'] = ''
+        row[f'Context {i} Action'] = ''
+        row[f'Context {i} Target'] = ''
+        row[f'Context {i} Disabled (Yes/No)'] = ''
+
     if 'skills' in assistant and token:
         for s_stub in assistant['skills']:
             skill_detail = fetch_skill_details(s_stub['id'], token)
@@ -80,8 +142,7 @@ def parse_assistant_to_row(assistant, token=None):
                 
             elif stype == 'QA':
                 corpus = skill.get('corpus', [])
-                # Dynamically handle unlimited FAQs
-                for i, qa in enumerate(corpus): 
+                for i, qa in enumerate(corpus[:MAX_FAQS]): 
                     row[f'FAQ {i+1} Question'] = qa.get('question', '')
                     row[f'FAQ {i+1} Answer'] = qa.get('answer', '')
 
@@ -91,23 +152,28 @@ def parse_assistant_to_row(assistant, token=None):
                 
             elif stype == 'CALL_ROUTING':
                 rules = skill.get('rules', [])
-                # Dynamically handle unlimited Context Rules
-                for i, r in enumerate(rules): 
+                for i, r in enumerate(rules[:MAX_ROUTING]): 
                     row[f'Context {i+1} Rule'] = r.get('rule', '')
                     row[f'Context {i+1} Disabled (Yes/No)'] = 'Yes' if r.get('disabled') else 'No'
                     
-                    target = r.get('externalNumber', '')
-                    if not target and r.get('extension'):
-                        target = r['extension'].get('id', '')
-                    if not target and r.get('contactCenterNumber'):
-                        target = r['contactCenterNumber'].get('phoneNumber', '')
+                    action = ''
+                    target = ''
+                    if r.get('externalNumber'):
+                        action = 'External'
+                        target = r['externalNumber']
+                    elif r.get('contactCenterNumber'):
+                        action = 'Contact Centre'
+                        target = r['contactCenterNumber'].get('phoneNumber', r['contactCenterNumber'].get('id', ''))
+                    elif r.get('extension'):
+                        action = 'Extension'
+                        target = format_ext_display(r['extension'].get('id', ''), dir_map)
                         
+                    row[f'Context {i+1} Action'] = action
                     row[f'Context {i+1} Target'] = target
 
     return row
 
 def safe_str(val, default=''):
-    """Safely extracts string values from Pandas, filtering out NaN artifacts."""
     if pd.isna(val): return default
     s = str(val).strip()
     if s.lower() == 'nan': return default
@@ -120,9 +186,8 @@ def clean_ext_num(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
-def build_assistant_payload(row):
+def build_assistant_payload(row, dir_map):
     """Build the core API payload for the base Assistant."""
-    
     sys_type = safe_str(row.get('System Type'), 'PBX_VOICE')
     if not sys_type: sys_type = 'PBX_VOICE'
 
@@ -151,14 +216,14 @@ def build_assistant_payload(row):
     add_str('Prompt Template', 'promptTemplate')
     add_str('Website', 'website')
 
-    fallback_id = clean_ext_num(row.get('Fallback Extension ID'))
+    fallback_id = extract_id(row.get('Fallback Extension'), dir_map)
     if fallback_id:
         payload["fallbackExtension"] = {"id": fallback_id}
         
     bh_act = safe_str(row.get('Idle Action (BH)'))
-    bh_tgt = clean_ext_num(row.get('Idle Target (BH)'))
+    bh_tgt = extract_id(row.get('Idle Target (BH)'), dir_map)
     ah_act = safe_str(row.get('Idle Action (AH)'))
-    ah_tgt = clean_ext_num(row.get('Idle Target (AH)'))
+    ah_tgt = extract_id(row.get('Idle Target (AH)'), dir_map)
 
     if bh_act or ah_act:
         idle_rule = {}
@@ -179,7 +244,7 @@ def build_assistant_payload(row):
         
     return payload
 
-def build_skills_payloads(row):
+def build_skills_payloads(row, dir_map):
     """Parses the Excel row and returns a dictionary of SkillOption payloads to apply."""
     skills = {}
 
@@ -225,11 +290,11 @@ def build_skills_payloads(row):
         cd_payload = {"skillType": "CONTACT_DIRECTORY"}
         cd_payload["syncDialByNameDirectory"] = (sync_dir in ['yes', 'y', 'true', '1'])
         if restricted_exts:
-            ids = [x.strip() for x in restricted_exts.split(',') if x.strip()]
+            ids = [extract_id(x.strip(), dir_map) for x in restricted_exts.split(',') if x.strip()]
             cd_payload["restrictedExtensions"] = [{"id": x} for x in ids]
         skills["CONTACT_DIRECTORY"] = cd_payload
 
-    # 5. QA (FAQs) - Dynamically discover maximum number of FAQs in the provided sheet
+    # 5. QA (FAQs)
     corpus = []
     faq_indices = [int(re.search(r'\d+', str(k)).group()) for k in row.keys() if re.match(r'^FAQ \d+ Question$', str(k).strip())]
     max_faq = max(faq_indices) if faq_indices else 0
@@ -250,25 +315,38 @@ def build_skills_payloads(row):
         if contexts:
             skills["KNOWLEDGE_BASE"] = {"skillType": "KNOWLEDGE_BASE", "contexts": contexts}
 
-    # 7. CALL ROUTING (Transfer by Context) - Dynamically discover rules
+    # 7. CALL ROUTING (Transfer by Context)
     rules = []
     ctx_indices = [int(re.search(r'\d+', str(k)).group()) for k in row.keys() if re.match(r'^Context \d+ Rule$', str(k).strip())]
     max_ctx = max(ctx_indices) if ctx_indices else 0
     
     for i in range(1, max_ctx + 1): 
         rule_text = safe_str(row.get(f'Context {i} Rule'))
-        target = clean_ext_num(row.get(f'Context {i} Target'))
+        action = safe_str(row.get(f'Context {i} Action')).lower()
+        target = safe_str(row.get(f'Context {i} Target'))
         is_disabled = safe_str(row.get(f'Context {i} Disabled (Yes/No)')).lower() in ['yes', 'y', 'true', '1']
         
-        if rule_text and target:
+        if rule_text and target and action:
             rule_obj = {
                 "rule": rule_text, 
                 "disabled": is_disabled 
             }
-            if target.startswith('+') or len(target) >= 10:
+            
+            if 'external' in action:
                 rule_obj["externalNumber"] = target
-            else:
-                rule_obj["extension"] = {"id": target}
+            elif 'contact centre' in action or 'contact center' in action:
+                # The schema requires an ID, but CXone Phone Numbers don't strictly align.
+                # Supplying the PhoneNumber and attempting ID cast if numeric to prevent API rejection.
+                if target.isdigit():
+                    try:
+                        rule_obj["contactCenterNumber"] = {"id": int(target), "phoneNumber": target}
+                    except:
+                        rule_obj["contactCenterNumber"] = {"phoneNumber": target}
+                else:
+                    rule_obj["contactCenterNumber"] = {"phoneNumber": target}
+            else: # Default to Extension
+                rule_obj["extension"] = {"id": extract_id(target, dir_map)}
+                
             rules.append(rule_obj)
     
     if rules:
