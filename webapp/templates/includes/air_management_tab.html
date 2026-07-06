@@ -85,8 +85,19 @@
                 Render Graph
             </button>
         </div>
-        <div id="airGraphContainer" class="border border-gray-200 bg-slate-50 rounded-lg h-[500px] w-full flex items-center justify-center text-gray-400 relative overflow-hidden">
-            Select an AIR and click Render Graph.
+        
+        <div class="relative border border-gray-200 bg-slate-50 rounded-lg h-[600px] w-full overflow-hidden">
+            <div id="airGraphContainer" class="absolute inset-0 w-full h-full flex items-center justify-center text-gray-400">
+                Select an AIR and click Render Graph.
+            </div>
+            
+            <div id="airZoomControls" class="absolute bottom-4 right-4 z-10 bg-white/90 p-1.5 rounded-lg shadow-md border border-gray-200 flex gap-1 hidden">
+                <button class="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded text-gray-700 hover:bg-gray-50 font-bold transition-colors" id="air-btn-zoom-in" title="Zoom In">+</button>
+                <button class="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded text-gray-700 hover:bg-gray-50 font-bold transition-colors" id="air-btn-zoom-out" title="Zoom Out">−</button>
+                <button class="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded text-gray-700 hover:bg-gray-50 font-bold transition-colors" id="air-btn-reset" title="Fit to screen">⟲</button>
+                <div class="w-px h-6 bg-gray-300 my-auto mx-1"></div>
+                <button class="px-3 h-8 flex items-center justify-center bg-white border border-gray-300 rounded text-gray-700 hover:bg-gray-50 text-xs font-bold transition-colors" id="air-btn-save-png" title="Download PNG">💾 PNG</button>
+            </div>
         </div>
     </div>
 
@@ -187,6 +198,7 @@
     const airSelect = document.getElementById('airSelect');
     const renderAirBtn = document.getElementById('renderAirBtn');
     const airGraphContainer = document.getElementById('airGraphContainer');
+    const airZoomControls = document.getElementById('airZoomControls');
     let airListLoaded = false;
 
     airVisualizeBtn.addEventListener('click', async () => {
@@ -217,6 +229,7 @@
 
     closeAirVisualizeBtn.addEventListener('click', () => {
         airVisualizeWorkspace.classList.add('hidden');
+        airZoomControls.classList.add('hidden');
         if (airCy) { airCy.destroy(); airCy = null; }
         removeAirHoverPreview();
     });
@@ -226,6 +239,7 @@
         if (!airId) return alert('Please select an AI Receptionist.');
 
         renderAirBtn.disabled = true;
+        airZoomControls.classList.add('hidden');
         airGraphContainer.innerHTML = `<svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>`;
         removeAirHoverPreview();
 
@@ -356,10 +370,12 @@
                     'text-rotation':                 'none',
                     'text-background-color':         '#ffffff',
                     'text-background-opacity':       1,
-                    'text-background-padding':       '2px 4px',
+                    'text-background-padding':       '4px 6px',
                     'text-background-shape':         'round-rectangle',
                     'text-border-color':             '#cbd5e1',
                     'text-border-width':             1,
+                    'text-wrap':                     'wrap',
+                    'text-max-width':                '140px'
                 },
             },
         ];
@@ -370,10 +386,11 @@
             style: stylesheet,
             layout: {
                 name: 'dagre',
-                rankDir: 'TB',
-                nodeSep: 60,
-                rankSep: 80,
-                padding: 50,
+                rankDir: 'LR',
+                nodeSep: 40,
+                rankSep: 180,
+                edgeSep: 20,
+                padding: 40,
                 animate: false
             },
             wheelSensitivity: 0.25,
@@ -391,6 +408,26 @@
         });
 
         airCy.on('mouseout', 'node', () => removeAirHoverPreview());
-    }
 
+        // Enable Overlays and bindings
+        airZoomControls.classList.remove('hidden');
+
+        const mid = () => ({ x: airGraphContainer.offsetWidth / 2, y: airGraphContainer.offsetHeight / 2 });
+        document.getElementById('air-btn-zoom-in').onclick = () => { if(airCy) airCy.zoom({ level: airCy.zoom() * 1.25, renderedPosition: mid() }); };
+        document.getElementById('air-btn-zoom-out').onclick = () => { if(airCy) airCy.zoom({ level: airCy.zoom() * 0.8, renderedPosition: mid() }); };
+        document.getElementById('air-btn-reset').onclick = () => { if(airCy) airCy.fit(undefined, 50); };
+        
+        document.getElementById('air-btn-save-png').onclick = () => {
+            if(!airCy) return;
+            const png = airCy.png({ scale: 2, bg: '#f8fafc', full: true });
+            const a = document.createElement('a');
+            a.href = png;
+            const airName = airSelect.options[airSelect.selectedIndex].text.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            a.download = `air-flow-${airName}.png`;
+            a.click();
+        };
+
+        // Enforce fit-to-screen sizing after a slight rendering delay
+        setTimeout(() => { if (airCy) airCy.fit(undefined, 50); }, 150);
+    }
 </script>
