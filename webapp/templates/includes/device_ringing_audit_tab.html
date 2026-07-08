@@ -1,0 +1,35 @@
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    <div class="mb-4 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-bold text-slate-800 mb-1">Device Ringing Audit</h2>
+        <p class="text-slate-500 text-sm">Query the new V2 Call Handling APIs to determine if user devices, mobile apps, and desktop apps are enabled to ring.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Run Audit</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Generate an Excel spreadsheet identifying ringing states (toggled ON or OFF) across all user devices, apps, and physical phones.
+            </p>
+            <button id="btn-device-audit" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+                Generate Report
+            </button>
+        </div>
+    </div>
+
+    <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
+        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
+            <button onclick="document.getElementById('deviceAuditLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+        </div>
+        <div id="deviceAuditLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+            Ready to audit...
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/device_ringing_audit.js') }}"></script>
