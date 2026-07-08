@@ -32,4 +32,68 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/device_ringing_audit.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('btn-device-audit');
+
+    function logAudit(msg, type='info') {
+        const box = document.getElementById('deviceAuditLogs');
+        if (!box) return;
+        
+        // Remove empty state message if needed
+        if (box.children.length === 1 && box.children[0].classList && !box.children[0].classList.contains('text-gray-500')) {
+             if (box.innerText.includes("Ready to audit")) {
+                 box.innerHTML = '';
+             }
+        }
+
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    if (btn) {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Generating...`;
+            
+            logAudit("Starting Audit... fetching user devices and V2 routing rules from RingCentral.");
+
+            try {
+                const res = await fetch('/api/device_ringing_audit/audit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!res.ok) {
+                    let err = "Audit failed on server.";
+                    try {
+                        const errJson = await res.json();
+                        err = errJson.error || err;
+                    } catch(e) {}
+                    throw new Error(err);
+                }
+                
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const dateStr = new Date().toISOString().slice(0, 10);
+                a.download = `Device_Ringing_Audit_${dateStr}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                
+                logAudit("Audit Complete! Downloading file...", "success");
+            } catch (e) {
+                logAudit(`Audit Failed: ${e.message}`, "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Generate Report";
+            }
+        });
+    }
+});
+</script>
