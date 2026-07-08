@@ -5,6 +5,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, send_file, request
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
+from webapp.rc_api import rc_api_call
 from .utils import run_audit_background, audit_progress_store
 
 device_ringing_audit_bp = Blueprint('device_ringing_audit_bp', __name__, url_prefix='/api/device_ringing_audit')
@@ -19,7 +20,6 @@ def start_audit():
     
     task_id = f"ringing_audit_{int(time.time())}"
     
-    # Start the audit in a background thread
     thread = threading.Thread(target=run_audit_background, args=(task_id, token))
     thread.daemon = True
     thread.start()
@@ -57,3 +57,48 @@ def audit_download():
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
     return "File not ready or expired", 404
+
+# --- NEW DEBUG ROUTE ---
+@device_ringing_audit_bp.route('/debug', methods=['POST'])
+@require_rc_token
+def debug_extension():
+    """Fetches the raw JSON for all 3 relevant APIs so we can inspect the exact schema."""
+    token = get_rc_access_token()
+    data = request.get_json()
+    ext_num = data.get('extension_number')
+    
+    if not ext_num:
+        return jsonify({"error": "Please provide an extension number."}), 400
+
+    try:
+        # 1. Resolve Ext ID
+        search_resp = rc_api_call(f"/restapi/v1.0/account/~/extension?extensionNumber={ext_num}", token=token)
+        records = search_resp.get('records', [])
+        if not records:
+            return jsonify({"error": f"Extension {ext_num} not found."}), 404
+            
+        ext_id = records[0]['id']
+        
+        # 2. Fetch Devices
+        devices = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, return_response=True)
+        devices_json = devices.json() if getattr(devices, 'ok', False) else {"error": getattr(devices, 'status_code', 'Failed')}
+        
+        # 3. Fetch V1 Rules
+        v1_rule = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule", token=token, return_response=True)
+        v1_json = v1_rule.json() if getattr(v1_rule, 'ok', False) else {"error": getattr(v1_rule, 'status_code', 'Failed')}
+        
+        # 4. Fetch V2 Rules
+        v2_rule = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules", token=token, return_response=True)
+        v2_json = v2_rule.json() if getattr(v2_rule, 'ok', False) else {"error": getattr(v2_rule, 'status_code', 'Failed')}
+
+        return jsonify({
+            "success": True,
+            "extension_id": ext_id,
+            "raw_data": {
+                "1_devices_api": devices_json,
+                "2_v1_answering_rule_api": v1_json,
+                "3_v2_interaction_rules_api": v2_json
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
