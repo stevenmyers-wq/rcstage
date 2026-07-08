@@ -1,7 +1,7 @@
 <div class="space-y-6 animate-fade-in p-4 w-full">
     <div class="mb-4 border-b border-gray-200 pb-4">
         <h2 class="text-3xl font-bold text-slate-800 mb-1">Device Ringing Audit</h2>
-        <p class="text-slate-500 text-sm">Query the new V2 Call Handling APIs to determine if user devices, mobile apps, and desktop apps are enabled to ring.</p>
+        <p class="text-slate-500 text-sm">Query the V1 and V2 Call Handling APIs to determine if user devices, mobile apps, and desktop apps are enabled to ring.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -84,7 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // If the message has changed, log it to the console UI
                 if (data.message && data.message !== lastLoggedMessage) {
-                    logAudit(data.message, 'info');
+                    // Log standard status messages as info, let backend dictate errors
+                    const msgType = data.message.toLowerCase().includes('rate limit') ? 'error' : 'info';
+                    logAudit(data.message, msgType);
                     progressText.textContent = data.message;
                     lastLoggedMessage = data.message;
                 }
@@ -102,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.body.removeChild(link);
                     
                     btn.disabled = false;
-                    btn.innerText = "Generate Report";
+                    btn.innerHTML = `Generate Report`;
                     
                     // Hide progress bar after delay
                     setTimeout(() => {
@@ -115,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     logAudit(`Audit Failed: ${data.error}`, "error");
                     
                     btn.disabled = false;
-                    btn.innerText = "Generate Report";
+                    btn.innerHTML = `Generate Report`;
                 }
             } catch (e) {
                 // Ignore network blips during polling
@@ -156,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
                 logAudit(`Audit Failed: ${e.message}`, "error");
                 btn.disabled = false;
-                btn.innerText = "Generate Report";
+                btn.innerHTML = `Generate Report`;
                 progressContainer.classList.add('hidden');
             }
         });
