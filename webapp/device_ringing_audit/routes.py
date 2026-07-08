@@ -58,11 +58,11 @@ def audit_download():
         )
     return "File not ready or expired", 404
 
-# --- NEW DEBUG ROUTE ---
+# --- DEBUG ROUTE ---
 @device_ringing_audit_bp.route('/debug', methods=['POST'])
 @require_rc_token
 def debug_extension():
-    """Fetches the raw JSON for all 3 relevant APIs so we can inspect the exact schema."""
+    """Fetches the raw JSON for all relevant APIs so we can inspect the exact schema."""
     token = get_rc_access_token()
     data = request.get_json()
     ext_num = data.get('extension_number')
@@ -71,7 +71,6 @@ def debug_extension():
         return jsonify({"error": "Please provide an extension number."}), 400
 
     try:
-        # 1. Resolve Ext ID
         search_resp = rc_api_call(f"/restapi/v1.0/account/~/extension?extensionNumber={ext_num}", token=token)
         records = search_resp.get('records', [])
         if not records:
@@ -79,17 +78,18 @@ def debug_extension():
             
         ext_id = records[0]['id']
         
-        # 2. Fetch Devices
         devices = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, return_response=True)
         devices_json = devices.json() if getattr(devices, 'ok', False) else {"error": getattr(devices, 'status_code', 'Failed')}
         
-        # 3. Fetch V1 Rules
-        v1_rule = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule", token=token, return_response=True)
+        v1_rule = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule", token=token, return_response=True)
         v1_json = v1_rule.json() if getattr(v1_rule, 'ok', False) else {"error": getattr(v1_rule, 'status_code', 'Failed')}
         
-        # 4. Fetch V2 Rules
-        v2_rule = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules", token=token, return_response=True)
-        v2_json = v2_rule.json() if getattr(v2_rule, 'ok', False) else {"error": getattr(v2_rule, 'status_code', 'Failed')}
+        v2_interaction = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules", token=token, return_response=True)
+        v2_json = v2_interaction.json() if getattr(v2_interaction, 'ok', False) else {"error": getattr(v2_interaction, 'status_code', 'Failed')}
+
+        # CHANGED: Hits the correct "state-rules/work-hours" endpoint
+        v2_work_hours = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours", token=token, return_response=True)
+        v2_work_hours_json = v2_work_hours.json() if getattr(v2_work_hours, 'ok', False) else {"error": getattr(v2_work_hours, 'status_code', 'Failed')}
 
         return jsonify({
             "success": True,
@@ -97,7 +97,8 @@ def debug_extension():
             "raw_data": {
                 "1_devices_api": devices_json,
                 "2_v1_answering_rule_api": v1_json,
-                "3_v2_interaction_rules_api": v2_json
+                "3_v2_interaction_rules_api": v2_json,
+                "4_v2_work_hours_state_api": v2_work_hours_json
             }
         })
     except Exception as e:
