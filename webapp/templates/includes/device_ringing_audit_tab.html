@@ -21,6 +21,16 @@
         </div>
     </div>
 
+    <div id="device-audit-progress-container" class="hidden mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden px-4 pt-4 pb-4">
+        <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
+            <span id="device-audit-progress-text">Initializing...</span>
+            <span id="device-audit-progress-percent">0%</span>
+        </div>
+        <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
+            <div id="device-audit-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+        </div>
+    </div>
+
     <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
         <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
             <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
@@ -35,6 +45,12 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('btn-device-audit');
+    const progressContainer = document.getElementById('device-audit-progress-container');
+    const progressBar = document.getElementById('device-audit-progress-bar');
+    const progressText = document.getElementById('device-audit-progress-text');
+    const progressPercent = document.getElementById('device-audit-progress-percent');
+    
+    let lastLoggedMessage = "";
 
     function logAudit(msg, type='info') {
         const box = document.getElementById('deviceAuditLogs');
@@ -54,12 +70,74 @@ document.addEventListener('DOMContentLoaded', () => {
         box.scrollTop = box.scrollHeight;
     }
 
+    function pollAuditStatus(taskId) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/device_ringing_audit/audit/status?task_id=${taskId}`);
+                const data = await res.json();
+                
+                if (data.total > 0) {
+                    const pct = Math.round((data.current / data.total) * 100);
+                    progressBar.style.width = `${pct}%`;
+                    progressPercent.textContent = `${pct}% (${data.current}/${data.total})`;
+                }
+                
+                // If the message has changed, log it to the console UI
+                if (data.message && data.message !== lastLoggedMessage) {
+                    logAudit(data.message, 'info');
+                    progressText.textContent = data.message;
+                    lastLoggedMessage = data.message;
+                }
+
+                if (data.status === 'completed') {
+                    clearInterval(interval);
+                    progressBar.className = 'bg-green-500 h-2.5 rounded-full transition-all duration-300';
+                    progressText.textContent = "Audit Complete!";
+                    
+                    // Trigger Download
+                    const link = document.createElement('a');
+                    link.href = `/api/device_ringing_audit/audit/download?task_id=${taskId}`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    btn.disabled = false;
+                    btn.innerText = "Generate Report";
+                    
+                    // Hide progress bar after delay
+                    setTimeout(() => {
+                        progressContainer.classList.add('hidden');
+                    }, 3000);
+                } else if (data.status === 'error') {
+                    clearInterval(interval);
+                    progressBar.className = 'bg-red-500 h-2.5 rounded-full transition-all duration-300';
+                    progressText.textContent = "Audit Failed";
+                    logAudit(`Audit Failed: ${data.error}`, "error");
+                    
+                    btn.disabled = false;
+                    btn.innerText = "Generate Report";
+                }
+            } catch (e) {
+                // Ignore network blips during polling
+            }
+        }, 1000);
+    }
+
     if (btn) {
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Generating...`;
             
-            logAudit("Starting Audit... fetching user devices and V2 routing rules from RingCentral.");
+            // Reset Progress Bar UI
+            progressContainer.classList.remove('hidden');
+            progressBar.className = 'bg-blue-500 h-2.5 rounded-full transition-all duration-300';
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Initializing...';
+            progressPercent.textContent = '0%';
+            lastLoggedMessage = "";
+            document.getElementById('deviceAuditLogs').innerHTML = ''; // clear logs
+            
+            logAudit("Starting Audit... triggering background task.", "info");
 
             try {
                 const res = await fetch('/api/device_ringing_audit/audit', {
@@ -67,31 +145,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' }
                 });
 
-                if (!res.ok) {
-                    let err = "Audit failed on server.";
-                    try {
-                        const errJson = await res.json();
-                        err = errJson.error || err;
-                    } catch(e) {}
-                    throw new Error(err);
+                const data = await res.json();
+                
+                if (data.success) {
+                    pollAuditStatus(data.task_id);
+                } else {
+                    throw new Error(data.error || "Server failed to initiate audit.");
                 }
                 
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                const dateStr = new Date().toISOString().slice(0, 10);
-                a.download = `Device_Ringing_Audit_${dateStr}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                
-                logAudit("Audit Complete! Downloading file...", "success");
             } catch (e) {
                 logAudit(`Audit Failed: ${e.message}`, "error");
-            } finally {
                 btn.disabled = false;
                 btn.innerText = "Generate Report";
+                progressContainer.classList.add('hidden');
             }
         });
     }
