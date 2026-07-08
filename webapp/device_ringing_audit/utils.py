@@ -138,40 +138,49 @@ def get_device_ringing_status(ext_id, token, task_id=None):
     # 2. V1 SCHEMA (FALLBACK)
     # ==========================================
     if not is_v2:
-        v1_rules_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed"
+        v1_rules_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
         v1_resp = safe_api_call(v1_rules_url, token=token, task_id=task_id)
 
         if v1_resp and 'records' in v1_resp:
-            for rule in v1_resp['records']:
-                if rule.get('enabled', False) and rule.get('callHandlingAction') == 'ForwardCalls':
-                    r_name = rule.get('name', 'Unnamed V1 Rule')
-                    mobile_en = False
-                    desktop_en = False
-                    external_nums = []
-                    dev_status = {dev_id: False for dev_id in device_map.keys()}
+            for rule_summary in v1_resp['records']:
+                if rule_summary.get('enabled', False) and rule_summary.get('callHandlingAction') == 'ForwardCalls':
+                    rule_id = rule_summary.get('id')
                     
-                    for r in rule.get('forwarding', {}).get('rules', []):
-                        if r.get('enabled', True) or r.get('active', True):
-                            for f in r.get('forwardingNumbers', []):
-                                f_type = f.get('type', '')
-                                f_device_id = str(f.get('device', {}).get('id', ''))
-                                f_phone = str(f.get('phoneNumber', ''))
-                                
-                                if f_type in ['SoftPhone', 'ApplicationExtension']:
-                                    desktop_en = True
-                                    mobile_en = True
-                                elif f_device_id and f_device_id in dev_status:
-                                    dev_status[f_device_id] = True
-                                elif f_phone and f_type not in ['SoftPhone', 'ApplicationExtension']:
-                                    external_nums.append(f_phone)
+                    # Explicit fetch per rule to guarantee forwarding nested array is populated
+                    rule_detail_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}"
+                    rule_detail = safe_api_call(rule_detail_url, token=token, task_id=task_id)
+                    
+                    if rule_detail and 'forwarding' in rule_detail:
+                        r_name = rule_detail.get('name', rule_summary.get('name', 'Unnamed V1 Rule'))
+                        mobile_en = False
+                        desktop_en = False
+                        external_nums = []
+                        dev_status = {dev_id: False for dev_id in device_map.keys()}
+                        
+                        for r in rule_detail['forwarding'].get('rules', []):
+                            if r.get('enabled', True) or r.get('active', True):
+                                for f in r.get('forwardingNumbers', []):
+                                    f_type = f.get('type', '')
+                                    f_device_id = str(f.get('device', {}).get('id', ''))
+                                    f_phone = str(f.get('phoneNumber', ''))
                                     
-                    rules_data.append({
-                        'rule_name': r_name,
-                        'mobile_enabled': mobile_en,
-                        'desktop_enabled': desktop_en,
-                        'external_numbers': external_nums,
-                        'device_status': dev_status
-                    })
+                                    if f_type in ['SoftPhone', 'ApplicationExtension']:
+                                        desktop_en = True
+                                        mobile_en = True
+                                    elif f_device_id and f_device_id in dev_status:
+                                        dev_status[f_device_id] = True
+                                    elif f_phone and f_type not in ['SoftPhone', 'ApplicationExtension']:
+                                        external_nums.append(f_phone)
+                                        
+                        rules_data.append({
+                            'rule_name': r_name,
+                            'mobile_enabled': mobile_en,
+                            'desktop_enabled': desktop_en,
+                            'external_numbers': external_nums,
+                            'device_status': dev_status
+                        })
+                    # Gentle sub-pacing if they have a huge amount of V1 custom rules
+                    time.sleep(0.5)
 
     return device_map, rules_data
 
@@ -235,8 +244,8 @@ def run_audit_background(task_id, token):
                     is_ringing = r_data['device_status'].get(did, False)
                     
                     # SoftPhone inheritance trap: V2 API addresses softphones as "Desktop Apps"
-                    if not is_ringing and d_info['type'] in ['SoftPhone', 'ApplicationExtension']:
-                        if r_data['desktop_enabled'] or r_data['mobile_enabled']:
+                    if not is_ringing and d_info['type'] == 'SoftPhone':
+                        if r_data['desktop_enabled']:
                             is_ringing = True
                             
                     row[f"Device {dev_idx} Name"] = d_info['name']
