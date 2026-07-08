@@ -7,29 +7,47 @@ from webapp.rc_api import rc_api_call
 # Global store for background task progress
 audit_progress_store = {}
 
-def safe_api_call(endpoint, method='GET', token=None):
-    """Helper to safely request API data while respecting 429 Rate Limits."""
+def safe_api_call(endpoint, method='GET', token=None, task_id=None):
+    """Helper to safely request API data while respecting 429 Rate Limits and 50x errors."""
     for attempt in range(4):
         resp = rc_api_call(endpoint, method=method, return_response=True, token=token)
-        if resp and getattr(resp, 'status_code', None) == 429:
-            # Respect RingCentral's requested backoff time
+        status_code = getattr(resp, 'status_code', None)
+        
+        # 1. Handle Rate Limiting (429)
+        if status_code == 429:
             retry_after = int(resp.headers.get('Retry-After', 60)) if hasattr(resp, 'headers') else 10
-            time.sleep(retry_after)
+            if task_id:
+                audit_progress_store[task_id]['message'] = f"Rate limit hit! Pausing for {retry_after}s..."
+            time.sleep(retry_after + 1)
             continue
+            
+        # 2. Handle Token Expiry (401)
+        if status_code == 401:
+            raise Exception("Authentication token expired during audit. Please Authorize & Bridge again.")
+            
+        # 3. Handle Success
         if resp and getattr(resp, 'ok', False):
             try:
                 return resp.json()
             except:
                 return {}
+                
+        # 4. Handle Server/Gateway Errors (50x)
+        if status_code and status_code >= 500:
+            time.sleep(3)
+            continue
+            
+        # For 403 Forbidden or 404 Not Found, return None (don't retry)
         return None
+        
     return None
 
-def fetch_all_users(token):
+def fetch_all_users(token, task_id=None):
     """Fetches all users from the account."""
     users = []
     page = 1
     while True:
-        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token)
+        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token, task_id=task_id)
         if not resp or 'records' not in resp: 
             break
         users.extend(resp['records'])
@@ -39,12 +57,12 @@ def fetch_all_users(token):
         time.sleep(0.05)
     return users
 
-def get_device_ringing_status(ext_id, token):
+def get_device_ringing_status(ext_id, token, task_id=None):
     """
     Fetches the user's devices and queries the Call Handling APIs to map which devices are enabled to ring.
     Safely handles both V1 Forwarding rules and V2 Interaction Rules.
     """
-    devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token)
+    devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, task_id=task_id)
     devices = devices_resp.get('records', []) if devices_resp else []
     device_map = {
         str(d['id']): d.get('name') or d.get('model', {}).get('name', 'Unknown Device') 
@@ -57,7 +75,7 @@ def get_device_ringing_status(ext_id, token):
 
     # 1. Query V1 Business Hours Rule first
     v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule"
-    v1_resp = safe_api_call(v1_url, token=token)
+    v1_resp = safe_api_call(v1_url, token=token, task_id=task_id)
     
     v1_success = False
 
@@ -68,7 +86,7 @@ def get_device_ringing_status(ext_id, token):
             if r.get('enabled', True) or r.get('active', True):
                 for f in r.get('forwardingNumbers', []):
                     f_type = f.get('type', '')
-                    # CRITICAL FIX: Extract the actual Device ID, not the Forwarding List ID
+                    # CRITICAL: We must extract the actual hardware Device ID, not the Forwarding List ID
                     f_device_id = str(f.get('device', {}).get('id', ''))
                     
                     if f_type in ['SoftPhone', 'ApplicationExtension']:
@@ -80,7 +98,7 @@ def get_device_ringing_status(ext_id, token):
     # 2. If V1 didn't have forwarding (e.g. account fully migrated to V2 interaction rules)
     if not v1_success:
         v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-        v2_resp = safe_api_call(v2_url, token=token)
+        v2_resp = safe_api_call(v2_url, token=token, task_id=task_id)
 
         if v2_resp and 'records' in v2_resp:
             for rule in v2_resp['records']:
@@ -118,7 +136,7 @@ def run_audit_background(task_id, token):
     }
 
     try:
-        users = fetch_all_users(token)
+        users = fetch_all_users(token, task_id=task_id)
         valid_users = [u for u in users if u.get('status') in ['Enabled', 'NotActivated']]
         
         total_users = len(valid_users)
@@ -136,10 +154,11 @@ def run_audit_background(task_id, token):
             ext_name = user.get('name', 'Unknown')
             ext_num = user.get('extensionNumber', '')
 
+            # Report specific item to the system log
             audit_progress_store[task_id]['current'] = i + 1
             audit_progress_store[task_id]['message'] = f"Auditing Extension {ext_num} ({ext_name})..."
 
-            mobile_en, desktop_en, device_map, device_status = get_device_ringing_status(ext_id, token)
+            mobile_en, desktop_en, device_map, device_status = get_device_ringing_status(ext_id, token, task_id=task_id)
 
             row = {
                 "Username": ext_name,
@@ -156,7 +175,9 @@ def run_audit_background(task_id, token):
                 dev_idx += 1
 
             audit_data.append(row)
-            # 2.5s pacing prevents 429 penalties on large accounts
+            
+            # SUSTAINABLE PACING: 2.5s prevents hitting the ~40 calls/min limit.
+            # This is critical to prevent the 60-second 429 lockouts.
             time.sleep(2.5)
 
         # Build Excel File
