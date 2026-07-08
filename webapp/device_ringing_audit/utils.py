@@ -41,8 +41,8 @@ def fetch_all_users(token):
 
 def get_device_ringing_status(ext_id, token):
     """
-    Fetches the user's devices and queries the NEW V2 Call Handling (interaction-rules) API 
-    to map which devices are enabled to ring.
+    Fetches the user's devices and queries the Call Handling APIs to map which devices are enabled to ring.
+    Safely handles both V1 Forwarding rules and V2 Interaction Rules.
     """
     devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token)
     devices = devices_resp.get('records', []) if devices_resp else []
@@ -55,48 +55,54 @@ def get_device_ringing_status(ext_id, token):
     desktop_enabled = False
     device_status = {dev_id: False for dev_id in device_map.keys()}
 
-    v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-    v2_resp = safe_api_call(v2_url, token=token)
+    # 1. Query V1 Business Hours Rule first
+    v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule"
+    v1_resp = safe_api_call(v1_url, token=token)
+    
+    v1_success = False
 
-    used_v2 = False
-    if v2_resp and 'records' in v2_resp:
-        used_v2 = True
-        for rule in v2_resp['records']:
-            actions = rule.get('dispatching', {}).get('actions', [])
-            for action in actions:
-                if action.get('type') == 'RingGroupAction':
-                    action_enabled = action.get('enabled', True)
-                    if action_enabled:
-                        targets = action.get('targets', [])
-                        for t in targets:
-                            t_type = t.get('type')
-                            t_enabled = t.get('enabled', True)
-                            
-                            if t_type == 'AllMobileRingTarget':
-                                mobile_enabled = mobile_enabled or t_enabled
-                            elif t_type == 'AllDesktopRingTarget':
-                                desktop_enabled = desktop_enabled or t_enabled
-                            elif t_type == 'DeviceRingTarget':
-                                dev_id = str(t.get('device', {}).get('id', ''))
-                                if dev_id in device_status:
-                                    device_status[dev_id] = device_status[dev_id] or t_enabled
+    if v1_resp and v1_resp.get('callHandlingAction') == 'ForwardCalls' and 'forwarding' in v1_resp:
+        v1_success = True
+        rules = v1_resp['forwarding'].get('rules', [])
+        for r in rules:
+            if r.get('enabled', True) or r.get('active', True):
+                for f in r.get('forwardingNumbers', []):
+                    f_type = f.get('type', '')
+                    # CRITICAL FIX: Extract the actual Device ID, not the Forwarding List ID
+                    f_device_id = str(f.get('device', {}).get('id', ''))
+                    
+                    if f_type in ['SoftPhone', 'ApplicationExtension']:
+                        desktop_enabled = True
+                        mobile_enabled = True
+                    elif f_device_id and f_device_id in device_status:
+                        device_status[f_device_id] = True
 
-    if not used_v2:
-        # Fallback to V1
-        v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule"
-        v1_resp = safe_api_call(v1_url, token=token)
-        if v1_resp and 'forwarding' in v1_resp:
-            rules = v1_resp['forwarding'].get('rules', [])
-            for r in rules:
-                if r.get('active', True):
-                    for f in r.get('forwardingNumbers', []):
-                        f_type = f.get('type')
-                        f_id = str(f.get('id', ''))
-                        if f_type == 'SoftPhone':
-                            desktop_enabled = True
-                            mobile_enabled = True
-                        elif f_id in device_status:
-                            device_status[f_id] = True
+    # 2. If V1 didn't have forwarding (e.g. account fully migrated to V2 interaction rules)
+    if not v1_success:
+        v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
+        v2_resp = safe_api_call(v2_url, token=token)
+
+        if v2_resp and 'records' in v2_resp:
+            for rule in v2_resp['records']:
+                if not rule.get('enabled', True):
+                    continue
+                actions = rule.get('dispatching', {}).get('actions', [])
+                for action in actions:
+                    if action.get('type') == 'RingGroupAction':
+                        if action.get('enabled', True):
+                            for t in action.get('targets', []):
+                                t_type = t.get('type')
+                                t_enabled = t.get('enabled', True)
+                                
+                                if t_enabled:
+                                    if t_type == 'AllMobileRingTarget':
+                                        mobile_enabled = True
+                                    elif t_type == 'AllDesktopRingTarget':
+                                        desktop_enabled = True
+                                    elif t_type == 'DeviceRingTarget':
+                                        dev_id = str(t.get('device', {}).get('id', ''))
+                                        if dev_id in device_status:
+                                            device_status[dev_id] = True
 
     return mobile_enabled, desktop_enabled, device_map, device_status
 
@@ -130,7 +136,6 @@ def run_audit_background(task_id, token):
             ext_name = user.get('name', 'Unknown')
             ext_num = user.get('extensionNumber', '')
 
-            # Update progress state for the live UI log
             audit_progress_store[task_id]['current'] = i + 1
             audit_progress_store[task_id]['message'] = f"Auditing Extension {ext_num} ({ext_name})..."
 
@@ -151,8 +156,8 @@ def run_audit_background(task_id, token):
                 dev_idx += 1
 
             audit_data.append(row)
-            # Gentle pacing to avoid instant bucket depletion on large accounts
-            time.sleep(0.05)
+            # 2.5s pacing prevents 429 penalties on large accounts
+            time.sleep(2.5)
 
         # Build Excel File
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
