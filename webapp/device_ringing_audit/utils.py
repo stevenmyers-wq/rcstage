@@ -42,15 +42,21 @@ def safe_api_call(endpoint, method='GET', token=None, task_id=None):
         
     return None
 
-def fetch_all_users(token, task_id=None):
-    """Fetches all users from the account."""
+def fetch_users_for_ui(token):
+    """Fetches all active users from the account for the UI table."""
     users = []
     page = 1
     while True:
-        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token, task_id=task_id)
+        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&status=Enabled,NotActivated&perPage=1000&page={page}", token=token)
         if not resp or 'records' not in resp: 
             break
-        users.extend(resp['records'])
+        for u in resp['records']:
+            users.append({
+                'id': str(u['id']),
+                'name': u.get('name', 'Unknown'),
+                'extensionNumber': u.get('extensionNumber', ''),
+                'site': u.get('site', {}).get('name', 'Main Site')
+            })
         if not resp.get('navigation', {}).get('nextPage'): 
             break
         page += 1
@@ -65,12 +71,19 @@ def get_device_ringing_status(ext_id, token, task_id=None):
     devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, task_id=task_id)
     devices = devices_resp.get('records', []) if devices_resp else []
     
-    # Store both the name and the TYPE of the device so we can correctly map SoftPhones
     device_map = {}
     for d in devices:
+        d_type = d.get('type', 'Unknown')
+        d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
+        
+        # STRICT FILTER: Drop devices only if their system type dictates they are apps.
+        # We do not drop based on d_name, as hardphones can be manually named anything.
+        if d_type in ['SoftPhone', 'ApplicationExtension']:
+            continue
+            
         device_map[str(d['id'])] = {
-            'name': d.get('name') or d.get('model', {}).get('name', 'Unknown Device'),
-            'type': d.get('type', 'Unknown')
+            'name': d_name,
+            'type': d_type
         }
 
     rules_data = []
@@ -210,7 +223,7 @@ def get_device_ringing_status(ext_id, token, task_id=None):
 
     return device_map, rules_data
 
-def run_audit_background(task_id, token):
+def run_audit_background(task_id, token, ext_ids=None):
     """Background task to perform the audit, updating progress as it goes."""
     audit_progress_store[task_id] = {
         'status': 'running',
@@ -222,9 +235,12 @@ def run_audit_background(task_id, token):
     }
 
     try:
-        users = fetch_all_users(token, task_id=task_id)
-        valid_users = [u for u in users if u.get('status') in ['Enabled', 'NotActivated']]
+        valid_users = fetch_users_for_ui(token)
         
+        # Filter down to only the explicitly selected users if provided
+        if ext_ids and len(ext_ids) > 0:
+            valid_users = [u for u in valid_users if str(u['id']) in ext_ids]
+            
         total_users = len(valid_users)
         audit_progress_store[task_id]['total'] = total_users
         
@@ -268,12 +284,6 @@ def run_audit_background(task_id, token):
                 dev_idx = 1
                 for did, d_info in device_map.items():
                     is_ringing = r_data['device_status'].get(did, False)
-                    
-                    # SoftPhone inheritance trap: V2 API addresses softphones as "Desktop Apps"
-                    if not is_ringing and d_info['type'] == 'SoftPhone':
-                        if r_data['desktop_enabled']:
-                            is_ringing = True
-                            
                     row[f"Device {dev_idx} Name"] = d_info['name']
                     row[f"Device {dev_idx} Ring Enabled"] = "Yes" if is_ringing else "No"
                     dev_idx += 1
