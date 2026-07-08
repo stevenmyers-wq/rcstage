@@ -6,9 +6,20 @@ from flask import Blueprint, jsonify, send_file, request
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
-from .utils import run_audit_background, audit_progress_store
+from .utils import run_audit_background, audit_progress_store, fetch_users_for_ui
 
 device_ringing_audit_bp = Blueprint('device_ringing_audit_bp', __name__, url_prefix='/api/device_ringing_audit')
+
+@device_ringing_audit_bp.route('/users', methods=['GET'])
+@require_rc_token
+def get_users():
+    """Fetches list of active users to populate the selection UI"""
+    token = get_rc_access_token()
+    try:
+        data = fetch_users_for_ui(token)
+        return jsonify({'records': data})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @device_ringing_audit_bp.route('/audit', methods=['POST'])
 @require_rc_token
@@ -17,10 +28,13 @@ def start_audit():
     token = get_rc_access_token()
     if not token:
         return jsonify({"error": "Unauthorized"}), 401
+        
+    data = request.get_json() or {}
+    ext_ids = data.get('ext_ids', [])
     
     task_id = f"ringing_audit_{int(time.time())}"
     
-    thread = threading.Thread(target=run_audit_background, args=(task_id, token))
+    thread = threading.Thread(target=run_audit_background, args=(task_id, token, ext_ids))
     thread.daemon = True
     thread.start()
     
@@ -58,7 +72,6 @@ def audit_download():
         )
     return "File not ready or expired", 404
 
-# --- UPDATED DEBUG ROUTE ---
 @device_ringing_audit_bp.route('/debug', methods=['POST'])
 @require_rc_token
 def debug_extension():
@@ -78,19 +91,15 @@ def debug_extension():
             
         ext_id = records[0]['id']
         
-        # 1. Devices
         devices = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, return_response=True)
         devices_json = devices.json() if getattr(devices, 'ok', False) else {"error": getattr(devices, 'status_code', 'Failed')}
         
-        # 2. V1 Legacy Rules
         v1_rule = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule", token=token, return_response=True)
         v1_json = v1_rule.json() if getattr(v1_rule, 'ok', False) else {"error": getattr(v1_rule, 'status_code', 'Failed')}
         
-        # 3. V2 Custom Interaction Rules
         v2_interaction = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules", token=token, return_response=True)
         v2_json = v2_interaction.json() if getattr(v2_interaction, 'ok', False) else {"error": getattr(v2_interaction, 'status_code', 'Failed')}
 
-        # 4. V2 State Rules (The master list for Business Hours, After Hours, DND, etc.)
         v2_state_rules = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules", token=token, return_response=True)
         v2_state_rules_json = v2_state_rules.json() if getattr(v2_state_rules, 'ok', False) else {"error": getattr(v2_state_rules, 'status_code', 'Failed')}
 
