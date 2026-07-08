@@ -1,49 +1,109 @@
 <div class="space-y-6 animate-fade-in p-4 w-full">
-    <div class="mb-4 border-b border-gray-200 pb-4">
-        <h2 class="text-3xl font-bold text-slate-800 mb-1">Device Ringing Audit</h2>
-        <p class="text-slate-500 text-sm">Query the V1 and V2 Call Handling APIs to determine if user devices, mobile apps, and desktop apps are enabled to ring.</p>
+    <div class="mb-4 border-b border-gray-200 pb-4 flex justify-between items-start">
+        <div>
+            <h2 class="text-3xl font-bold text-slate-800 mb-1">Device Ringing Audit</h2>
+            <p class="text-slate-500 text-sm">Query the V1 and V2 Call Handling APIs to determine if user devices, mobile apps, and desktop apps are enabled to ring.</p>
+        </div>
+        <button id="btn-toggle-sandbox" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 px-4 rounded transition-colors">
+            Toggle Diagnostics
+        </button>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                </svg>
+    <div id="audit-main-ui">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+                <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-2">Run Audit</h3>
+                <p class="text-gray-500 text-sm mb-6 flex-grow">
+                    Generate an Excel spreadsheet identifying ringing states (toggled ON or OFF) across all user devices, apps, and physical phones.
+                </p>
+                <button id="btn-device-audit" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+                    Generate Report
+                </button>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Run Audit</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate an Excel spreadsheet identifying ringing states (toggled ON or OFF) across all user devices, apps, and physical phones.
-            </p>
-            <button id="btn-device-audit" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
-                Generate Report
+        </div>
+
+        <div id="device-audit-progress-container" class="hidden mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden px-4 pt-4 pb-4">
+            <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
+                <span id="device-audit-progress-text">Initializing...</span>
+                <span id="device-audit-progress-percent">0%</span>
+            </div>
+            <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
+                <div id="device-audit-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
+            <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+                <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
+                <button onclick="document.getElementById('deviceAuditLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+            </div>
+            <div id="deviceAuditLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+                Ready to audit...
+            </div>
+        </div>
+    </div>
+
+    <div id="audit-sandbox-ui" class="hidden bg-slate-50 border border-slate-300 rounded-xl p-6 mt-4">
+        <h3 class="text-xl font-bold text-slate-800 mb-2 border-b border-slate-200 pb-2">API Diagnostics Sandbox</h3>
+        <p class="text-sm text-slate-600 mb-4">Enter an extension number that is returning bad data. This will dump the raw API responses so we can map the schema perfectly.</p>
+        
+        <div class="flex gap-4 mb-4">
+            <input type="text" id="debug-ext-number" placeholder="e.g. 11141" class="border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 w-48">
+            <button id="btn-run-debug" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded transition shadow-sm">
+                Fetch Raw Data
             </button>
         </div>
-    </div>
-
-    <div id="device-audit-progress-container" class="hidden mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden px-4 pt-4 pb-4">
-        <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
-            <span id="device-audit-progress-text">Initializing...</span>
-            <span id="device-audit-progress-percent">0%</span>
-        </div>
-        <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
-            <div id="device-audit-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
-        </div>
-    </div>
-
-    <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
-        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
-            <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
-            <button onclick="document.getElementById('deviceAuditLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
-        </div>
-        <div id="deviceAuditLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
-            Ready to audit...
-        </div>
+        
+        <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Raw JSON Output</label>
+        <textarea id="debug-json-output" class="w-full h-96 bg-black text-green-400 p-4 rounded font-mono text-xs overflow-auto border border-slate-700" placeholder="Awaiting execution..." readonly></textarea>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Diagnostics Toggle & Execution ---
+    const toggleSandboxBtn = document.getElementById('btn-toggle-sandbox');
+    const mainUi = document.getElementById('audit-main-ui');
+    const sandboxUi = document.getElementById('audit-sandbox-ui');
+    const runDebugBtn = document.getElementById('btn-run-debug');
+    const debugInput = document.getElementById('debug-ext-number');
+    const debugOutput = document.getElementById('debug-json-output');
+
+    toggleSandboxBtn.addEventListener('click', () => {
+        mainUi.classList.toggle('hidden');
+        sandboxUi.classList.toggle('hidden');
+    });
+
+    runDebugBtn.addEventListener('click', async () => {
+        const extNum = debugInput.value.trim();
+        if (!extNum) return alert("Please enter an extension number.");
+        
+        runDebugBtn.disabled = true;
+        runDebugBtn.innerHTML = "Fetching...";
+        debugOutput.value = "Sending request to RingCentral APIs...";
+
+        try {
+            const res = await fetch('/api/device_ringing_audit/debug', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ extension_number: extNum })
+            });
+            const data = await res.json();
+            debugOutput.value = JSON.stringify(data, null, 2);
+        } catch (e) {
+            debugOutput.value = "NETWORK ERROR: " + e.message;
+        } finally {
+            runDebugBtn.disabled = false;
+            runDebugBtn.innerHTML = "Fetch Raw Data";
+        }
+    });
+
+    // --- Main Audit Logic ---
     const btn = document.getElementById('btn-device-audit');
     const progressContainer = document.getElementById('device-audit-progress-container');
     const progressBar = document.getElementById('device-audit-progress-bar');
@@ -56,7 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const box = document.getElementById('deviceAuditLogs');
         if (!box) return;
         
-        // Remove empty state message if needed
         if (box.children.length === 1 && box.children[0].classList && !box.children[0].classList.contains('text-gray-500')) {
              if (box.innerText.includes("Ready to audit")) {
                  box.innerHTML = '';
@@ -82,9 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressPercent.textContent = `${pct}% (${data.current}/${data.total})`;
                 }
                 
-                // If the message has changed, log it to the console UI
                 if (data.message && data.message !== lastLoggedMessage) {
-                    // Log standard status messages as info, let backend dictate errors
                     const msgType = data.message.toLowerCase().includes('rate limit') ? 'error' : 'info';
                     logAudit(data.message, msgType);
                     progressText.textContent = data.message;
@@ -96,7 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressBar.className = 'bg-green-500 h-2.5 rounded-full transition-all duration-300';
                     progressText.textContent = "Audit Complete!";
                     
-                    // Trigger Download
                     const link = document.createElement('a');
                     link.href = `/api/device_ringing_audit/audit/download?task_id=${taskId}`;
                     document.body.appendChild(link);
@@ -106,10 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     btn.disabled = false;
                     btn.innerHTML = `Generate Report`;
                     
-                    // Hide progress bar after delay
-                    setTimeout(() => {
-                        progressContainer.classList.add('hidden');
-                    }, 3000);
+                    setTimeout(() => { progressContainer.classList.add('hidden'); }, 3000);
                 } else if (data.status === 'error') {
                     clearInterval(interval);
                     progressBar.className = 'bg-red-500 h-2.5 rounded-full transition-all duration-300';
@@ -120,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     btn.innerHTML = `Generate Report`;
                 }
             } catch (e) {
-                // Ignore network blips during polling
+                // Ignore network blips
             }
         }, 1000);
     }
@@ -130,14 +183,13 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.disabled = true;
             btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Generating...`;
             
-            // Reset Progress Bar UI
             progressContainer.classList.remove('hidden');
             progressBar.className = 'bg-blue-500 h-2.5 rounded-full transition-all duration-300';
             progressBar.style.width = '0%';
             progressText.textContent = 'Initializing...';
             progressPercent.textContent = '0%';
             lastLoggedMessage = "";
-            document.getElementById('deviceAuditLogs').innerHTML = ''; // clear logs
+            document.getElementById('deviceAuditLogs').innerHTML = '';
             
             logAudit("Starting Audit... triggering background task.", "info");
 
@@ -146,7 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
-
                 const data = await res.json();
                 
                 if (data.success) {
@@ -154,7 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     throw new Error(data.error || "Server failed to initiate audit.");
                 }
-                
             } catch (e) {
                 logAudit(`Audit Failed: ${e.message}`, "error");
                 btn.disabled = false;
