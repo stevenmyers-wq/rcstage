@@ -58,11 +58,11 @@ def audit_download():
         )
     return "File not ready or expired", 404
 
-# --- DEBUG ROUTE ---
+# --- UPDATED DEBUG ROUTE ---
 @device_ringing_audit_bp.route('/debug', methods=['POST'])
 @require_rc_token
 def debug_extension():
-    """Fetches the raw JSON for all relevant APIs so we can inspect the exact schema."""
+    """Fetches the raw JSON for all relevant APIs to inspect the exact schema."""
     token = get_rc_access_token()
     data = request.get_json()
     ext_num = data.get('extension_number')
@@ -78,18 +78,21 @@ def debug_extension():
             
         ext_id = records[0]['id']
         
+        # 1. Devices
         devices = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, return_response=True)
         devices_json = devices.json() if getattr(devices, 'ok', False) else {"error": getattr(devices, 'status_code', 'Failed')}
         
+        # 2. V1 Legacy Rules
         v1_rule = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule", token=token, return_response=True)
         v1_json = v1_rule.json() if getattr(v1_rule, 'ok', False) else {"error": getattr(v1_rule, 'status_code', 'Failed')}
         
+        # 3. V2 Custom Interaction Rules
         v2_interaction = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules", token=token, return_response=True)
         v2_json = v2_interaction.json() if getattr(v2_interaction, 'ok', False) else {"error": getattr(v2_interaction, 'status_code', 'Failed')}
 
-        # CHANGED: Hits the correct "state-rules/work-hours" endpoint
-        v2_work_hours = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours", token=token, return_response=True)
-        v2_work_hours_json = v2_work_hours.json() if getattr(v2_work_hours, 'ok', False) else {"error": getattr(v2_work_hours, 'status_code', 'Failed')}
+        # 4. V2 State Rules (The master list for Business Hours, After Hours, DND, etc.)
+        v2_state_rules = rc_api_call(f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules", token=token, return_response=True)
+        v2_state_rules_json = v2_state_rules.json() if getattr(v2_state_rules, 'ok', False) else {"error": getattr(v2_state_rules, 'status_code', 'Failed')}
 
         return jsonify({
             "success": True,
@@ -98,7 +101,7 @@ def debug_extension():
                 "1_devices_api": devices_json,
                 "2_v1_answering_rule_api": v1_json,
                 "3_v2_interaction_rules_api": v2_json,
-                "4_v2_work_hours_state_api": v2_work_hours_json
+                "4_v2_state_rules_api": v2_state_rules_json
             }
         })
     except Exception as e:
