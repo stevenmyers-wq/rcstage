@@ -1,55 +1,100 @@
 <div class="space-y-6 animate-fade-in p-4 w-full">
-    <div class="mb-4 border-b border-gray-200 pb-4 flex justify-between items-start">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 border-b border-gray-200 pb-4">
         <div>
             <h2 class="text-3xl font-bold text-slate-800 mb-1">Device Ringing Audit</h2>
-            <p class="text-slate-500 text-sm">Query the V1 and V2 Call Handling APIs to determine if user devices, mobile apps, and desktop apps are enabled to ring.</p>
+            <p class="text-slate-500 text-sm">Target specific users to query their active V1 and V2 Call Handling ringing states.</p>
         </div>
-        <button id="btn-toggle-sandbox" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 px-4 rounded transition-colors">
-            Toggle Diagnostics
-        </button>
+        <div class="flex flex-wrap gap-3">
+            <button id="btn-toggle-sandbox" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-2 px-4 rounded-lg shadow-sm transition">
+                Diagnostics Sandbox
+            </button>
+            <button id="btn-device-audit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                Generate Report
+            </button>
+        </div>
     </div>
 
-    <!-- MAIN TOOL UI -->
-    <div id="audit-main-ui">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-                <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">Run Audit</h3>
-                <p class="text-gray-500 text-sm mb-6 flex-grow">
-                    Generate an Excel spreadsheet identifying ringing states across all user devices and apps. <strong>If an extension has multiple active rules (e.g. Custom Caller ID rules), each rule will generate a separate row.</strong>
-                </p>
-                <button id="btn-device-audit" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
-                    Generate Report
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end mb-4" id="audit-main-ui">
+        <div class="flex-grow min-w-[200px]">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search Users</label>
+            <input type="text" id="audit-search-input" placeholder="Name or Ext Number..." class="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        
+        <div class="w-64" id="filter-site">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Site</label>
+            <div class="relative">
+                <button class="ms-btn w-full text-left p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow">
+                    <span class="ms-label truncate text-gray-700">All Sites</span>
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl">
+                    <div class="p-2 border-b border-gray-100">
+                        <input type="text" class="ms-search w-full p-1.5 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" placeholder="Search sites...">
+                    </div>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-gray-700"></ul>
+                </div>
             </div>
         </div>
 
-        <div id="device-audit-progress-container" class="hidden mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden px-4 pt-4 pb-4">
-            <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
-                <span id="device-audit-progress-text">Initializing...</span>
-                <span id="device-audit-progress-percent">0%</span>
-            </div>
-            <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
-                <div id="device-audit-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
-            </div>
+        <div>
+            <button id="audit-refresh-users" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-lg transition border border-gray-300 text-sm h-[42px]">
+                Refresh List
+            </button>
         </div>
+    </div>
+    
+    <div class="mb-2 flex justify-between items-center text-sm px-1">
+        <span class="font-semibold text-blue-700 bg-blue-50 px-3 py-1 rounded border border-blue-200 selected-count-display">0 users selected for audit</span>
+    </div>
 
-        <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
-            <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
-                <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
-                <button onclick="document.getElementById('deviceAuditLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
-            </div>
-            <div id="deviceAuditLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
-                Ready to audit...
-            </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative mb-6">
+        <div class="overflow-x-auto max-h-[500px]">
+            <table class="min-w-full text-sm text-left relative">
+                <thead class="bg-gray-50 text-xs text-gray-600 uppercase sticky top-0 z-10 shadow-sm select-none">
+                    <tr>
+                        <th class="px-4 py-3 w-12 text-center border-b border-gray-200">
+                            <input type="checkbox" id="audit-select-all" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-1/3 cursor-pointer hover:bg-gray-100 transition-colors audit-sort-header border-b border-gray-200" data-sort="name">
+                            User Name <span id="sort-icon-name" class="ml-0.5 text-blue-600 font-bold">▲</span>
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-1/3 cursor-pointer hover:bg-gray-100 transition-colors audit-sort-header border-b border-gray-200" data-sort="ext">
+                            Extension <span id="sort-icon-ext" class="ml-0.5 text-slate-400"></span>
+                        </th>
+                        <th class="px-4 py-3 font-semibold w-1/3 cursor-pointer hover:bg-gray-100 transition-colors audit-sort-header border-b border-gray-200" data-sort="site">
+                            Site <span id="sort-icon-site" class="ml-0.5 text-slate-400"></span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="audit-tbody" class="divide-y divide-gray-100 text-gray-700">
+                    <tr><td colspan="4" class="px-4 py-12 text-center text-gray-400">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Loading active users...
+                    </td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <!-- DIAGNOSTICS SANDBOX UI -->
+    <div id="device-audit-progress-container" class="hidden bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden px-4 pt-4 pb-4 mb-6">
+        <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
+            <span id="device-audit-progress-text">Initializing...</span>
+            <span id="device-audit-progress-percent">0%</span>
+        </div>
+        <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
+            <div id="device-audit-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <div class="card bg-gray-900 text-white rounded-lg shadow-lg p-0 overflow-hidden">
+        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
+            <button onclick="document.getElementById('deviceAuditLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+        </div>
+        <div id="deviceAuditLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+            Ready to audit...
+        </div>
+    </div>
+
     <div id="audit-sandbox-ui" class="hidden bg-slate-50 border border-slate-300 rounded-xl p-6 mt-4">
         <h3 class="text-xl font-bold text-slate-800 mb-2 border-b border-slate-200 pb-2">API Diagnostics Sandbox</h3>
         <p class="text-sm text-slate-600 mb-4">Enter an extension number that is returning bad data. This will dump the raw API responses so we can map the schema perfectly.</p>
@@ -68,16 +113,253 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Diagnostics Toggle & Execution ---
+    // --- Table & Filter State ---
+    let allUsers = [];
+    let selectedIds = new Set();
+    let currentSortCol = 'name';
+    let sortDirection = 'asc';
+    let selectedSites = new Set();
+
+    const searchInput = document.getElementById('audit-search-input');
+    const tbody = document.getElementById('audit-tbody');
+    const selectAllCb = document.getElementById('audit-select-all');
+    const btnDeviceAudit = document.getElementById('btn-device-audit');
+
+    // --- Multi-Select Component Logic ---
+    function renderMultiSelectList(containerId, items, selectedSet, defaultLabel, onChange) {
+        const container = document.getElementById(containerId);
+        const list = container.querySelector('.ms-list');
+        const search = container.querySelector('.ms-search');
+        const label = container.querySelector('.ms-label');
+        
+        const draw = (filterText = '') => {
+            list.innerHTML = '';
+            items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'px-2 py-1.5 hover:bg-gray-100 cursor-pointer flex items-center gap-2 rounded transition-colors';
+                const checked = selectedSet.has(item.val) ? 'checked' : '';
+                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
+                
+                li.onclick = (e) => {
+                    e.stopPropagation();
+                    if(selectedSet.has(item.val)) selectedSet.delete(item.val);
+                    else selectedSet.add(item.val);
+                    
+                    li.querySelector('input').checked = selectedSet.has(item.val);
+                    updateLabel();
+                    onChange();
+                };
+                list.appendChild(li);
+            });
+        };
+
+        const updateLabel = () => {
+            if(selectedSet.size === 0) label.textContent = defaultLabel;
+            else if(selectedSet.size === 1) {
+                const selectedItem = items.find(i => i.val === Array.from(selectedSet)[0]);
+                label.textContent = selectedItem ? selectedItem.label : '1 Selected';
+            }
+            else label.textContent = `${selectedSet.size} Selected`;
+        };
+
+        if (!container.dataset.initialized) {
+            const btn = container.querySelector('.ms-btn');
+            const dropdown = container.querySelector('.ms-dropdown');
+            
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const isHidden = dropdown.classList.contains('hidden');
+                document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+                if (isHidden) {
+                    dropdown.classList.remove('hidden');
+                    search.focus();
+                }
+            };
+
+            search.oninput = (e) => draw(e.target.value);
+            search.onclick = (e) => e.stopPropagation();
+            dropdown.onclick = (e) => e.stopPropagation();
+            
+            container.dataset.initialized = 'true';
+        }
+
+        draw(search.value);
+        updateLabel();
+    }
+
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+    });
+
+    // --- Loading & Rendering Users ---
+    async function loadUsers() {
+        try {
+            const res = await fetch('/api/device_ringing_audit/users');
+            if (!res.ok) throw new Error("Failed to load");
+            
+            const data = await res.json();
+            if (data.records) {
+                allUsers = data.records.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                populateSiteFilter();
+                renderTable();
+            }
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-8 text-center text-red-500">Failed to load users: ${e.message}</td></tr>`;
+        }
+    }
+
+    function populateSiteFilter() {
+        const sites = new Set();
+        allUsers.forEach(u => {
+            sites.add(u.site || 'Main Site');
+        });
+        
+        const sortedSites = Array.from(sites).sort();
+        const siteOptions = sortedSites.map(s => ({val: s, label: s}));
+        renderMultiSelectList('filter-site', siteOptions, selectedSites, 'All Sites', renderTable);
+    }
+
+    function getFilteredUsers() {
+        const term = searchInput.value.toLowerCase();
+        
+        return allUsers.filter(u => {
+            const matchTerm = (u.name || '').toLowerCase().includes(term) || (u.extensionNumber || '').includes(term);
+            const userSite = u.site || 'Main Site';
+            const matchSite = selectedSites.size === 0 ? true : selectedSites.has(userSite);
+            
+            return matchTerm && matchSite;
+        });
+    }
+
+    function renderTable() {
+        let filtered = getFilteredUsers();
+        
+        filtered.sort((a, b) => {
+            let valA = '';
+            let valB = '';
+            
+            if (currentSortCol === 'name') {
+                valA = a.name || '';
+                valB = b.name || '';
+            } else if (currentSortCol === 'ext') {
+                valA = a.extensionNumber || '';
+                valB = b.extensionNumber || '';
+            } else if (currentSortCol === 'site') {
+                valA = a.site || 'Main Site';
+                valB = b.site || 'Main Site';
+            }
+            
+            let cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+            return sortDirection === 'asc' ? cmp : -cmp;
+        });
+
+        tbody.innerHTML = '';
+        
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-400">No users found matching filters.</td></tr>';
+            return;
+        }
+
+        filtered.forEach(u => {
+            const isChecked = selectedIds.has(String(u.id));
+            const tr = document.createElement('tr');
+            tr.className = `border-b border-gray-100 transition-colors ${isChecked ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`;
+            
+            const siteName = u.site || 'Main Site';
+
+            tr.innerHTML = `
+                <td class="px-4 py-3 text-center">
+                    <input type="checkbox" class="row-cb h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-id="${u.id}" ${isChecked ? 'checked' : ''}>
+                </td>
+                <td class="px-4 py-3 font-semibold text-gray-800">${u.name || 'Unnamed'}</td>
+                <td class="px-4 py-3 text-gray-600">${u.extensionNumber || 'N/A'}</td>
+                <td class="px-4 py-3 text-gray-600 text-xs">${siteName}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        updateSelectionState();
+    }
+
+    searchInput.addEventListener('input', renderTable);
+
+    document.getElementById('audit-refresh-users').addEventListener('click', () => {
+        selectedIds.clear();
+        selectedSites.clear();
+        searchInput.value = '';
+        populateSiteFilter();
+        loadUsers();
+    });
+
+    document.querySelectorAll('.audit-sort-header').forEach(header => {
+        header.addEventListener('click', (e) => {
+            const col = e.currentTarget.dataset.sort;
+            if (currentSortCol === col) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortCol = col;
+                sortDirection = 'asc';
+            }
+            updateSortIcons();
+            renderTable();
+        });
+    });
+
+    function updateSortIcons() {
+        ['name', 'ext', 'site'].forEach(col => {
+            const icon = document.getElementById(`sort-icon-${col}`);
+            if (!icon) return;
+            if (currentSortCol === col) {
+                icon.textContent = sortDirection === 'asc' ? '▲' : '▼';
+                icon.className = 'ml-0.5 text-blue-600 font-bold';
+            } else {
+                icon.textContent = '';
+                icon.className = 'ml-0.5 text-slate-400';
+            }
+        });
+    }
+
+    tbody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('row-cb')) {
+            const id = e.target.dataset.id;
+            if (e.target.checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+            
+            e.target.closest('tr').classList.toggle('bg-blue-50/50', e.target.checked);
+            updateSelectionState();
+        }
+    });
+
+    selectAllCb.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        document.querySelectorAll('.row-cb').forEach(cb => {
+            cb.checked = isChecked;
+            const id = cb.dataset.id;
+            if (isChecked) selectedIds.add(id);
+            else selectedIds.delete(id);
+            cb.closest('tr').classList.toggle('bg-blue-50/50', isChecked);
+        });
+        updateSelectionState();
+    });
+
+    function updateSelectionState() {
+        const count = selectedIds.size;
+        btnDeviceAudit.disabled = count === 0;
+        document.querySelectorAll('.selected-count-display').forEach(el => {
+            el.textContent = `${count} user(s) selected for audit`;
+        });
+    }
+
+    loadUsers();
+
+    // --- Diagnostics Sandbox Toggle ---
     const toggleSandboxBtn = document.getElementById('btn-toggle-sandbox');
-    const mainUi = document.getElementById('audit-main-ui');
     const sandboxUi = document.getElementById('audit-sandbox-ui');
     const runDebugBtn = document.getElementById('btn-run-debug');
     const debugInput = document.getElementById('debug-ext-number');
     const debugOutput = document.getElementById('debug-json-output');
 
     toggleSandboxBtn.addEventListener('click', () => {
-        mainUi.classList.toggle('hidden');
         sandboxUi.classList.toggle('hidden');
     });
 
@@ -105,8 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Main Audit Logic ---
-    const btn = document.getElementById('btn-device-audit');
+    // --- Main Audit Execution Logic ---
     const progressContainer = document.getElementById('device-audit-progress-container');
     const progressBar = document.getElementById('device-audit-progress-bar');
     const progressText = document.getElementById('device-audit-progress-text');
@@ -161,8 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     link.click();
                     document.body.removeChild(link);
                     
-                    btn.disabled = false;
-                    btn.innerHTML = `Generate Report`;
+                    btnDeviceAudit.disabled = false;
+                    btnDeviceAudit.innerHTML = `Generate Report`;
                     
                     setTimeout(() => { progressContainer.classList.add('hidden'); }, 3000);
                 } else if (data.status === 'error') {
@@ -171,8 +452,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressText.textContent = "Audit Failed";
                     logAudit(`Audit Failed: ${data.error}`, "error");
                     
-                    btn.disabled = false;
-                    btn.innerHTML = `Generate Report`;
+                    btnDeviceAudit.disabled = false;
+                    btnDeviceAudit.innerHTML = `Generate Report`;
                 }
             } catch (e) {
                 // Ignore network blips
@@ -180,10 +461,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1000);
     }
 
-    if (btn) {
-        btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Generating...`;
+    if (btnDeviceAudit) {
+        btnDeviceAudit.addEventListener('click', async () => {
+            if (selectedIds.size === 0) return;
+
+            btnDeviceAudit.disabled = true;
+            btnDeviceAudit.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Generating...`;
             
             progressContainer.classList.remove('hidden');
             progressBar.className = 'bg-blue-500 h-2.5 rounded-full transition-all duration-300';
@@ -193,12 +476,15 @@ document.addEventListener('DOMContentLoaded', () => {
             lastLoggedMessage = "";
             document.getElementById('deviceAuditLogs').innerHTML = '';
             
-            logAudit("Starting Audit... triggering background task.", "info");
+            logAudit(`Starting Audit for ${selectedIds.size} users... triggering background task.`, "info");
+
+            const extIdsArray = Array.from(selectedIds);
 
             try {
                 const res = await fetch('/api/device_ringing_audit/audit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ext_ids: extIdsArray })
                 });
                 const data = await res.json();
                 
@@ -209,8 +495,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (e) {
                 logAudit(`Audit Failed: ${e.message}`, "error");
-                btn.disabled = false;
-                btn.innerHTML = `Generate Report`;
+                btnDeviceAudit.disabled = false;
+                btnDeviceAudit.innerHTML = `Generate Report`;
                 progressContainer.classList.add('hidden');
             }
         });
