@@ -78,18 +78,27 @@ def get_device_ringing_status(ext_id, token, task_id=None):
     # ==========================================
     # 1. V2 SCHEMA (PRIMARY)
     # ==========================================
-    v2_default_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/default-rule"
-    v2_default_resp = safe_api_call(v2_default_url, token=token, task_id=task_id)
+    # RingCentral V2 defines the base rules as "state-rules/work-hours" and "state-rules/after-hours"
+    v2_work_hours_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours"
+    v2_wh_resp = safe_api_call(v2_work_hours_url, token=token, task_id=task_id)
     
     is_v2 = False
 
-    if v2_default_resp and 'dispatching' in v2_default_resp:
+    # If the work-hours state rule responds, we are definitely on V2
+    if v2_wh_resp and 'dispatching' in v2_wh_resp:
         is_v2 = True
         v2_rules_to_check = []
         
-        # Load the Default Rule
-        v2_default_resp['displayName'] = 'Default Rule (Business Hours)'
-        v2_rules_to_check.append(v2_default_resp)
+        # Load the Work Hours Rule
+        v2_wh_resp['displayName'] = 'Business Hours (Default)'
+        v2_rules_to_check.append(v2_wh_resp)
+        
+        # Load the After Hours Rule
+        v2_after_hours_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/after-hours"
+        v2_ah_resp = safe_api_call(v2_after_hours_url, token=token, task_id=task_id)
+        if v2_ah_resp and 'dispatching' in v2_ah_resp:
+            v2_ah_resp['displayName'] = 'After Hours'
+            v2_rules_to_check.append(v2_ah_resp)
         
         # Fetch Custom Interaction Rules
         v2_interaction_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
@@ -179,7 +188,6 @@ def get_device_ringing_status(ext_id, token, task_id=None):
                             'external_numbers': external_nums,
                             'device_status': dev_status
                         })
-                    # Gentle sub-pacing if they have a huge amount of V1 custom rules
                     time.sleep(0.5)
 
     return device_map, rules_data
