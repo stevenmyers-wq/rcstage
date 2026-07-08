@@ -9,6 +9,7 @@
         </button>
     </div>
 
+    <!-- MAIN TOOL UI -->
     <div id="audit-main-ui">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
@@ -19,7 +20,7 @@
                 </div>
                 <h3 class="text-xl font-bold text-gray-800 mb-2">Run Audit</h3>
                 <p class="text-gray-500 text-sm mb-6 flex-grow">
-                    Generate an Excel spreadsheet identifying ringing states (toggled ON or OFF) across all user devices, apps, and physical phones.
+                    Generate an Excel spreadsheet identifying ringing states across all user devices and apps. <strong>If an extension has multiple active rules (e.g. Custom Caller ID rules), each rule will generate a separate row.</strong>
                 </p>
                 <button id="btn-device-audit" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                     Generate Report
@@ -48,6 +49,7 @@
         </div>
     </div>
 
+    <!-- DIAGNOSTICS SANDBOX UI -->
     <div id="audit-sandbox-ui" class="hidden bg-slate-50 border border-slate-300 rounded-xl p-6 mt-4">
         <h3 class="text-xl font-bold text-slate-800 mb-2 border-b border-slate-200 pb-2">API Diagnostics Sandbox</h3>
         <p class="text-sm text-slate-600 mb-4">Enter an extension number that is returning bad data. This will dump the raw API responses so we can map the schema perfectly.</p>
