@@ -60,7 +60,7 @@ def fetch_all_users(token, task_id=None):
 def get_device_ringing_status(ext_id, token, task_id=None):
     """
     Fetches the user's devices and queries the Call Handling APIs to map which devices are enabled to ring.
-    Safely handles both V1 Forwarding rules and V2 Interaction Rules.
+    Safely handles V1 Forwarding rules, V2 Default Rules, and V2 Interaction Rules.
     """
     devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, task_id=task_id)
     devices = devices_resp.get('records', []) if devices_resp else []
@@ -73,7 +73,7 @@ def get_device_ringing_status(ext_id, token, task_id=None):
     desktop_enabled = False
     device_status = {dev_id: False for dev_id in device_map.keys()}
 
-    # 1. Query V1 Business Hours Rule first
+    # 1. Try V1 Business Hours Rule first
     v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule"
     v1_resp = safe_api_call(v1_url, token=token, task_id=task_id)
     
@@ -86,7 +86,6 @@ def get_device_ringing_status(ext_id, token, task_id=None):
             if r.get('enabled', True) or r.get('active', True):
                 for f in r.get('forwardingNumbers', []):
                     f_type = f.get('type', '')
-                    # CRITICAL: We must extract the actual hardware Device ID, not the Forwarding List ID
                     f_device_id = str(f.get('device', {}).get('id', ''))
                     
                     if f_type in ['SoftPhone', 'ApplicationExtension']:
@@ -95,32 +94,41 @@ def get_device_ringing_status(ext_id, token, task_id=None):
                     elif f_device_id and f_device_id in device_status:
                         device_status[f_device_id] = True
 
-    # 2. If V1 didn't have forwarding (e.g. account fully migrated to V2 interaction rules)
+    # 2. If V1 failed (403 Forbidden), account is migrated to V2 Schema.
     if not v1_success:
-        v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-        v2_resp = safe_api_call(v2_url, token=token, task_id=task_id)
+        v2_rules_to_check = []
+        
+        # A. Fetch V2 Default Rule (Standard routing)
+        v2_default_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/default-rule"
+        v2_default_resp = safe_api_call(v2_default_url, token=token, task_id=task_id)
+        if v2_default_resp and 'dispatching' in v2_default_resp:
+            v2_rules_to_check.append(v2_default_resp)
+            
+        # B. Fetch V2 Interaction Rules (Custom routing/exceptions)
+        v2_interaction_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
+        v2_interaction_resp = safe_api_call(v2_interaction_url, token=token, task_id=task_id)
+        if v2_interaction_resp and 'records' in v2_interaction_resp:
+            v2_rules_to_check.extend(v2_interaction_resp['records'])
 
-        if v2_resp and 'records' in v2_resp:
-            for rule in v2_resp['records']:
-                if not rule.get('enabled', True):
-                    continue
-                actions = rule.get('dispatching', {}).get('actions', [])
-                for action in actions:
-                    if action.get('type') == 'RingGroupAction':
-                        if action.get('enabled', True):
-                            for t in action.get('targets', []):
-                                t_type = t.get('type')
-                                t_enabled = t.get('enabled', True)
-                                
-                                if t_enabled:
-                                    if t_type == 'AllMobileRingTarget':
-                                        mobile_enabled = True
-                                    elif t_type == 'AllDesktopRingTarget':
-                                        desktop_enabled = True
-                                    elif t_type == 'DeviceRingTarget':
-                                        dev_id = str(t.get('device', {}).get('id', ''))
-                                        if dev_id in device_status:
-                                            device_status[dev_id] = True
+        # C. Parse all collected V2 rules
+        for rule in v2_rules_to_check:
+            if not rule.get('enabled', True):
+                continue
+                
+            actions = rule.get('dispatching', {}).get('actions', [])
+            for action in actions:
+                if action.get('type') == 'RingGroupAction' and action.get('enabled', True):
+                    for t in action.get('targets', []):
+                        if t.get('enabled', True):
+                            t_type = t.get('type')
+                            if t_type == 'AllMobileRingTarget':
+                                mobile_enabled = True
+                            elif t_type == 'AllDesktopRingTarget':
+                                desktop_enabled = True
+                            elif t_type == 'DeviceRingTarget':
+                                dev_id = str(t.get('device', {}).get('id', ''))
+                                if dev_id in device_status:
+                                    device_status[dev_id] = True
 
     return mobile_enabled, desktop_enabled, device_map, device_status
 
@@ -177,7 +185,6 @@ def run_audit_background(task_id, token):
             audit_data.append(row)
             
             # SUSTAINABLE PACING: 2.5s prevents hitting the ~40 calls/min limit.
-            # This is critical to prevent the 60-second 429 lockouts.
             time.sleep(2.5)
 
         # Build Excel File
