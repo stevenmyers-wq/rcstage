@@ -78,62 +78,80 @@ def get_device_ringing_status(ext_id, token, task_id=None):
     # ==========================================
     # 1. V2 SCHEMA (PRIMARY)
     # ==========================================
-    # RingCentral V2 defines the base rules as "state-rules/work-hours" and "state-rules/after-hours"
-    v2_work_hours_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours"
-    v2_wh_resp = safe_api_call(v2_work_hours_url, token=token, task_id=task_id)
+    v2_state_rules_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
+    v2_state_resp = safe_api_call(v2_state_rules_url, token=token, task_id=task_id)
     
     is_v2 = False
 
-    # If the work-hours state rule responds, we are definitely on V2
-    if v2_wh_resp and 'dispatching' in v2_wh_resp:
+    # If the state-rules endpoint responds with records, the user is on V2
+    if v2_state_resp and 'records' in v2_state_resp:
         is_v2 = True
         v2_rules_to_check = []
         
-        # Load the Work Hours Rule
-        v2_wh_resp['displayName'] = 'Business Hours (Default)'
-        v2_rules_to_check.append(v2_wh_resp)
-        
-        # Load the After Hours Rule
-        v2_after_hours_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/after-hours"
-        v2_ah_resp = safe_api_call(v2_after_hours_url, token=token, task_id=task_id)
-        if v2_ah_resp and 'dispatching' in v2_ah_resp:
-            v2_ah_resp['displayName'] = 'After Hours'
-            v2_rules_to_check.append(v2_ah_resp)
-        
-        # Fetch Custom Interaction Rules
+        # Load State Rules (Business Hours, After Hours, DND, Agent, etc.)
+        for rule in v2_state_resp['records']:
+            # State rules nest their enabled flag inside the 'state' object
+            if not rule.get('state', {}).get('enabled', True):
+                continue
+            v2_rules_to_check.append(rule)
+            
+        # Load Custom Interaction Rules
         v2_interaction_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
         v2_interaction_resp = safe_api_call(v2_interaction_url, token=token, task_id=task_id)
         if v2_interaction_resp and 'records' in v2_interaction_resp:
-            v2_rules_to_check.extend(v2_interaction_resp['records'])
+            for rule in v2_interaction_resp['records']:
+                # Interaction rules keep their enabled flag at the top level
+                if not rule.get('enabled', True):
+                    continue
+                v2_rules_to_check.append(rule)
 
+        # Parse all collected V2 rules based on exact schema
         for rule in v2_rules_to_check:
-            if not rule.get('enabled', True):
-                continue
-                
-            r_name = rule.get('displayName') or rule.get('name') or 'Unnamed V2 Rule'
+            r_name = rule.get('displayName') or rule.get('name') or rule.get('id') or 'Unnamed V2 Rule'
             mobile_en = False
             desktop_en = False
             external_nums = []
             dev_status = {dev_id: False for dev_id in device_map.keys()}
-                
-            actions = rule.get('dispatching', {}).get('actions', [])
+            
+            # Actions can live in 'dispatching' or a nested 'dispatchingRef' object
+            dispatching = rule.get('dispatching') or rule.get('dispatchingRef', {}).get('dispatching') or {}
+            actions = dispatching.get('actions', [])
+            
             for action in actions:
-                if action.get('type') == 'RingGroupAction' and action.get('enabled', True):
-                    for t in action.get('targets', []):
-                        if t.get('enabled', True):
-                            t_type = t.get('type')
-                            if t_type == 'AllMobileRingTarget':
-                                mobile_en = True
-                            elif t_type == 'AllDesktopRingTarget':
-                                desktop_en = True
-                            elif t_type == 'DeviceRingTarget':
-                                did = str(t.get('device', {}).get('id', ''))
-                                if did in dev_status:
-                                    dev_status[did] = True
-                            elif t_type == 'PhoneNumberRingTarget':
-                                p_num = str(t.get('phoneNumber', ''))
-                                if p_num:
-                                    external_nums.append(p_num)
+                # If an action explicitly disables itself, skip
+                if action.get('enabled', True) == False:
+                    continue
+                    
+                a_type = action.get('type', '')
+                targets = action.get('targets', [])
+                
+                for t in targets:
+                    if t.get('enabled', True) == False:
+                        continue
+                        
+                    t_type = t.get('type', '')
+                    
+                    # Normal ringing targets
+                    if a_type == 'RingGroupAction':
+                        if t_type == 'AllMobileRingTarget':
+                            mobile_en = True
+                        elif t_type == 'AllDesktopRingTarget':
+                            desktop_en = True
+                        elif t_type == 'DeviceRingTarget':
+                            did = str(t.get('device', {}).get('id', ''))
+                            if did in dev_status:
+                                dev_status[did] = True
+                        elif t_type == 'PhoneNumberRingTarget':
+                            p_num = str(t.get('phoneNumber', ''))
+                            if p_num:
+                                external_nums.append(p_num)
+                                
+                    # External forwarding targets (often stored as Terminating actions instead of Ring Groups)
+                    elif a_type == 'TerminatingAction' and t_type == 'PhoneNumberTerminatingTarget':
+                        # Can be under 'destination.phoneNumber' or just 'phoneNumber'
+                        p_num = str(t.get('destination', {}).get('phoneNumber', '')) or str(t.get('phoneNumber', ''))
+                        if p_num:
+                            external_nums.append(p_num)
                     
             rules_data.append({
                 'rule_name': r_name,
