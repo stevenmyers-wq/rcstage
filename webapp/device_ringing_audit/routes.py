@@ -22,6 +22,7 @@ def get_users():
         'client_id': session.get('rc_current_client_id'),
         'server_url': current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'),
         'sm_employee_token': session.get('sm_employee_token'),
+        'sm_employee_refresh_token': session.get('sm_employee_refresh_token'),
         'sm_target_id': session.get('sm_target_id')
     }
 
@@ -49,6 +50,7 @@ def start_audit():
         'client_id': session.get('rc_current_client_id'),
         'server_url': current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'),
         'sm_employee_token': session.get('sm_employee_token'),
+        'sm_employee_refresh_token': session.get('sm_employee_refresh_token'),
         'sm_target_id': session.get('sm_target_id')
     }
     
