@@ -182,7 +182,7 @@ def sm_oauth2callback():
         
     response = requests.post(f"{base_url}/restapi/oauth/token", data=data, headers=headers)
     
-if response.ok:
+    if response.ok:
         token_data = response.json()
         session['sm_employee_token'] = token_data.get('access_token')
         session['sm_employee_refresh_token'] = token_data.get('refresh_token')
@@ -237,4 +237,5 @@ def sm_full_logout():
     session.pop('sm_target_id', None)
     session.pop('sm_target_name', None) # Cleared name
     session.pop('sm_employee_token', None)
+    session.pop('sm_employee_refresh_token', None)
     return redirect(f"/?tab={target_tab}")
