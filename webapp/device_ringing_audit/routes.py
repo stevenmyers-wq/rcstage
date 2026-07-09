@@ -16,7 +16,6 @@ def get_users():
     """Fetches list of active users to populate the selection UI"""
     token = get_rc_access_token()
     
-    # We must construct the auth bundle here as well
     auth_data = {
         'access_token': token,
         'refresh_token': session.get('rc_refresh_token'),
