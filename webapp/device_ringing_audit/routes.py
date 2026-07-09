@@ -56,6 +56,16 @@ def start_audit():
     
     task_id = f"ringing_audit_{int(time.time())}"
     
+    # PRE-INITIALIZE THE STORE TO PREVENT UI HANGS
+    audit_progress_store[task_id] = {
+        'status': 'running',
+        'current': 0,
+        'total': 0,
+        'message': 'Starting background task...',
+        'file_data': None,
+        'error': None
+    }
+    
     thread = threading.Thread(target=run_audit_background, args=(task_id, auth_data, ext_ids))
     thread.daemon = True
     thread.start()
