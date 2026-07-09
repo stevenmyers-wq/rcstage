@@ -42,7 +42,7 @@ def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
                 
                 # B. Heal Standard OAuth Token
                 elif auth_data.get('refresh_token') and auth_data.get('client_id'):
-                    token_url = f"{auth_data['server_url']}/restapi/oauth/token"
+                    token_url = f"{auth_data.get('server_url', 'https://platform.ringcentral.com')}/restapi/oauth/token"
                     payload = {
                         'grant_type': 'refresh_token',
                         'refresh_token': auth_data['refresh_token'],
@@ -118,6 +118,7 @@ def get_device_ringing_status(ext_id, auth_data, task_id=None):
         d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
         
         # STRICT WHITELIST: Only process actual physical endpoints.
+        # This safely drops WebPhone, SoftPhone, ApplicationExtension, and Unknown apps.
         if d_type not in ['HardPhone', 'OtherPhone', 'Paging']:
             continue
             
@@ -140,7 +141,7 @@ def get_device_ringing_status(ext_id, auth_data, task_id=None):
         is_v2 = True
         v2_rules_to_check = []
         
-        # Load State Rules (Business Hours, After Hours)
+        # Load State Rules (Business Hours, After Hours, etc.)
         for rule in v2_state_resp['records']:
             rule_id = rule.get('id', '')
             
@@ -328,7 +329,7 @@ def run_audit_background(task_id, auth_data, ext_ids=None):
                 audit_data.append(row)
             
             # SUSTAINABLE PACING: Space out API calls to prevent rapid bucket depletion
-            time.sleep(3.0)
+            time.sleep(3.5)
 
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
         df = pd.DataFrame(audit_data)
