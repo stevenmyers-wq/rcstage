@@ -130,4 +130,8 @@ def create_app():
         from .air_management import routes as air_management_routes
         app.register_blueprint(air_management_routes.air_management_bp)
 
+        # User Templates routes
+        from .user_templates import routes as user_templates_routes
+        app.register_blueprint(user_templates_routes.user_templates_bp)
+
     return app
