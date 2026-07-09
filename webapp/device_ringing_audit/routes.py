@@ -2,7 +2,7 @@ import time
 import threading
 import io
 from datetime import datetime
-from flask import Blueprint, jsonify, send_file, request
+from flask import Blueprint, jsonify, send_file, request, session, current_app
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
@@ -15,8 +15,19 @@ device_ringing_audit_bp = Blueprint('device_ringing_audit_bp', __name__, url_pre
 def get_users():
     """Fetches list of active users to populate the selection UI"""
     token = get_rc_access_token()
+    
+    # We must construct the auth bundle here as well
+    auth_data = {
+        'access_token': token,
+        'refresh_token': session.get('rc_refresh_token'),
+        'client_id': session.get('rc_current_client_id'),
+        'server_url': current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'),
+        'sm_employee_token': session.get('sm_employee_token'),
+        'sm_target_id': session.get('sm_target_id')
+    }
+
     try:
-        data = fetch_users_for_ui(token)
+        data = fetch_users_for_ui(auth_data)
         return jsonify({'records': data})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -32,9 +43,19 @@ def start_audit():
     data = request.get_json() or {}
     ext_ids = data.get('ext_ids', [])
     
+    # Bundle the auth parameters so the background thread can self-heal an expired token
+    auth_data = {
+        'access_token': token,
+        'refresh_token': session.get('rc_refresh_token'),
+        'client_id': session.get('rc_current_client_id'),
+        'server_url': current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'),
+        'sm_employee_token': session.get('sm_employee_token'),
+        'sm_target_id': session.get('sm_target_id')
+    }
+    
     task_id = f"ringing_audit_{int(time.time())}"
     
-    thread = threading.Thread(target=run_audit_background, args=(task_id, token, ext_ids))
+    thread = threading.Thread(target=run_audit_background, args=(task_id, auth_data, ext_ids))
     thread.daemon = True
     thread.start()
     
@@ -45,15 +66,6 @@ def start_audit():
 def audit_status():
     task_id = request.args.get('task_id')
     data = audit_progress_store.get(task_id, {})
-    
-    # MAGIC FIX FOR LONG ACCOUNTS:
-    # The frontend naturally hits this endpoint every 1s. 
-    # @require_rc_token automatically refreshes the user's session token if it is close to expiring.
-    # We inject that fresh token directly into the background task's memory state, 
-    # guaranteeing the background thread's token never hits the 1-hour expiration wall!
-    latest_token = get_rc_access_token()
-    if latest_token and data:
-        data['token'] = latest_token
     
     safe_data = {
         'current': data.get('current', 0),
