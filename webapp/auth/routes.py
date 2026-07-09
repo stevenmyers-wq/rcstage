@@ -182,8 +182,10 @@ def sm_oauth2callback():
         
     response = requests.post(f"{base_url}/restapi/oauth/token", data=data, headers=headers)
     
-    if response.ok:
-        session['sm_employee_token'] = response.json().get('access_token')
+if response.ok:
+        token_data = response.json()
+        session['sm_employee_token'] = token_data.get('access_token')
+        session['sm_employee_refresh_token'] = token_data.get('refresh_token')
         session.pop('sm_redirect_uri', None) 
         return redirect(f"/?tab={target_tab}")
         
