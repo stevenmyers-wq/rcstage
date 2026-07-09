@@ -47,13 +47,11 @@ def fetch_users_for_ui(token):
     users = []
     page = 1
     while True:
-        # Reverted to the stable API query that does not trigger schema errors
         resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token)
         if not resp or 'records' not in resp: 
             break
             
         for u in resp['records']:
-            # Safe in-memory filtering for active users
             if u.get('status') in ['Enabled', 'NotActivated']:
                 users.append({
                     'id': str(u['id']),
@@ -81,9 +79,9 @@ def get_device_ringing_status(ext_id, token, task_id=None):
         d_type = d.get('type', 'Unknown')
         d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
         
-        # STRICT FILTER: Drop devices only if their system type dictates they are apps.
-        # We do not drop based on d_name, as hardphones can be manually named anything.
-        if d_type in ['SoftPhone', 'ApplicationExtension']:
+        # STRICT WHITELIST: Only process actual physical endpoints.
+        # This safely drops WebPhone, SoftPhone, ApplicationExtension, and Unknown apps.
+        if d_type not in ['HardPhone', 'OtherPhone', 'Paging']:
             continue
             
         device_map[str(d['id'])] = {
@@ -101,14 +99,12 @@ def get_device_ringing_status(ext_id, token, task_id=None):
     
     is_v2 = False
 
-    # If the state-rules endpoint responds with records, the user is on V2
     if v2_state_resp and 'records' in v2_state_resp:
         is_v2 = True
         v2_rules_to_check = []
         
         # Load State Rules (Business Hours, After Hours, DND, Agent, etc.)
         for rule in v2_state_resp['records']:
-            # State rules nest their enabled flag inside the 'state' object
             if not rule.get('state', {}).get('enabled', True):
                 continue
             v2_rules_to_check.append(rule)
@@ -118,12 +114,11 @@ def get_device_ringing_status(ext_id, token, task_id=None):
         v2_interaction_resp = safe_api_call(v2_interaction_url, token=token, task_id=task_id)
         if v2_interaction_resp and 'records' in v2_interaction_resp:
             for rule in v2_interaction_resp['records']:
-                # Interaction rules keep their enabled flag at the top level
                 if not rule.get('enabled', True):
                     continue
                 v2_rules_to_check.append(rule)
 
-        # Parse all collected V2 rules based on exact schema
+        # Parse all collected V2 rules
         for rule in v2_rules_to_check:
             r_name = rule.get('displayName') or rule.get('name') or rule.get('id') or 'Unnamed V2 Rule'
             mobile_en = False
@@ -131,12 +126,10 @@ def get_device_ringing_status(ext_id, token, task_id=None):
             external_nums = []
             dev_status = {dev_id: False for dev_id in device_map.keys()}
             
-            # Actions can live in 'dispatching' or a nested 'dispatchingRef' object
             dispatching = rule.get('dispatching') or rule.get('dispatchingRef', {}).get('dispatching') or {}
             actions = dispatching.get('actions', [])
             
             for action in actions:
-                # If an action explicitly disables itself, skip
                 if action.get('enabled', True) == False:
                     continue
                     
@@ -149,7 +142,6 @@ def get_device_ringing_status(ext_id, token, task_id=None):
                         
                     t_type = t.get('type', '')
                     
-                    # Normal ringing targets
                     if a_type == 'RingGroupAction':
                         if t_type == 'AllMobileRingTarget':
                             mobile_en = True
@@ -164,9 +156,7 @@ def get_device_ringing_status(ext_id, token, task_id=None):
                             if p_num:
                                 external_nums.append(p_num)
                                 
-                    # External forwarding targets (often stored as Terminating actions instead of Ring Groups)
                     elif a_type == 'TerminatingAction' and t_type == 'PhoneNumberTerminatingTarget':
-                        # Can be under 'destination.phoneNumber' or just 'phoneNumber'
                         p_num = str(t.get('destination', {}).get('phoneNumber', '')) or str(t.get('phoneNumber', ''))
                         if p_num:
                             external_nums.append(p_num)
@@ -191,7 +181,6 @@ def get_device_ringing_status(ext_id, token, task_id=None):
                 if rule_summary.get('enabled', False) and rule_summary.get('callHandlingAction') == 'ForwardCalls':
                     rule_id = rule_summary.get('id')
                     
-                    # Explicit fetch per rule to guarantee forwarding nested array is populated
                     rule_detail_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}"
                     rule_detail = safe_api_call(rule_detail_url, token=token, task_id=task_id)
                     
@@ -242,7 +231,6 @@ def run_audit_background(task_id, token, ext_ids=None):
     try:
         valid_users = fetch_users_for_ui(token)
         
-        # Filter down to only the explicitly selected users if provided
         if ext_ids and len(ext_ids) > 0:
             valid_users = [u for u in valid_users if str(u['id']) in ext_ids]
             
@@ -295,10 +283,8 @@ def run_audit_background(task_id, token, ext_ids=None):
 
                 audit_data.append(row)
             
-            # SUSTAINABLE PACING: Space out API calls to prevent 429 lockouts
             time.sleep(3.5)
 
-        # Build Excel File
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
         df = pd.DataFrame(audit_data)
 
