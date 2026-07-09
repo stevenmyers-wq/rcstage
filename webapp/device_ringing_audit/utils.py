@@ -37,7 +37,7 @@ def safe_api_call(endpoint, method='GET', token=None, task_id=None):
             time.sleep(3)
             continue
             
-        # For 403 Forbidden or 404 Not Found, return None (don't retry)
+        # For 400 Bad Request, 403 Forbidden or 404 Not Found, return None (don't retry)
         return None
         
     return None
@@ -47,16 +47,21 @@ def fetch_users_for_ui(token):
     users = []
     page = 1
     while True:
-        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&status=Enabled,NotActivated&perPage=1000&page={page}", token=token)
+        # Reverted to the stable API query that does not trigger schema errors
+        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token)
         if not resp or 'records' not in resp: 
             break
+            
         for u in resp['records']:
-            users.append({
-                'id': str(u['id']),
-                'name': u.get('name', 'Unknown'),
-                'extensionNumber': u.get('extensionNumber', ''),
-                'site': u.get('site', {}).get('name', 'Main Site')
-            })
+            # Safe in-memory filtering for active users
+            if u.get('status') in ['Enabled', 'NotActivated']:
+                users.append({
+                    'id': str(u['id']),
+                    'name': u.get('name', 'Unknown'),
+                    'extensionNumber': u.get('extensionNumber', ''),
+                    'site': u.get('site', {}).get('name', 'Main Site')
+                })
+                
         if not resp.get('navigation', {}).get('nextPage'): 
             break
         page += 1
