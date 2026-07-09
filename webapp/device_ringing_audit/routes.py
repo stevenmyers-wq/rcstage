@@ -46,6 +46,15 @@ def audit_status():
     task_id = request.args.get('task_id')
     data = audit_progress_store.get(task_id, {})
     
+    # MAGIC FIX FOR LONG ACCOUNTS:
+    # The frontend naturally hits this endpoint every 1s. 
+    # @require_rc_token automatically refreshes the user's session token if it is close to expiring.
+    # We inject that fresh token directly into the background task's memory state, 
+    # guaranteeing the background thread's token never hits the 1-hour expiration wall!
+    latest_token = get_rc_access_token()
+    if latest_token and data:
+        data['token'] = latest_token
+    
     safe_data = {
         'current': data.get('current', 0),
         'total': data.get('total', 0),
