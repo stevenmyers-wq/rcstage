@@ -1,37 +1,66 @@
 import io
 import time
+import requests
 import pandas as pd
 from datetime import datetime
 from webapp.rc_api import rc_api_call
+from webapp.auth_utils import get_impersonation_token
 
 # Global store for background task progress
 audit_progress_store = {}
 
-def safe_api_call(endpoint, method='GET', token=None, task_id=None):
-    """Helper to safely request API data while respecting 429 Rate Limits and 50x errors."""
+def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
+    """Helper to safely request API data while respecting 429 Rate Limits and healing expired tokens."""
     for attempt in range(4):
-        # Dynamically fetch the latest token injected by the frontend polling route
-        active_token = token
-        if task_id and task_id in audit_progress_store:
-            active_token = audit_progress_store[task_id].get('token', token)
-            
+        active_token = auth_data['access_token'] if auth_data else None
         resp = rc_api_call(endpoint, method=method, return_response=True, token=active_token)
         status_code = getattr(resp, 'status_code', None)
         
         # 1. Handle Rate Limiting (429)
         if status_code == 429:
-            retry_after = int(resp.headers.get('Retry-After', 60)) if hasattr(resp, 'headers') else 10
+            retry_after = int(resp.headers.get('Retry-After', 60)) if hasattr(resp, 'headers') else 60
             if task_id:
-                audit_progress_store[task_id]['message'] = f"API Limit Reached! Pausing for {retry_after} seconds..."
+                audit_progress_store[task_id]['message'] = f"API rate limit reached. Pausing for {retry_after} seconds..."
             time.sleep(retry_after + 1)
             continue
             
-        # 2. Handle Token Expiry (401)
+        # 2. Handle Token Expiry (401) with Background Self-Healing
         if status_code == 401:
-            # Quick 2-second grace period in case the frontend refresh ping is fractionally behind
-            if attempt < 3:
-                time.sleep(2)
-                continue
+            if auth_data:
+                if task_id:
+                    audit_progress_store[task_id]['message'] = "Access token expired. Executing background refresh..."
+                
+                # A. Heal Partner Impersonation Token
+                if auth_data.get('sm_employee_token') and auth_data.get('sm_target_id'):
+                    new_token = get_impersonation_token(auth_data['sm_employee_token'], auth_data['sm_target_id'])
+                    if new_token:
+                        auth_data['access_token'] = new_token
+                        if task_id:
+                            audit_progress_store[task_id]['message'] = "Impersonation token refreshed! Resuming audit..."
+                        time.sleep(1)
+                        continue
+                
+                # B. Heal Standard OAuth Token
+                elif auth_data.get('refresh_token') and auth_data.get('client_id'):
+                    token_url = f"{auth_data['server_url']}/restapi/oauth/token"
+                    payload = {
+                        'grant_type': 'refresh_token',
+                        'refresh_token': auth_data['refresh_token'],
+                        'client_id': auth_data['client_id']
+                    }
+                    try:
+                        refresh_resp = requests.post(token_url, data=payload, headers={'Content-Type': 'application/x-www-form-urlencoded'})
+                        if refresh_resp.ok:
+                            new_tokens = refresh_resp.json()
+                            auth_data['access_token'] = new_tokens.get('access_token')
+                            auth_data['refresh_token'] = new_tokens.get('refresh_token')
+                            if task_id:
+                                audit_progress_store[task_id]['message'] = "OAuth token refreshed! Resuming audit..."
+                            time.sleep(1)
+                            continue
+                    except Exception as e:
+                        pass
+                        
             raise Exception("Authentication token expired during audit. Please Authorize & Bridge again.")
             
         # 3. Handle Success
@@ -46,17 +75,17 @@ def safe_api_call(endpoint, method='GET', token=None, task_id=None):
             time.sleep(3)
             continue
             
-        # For 400 Bad Request, 403 Forbidden or 404 Not Found, return None
+        # For 400 Bad Request, 403 Forbidden or 404 Not Found, return None (don't retry)
         return None
         
     return None
 
-def fetch_users_for_ui(token):
+def fetch_users_for_ui(auth_data):
     """Fetches all active users from the account for the UI table."""
     users = []
     page = 1
     while True:
-        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token)
+        resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", auth_data=auth_data)
         if not resp or 'records' not in resp: 
             break
             
@@ -75,28 +104,16 @@ def fetch_users_for_ui(token):
         time.sleep(0.05)
     return users
 
-def fetch_all_devices(token, task_id=None):
-    """Fetches all devices from the account to avoid redundant per-user API calls."""
-    devices = []
-    page = 1
-    while True:
-        resp = safe_api_call(f"/restapi/v1.0/account/~/device?perPage=1000&page={page}", token=token, task_id=task_id)
-        if not resp or 'records' not in resp: 
-            break
-        devices.extend(resp['records'])
-        if not resp.get('navigation', {}).get('nextPage'): 
-            break
-        page += 1
-        time.sleep(0.1)
-    return devices
-
-def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
+def get_device_ringing_status(ext_id, auth_data, task_id=None):
     """
-    Evaluates ALL configured call handling rules.
+    Fetches the user's devices and evaluates ALL configured call handling rules.
     Queries V2 Schema first (Source of truth for migrated accounts), then falls back to V1.
     """
+    devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", auth_data=auth_data, task_id=task_id)
+    devices = devices_resp.get('records', []) if devices_resp else []
+    
     device_map = {}
-    for d in user_devices:
+    for d in devices:
         d_type = d.get('type', 'Unknown')
         d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
         
@@ -115,7 +132,7 @@ def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
     # 1. V2 SCHEMA (PRIMARY)
     # ==========================================
     v2_state_rules_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
-    v2_state_resp = safe_api_call(v2_state_rules_url, token=token, task_id=task_id)
+    v2_state_resp = safe_api_call(v2_state_rules_url, auth_data=auth_data, task_id=task_id)
     
     is_v2 = False
 
@@ -127,7 +144,7 @@ def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
         for rule in v2_state_resp['records']:
             rule_id = rule.get('id', '')
             
-            # FILTER: Ignore RingCentral's hidden system/toggle states 
+            # FILTER: Ignore RingCentral's hidden system/toggle states so they don't duplicate/clutter the report
             if rule_id in ['agent', 'dnd', 'forward-all-calls']:
                 continue
                 
@@ -138,7 +155,7 @@ def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
             
         # Load Custom Interaction Rules
         v2_interaction_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-        v2_interaction_resp = safe_api_call(v2_interaction_url, token=token, task_id=task_id)
+        v2_interaction_resp = safe_api_call(v2_interaction_url, auth_data=auth_data, task_id=task_id)
         if v2_interaction_resp and 'records' in v2_interaction_resp:
             for rule in v2_interaction_resp['records']:
                 if not rule.get('enabled', True):
@@ -201,7 +218,7 @@ def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
     # ==========================================
     if not is_v2:
         v1_rules_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
-        v1_resp = safe_api_call(v1_rules_url, token=token, task_id=task_id)
+        v1_resp = safe_api_call(v1_rules_url, auth_data=auth_data, task_id=task_id)
 
         if v1_resp and 'records' in v1_resp:
             for rule_summary in v1_resp['records']:
@@ -209,7 +226,7 @@ def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
                     rule_id = rule_summary.get('id')
                     
                     rule_detail_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}"
-                    rule_detail = safe_api_call(rule_detail_url, token=token, task_id=task_id)
+                    rule_detail = safe_api_call(rule_detail_url, auth_data=auth_data, task_id=task_id)
                     
                     if rule_detail and 'forwarding' in rule_detail:
                         r_name = rule_detail.get('name', rule_summary.get('name', 'Unnamed V1 Rule'))
@@ -244,7 +261,7 @@ def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
 
     return device_map, rules_data
 
-def run_audit_background(task_id, token, ext_ids=None):
+def run_audit_background(task_id, auth_data, ext_ids=None):
     """Background task to perform the audit, updating progress as it goes."""
     audit_progress_store[task_id] = {
         'status': 'running',
@@ -252,12 +269,11 @@ def run_audit_background(task_id, token, ext_ids=None):
         'total': 0,
         'message': 'Fetching user list from RingCentral...',
         'file_data': None,
-        'error': None,
-        'token': token
+        'error': None
     }
 
     try:
-        valid_users = fetch_users_for_ui(token)
+        valid_users = fetch_users_for_ui(auth_data)
         
         if ext_ids and len(ext_ids) > 0:
             valid_users = [u for u in valid_users if str(u['id']) in ext_ids]
@@ -270,18 +286,6 @@ def run_audit_background(task_id, token, ext_ids=None):
             audit_progress_store[task_id]['error'] = 'No active users found to audit.'
             return
 
-        # Optimization: Fetch all devices on the account at once to eliminate 1 API call per user
-        audit_progress_store[task_id]['message'] = 'Fetching all account devices (Optimization)...'
-        all_devices = fetch_all_devices(token, task_id=task_id)
-        
-        devices_by_ext = {}
-        for d in all_devices:
-            d_ext_id = str(d.get('extension', {}).get('id', ''))
-            if d_ext_id:
-                if d_ext_id not in devices_by_ext:
-                    devices_by_ext[d_ext_id] = []
-                devices_by_ext[d_ext_id].append(d)
-
         audit_data = []
 
         for i, user in enumerate(valid_users):
@@ -292,8 +296,7 @@ def run_audit_background(task_id, token, ext_ids=None):
             audit_progress_store[task_id]['current'] = i + 1
             audit_progress_store[task_id]['message'] = f"Auditing Extension {ext_num} ({ext_name})..."
 
-            user_devices = devices_by_ext.get(ext_id, [])
-            device_map, rules_data = get_device_ringing_status(ext_id, user_devices, token, task_id=task_id)
+            device_map, rules_data = get_device_ringing_status(ext_id, auth_data, task_id=task_id)
 
             if not rules_data:
                 rules_data = [{
@@ -324,7 +327,7 @@ def run_audit_background(task_id, token, ext_ids=None):
 
                 audit_data.append(row)
             
-            # SUSTAINABLE PACING: Space out API calls to comfortably stay under 40 calls/minute limit
+            # SUSTAINABLE PACING: Space out API calls to prevent rapid bucket depletion
             time.sleep(3.0)
 
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
