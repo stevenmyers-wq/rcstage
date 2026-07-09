@@ -103,10 +103,17 @@ def get_device_ringing_status(ext_id, token, task_id=None):
         is_v2 = True
         v2_rules_to_check = []
         
-        # Load State Rules (Business Hours, After Hours, DND, Agent, etc.)
+        # Load State Rules (Business Hours, After Hours)
         for rule in v2_state_resp['records']:
+            rule_id = rule.get('id', '')
+            
+            # FILTER: Ignore RingCentral's hidden system/toggle states so they don't duplicate/clutter the report
+            if rule_id in ['agent', 'dnd', 'forward-all-calls']:
+                continue
+                
             if not rule.get('state', {}).get('enabled', True):
                 continue
+                
             v2_rules_to_check.append(rule)
             
         # Load Custom Interaction Rules
