@@ -1,0 +1,198 @@
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    <div class="mb-4 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-bold text-slate-800 mb-1">User Template Application</h2>
+        <p class="text-slate-500 text-sm">Bulk apply User Templates across the entire account or specific sites using Excel.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="bg-blue-100 text-blue-600 p-3 rounded-lg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-gray-800">1. Download User Roster</h3>
+                    <p class="text-xs text-gray-500">Get an Excel sheet with a template dropdown.</p>
+                </div>
+            </div>
+            
+            <div class="flex-grow space-y-4 text-sm text-gray-600 mb-6">
+                <p>Click below to generate a spreadsheet containing all active users on the account. The <strong>Template to Apply</strong> column will feature a dropdown pre-populated with all templates available on the tenant.</p>
+            </div>
+
+            <button id="btn-dl-templates" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition disabled:opacity-50">
+                Download Spreadsheet
+            </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="bg-emerald-100 text-emerald-600 p-3 rounded-lg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-gray-800">2. Upload & Apply</h3>
+                    <p class="text-xs text-gray-500">Apply the selected templates to the users.</p>
+                </div>
+            </div>
+            
+            <div class="flex-grow space-y-4 text-sm text-gray-600 mb-6">
+                <p>Upload your configured spreadsheet. The system will automatically chunk requests into batches of 100 to safely process thousands of users.</p>
+                
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+                    <input type="file" id="template-zip-file" accept=".xlsx" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <svg class="mx-auto h-8 w-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="text-sm font-bold text-emerald-600" id="template-filename">Select Excel File</p>
+                    <p class="text-xs text-gray-500 mt-1">Drag and drop or click to browse</p>
+                </div>
+            </div>
+
+            <button id="btn-up-templates" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition disabled:opacity-50" disabled>
+                Start Bulk Apply
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="ut-modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center">
+        <h3 class="font-bold text-gray-800 text-lg mb-2" id="ut-progress-title">Applying Templates...</h3>
+        <p class="text-sm text-gray-500 mb-6" id="ut-progress-desc">Processing batches of 100 users. Please do not close this window.</p>
+        
+        <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
+            <div id="ut-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="text-xs font-bold text-gray-700 text-right" id="ut-progress-pct">0%</div>
+        <div class="text-xs font-mono text-blue-600 text-left mt-2 truncate" id="ut-progress-msg">Initializing...</div>
+        
+        <button id="ut-progress-close-btn" class="mt-6 hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition">
+            Close
+        </button>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const btnDownload = document.getElementById('btn-dl-templates');
+    const btnUpload = document.getElementById('btn-up-templates');
+    const fileInput = document.getElementById('template-zip-file');
+    const filenameDisplay = document.getElementById('template-filename');
+    
+    const modal = document.getElementById('ut-modal-progress');
+    const progTitle = document.getElementById('ut-progress-title');
+    const progBar = document.getElementById('ut-progress-bar');
+    const progPct = document.getElementById('ut-progress-pct');
+    const progMsg = document.getElementById('ut-progress-msg');
+    const btnClose = document.getElementById('ut-progress-close-btn');
+
+    let pollInterval = null;
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            filenameDisplay.textContent = e.target.files[0].name;
+            btnUpload.disabled = false;
+        } else {
+            filenameDisplay.textContent = 'Select Excel File';
+            btnUpload.disabled = true;
+        }
+    });
+
+    btnDownload.addEventListener('click', () => {
+        btnDownload.disabled = true;
+        btnDownload.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating...';
+        
+        window.location.href = '/api/user_templates/download';
+        
+        setTimeout(() => {
+            btnDownload.disabled = false;
+            btnDownload.innerHTML = 'Download Spreadsheet';
+        }, 3000);
+    });
+
+    function openProgressModal() {
+        progTitle.textContent = "Applying Templates...";
+        progBar.style.width = '0%';
+        progBar.className = 'bg-blue-600 h-3 rounded-full transition-all duration-300';
+        progPct.textContent = '0%';
+        progMsg.textContent = 'Initializing...';
+        progMsg.className = 'text-xs font-mono text-blue-600 text-left mt-2 truncate';
+        btnClose.classList.add('hidden');
+        
+        modal.classList.remove('hidden');
+        setTimeout(() => modal.classList.remove('opacity-0'), 10);
+    }
+
+    function closeProgressModal() {
+        modal.classList.add('opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 200);
+        if (pollInterval) clearInterval(pollInterval);
+    }
+
+    btnClose.addEventListener('click', closeProgressModal);
+
+    function startPolling(taskId) {
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/user_templates/status?task_id=${taskId}`);
+                if (!res.ok) return;
+                
+                const data = await res.json();
+                
+                if (data.total > 0) {
+                    const pct = Math.round((data.current / data.total) * 100);
+                    progBar.style.width = `${pct}%`;
+                    progPct.textContent = `${pct}%`;
+                    progMsg.textContent = data.message;
+                }
+
+                if (data.status === 'completed') {
+                    clearInterval(pollInterval);
+                    progBar.classList.replace('bg-blue-600', 'bg-green-500');
+                    progTitle.textContent = 'Success!';
+                    progMsg.classList.replace('text-blue-600', 'text-green-600');
+                    btnClose.classList.remove('hidden');
+                } else if (data.status === 'error') {
+                    clearInterval(pollInterval);
+                    progBar.classList.replace('bg-blue-600', 'bg-red-500');
+                    progTitle.textContent = 'Failed';
+                    progMsg.textContent = data.error;
+                    progMsg.classList.replace('text-blue-600', 'text-red-600');
+                    btnClose.classList.remove('hidden');
+                }
+            } catch (e) {
+                // Ignore silent polling errors
+            }
+        }, 1000);
+    }
+
+    btnUpload.addEventListener('click', async () => {
+        if (fileInput.files.length === 0) return;
+
+        btnUpload.disabled = true;
+        openProgressModal();
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            const res = await fetch('/api/user_templates/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || "Failed to start upload.");
+            startPolling(data.task_id);
+        } catch (err) {
+            clearInterval(pollInterval);
+            progBar.classList.replace('bg-blue-600', 'bg-red-500');
+            progTitle.textContent = 'Upload Failed';
+            progMsg.textContent = err.message;
+            progMsg.classList.replace('text-blue-600', 'text-red-600');
+            btnClose.classList.remove('hidden');
+            btnUpload.disabled = false;
+        }
+    });
+});
+</script>
