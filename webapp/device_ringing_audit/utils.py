@@ -1,6 +1,8 @@
 import io
+import os
 import time
 import requests
+import base64
 import pandas as pd
 from datetime import datetime
 from webapp.rc_api import rc_api_call
@@ -32,6 +34,34 @@ def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
                 
                 # A. Heal Partner Impersonation Token
                 if auth_data.get('sm_employee_token') and auth_data.get('sm_target_id'):
+                    
+                    # 1. Refresh the underlying Employee Token first
+                    if auth_data.get('sm_employee_refresh_token'):
+                        client_id = os.getenv('SM_CLIENT_ID')
+                        client_secret = os.getenv('SM_CLIENT_SECRET')
+                        token_url = f"{auth_data.get('server_url', 'https://platform.ringcentral.com')}/restapi/oauth/token"
+                        
+                        data = {
+                            'grant_type': 'refresh_token',
+                            'refresh_token': auth_data['sm_employee_refresh_token']
+                        }
+                        headers = { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }
+                        if client_secret:
+                            auth_str = f"{client_id}:{client_secret}"
+                            headers['Authorization'] = f"Basic {base64.b64encode(auth_str.encode()).decode()}"
+                        else:
+                            data['client_id'] = client_id
+                            
+                        try:
+                            refresh_resp = requests.post(token_url, data=data, headers=headers)
+                            if refresh_resp.ok:
+                                new_tokens = refresh_resp.json()
+                                auth_data['sm_employee_token'] = new_tokens.get('access_token')
+                                auth_data['sm_employee_refresh_token'] = new_tokens.get('refresh_token')
+                        except Exception:
+                            pass
+                            
+                    # 2. Generate a new target customer token using the fresh employee token
                     new_token = get_impersonation_token(auth_data['sm_employee_token'], auth_data['sm_target_id'])
                     if new_token:
                         auth_data['access_token'] = new_token
@@ -58,7 +88,7 @@ def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
                                 audit_progress_store[task_id]['message'] = "OAuth token refreshed! Resuming audit..."
                             time.sleep(1)
                             continue
-                    except Exception as e:
+                    except Exception:
                         pass
                         
             raise Exception("Authentication token expired during audit. Please Authorize & Bridge again.")
@@ -104,21 +134,32 @@ def fetch_users_for_ui(auth_data):
         time.sleep(0.05)
     return users
 
-def get_device_ringing_status(ext_id, auth_data, task_id=None):
+def fetch_all_devices(auth_data, task_id=None):
+    """Fetches all devices from the account to avoid redundant per-user API calls."""
+    devices = []
+    page = 1
+    while True:
+        resp = safe_api_call(f"/restapi/v1.0/account/~/device?perPage=1000&page={page}", auth_data=auth_data, task_id=task_id)
+        if not resp or 'records' not in resp: 
+            break
+        devices.extend(resp['records'])
+        if not resp.get('navigation', {}).get('nextPage'): 
+            break
+        page += 1
+        time.sleep(0.1)
+    return devices
+
+def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
     """
-    Fetches the user's devices and evaluates ALL configured call handling rules.
+    Evaluates ALL configured call handling rules.
     Queries V2 Schema first (Source of truth for migrated accounts), then falls back to V1.
     """
-    devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", auth_data=auth_data, task_id=task_id)
-    devices = devices_resp.get('records', []) if devices_resp else []
-    
     device_map = {}
-    for d in devices:
+    for d in user_devices:
         d_type = d.get('type', 'Unknown')
         d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
         
         # STRICT WHITELIST: Only process actual physical endpoints.
-        # This safely drops WebPhone, SoftPhone, ApplicationExtension, and Unknown apps.
         if d_type not in ['HardPhone', 'OtherPhone', 'Paging']:
             continue
             
@@ -141,7 +182,7 @@ def get_device_ringing_status(ext_id, auth_data, task_id=None):
         is_v2 = True
         v2_rules_to_check = []
         
-        # Load State Rules (Business Hours, After Hours, etc.)
+        # Load State Rules (Business Hours, After Hours)
         for rule in v2_state_resp['records']:
             rule_id = rule.get('id', '')
             
@@ -287,6 +328,18 @@ def run_audit_background(task_id, auth_data, ext_ids=None):
             audit_progress_store[task_id]['error'] = 'No active users found to audit.'
             return
 
+        # Optimization: Fetch all devices on the account at once to eliminate 1 API call per user
+        audit_progress_store[task_id]['message'] = 'Fetching all account devices (Optimization)...'
+        all_devices = fetch_all_devices(auth_data, task_id=task_id)
+        
+        devices_by_ext = {}
+        for d in all_devices:
+            d_ext_id = str(d.get('extension', {}).get('id', ''))
+            if d_ext_id:
+                if d_ext_id not in devices_by_ext:
+                    devices_by_ext[d_ext_id] = []
+                devices_by_ext[d_ext_id].append(d)
+
         audit_data = []
 
         for i, user in enumerate(valid_users):
@@ -297,7 +350,8 @@ def run_audit_background(task_id, auth_data, ext_ids=None):
             audit_progress_store[task_id]['current'] = i + 1
             audit_progress_store[task_id]['message'] = f"Auditing Extension {ext_num} ({ext_name})..."
 
-            device_map, rules_data = get_device_ringing_status(ext_id, auth_data, task_id=task_id)
+            user_devices = devices_by_ext.get(ext_id, [])
+            device_map, rules_data = get_device_ringing_status(ext_id, user_devices, auth_data, task_id=task_id)
 
             if not rules_data:
                 rules_data = [{
@@ -329,7 +383,7 @@ def run_audit_background(task_id, auth_data, ext_ids=None):
                 audit_data.append(row)
             
             # SUSTAINABLE PACING: Space out API calls to prevent rapid bucket depletion
-            time.sleep(3.5)
+            time.sleep(3.0)
 
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
         df = pd.DataFrame(audit_data)
