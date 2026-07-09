@@ -58,8 +58,10 @@ def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
                                 new_tokens = refresh_resp.json()
                                 auth_data['sm_employee_token'] = new_tokens.get('access_token')
                                 auth_data['sm_employee_refresh_token'] = new_tokens.get('refresh_token')
-                        except Exception:
-                            pass
+                            else:
+                                raise Exception(f"Employee token refresh rejected: {refresh_resp.text}")
+                        except Exception as e:
+                            raise Exception(f"Failed to refresh employee token: {str(e)}")
                             
                     # 2. Generate a new target customer token using the fresh employee token
                     new_token = get_impersonation_token(auth_data['sm_employee_token'], auth_data['sm_target_id'])
@@ -88,10 +90,12 @@ def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
                                 audit_progress_store[task_id]['message'] = "OAuth token refreshed! Resuming audit..."
                             time.sleep(1)
                             continue
-                    except Exception:
-                        pass
+                        else:
+                            raise Exception(f"OAuth token refresh rejected: {refresh_resp.text}")
+                    except Exception as e:
+                        raise Exception(f"Failed to refresh OAuth token: {str(e)}")
                         
-            raise Exception("Authentication token expired during audit. Please Authorize & Bridge again.")
+            raise Exception("Authentication token expired during audit and could not be healed. Please Authorize & Bridge again.")
             
         # 3. Handle Success
         if resp and getattr(resp, 'ok', False):
@@ -305,15 +309,6 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
 
 def run_audit_background(task_id, auth_data, ext_ids=None):
     """Background task to perform the audit, updating progress as it goes."""
-    audit_progress_store[task_id] = {
-        'status': 'running',
-        'current': 0,
-        'total': 0,
-        'message': 'Fetching user list from RingCentral...',
-        'file_data': None,
-        'error': None
-    }
-
     try:
         valid_users = fetch_users_for_ui(auth_data)
         
