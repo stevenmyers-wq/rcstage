@@ -73,7 +73,8 @@ def generate_audit_spreadsheet(token):
     ws = wb.active
     ws.title = "Template Assignment"
 
-    headers = ["Extension ID", "Extension Number", "Name", "Site", "Current Template (If Known)", "Template to Apply"]
+    # Removed the "Current Template" column
+    headers = ["Extension ID", "Extension Number", "Name", "Site", "Template to Apply"]
     ws.append(headers)
 
     # Note: openpyxl data validation formula must be a comma-separated string
@@ -89,9 +90,11 @@ def generate_audit_spreadsheet(token):
         ext_num = user.get('extensionNumber', '')
         name = user.get('name', 'Unknown')
         site = user.get('site', {}).get('name', 'Main Site')
-        # We leave Current Template blank as it's not exposed cleanly in standard list API
-        ws.append([ext_id, ext_num, name, site, "", ""])
-        dv.add(ws.cell(row=index, column=6)) # Column F is 'Template to Apply'
+        
+        ws.append([ext_id, ext_num, name, site, ""])
+        
+        # Add the validation to the 'Template to Apply' column (now Column E / 5)
+        dv.add(ws.cell(row=index, column=5)) 
 
     # Auto-adjust column widths
     for column in ws.columns:
