@@ -10,19 +10,28 @@ audit_progress_store = {}
 def safe_api_call(endpoint, method='GET', token=None, task_id=None):
     """Helper to safely request API data while respecting 429 Rate Limits and 50x errors."""
     for attempt in range(4):
-        resp = rc_api_call(endpoint, method=method, return_response=True, token=token)
+        # Dynamically fetch the latest token injected by the frontend polling route
+        active_token = token
+        if task_id and task_id in audit_progress_store:
+            active_token = audit_progress_store[task_id].get('token', token)
+            
+        resp = rc_api_call(endpoint, method=method, return_response=True, token=active_token)
         status_code = getattr(resp, 'status_code', None)
         
         # 1. Handle Rate Limiting (429)
         if status_code == 429:
             retry_after = int(resp.headers.get('Retry-After', 60)) if hasattr(resp, 'headers') else 10
             if task_id:
-                audit_progress_store[task_id]['message'] = f"Rate limit hit! Pausing for {retry_after}s..."
+                audit_progress_store[task_id]['message'] = f"API Limit Reached! Pausing for {retry_after} seconds..."
             time.sleep(retry_after + 1)
             continue
             
         # 2. Handle Token Expiry (401)
         if status_code == 401:
+            # Quick 2-second grace period in case the frontend refresh ping is fractionally behind
+            if attempt < 3:
+                time.sleep(2)
+                continue
             raise Exception("Authentication token expired during audit. Please Authorize & Bridge again.")
             
         # 3. Handle Success
@@ -37,7 +46,7 @@ def safe_api_call(endpoint, method='GET', token=None, task_id=None):
             time.sleep(3)
             continue
             
-        # For 400 Bad Request, 403 Forbidden or 404 Not Found, return None (don't retry)
+        # For 400 Bad Request, 403 Forbidden or 404 Not Found, return None
         return None
         
     return None
@@ -66,21 +75,32 @@ def fetch_users_for_ui(token):
         time.sleep(0.05)
     return users
 
-def get_device_ringing_status(ext_id, token, task_id=None):
+def fetch_all_devices(token, task_id=None):
+    """Fetches all devices from the account to avoid redundant per-user API calls."""
+    devices = []
+    page = 1
+    while True:
+        resp = safe_api_call(f"/restapi/v1.0/account/~/device?perPage=1000&page={page}", token=token, task_id=task_id)
+        if not resp or 'records' not in resp: 
+            break
+        devices.extend(resp['records'])
+        if not resp.get('navigation', {}).get('nextPage'): 
+            break
+        page += 1
+        time.sleep(0.1)
+    return devices
+
+def get_device_ringing_status(ext_id, user_devices, token, task_id=None):
     """
-    Fetches the user's devices and evaluates ALL configured call handling rules.
+    Evaluates ALL configured call handling rules.
     Queries V2 Schema first (Source of truth for migrated accounts), then falls back to V1.
     """
-    devices_resp = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device", token=token, task_id=task_id)
-    devices = devices_resp.get('records', []) if devices_resp else []
-    
     device_map = {}
-    for d in devices:
+    for d in user_devices:
         d_type = d.get('type', 'Unknown')
         d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
         
         # STRICT WHITELIST: Only process actual physical endpoints.
-        # This safely drops WebPhone, SoftPhone, ApplicationExtension, and Unknown apps.
         if d_type not in ['HardPhone', 'OtherPhone', 'Paging']:
             continue
             
@@ -107,7 +127,7 @@ def get_device_ringing_status(ext_id, token, task_id=None):
         for rule in v2_state_resp['records']:
             rule_id = rule.get('id', '')
             
-            # FILTER: Ignore RingCentral's hidden system/toggle states so they don't duplicate/clutter the report
+            # FILTER: Ignore RingCentral's hidden system/toggle states 
             if rule_id in ['agent', 'dnd', 'forward-all-calls']:
                 continue
                 
@@ -232,7 +252,8 @@ def run_audit_background(task_id, token, ext_ids=None):
         'total': 0,
         'message': 'Fetching user list from RingCentral...',
         'file_data': None,
-        'error': None
+        'error': None,
+        'token': token
     }
 
     try:
@@ -249,6 +270,18 @@ def run_audit_background(task_id, token, ext_ids=None):
             audit_progress_store[task_id]['error'] = 'No active users found to audit.'
             return
 
+        # Optimization: Fetch all devices on the account at once to eliminate 1 API call per user
+        audit_progress_store[task_id]['message'] = 'Fetching all account devices (Optimization)...'
+        all_devices = fetch_all_devices(token, task_id=task_id)
+        
+        devices_by_ext = {}
+        for d in all_devices:
+            d_ext_id = str(d.get('extension', {}).get('id', ''))
+            if d_ext_id:
+                if d_ext_id not in devices_by_ext:
+                    devices_by_ext[d_ext_id] = []
+                devices_by_ext[d_ext_id].append(d)
+
         audit_data = []
 
         for i, user in enumerate(valid_users):
@@ -259,7 +292,8 @@ def run_audit_background(task_id, token, ext_ids=None):
             audit_progress_store[task_id]['current'] = i + 1
             audit_progress_store[task_id]['message'] = f"Auditing Extension {ext_num} ({ext_name})..."
 
-            device_map, rules_data = get_device_ringing_status(ext_id, token, task_id=task_id)
+            user_devices = devices_by_ext.get(ext_id, [])
+            device_map, rules_data = get_device_ringing_status(ext_id, user_devices, token, task_id=task_id)
 
             if not rules_data:
                 rules_data = [{
@@ -290,7 +324,8 @@ def run_audit_background(task_id, token, ext_ids=None):
 
                 audit_data.append(row)
             
-            time.sleep(3.5)
+            # SUSTAINABLE PACING: Space out API calls to comfortably stay under 40 calls/minute limit
+            time.sleep(3.0)
 
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
         df = pd.DataFrame(audit_data)
