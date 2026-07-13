@@ -1,0 +1,129 @@
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    
+    <div class="mb-4 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-bold text-slate-800 mb-1">Extension Number Changer</h2>
+        <p class="text-slate-500 text-sm">Audit your account's extensions and bulk update their extension numbers using Excel.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">1. Download Audit</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Generate a comprehensive Excel report of all extensions. The file will include a "New Extension Number" column for you to fill out.
+            </p>
+            <button onclick="auditExtensionNumbers()" id="encAuditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+                Download Extension Audit
+            </button>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">2. Upload & Apply</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Upload your modified Excel sheet. Only rows with a value in the "New Extension Number" column will be processed.
+            </p>
+            <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer block text-center">
+                Upload to Update
+                <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadExtensionNumbers(this)">
+            </label>
+        </div>
+
+    </div>
+
+    <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
+        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">PROVISIONING LOGS</span>
+            <button onclick="document.getElementById('encLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+        </div>
+        <div id="encLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+            Ready for action...
+        </div>
+    </div>
+
+</div>
+
+<script>
+    function logEnc(msg, type='info') {
+        const box = document.getElementById('encLogs');
+        if (!box) return;
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function auditExtensionNumbers() {
+        const btn = document.getElementById('encAuditBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+        
+        logEnc("Starting Audit... fetching data from RingCentral.");
+
+        try {
+            const res = await fetch('/api/extension_number_changer/audit');
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Audit failed");
+            }
+            
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // Generate filename based on date
+            const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
+            a.download = `Extension_Number_Audit_${dateStr}.xlsx`;
+            
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            logEnc("Audit Complete! Downloading file...", "success");
+        } catch (e) {
+            logEnc(`Audit Failed: ${e.message}`, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Download Extension Audit";
+        }
+    }
+
+    async function uploadExtensionNumbers(input) {
+        if (!input.files || !input.files[0]) return;
+        
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        logEnc(`Uploading ${file.name}... analyzing changes.`);
+        
+        try {
+            const res = await fetch('/api/extension_number_changer/upload', { 
+                method: 'POST', 
+                body: formData 
+            });
+            const data = await res.json();
+            
+            if (data.logs) {
+                data.logs.forEach(l => {
+                    const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
+                    logEnc(l, type);
+                });
+                logEnc("Batch process completed.", "info");
+            } else if (data.error) {
+                logEnc(data.error, 'error');
+            }
+        } catch (e) {
+            logEnc(`Upload Failed: ${e.message}`, 'error');
+        }
+        
+        input.value = ''; // clear out input
+    }
+</script>
