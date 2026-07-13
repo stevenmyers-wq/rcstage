@@ -1,0 +1,76 @@
+<div class="space-y-6 animate-fade-in p-4 w-full">
+    <div class="mb-4 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-bold text-slate-800 mb-1">Device Audit</h2>
+        <p class="text-slate-500 text-sm">Audit all provisioned devices across the account, including their online connection status.</p>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 flex flex-col items-center text-center max-w-lg mx-auto">
+        <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+            </svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-800 mb-2">Generate Device Audit</h3>
+        <p class="text-gray-500 text-sm mb-6">
+            Downloads an Excel file containing all physical and soft devices, their MAC addresses, assignment types, and their live Online/Offline status.
+        </p>
+        <button id="btn-export-device-audit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow-sm transition">
+            Download Device Audit
+        </button>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const btnExport = document.getElementById('btn-export-device-audit');
+    if (!btnExport) return;
+
+    btnExport.addEventListener('click', async () => {
+        btnExport.disabled = true;
+        const originalText = btnExport.innerHTML;
+        btnExport.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating...';
+
+        try {
+            const response = await fetch('/api/device_audit/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    window.location.href = '/api/sm_auth/logout?tab=device_audit';
+                    return;
+                }
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to export device audit');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+            a.download = `Device_Audit_${dateStr}.xlsx`;
+            
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            if (typeof showMessage === 'function') {
+                showMessage("Device Audit downloaded successfully!", false);
+            }
+        } catch (error) {
+            console.error("Device audit error:", error);
+            if (typeof showMessage === 'function') {
+                showMessage(error.message, true);
+            } else {
+                alert("Error: " + error.message);
+            }
+        } finally {
+            btnExport.disabled = false;
+            btnExport.innerHTML = originalText;
+        }
+    });
+});
+</script>
