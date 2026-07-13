@@ -5,17 +5,45 @@
         <p class="text-slate-500 text-sm">Audit your account's extensions and bulk update their extension numbers using Excel.</p>
     </div>
 
+    <div class="card p-6 shadow-sm border border-gray-200">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-800">1. Filters</h3>
+            <span id="enc-filter-badge" class="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-xs font-bold">
+                Loading Filters...
+            </span>
+        </div>
+
+        <div id="enc-loading-indicator" class="flex items-center text-blue-600 text-sm mb-4">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            Fetching Account Metadata...
+        </div>
+
+        <div id="enc-filter-controls" class="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-50 pointer-events-none transition-opacity duration-300">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Filter by Site (Hold Ctrl/Cmd to select multiple)</label>
+                <select id="enc-filter-site" multiple class="block w-full text-sm border border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 h-32 p-2"></select>
+                <div class="text-xs text-right text-gray-400 mt-1 cursor-pointer hover:text-blue-600" onclick="document.getElementById('enc-filter-site').selectedIndex = -1">Clear Selection</div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Filter by Type (Hold Ctrl/Cmd to select multiple)</label>
+                <select id="enc-filter-type" multiple class="block w-full text-sm border border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 h-32 p-2"></select>
+                <div class="text-xs text-right text-gray-400 mt-1 cursor-pointer hover:text-blue-600" onclick="document.getElementById('enc-filter-type').selectedIndex = -1">Clear Selection</div>
+            </div>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">1. Download Audit</h3>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">2. Download Audit</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive Excel report of all extensions. The file will include a "New Extension Number" column for you to fill out.
+                Generate a filtered Excel report of your extensions. The file will include a "New Extension Number" column for you to fill out.
             </p>
-            <button onclick="auditExtensionNumbers()" id="encAuditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+            <button onclick="auditExtensionNumbers()" id="encAuditBtn" disabled class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                 Download Extension Audit
             </button>
         </div>
@@ -24,11 +52,11 @@
             <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">2. Upload & Apply</h3>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">3. Upload & Apply</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
                 Upload your modified Excel sheet. Only rows with a value in the "New Extension Number" column will be processed.
             </p>
-            <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer block text-center">
+            <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer block text-center shadow-sm">
                 Upload to Update
                 <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadExtensionNumbers(this)">
             </label>
@@ -49,9 +77,49 @@
 </div>
 
 <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchEncFilters();
+    });
+
+    async function fetchEncFilters() {
+        try {
+            const res = await fetch('/api/extension_number_changer/filters');
+            if (!res.ok) throw new Error("Failed to load filters");
+            
+            const data = await res.json();
+            
+            const siteSelect = document.getElementById('enc-filter-site');
+            const typeSelect = document.getElementById('enc-filter-type');
+            
+            siteSelect.innerHTML = data.sites.map(s => `<option value="${s}">${s}</option>`).join('');
+            typeSelect.innerHTML = data.types.map(t => `<option value="${t}">${t}</option>`).join('');
+            
+            document.getElementById('enc-loading-indicator').classList.add('hidden');
+            document.getElementById('enc-filter-controls').classList.remove('opacity-50', 'pointer-events-none');
+            document.getElementById('enc-filter-badge').innerText = `Filters Ready`;
+            document.getElementById('enc-filter-badge').classList.replace('bg-gray-200', 'bg-green-100');
+            document.getElementById('enc-filter-badge').classList.replace('text-gray-700', 'text-green-700');
+            
+            document.getElementById('encAuditBtn').disabled = false;
+        } catch (err) {
+            document.getElementById('enc-filter-badge').innerText = "Error Loading Filters";
+            document.getElementById('enc-filter-badge').classList.replace('bg-gray-200', 'bg-red-100');
+            document.getElementById('enc-filter-badge').classList.replace('text-gray-700', 'text-red-700');
+            logEnc("Failed to load filters: " + err.message, "error");
+        }
+    }
+
+    function getEncSelectedValues(selectId) {
+        const select = document.getElementById(selectId);
+        return Array.from(select.selectedOptions).map(option => option.value);
+    }
+
     function logEnc(msg, type='info') {
         const box = document.getElementById('encLogs');
         if (!box) return;
+        if (box.children.length === 1 && box.children[0].classList.contains('text-gray-300')) {
+            box.innerHTML = '';
+        }
         const entry = document.createElement('div');
         entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
         entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -64,10 +132,18 @@
         btn.disabled = true;
         btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
         
-        logEnc("Starting Audit... fetching data from RingCentral.");
+        const selectedSites = getEncSelectedValues('enc-filter-site');
+        const selectedTypes = getEncSelectedValues('enc-filter-type');
+
+        logEnc(`Starting Audit for ${selectedSites.length ? selectedSites.length + ' sites' : 'all sites'}, ${selectedTypes.length ? selectedTypes.length + ' types' : 'all types'}...`);
 
         try {
-            const res = await fetch('/api/extension_number_changer/audit');
+            const res = await fetch('/api/extension_number_changer/audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sites: selectedSites, types: selectedTypes })
+            });
+
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || "Audit failed");
@@ -78,7 +154,6 @@
             const a = document.createElement('a');
             a.href = url;
             
-            // Generate filename based on date
             const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
             a.download = `Extension_Number_Audit_${dateStr}.xlsx`;
             
