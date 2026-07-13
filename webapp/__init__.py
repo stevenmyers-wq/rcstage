@@ -134,4 +134,8 @@ def create_app():
         from .user_templates import routes as user_templates_routes
         app.register_blueprint(user_templates_routes.user_templates_bp)
 
+        # Extension Number Changer routes
+        from .extension_number_changer import routes as ext_num_changer_routes
+        app.register_blueprint(ext_num_changer_routes.ext_num_changer_bp)
+
     return app
