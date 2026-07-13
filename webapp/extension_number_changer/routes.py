@@ -18,15 +18,28 @@ def generate_audit():
         
         audit_data = []
         for ext in extensions:
+            # Safely extract the nested site name, default to blank if not found
+            site_name = ext.get('site', {}).get('name', '')
+            ext_type = ext.get('type', '')
+            
             audit_data.append({
                 'Extension ID': ext.get('id', ''),
                 'Extension Name': ext.get('name', 'Unknown'),
+                'Extension Type': ext_type,
+                'Site': site_name,
                 'Extension Number': ext.get('extensionNumber', ''),
                 'New Extension Number': ''
             })
             
         if not audit_data:
-            audit_data = [{'Extension ID': 'No Data', 'Extension Name': 'No Extensions Found', 'Extension Number': '', 'New Extension Number': ''}]
+            audit_data = [{
+                'Extension ID': 'No Data', 
+                'Extension Name': 'No Extensions Found', 
+                'Extension Type': '',
+                'Site': '',
+                'Extension Number': '', 
+                'New Extension Number': ''
+            }]
 
         df = pd.DataFrame(audit_data)
         
