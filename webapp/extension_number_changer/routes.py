@@ -8,19 +8,58 @@ from . import utils
 
 ext_num_changer_bp = Blueprint('ext_num_changer_bp', __name__, url_prefix='/api/extension_number_changer')
 
-@ext_num_changer_bp.route('/audit', methods=['GET'])
+@ext_num_changer_bp.route('/filters', methods=['GET'])
 @require_rc_token
-@track_usage('Extension Number Changer - Audit')
-def generate_audit():
+def get_filters():
+    """Returns all unique Sites and Extension Types for the UI dropdowns."""
     token = session.get('sm_isolated_token') or session.get('rc_access_token')
     try:
         extensions = utils.fetch_all_extensions(token)
-        
-        audit_data = []
+        sites = set()
+        types = set()
         for ext in extensions:
-            # Safely extract the nested site name, default to blank if not found
-            site_name = ext.get('site', {}).get('name', '')
             ext_type = ext.get('type', '')
+            if ext_type:
+                types.add(ext_type)
+            
+            if ext_type == 'Site':
+                sites.add(ext.get('name', 'Main Site'))
+            else:
+                sites.add(ext.get('site', {}).get('name', 'Main Site'))
+        
+        return jsonify({
+            "sites": sorted(list(sites)),
+            "types": sorted(list(types))
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@ext_num_changer_bp.route('/audit', methods=['POST'])
+@require_rc_token
+@track_usage('Extension Number Changer - Audit')
+def generate_audit():
+    """Generates the filtered Excel file including Site and Extension Type."""
+    token = session.get('sm_isolated_token') or session.get('rc_access_token')
+    data = request.get_json() or {}
+    selected_sites = data.get('sites', [])
+    selected_types = data.get('types', [])
+    
+    try:
+        extensions = utils.fetch_all_extensions(token)
+        audit_data = []
+        
+        for ext in extensions:
+            ext_type = ext.get('type', '')
+            if ext_type == 'Site':
+                site_name = ext.get('name', 'Main Site')
+            else:
+                site_name = ext.get('site', {}).get('name', 'Main Site')
+            
+            # Apply Filters
+            if selected_sites and site_name not in selected_sites:
+                continue
+            if selected_types and ext_type not in selected_types:
+                continue
             
             audit_data.append({
                 'Extension ID': ext.get('id', ''),
@@ -34,7 +73,7 @@ def generate_audit():
         if not audit_data:
             audit_data = [{
                 'Extension ID': 'No Data', 
-                'Extension Name': 'No Extensions Found', 
+                'Extension Name': 'No Extensions Found Matching Filters', 
                 'Extension Type': '',
                 'Site': '',
                 'Extension Number': '', 
