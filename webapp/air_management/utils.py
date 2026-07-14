@@ -2,6 +2,7 @@ import pandas as pd
 import re
 import time
 import io
+import json
 from datetime import datetime
 from webapp.rc_api import rc_api_call
 
@@ -526,12 +527,17 @@ def run_transcript_export(task_id, date_from, date_to, air_id, token):
                     break
                 
                 for msg in msg_resp['records']:
+                    parsed_input = msg.get('parsedToolInput', {})
+                    parsed_str = json.dumps(parsed_input) if isinstance(parsed_input, dict) and parsed_input else str(parsed_input) if parsed_input else ''
+
                     transcript_data.append({
                         'Conversation ID': conv_id,
                         'Timestamp': msg.get('creationTime', ''),
                         'Role': msg.get('producerRole', ''),
                         'Text': msg.get('text', ''),
                         'Tool Triggered': msg.get('toolName', ''),
+                        'Tool Input': msg.get('toolInput', ''),
+                        'Parsed Tool Input': parsed_str,
                         'Tool Output': msg.get('toolOutput', '')
                     })
                     
