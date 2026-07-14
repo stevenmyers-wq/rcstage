@@ -24,13 +24,10 @@ def fetch_all_pages(endpoint, token, params=None):
 
 def fetch_inventory_numbers(token):
     numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
-    
     inventory = []
     for n in numbers:
-        # Check if it has no extension assigned
         if not n.get('extension') or not n.get('extension').get('id'):
             inventory.append(n)
-            
     return inventory
 
 def fetch_extensions(token):
@@ -60,16 +57,13 @@ def generate_template(token):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_template.to_excel(writer, index=False, sheet_name='Assignment Template')
-        
         if not df_inv.empty:
             df_inv.to_excel(writer, index=False, sheet_name='Available Numbers')
         else:
             pd.DataFrame([{"Available Phone Number": "No numbers available in inventory."}]).to_excel(writer, index=False, sheet_name='Available Numbers')
-            
         if not df_ext.empty:
             df_ext.to_excel(writer, index=False, sheet_name='Available Extensions')
 
-        # Auto-adjust column widths
         for sheet in writer.sheets.values():
             for column in sheet.columns:
                 length = max(len(str(cell.value) or "") for cell in column)
@@ -83,66 +77,65 @@ def extract_error(res):
     try:
         err_json = res.json() if res else {}
         if isinstance(err_json, dict):
+            code = err_json.get('errorCode', '')
+            if not code and err_json.get('errors') and len(err_json['errors']) > 0:
+                code = err_json['errors'][0].get('errorCode', '')
+            
             if err_json.get('errors'):
-                return " | ".join([f"[{e.get('errorCode', 'ERR')}] {e.get('message', str(e))}" for e in err_json.get('errors', [])])
-            elif err_json.get('message'):
-                return err_json.get('message')
+                err_msg = " | ".join([e.get('message', str(e)) for e in err_json.get('errors', [])])
+            else:
+                err_msg = err_json.get('message', '')
+                
+            if code:
+                return f"[{code}] {err_msg}"
+            return err_msg
     except Exception:
         pass
-    return raw_text.strip() if raw_text.strip() else "Unknown Error"
+    return raw_text.strip() if raw_text.strip() else "Empty/Unknown Response"
 
-def process_assignments(records, token):
-    # Map phone string to internal numerical ID
+def run_exhaustive_debug(phone, ext_num, token):
+    """
+    Tests the V2 Business Mobile Numbers endpoints you discovered.
+    """
+    logs = [f"🔍 Testing V2 Business Mobile Endpoints for {phone} -> Ext {ext_num}"]
+    
+    # 1. Resolve Number ID
     all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
-    phone_map = {}
+    number_data = None
+    clean_target = phone.replace('+', '').strip()
     
     for n in all_numbers:
-        if n.get('phoneNumber'):
-            phone_num = n['phoneNumber'].strip()
-            phone_map[phone_num] = n
-            phone_map[phone_num.replace('+', '')] = n
+        n_phone = n.get('phoneNumber', '')
+        if n_phone and clean_target in n_phone.replace('+', ''):
+            number_data = n
+            break
 
-    # Map Extension short Number to system internal long ID
-    all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
-    ext_map = {}
-    for e in all_exts:
-        if e.get('extensionNumber'):
-            ext_map[str(e['extensionNumber']).strip()] = str(e['id'])
+    if not number_data:
+        return logs + [f"❌ Phone number {phone} not found in account."]
 
-    logs = []
+    number_id = str(number_data.get('id', ''))
     
-    for index, row in enumerate(records):
-        phone = str(row.get('Phone Number', '')).strip()
-        ext_num = str(row.get('Extension Number', '')).replace('.0', '').strip()
-        
-        if not phone or phone.lower() == 'nan' or not ext_num or ext_num.lower() == 'nan':
-            continue
+    # 2. Resolve Ext ID
+    all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
+    ext_id = None
+    for e in all_exts:
+        if str(e.get('extensionNumber', '')).strip() == str(ext_num).strip():
+            ext_id = str(e['id'])
+            break
 
-        if phone.startswith('61') and len(phone) >= 11:
-            phone = '+' + phone
-        phone_clean = phone.replace('+', '')
+    if not ext_id:
+        return logs + [f"❌ Extension number {ext_num} not found in account."]
 
-        number_data = phone_map.get(phone) or phone_map.get(phone_clean)
-        if not number_data:
-            logs.append(f"❌ Row {index+2}: Phone Number {phone} not found in the account inventory.")
-            continue
+    logs.append(f"ℹ️ Phone ID: {number_id} | Target Ext ID: {ext_id}")
+    logs.append("="*60)
 
-        ext_id = ext_map.get(ext_num)
-        if not ext_id:
-            logs.append(f"❌ Row {index+2}: Extension Number {ext_num} not found in the account.")
-            continue
-
-        number_id = str(number_data.get('id', ''))
-        payment_type = str(number_data.get('paymentType', ''))
-        usage_type = str(number_data.get('usageType', ''))
-        
-        # Check if the number is categorized as a Mobile line
-        is_mobile = 'Mobile' in payment_type or 'Mobile' in usage_type
-        
-        if is_mobile:
-            # Use the specialized V2 Business Mobile Numbers Bulk API
-            endpoint = '/restapi/v2/accounts/~/business-mobile-numbers'
-            payload = {
+    # 3. Test Endpoints based on your schema discovery
+    test_endpoints = [
+        (
+            "V2 Business Mobile (Bulk POST)", 
+            f"/restapi/v2/accounts/~/business-mobile-numbers",
+            'POST',
+            {
                 "records": [
                     {
                         "id": number_id,
@@ -150,51 +143,70 @@ def process_assignments(records, token):
                     }
                 ]
             }
-            try:
-                res = rc_api_call(endpoint, method='POST', json=payload, token=token, return_response=True)
-                if res and getattr(res, 'ok', False):
-                    res_data = res.json()
-                    item_data = res_data.get('records', [{}])[0]
-                    
-                    if item_data.get('bulkItemSuccessful') is True:
-                        logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (via Business Mobile API).")
-                    else:
-                        errors = item_data.get('bulkItemErrors', [])
-                        err_msg = " | ".join([f"[{e.get('errorCode', 'ERR')}] {e.get('message', str(e))}" for e in errors])
-                        logs.append(f"❌ Failed to assign {phone}: {err_msg}")
-                else:
-                    err_msg = extract_error(res)
-                    logs.append(f"❌ Failed to assign {phone} (HTTP {getattr(res, 'status_code', 'Unknown')}): {err_msg}")
-            except Exception as e:
-                logs.append(f"❌ Error assigning {phone}: {str(e)}")
-                
-        else:
-            # Standard Voice DIDs and Toll-Free Numbers
-            endpoint = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
-            payload = {
-                "usageType": "DirectNumber",
+        ),
+        (
+            "V2 Business Mobile (Single PATCH)", 
+            f"/restapi/v2/accounts/~/business-mobile-numbers/{number_id}",
+            'PATCH',
+            {
                 "extension": { "id": ext_id }
             }
-            try:
-                res = rc_api_call(endpoint, method='PATCH', json=payload, token=token, return_response=True)
-                if res and getattr(res, 'ok', False):
-                    logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num}.")
-                else:
-                    # Fallback without usageType constraint
-                    time.sleep(0.5)
-                    fb_payload = { "extension": { "id": ext_id } }
-                    res_fb = rc_api_call(endpoint, method='PATCH', json=fb_payload, token=token, return_response=True)
-                    if res_fb and getattr(res_fb, 'ok', False):
-                        logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (Native Fallback).")
-                    else:
-                        err_msg = extract_error(res_fb)
-                        logs.append(f"❌ Failed to assign {phone} (HTTP {getattr(res_fb, 'status_code', 'Unknown')}): {err_msg}")
-            except Exception as e:
-                logs.append(f"❌ Error assigning {phone}: {str(e)}")
-                
-        time.sleep(0.7) # Safety delay window
+        ),
+        (
+            "V2 Business Mobile (Bulk PUT)", 
+            f"/restapi/v2/accounts/~/business-mobile-numbers",
+            'PUT',
+            {
+                "records": [
+                    {
+                        "id": number_id,
+                        "extension": { "id": ext_id }
+                    }
+                ]
+            }
+        ),
+        (
+            "V2 Business Mobile (Bulk PATCH)", 
+            f"/restapi/v2/accounts/~/business-mobile-numbers",
+            'PATCH',
+            {
+                "records": [
+                    {
+                        "id": number_id,
+                        "extension": { "id": ext_id }
+                    }
+                ]
+            }
+        )
+    ]
 
-    if not logs:
-        logs.append("No entries were detected inside the execution array.")
+    for name, ep, method, payload in test_endpoints:
+        logs.append(f"\n▶ Testing: {name} [{method} {ep}]")
         
+        try:
+            res = rc_api_call(ep, method=method, json=payload, token=token, return_response=True)
+            status = getattr(res, 'status_code', 'Unknown')
+            err = extract_error(res)
+            
+            if res and getattr(res, 'ok', False):
+                logs.append(f"  ✅ SUCCESS! The API accepted the assignment.")
+                # If it's the bulk endpoint, check the bulkItemSuccessful flag in the response
+                try:
+                    resp_json = res.json()
+                    logs.append(f"  Response Body: {resp_json}")
+                except:
+                    pass
+                return logs
+            else:
+                logs.append(f"  ❌ HTTP {status} - {err}")
+                if status == 429: time.sleep(2)
+        except Exception as e:
+            logs.append(f"  ❌ Exception: {str(e)}")
+            
+        time.sleep(1)
+
+    logs.append("\n🛑 EXHAUSTED BUSINESS MOBILE ENDPOINTS.")
     return logs
+
+def process_assignments(records, token):
+    return ["Batch processing is temporarily disabled while we run the Endpoint Diagnostic Sandbox below."]
