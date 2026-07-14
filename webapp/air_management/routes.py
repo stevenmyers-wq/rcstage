@@ -1,4 +1,6 @@
 import io
+import time
+import threading
 import pandas as pd
 import re
 from datetime import datetime
@@ -6,7 +8,7 @@ from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
-from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory, get_air_graph
+from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory, get_air_graph, run_transcript_export, export_progress_store
 
 air_management_bp = Blueprint('air_management_bp', __name__, url_prefix='/api/air')
 
@@ -239,3 +241,60 @@ def upload_air():
             results.append(f"❌ Error on '{name}': {err_str}")
             
     return jsonify({"logs": results})
+
+@air_management_bp.route('/transcripts/export', methods=['POST'])
+@require_rc_token
+@track_usage('AIR Management - Export Transcripts')
+def export_transcripts():
+    token = get_rc_access_token()
+    data = request.get_json()
+    
+    date_from = data.get('date_from')
+    date_to = data.get('date_to')
+    air_id = data.get('air_id')
+    
+    if not date_from or not date_to:
+        return jsonify({"error": "Start and End dates are required."}), 400
+        
+    task_id = f"air_export_{int(time.time())}"
+    
+    thread = threading.Thread(target=run_transcript_export, args=(task_id, date_from, date_to, air_id, token))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({"success": True, "task_id": task_id})
+
+@air_management_bp.route('/transcripts/status', methods=['GET'])
+@require_rc_token
+def transcript_status():
+    task_id = request.args.get('task_id')
+    if not task_id or task_id not in export_progress_store:
+        return jsonify({"error": "Invalid task ID"}), 404
+        
+    data = export_progress_store[task_id]
+    return jsonify({
+        "status": data.get("status"),
+        "current": data.get("current", 0),
+        "total": data.get("total", 1),
+        "message": data.get("message", ""),
+        "error": data.get("error", "")
+    })
+
+@air_management_bp.route('/transcripts/download', methods=['GET'])
+@require_rc_token
+def transcript_download():
+    task_id = request.args.get('task_id')
+    if not task_id or task_id not in export_progress_store:
+        return "Invalid task ID", 404
+        
+    data = export_progress_store[task_id]
+    if data.get("status") != "completed" or not data.get("file_data"):
+        return "File not ready", 400
+        
+    mem = io.BytesIO(data['file_data'])
+    return send_file(
+        mem,
+        as_attachment=True,
+        download_name=f"AIR_Transcripts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
