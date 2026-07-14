@@ -332,7 +332,8 @@ def run_cq_audit(task_id, queue_ids, token):
                 q_set = rule.get('queue', {})
                 
                 transfer_mode = q_set.get('transferMode', 'Simultaneous')
-                if transfer_mode == 'Rotating': row["Ring Type"] = "Rotating"
+                if transfer_mode == 'FixedOrder': row["Ring Type"] = "Sequential"
+                elif transfer_mode == 'Rotating': row["Ring Type"] = "Rotating"
                 else: row["Ring Type"] = transfer_mode
                 
                 row["User Ring Time"] = format_sec(q_set.get('agentTimeout'))
@@ -846,7 +847,7 @@ def update_cq_batch(records, token, is_preview=False):
             if rt is not None:
                 rt_lower = rt.lower()
                 if 'simultaneous' in rt_lower: q_set['transferMode'] = 'Simultaneous'
-                elif 'sequential' in rt_lower: q_set['transferMode'] = 'Sequential'
+                elif 'sequential' in rt_lower or 'fixed' in rt_lower: q_set['transferMode'] = 'FixedOrder'
                 elif 'rotating' in rt_lower or 'idle' in rt_lower: q_set['transferMode'] = 'Rotating'
             
             val_urt = get_val(row, 'User Ring Time')
@@ -901,14 +902,16 @@ def update_cq_batch(records, token, is_preview=False):
                     _set_queue_transfer(q_set, 'MaxCallers', None)
                     
             # Lean payload: Strip everything we aren't specifically allowed to touch from the deep copy
-            for f in ['fixedOrderAgents', 'positionInQueue', 'callback', 'callers', 'calledNumbers']:
+            for f in ['positionInQueue', 'callback', 'callers', 'calledNumbers']:
                 q_set.pop(f, None)
             
             rule['queue'] = q_set
             
             old_q = orig_rule.get('queue', {})
-            old_tm = 'Rotating' if old_q.get('transferMode') == 'Rotating' else old_q.get('transferMode')
-            new_tm = 'Rotating' if q_set.get('transferMode') == 'Rotating' else q_set.get('transferMode')
+            
+            tm_map = {'FixedOrder': 'Sequential', 'Simultaneous': 'Simultaneous', 'Rotating': 'Rotating'}
+            old_tm = tm_map.get(old_q.get('transferMode'), old_q.get('transferMode'))
+            new_tm = tm_map.get(q_set.get('transferMode'), q_set.get('transferMode'))
             
             if rt is not None: r_needs_update |= check_diff(changes, 'Ring Type', old_tm, new_tm)
             if val_urt is not None: r_needs_update |= check_diff(changes, 'User Ring Time', format_sec(old_q.get('agentTimeout')), format_sec(q_set.get('agentTimeout')))
@@ -956,11 +959,15 @@ def update_cq_batch(records, token, is_preview=False):
                 new_val = val.lower().strip()
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
                 
-                # Treat "Default" or "Off" as omitting the payload object entirely
                 if new_val in ['off', 'none', 'disable', 'disabled', 'default']:
                     pass 
                 else:
                     matched_id = preset_dict.get(dict_type, {}).get(new_val)
+                    if not matched_id:
+                        for n, gid in preset_dict.get(dict_type, {}).items():
+                            if new_val in n or n in new_val:
+                                matched_id = gid
+                                break
                     if not matched_id and dict_type == 'InterruptPrompt':
                         for n, gid in preset_dict['InterruptPrompt'].items():
                             if "patience" in new_val and "patience" in n: matched_id = gid
@@ -971,7 +978,6 @@ def update_cq_batch(records, token, is_preview=False):
                     if matched_id:
                         rule['greetings'].append({"type": slot_type, "preset": {"id": str(matched_id)}})
                     else:
-                        # Fallback to keep existing custom greetings safe if no dictionary match is found
                         orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == slot_type), None)
                         if orig_g:
                             old_id = str(orig_g.get('preset', {}).get('id', ''))
@@ -1179,7 +1185,6 @@ def update_cq_batch(records, token, is_preview=False):
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
                     v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
                     
-                    # Voicemail transcription diff checker
                     old_trans = str(orig_notif.get('voicemails', {}).get('includeTranscription', False))
                     new_trans = "True" if vm_set.get('notifyByEmail') else "False"
                     v_needs_update |= check_diff(changes, 'VM Transcription', old_trans, new_trans)
