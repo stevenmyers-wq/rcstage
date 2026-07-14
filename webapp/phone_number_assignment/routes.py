@@ -45,3 +45,22 @@ def upload():
         return jsonify({"logs": results})
     except Exception as e:
         return jsonify({"error": f"File processing error: {str(e)}"}), 500
+
+@phone_number_assignment_bp.route('/debug', methods=['POST'])
+@require_rc_token
+def debug_assignment():
+    """Runs the exhaustive schema test against a single user/phone combination."""
+    token = session.get('sm_isolated_token') or session.get('rc_access_token')
+    data = request.get_json()
+    
+    phone = data.get('phone')
+    ext_num = data.get('extension_number')
+    
+    if not phone or not ext_num:
+        return jsonify({"error": "Phone and Extension Number required"}), 400
+        
+    try:
+        logs = utils.run_exhaustive_debug(phone, ext_num, token)
+        return jsonify({"logs": logs})
+    except Exception as e:
+        return jsonify({"error": f"Debug processing error: {str(e)}"}), 500
