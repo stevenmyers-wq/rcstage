@@ -47,13 +47,13 @@ def generate_template(token):
     } for n in inventory]
     
     ext_data = [{
-        'Extension ID': e.get('id', ''),
-        'Extension Name': e.get('name', 'Unknown'),
         'Extension Number': e.get('extensionNumber', ''),
-        'Type': e.get('type', '')
+        'Extension Name': e.get('name', 'Unknown'),
+        'Type': e.get('type', ''),
+        'Extension ID (Reference)': e.get('id', '')
     } for e in extensions if e.get('status') in ['Enabled', 'NotActivated']]
 
-    df_template = pd.DataFrame(columns=['Phone Number', 'Extension ID'])
+    df_template = pd.DataFrame(columns=['Phone Number', 'Extension Number'])
     df_inv = pd.DataFrame(inv_data)
     df_ext = pd.DataFrame(ext_data)
 
@@ -89,13 +89,20 @@ def process_assignments(records, token):
             phone_map[phone_num] = str(n.get('id', ''))
             phone_map[phone_num.replace('+', '')] = str(n.get('id', ''))
 
+    # Map Extension Number to Extension ID
+    all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
+    ext_map = {}
+    for e in all_exts:
+        if e.get('extensionNumber'):
+            ext_map[str(e['extensionNumber']).strip()] = str(e['id'])
+
     logs = []
     
     for index, row in enumerate(records):
         phone = str(row.get('Phone Number', '')).strip()
-        ext_id = str(row.get('Extension ID', '')).replace('.0', '').strip()
+        ext_num = str(row.get('Extension Number', '')).replace('.0', '').strip()
         
-        if not phone or phone.lower() == 'nan' or not ext_id or ext_id.lower() == 'nan':
+        if not phone or phone.lower() == 'nan' or not ext_num or ext_num.lower() == 'nan':
             continue
 
         # Normalise phone if missing the +
@@ -109,6 +116,11 @@ def process_assignments(records, token):
             logs.append(f"❌ Row {index+2}: Phone Number {phone} not found in the account.")
             continue
 
+        ext_id = ext_map.get(ext_num)
+        if not ext_id:
+            logs.append(f"❌ Row {index+2}: Extension Number {ext_num} not found in the account.")
+            continue
+
         endpoint = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
         payload = {
             "usageType": "DirectNumber",
@@ -120,21 +132,27 @@ def process_assignments(records, token):
             res = rc_api_call(endpoint, method='PATCH', json=payload, token=token, return_response=True)
             
             if res and getattr(res, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Extension ID {ext_id}.")
+                logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num}.")
             else:
-                err = res.json() if res else "Unknown Error"
+                try:
+                    err = res.json() if res else {}
+                except Exception:
+                    err = getattr(res, 'text', "Unknown Error")
+                
+                # Safely get message if err is a dict, otherwise cast to string
+                err_msg = err.get('message', err) if isinstance(err, dict) else str(err)
                 
                 # Check for rate limiting
                 if getattr(res, 'status_code', None) == 429:
                     logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Try again.")
                 else:
-                    logs.append(f"❌ Failed to assign {phone}: {err.get('message', err)}")
+                    logs.append(f"❌ Failed to assign {phone}: {err_msg}")
         except Exception as e:
             logs.append(f"❌ Error assigning {phone}: {str(e)}")
             
         time.sleep(0.5) # Pace to avoid hitting RC limits rapidly
 
     if not logs:
-        logs.append("No valid records found to process. Please ensure 'Phone Number' and 'Extension ID' columns are populated.")
+        logs.append("No valid records found to process. Please ensure 'Phone Number' and 'Extension Number' columns are populated.")
         
     return logs
