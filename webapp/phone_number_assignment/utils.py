@@ -69,7 +69,6 @@ def generate_template(token):
         if not df_ext.empty:
             df_ext.to_excel(writer, index=False, sheet_name='Available Extensions')
 
-        # Auto-adjust column widths
         for sheet in writer.sheets.values():
             for column in sheet.columns:
                 length = max(len(str(cell.value) or "") for cell in column)
@@ -79,7 +78,6 @@ def generate_template(token):
     return output
 
 def extract_error(res):
-    """Safely extracts the deepest error message from a RingCentral API response."""
     raw_text = getattr(res, 'text', '')
     err_msg = ""
     try:
@@ -95,7 +93,6 @@ def extract_error(res):
     return err_msg if err_msg else (raw_text.strip() if raw_text.strip() else "Empty/Unknown Response")
 
 def process_assignments(records, token):
-    # Map phone string to ID using the v2 API, saving full metadata
     all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
     phone_map = {}
     
@@ -105,7 +102,6 @@ def process_assignments(records, token):
             phone_map[phone_num] = n
             phone_map[phone_num.replace('+', '')] = n
 
-    # Map Extension Number to Extension ID
     all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
     ext_map = {}
     for e in all_exts:
@@ -121,7 +117,6 @@ def process_assignments(records, token):
         if not phone or phone.lower() == 'nan' or not ext_num or ext_num.lower() == 'nan':
             continue
 
-        # Normalise phone if missing the +
         if phone.startswith('61') and len(phone) >= 11:
             phone = '+' + phone
             
@@ -138,53 +133,70 @@ def process_assignments(records, token):
             continue
 
         number_id = str(number_data.get('id', ''))
+        current_usage = str(number_data.get('usageType', ''))
+        payment_type = str(number_data.get('paymentType', ''))
         
         success = False
         attempts_log = []
 
-        # ATTEMPT 1: Internal AWU Assignment Endpoint (Bypasses usageType validation completely)
-        ep_awu = f'/restapi/v1.0/account/~/phone-numbers/assign'
-        payload_awu = {
-            "comment": "Assigned via Bulk Tool",
-            "forwardedPhoneId": int(number_id),
-            "assignee": {
-                "type": "Extension",
-                "value": ext_id
-            }
-        }
-        
-        res_awu = rc_api_call(ep_awu, method='POST', json=payload_awu, token=token, return_response=True)
-        status_code_awu = getattr(res_awu, 'status_code', 'Unknown')
-        
-        if res_awu and getattr(res_awu, 'ok', False):
-            logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (AWU Internal).")
-            success = True
+        # Map inventory states to their active enums based on the schema
+        usage_types_to_try = []
+        if current_usage == 'InventoryMobileNumber':
+            usage_types_to_try = ['BusinessMobileNumber', 'ForwardedNumber', 'DirectNumber']
+        elif current_usage == 'InventoryPartnerBusinessMobileNumber':
+            usage_types_to_try = ['PartnerBusinessMobileNumber', 'ForwardedNumber', 'DirectNumber']
+        elif current_usage == 'InventoryFmcBusinessMobileNumber':
+            usage_types_to_try = ['FmcBusinessMobileNumber', 'ForwardedNumber', 'DirectNumber']
+        elif payment_type == 'External':
+            usage_types_to_try = ['ForwardedNumber', 'DirectNumber', 'BusinessMobileNumber']
         else:
-            if status_code_awu == 429:
-                time.sleep(2)
-            attempts_log.append(f"AWU Internal: HTTP {status_code_awu} - {extract_error(res_awu)}")
+            usage_types_to_try = [None, 'DirectNumber', 'ForwardedNumber', 'BusinessMobileNumber']
 
-        # ATTEMPT 2: V2 PATCH Fallback (If AWU is blocked for external integrations)
-        if not success:
-            time.sleep(0.5)
-            ep_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
-            payload_v2 = { "extension": { "id": ext_id } }
-            
-            res_v2 = rc_api_call(ep_v2, method='PATCH', json=payload_v2, token=token, return_response=True)
+        ep_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
+        ep_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
+
+        for u_type in usage_types_to_try:
+            payload = { "extension": { "id": ext_id } }
+            if u_type:
+                payload["usageType"] = u_type
+
+            # 1. Try V2 PATCH
+            res_v2 = rc_api_call(ep_v2, method='PATCH', json=payload, token=token, return_response=True)
             status_code_v2 = getattr(res_v2, 'status_code', 'Unknown')
             
             if res_v2 and getattr(res_v2, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 Fallback).")
+                lbl = u_type if u_type else "Native/Omitted"
+                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 {lbl}).")
                 success = True
+                break
             else:
-                attempts_log.append(f"V2 Native: HTTP {status_code_v2} - {extract_error(res_v2)}")
+                err_msg = extract_error(res_v2)
+                attempts_log.append(f"V2 {u_type or 'Omitted'}: HTTP {status_code_v2} - {err_msg}")
+                if status_code_v2 == 429: time.sleep(2)
 
-        # If everything failed, log all attempts for debugging
+            time.sleep(0.5)
+
+            # 2. Try V1 PUT
+            res_v1 = rc_api_call(ep_v1, method='PUT', json=payload, token=token, return_response=True)
+            status_code_v1 = getattr(res_v1, 'status_code', 'Unknown')
+            
+            if res_v1 and getattr(res_v1, 'ok', False):
+                lbl = u_type if u_type else "Native/Omitted"
+                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V1 {lbl}).")
+                success = True
+                break
+            else:
+                err_msg = extract_error(res_v1)
+                attempts_log.append(f"V1 {u_type or 'Omitted'}: HTTP {status_code_v1} - {err_msg}")
+                if status_code_v1 == 429: time.sleep(2)
+
+            time.sleep(0.5)
+
         if not success:
             detail = "\n  ↳ ".join(attempts_log)
             logs.append(f"❌ Failed to assign {phone}:\n  ↳ {detail}")
 
-        time.sleep(0.6) # Pace to avoid hitting RC limits rapidly
+        time.sleep(0.6)
 
     if not logs:
         logs.append("No valid records found to process. Please ensure 'Phone Number' and 'Extension Number' columns are populated.")
