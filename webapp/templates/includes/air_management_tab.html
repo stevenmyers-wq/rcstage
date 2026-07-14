@@ -6,18 +6,18 @@
     
     <div class="mb-4 border-b border-gray-200 pb-4">
         <h2 class="text-3xl font-bold text-slate-800 mb-1">AIR (AI Receptionist) Manager</h2>
-        <p class="text-slate-500 text-sm">Audit, Create, Modify, and Visualize AI Receptionists (and their Skills) in bulk.</p>
+        <p class="text-slate-500 text-sm">Audit, Create, Modify, and Visualize AI Receptionists in bulk.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         
         <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
             <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </div>
             <h3 class="text-xl font-bold text-gray-800 mb-2">Audit AIR</h3>
             <p class="text-gray-500 text-sm mb-6 flex-grow">
-                Generate a comprehensive Excel report of ALL AI Receptionists and their active Skills (Greetings, KB, Routing Contexts).
+                Generate a comprehensive Excel report of ALL AI Receptionists and their active Skills.
             </p>
             <button onclick="auditAir()" id="airAuditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
                 Generate Report
@@ -70,6 +70,19 @@
             </button>
         </div>
 
+        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
+            <div class="w-16 h-16 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-teal-600 group-hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Export Transcripts</h3>
+            <p class="text-gray-500 text-sm mb-6 flex-grow">
+                Download a detailed call history and turn-by-turn conversation transcripts for a specific date range.
+            </p>
+            <button id="airOpenExportModalBtn" class="w-full bg-white border-2 border-teal-600 text-teal-600 font-semibold py-2 px-4 rounded-lg hover:bg-teal-600 hover:text-white transition-colors">
+                Configure Export
+            </button>
+        </div>
+
     </div>
 
     <div id="airVisualizeWorkspace" class="hidden card bg-white border border-gray-200 rounded-xl shadow-lg mt-8 p-6">
@@ -111,11 +124,54 @@
         </div>
     </div>
 
+    <div id="airExportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 class="font-bold text-slate-800">Export AIR Transcripts</h3>
+                <button id="closeAirExportModalBtn" class="text-slate-400 hover:text-slate-600 transition text-2xl leading-none">&times;</button>
+            </div>
+            <div class="px-5 py-4 space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">AI Receptionist (Optional)</label>
+                    <select id="airExportSelect" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-teal-500 focus:border-teal-500">
+                        <option value="">All Receptionists</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Start Date/Time</label>
+                    <input type="datetime-local" id="airExportDateFrom" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-teal-500 focus:border-teal-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">End Date/Time</label>
+                    <input type="datetime-local" id="airExportDateTo" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-teal-500 focus:border-teal-500">
+                </div>
+            </div>
+            <div class="flex gap-3 px-5 py-4 border-t border-slate-100">
+                <button id="airStartExportBtn" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    Start Export
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="airExportProgressModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-6 text-center">
+            <h3 class="font-bold text-slate-800 mb-2">Exporting Transcripts...</h3>
+            <p id="airExportProgressText" class="text-sm text-slate-500 mb-4">Initializing...</p>
+            <div class="w-full bg-slate-200 rounded-full h-2.5 mb-2">
+                <div id="airExportProgressBar" class="bg-teal-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <p id="airExportProgressCount" class="text-xs font-bold text-slate-700 text-right">0/0</p>
+            <button id="airExportCloseProgressBtn" class="hidden mt-4 w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded transition">Close</button>
+        </div>
+    </div>
+
 </div>
 
 <script>
     let airCy = null;
     let airHoverPreview = null;
+    let airListLoadedForExport = false;
 
     if (typeof cytoscape !== 'undefined' && typeof cytoscapeDagre !== 'undefined') {
         cytoscape.use(cytoscapeDagre);
@@ -430,4 +486,141 @@
         // Enforce fit-to-screen sizing after a slight rendering delay
         setTimeout(() => { if (airCy) airCy.fit(undefined, 50); }, 150);
     }
+
+    // --- Export Transcripts Logic ---
+    const airOpenExportModalBtn = document.getElementById('airOpenExportModalBtn');
+    const airExportModal = document.getElementById('airExportModal');
+    const closeAirExportModalBtn = document.getElementById('closeAirExportModalBtn');
+    const airStartExportBtn = document.getElementById('airStartExportBtn');
+    const airExportSelect = document.getElementById('airExportSelect');
+    
+    const airExportProgressModal = document.getElementById('airExportProgressModal');
+    const airExportProgressBar = document.getElementById('airExportProgressBar');
+    const airExportProgressText = document.getElementById('airExportProgressText');
+    const airExportProgressCount = document.getElementById('airExportProgressCount');
+    const airExportCloseProgressBtn = document.getElementById('airExportCloseProgressBtn');
+    
+    let exportPollInterval = null;
+
+    airOpenExportModalBtn.addEventListener('click', async () => {
+        airExportModal.classList.remove('hidden');
+        
+        // Set default dates to last 24 hours
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+        const toIsoLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        document.getElementById('airExportDateFrom').value = toIsoLocal(yesterday);
+        document.getElementById('airExportDateTo').value = toIsoLocal(now);
+
+        // Load AIRs if not already loaded
+        if (!airListLoadedForExport) {
+            try {
+                const res = await fetch('/api/air/list');
+                const data = await res.json();
+                if (data.success) {
+                    data.assistants.forEach(a => {
+                        const opt = document.createElement('option');
+                        opt.value = a.id;
+                        opt.textContent = `${a.name} (Ext ${a.ext})`;
+                        airExportSelect.appendChild(opt);
+                    });
+                    airListLoadedForExport = true;
+                }
+            } catch (e) {
+                console.error("Failed to load AIRs for export dropdown", e);
+            }
+        }
+    });
+
+    closeAirExportModalBtn.addEventListener('click', () => {
+        airExportModal.classList.add('hidden');
+    });
+
+    airStartExportBtn.addEventListener('click', async () => {
+        const dateFromInput = document.getElementById('airExportDateFrom').value;
+        const dateToInput = document.getElementById('airExportDateTo').value;
+        const airId = airExportSelect.value;
+
+        if (!dateFromInput || !dateToInput) {
+            return alert("Start and End dates are required.");
+        }
+
+        const dateFrom = new Date(dateFromInput).toISOString();
+        const dateTo = new Date(dateToInput).toISOString();
+
+        airStartExportBtn.disabled = true;
+        airStartExportBtn.innerHTML = 'Starting...';
+
+        try {
+            const res = await fetch('/api/air/transcripts/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date_from: dateFrom, date_to: dateTo, air_id: airId })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                airExportModal.classList.add('hidden');
+                startExportPolling(data.task_id);
+            } else {
+                alert(data.error || "Failed to start export.");
+            }
+        } catch (e) {
+            alert("Network error starting export.");
+        } finally {
+            airStartExportBtn.disabled = false;
+            airStartExportBtn.innerHTML = 'Start Export';
+        }
+    });
+
+    function startExportPolling(taskId) {
+        airExportProgressModal.classList.remove('hidden');
+        airExportCloseProgressBtn.classList.add('hidden');
+        airExportProgressBar.classList.remove('bg-red-500', 'bg-green-500');
+        airExportProgressBar.classList.add('bg-teal-600');
+        airExportProgressBar.style.width = '0%';
+        airExportProgressText.textContent = 'Initializing...';
+        airExportProgressCount.textContent = '0/0';
+
+        exportPollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/air/transcripts/status?task_id=${taskId}`);
+                const data = await res.json();
+                
+                if (res.ok) {
+                    airExportProgressText.textContent = data.message;
+                    if (data.total > 0) {
+                        const pct = Math.round((data.current / data.total) * 100);
+                        airExportProgressBar.style.width = `${pct}%`;
+                        airExportProgressCount.textContent = `${data.current}/${data.total}`;
+                    }
+
+                    if (data.status === 'completed') {
+                        clearInterval(exportPollInterval);
+                        airExportProgressBar.classList.remove('bg-teal-600');
+                        airExportProgressBar.classList.add('bg-green-500');
+                        airExportProgressText.textContent = 'Download starting...';
+                        airExportCloseProgressBtn.classList.remove('hidden');
+                        
+                        // Trigger download
+                        window.location.href = `/api/air/transcripts/download?task_id=${taskId}`;
+                    } else if (data.status === 'error') {
+                        clearInterval(exportPollInterval);
+                        airExportProgressBar.classList.remove('bg-teal-600');
+                        airExportProgressBar.classList.add('bg-red-500');
+                        airExportProgressText.textContent = `Error: ${data.error}`;
+                        airExportCloseProgressBtn.classList.remove('hidden');
+                    }
+                }
+            } catch (e) {
+                // Ignore silent network errors during polling
+            }
+        }, 1000);
+    }
+
+    airExportCloseProgressBtn.addEventListener('click', () => {
+        airExportProgressModal.classList.add('hidden');
+        if (exportPollInterval) clearInterval(exportPollInterval);
+    });
+
 </script>
