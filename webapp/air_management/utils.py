@@ -1,10 +1,14 @@
 import pandas as pd
 import re
 import time
+import io
+from datetime import datetime
 from webapp.rc_api import rc_api_call
 
 MAX_FAQS = 25
 MAX_ROUTING = 25
+
+export_progress_store = {}
 
 def get_ext_directory(token=None):
     """Fetches the account directory to map Extension Numbers to internal IDs."""
@@ -457,3 +461,101 @@ def get_air_graph(air_id, dir_map, token=None):
                     add_edge(air_id, tgt_id, r.get('rule', f'Context {i+1}'))
                     
     return {"nodes": nodes, "edges": edges}
+
+def run_transcript_export(task_id, date_from, date_to, air_id, token):
+    """Background worker to fetch conversations and compile transcripts."""
+    try:
+        export_progress_store[task_id] = {'current': 0, 'total': 1, 'status': 'running', 'file_data': None, 'message': 'Fetching conversations...'}
+        
+        conversations = []
+        page = 1
+        while True:
+            payload = {
+                "startDateFrom": date_from,
+                "startDateTo": date_to,
+                "perPage": 100,
+                "page": page
+            }
+            if air_id:
+                payload["assistantIds"] = [air_id]
+                
+            resp = rc_api_call('/ai/iva/v1/accounts/~/conversations/search', method='POST', json=payload, token=token, raise_error=False)
+            if not resp or 'records' not in resp:
+                break
+            conversations.extend(resp['records'])
+            if not resp.get('paging', {}).get('nextPage'):
+                break
+            page += 1
+            time.sleep(0.1)
+
+        total_convs = len(conversations)
+        export_progress_store[task_id]['total'] = total_convs if total_convs > 0 else 1
+        
+        if total_convs == 0:
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                pd.DataFrame([{"Message": "No conversations found for the selected criteria."}]).to_excel(writer, index=False, sheet_name='Call Log')
+            export_progress_store[task_id]['file_data'] = output.getvalue()
+            export_progress_store[task_id]['status'] = 'completed'
+            return
+
+        call_log_data = []
+        transcript_data = []
+
+        for i, conv in enumerate(conversations):
+            export_progress_store[task_id]['current'] = i
+            export_progress_store[task_id]['message'] = f'Fetching transcript {i+1} of {total_convs}...'
+            
+            conv_id = conv.get('id')
+            call_log_data.append({
+                'Conversation ID': conv_id,
+                'Assistant Name': conv.get('assistantName', ''),
+                'Caller Number': conv.get('callerFormattedNumber', conv.get('callerNumber', '')),
+                'Start Time': conv.get('creationTime', ''),
+                'End Time': conv.get('callEndTime', ''),
+                'Duration (s)': conv.get('callDurationSeconds', 0),
+                'End Reason': conv.get('callEndReason', ''),
+                'Type': conv.get('type', ''),
+                'Contains SMS': conv.get('containsSms', False)
+            })
+
+            msg_page = 1
+            while True:
+                msg_resp = rc_api_call(f'/ai/iva/v1/accounts/~/conversations/{conv_id}/messages?perPage=100&page={msg_page}', token=token, raise_error=False)
+                if not msg_resp or 'records' not in msg_resp:
+                    break
+                
+                for msg in msg_resp['records']:
+                    transcript_data.append({
+                        'Conversation ID': conv_id,
+                        'Timestamp': msg.get('creationTime', ''),
+                        'Role': msg.get('producerRole', ''),
+                        'Text': msg.get('text', ''),
+                        'Tool Triggered': msg.get('toolName', ''),
+                        'Tool Output': msg.get('toolOutput', '')
+                    })
+                    
+                if not msg_resp.get('paging', {}).get('nextPage'):
+                    break
+                msg_page += 1
+                time.sleep(0.05)
+
+        export_progress_store[task_id]['message'] = 'Compiling Excel file...'
+        
+        df_log = pd.DataFrame(call_log_data)
+        df_transcripts = pd.DataFrame(transcript_data)
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_log.to_excel(writer, index=False, sheet_name='Call Log')
+            if not df_transcripts.empty:
+                df_transcripts.to_excel(writer, index=False, sheet_name='Transcripts')
+            else:
+                pd.DataFrame([{"Message": "No transcripts found."}]).to_excel(writer, index=False, sheet_name='Transcripts')
+        
+        export_progress_store[task_id]['file_data'] = output.getvalue()
+        export_progress_store[task_id]['status'] = 'completed'
+
+    except Exception as e:
+        export_progress_store[task_id]['status'] = 'error'
+        export_progress_store[task_id]['error'] = str(e)
