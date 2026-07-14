@@ -142,4 +142,8 @@ def create_app():
         from .extension_number_changer import routes as ext_num_changer_routes
         app.register_blueprint(ext_num_changer_routes.ext_num_changer_bp)
 
+        # Phone Number Assignment routes
+        from .phone_number_assignment import routes as phone_number_assignment_routes
+        app.register_blueprint(phone_number_assignment_routes.phone_number_assignment_bp)
+
     return app
