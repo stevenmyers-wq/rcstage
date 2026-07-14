@@ -38,7 +38,8 @@ def generate_device_audit(token):
         str(ext.get('id')): {
             'type': ext.get('type', 'Unknown'),
             'name': ext.get('name', ''),
-            'extensionNumber': ext.get('extensionNumber', '')
+            'extensionNumber': ext.get('extensionNumber', ''),
+            'site': ext.get('site', {}).get('name', '')
         } 
         for ext in extensions if ext.get('id')
     }
@@ -49,9 +50,12 @@ def generate_device_audit(token):
         ext = d.get('extension')
         ext_name = ""
         ext_num = ""
+        site_name = ""
         
         if not ext or not ext.get('id'):
             device_type = "Unassigned"
+            # Unassigned devices can still belong to a site
+            site_name = d.get('site', {}).get('name', 'Main Site')
         else:
             ext_id = str(ext.get('id'))
             ext_info = ext_map.get(ext_id, {})
@@ -60,12 +64,19 @@ def generate_device_audit(token):
             ext_name = ext_info.get('name', '')
             ext_num = ext_info.get('extensionNumber', '')
             
+            # Inherit the site from the assigned extension, fallback to device site if missing
+            site_name = ext_info.get('site') or d.get('site', {}).get('name', 'Main Site')
+            
             if ext_type == 'Limited':
                 device_type = "Common Area"
             elif ext_type == 'PagingOnly':
                 device_type = "Paging"
             else:
                 device_type = ext_type
+                
+        # Ensure we don't have blank site names
+        if not site_name:
+            site_name = "Main Site"
                 
         model_info = d.get('model', {})
         model_name = model_info.get('name', 'Unknown')
@@ -76,6 +87,7 @@ def generate_device_audit(token):
         is_online = "Yes" if status.lower() == "online" else "No"
         
         audit_data.append({
+            "Site": site_name,
             "Type (User, Common Area, Unassigned etc)": device_type,
             "Assigned Ext Name": ext_name,
             "Assigned Ext Number": ext_num,
@@ -87,6 +99,7 @@ def generate_device_audit(token):
         
     if not audit_data:
         audit_data.append({
+            "Site": "",
             "Type (User, Common Area, Unassigned etc)": "No Devices Found",
             "Assigned Ext Name": "",
             "Assigned Ext Number": "",
