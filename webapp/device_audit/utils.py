@@ -30,46 +30,55 @@ def fetch_all_extensions(token):
     return extensions
 
 def generate_device_audit(token):
-    # 1. Fetch both devices and extensions
     devices = fetch_all_devices(token)
     extensions = fetch_all_extensions(token)
     
-    # 2. Build a lookup map: { 'extension_id': 'Extension_Type' }
-    ext_type_map = {str(ext.get('id')): ext.get('type', 'Unknown') for ext in extensions if ext.get('id')}
+    # Build a robust lookup map for extension details
+    ext_map = {
+        str(ext.get('id')): {
+            'type': ext.get('type', 'Unknown'),
+            'name': ext.get('name', ''),
+            'extensionNumber': ext.get('extensionNumber', '')
+        } 
+        for ext in extensions if ext.get('id')
+    }
     
     audit_data = []
     
-    # 3. Process devices
     for d in devices:
         ext = d.get('extension')
+        ext_name = ""
+        ext_num = ""
+        
         if not ext or not ext.get('id'):
             device_type = "Unassigned"
         else:
             ext_id = str(ext.get('id'))
+            ext_info = ext_map.get(ext_id, {})
             
-            # Look up the actual type using the map we built
-            ext_type = ext_type_map.get(ext_id, 'Unknown')
+            ext_type = ext_info.get('type', 'Unknown')
+            ext_name = ext_info.get('name', '')
+            ext_num = ext_info.get('extensionNumber', '')
             
-            # Translate RC API types to human-readable types
             if ext_type == 'Limited':
                 device_type = "Common Area"
             elif ext_type == 'PagingOnly':
                 device_type = "Paging"
             else:
-                device_type = ext_type # Will pass through "User", "Department", etc.
+                device_type = ext_type
                 
         model_info = d.get('model', {})
         model_name = model_info.get('name', 'Unknown')
-        
         name = d.get('name', 'Unnamed Device')
-        mac = d.get('serial', '') # 'serial' on HardPhones contains the MAC address
+        mac = d.get('serial', '') 
         
-        # Retrieve Online / Offline status
         status = d.get('status', 'Offline')
         is_online = "Yes" if status.lower() == "online" else "No"
         
         audit_data.append({
             "Type (User, Common Area, Unassigned etc)": device_type,
+            "Assigned Ext Name": ext_name,
+            "Assigned Ext Number": ext_num,
             "Model": model_name,
             "Name": name,
             "MAC": mac,
@@ -79,6 +88,8 @@ def generate_device_audit(token):
     if not audit_data:
         audit_data.append({
             "Type (User, Common Area, Unassigned etc)": "No Devices Found",
+            "Assigned Ext Name": "",
+            "Assigned Ext Number": "",
             "Model": "",
             "Name": "",
             "MAC": "",
