@@ -79,7 +79,7 @@ def generate_template(token):
     return output
 
 def process_assignments(records, token):
-    # Map phone string to ID using the v2 API
+    # Map phone string to ID using the v2 API and capture its current usageType
     all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
     phone_map = {}
     
@@ -87,8 +87,11 @@ def process_assignments(records, token):
         if n.get('phoneNumber'):
             phone_num = n['phoneNumber'].strip()
             num_id = str(n.get('id', ''))
-            phone_map[phone_num] = num_id
-            phone_map[phone_num.replace('+', '')] = num_id
+            usage = str(n.get('usageType', ''))
+            
+            data = {'id': num_id, 'usageType': usage}
+            phone_map[phone_num] = data
+            phone_map[phone_num.replace('+', '')] = data
 
     # Map Extension Number to Extension ID
     all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
@@ -112,73 +115,80 @@ def process_assignments(records, token):
             
         phone_clean = phone.replace('+', '')
 
-        number_id = phone_map.get(phone) or phone_map.get(phone_clean)
-        if not number_id:
+        number_data = phone_map.get(phone) or phone_map.get(phone_clean)
+        if not number_data:
             logs.append(f"❌ Row {index+2}: Phone Number {phone} not found in the account.")
             continue
+
+        number_id = number_data['id']
+        current_usage = number_data['usageType']
 
         ext_id = ext_map.get(ext_num)
         if not ext_id:
             logs.append(f"❌ Row {index+2}: Extension Number {ext_num} not found in the account.")
             continue
 
-        # Start with the stable V1 API Endpoint
-        endpoint_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
+        # 1. Determine Correct Target UsageType Based on Current Inventory State
+        if 'Mobile' in current_usage:
+            target_usage = 'MobileNumber'
+        elif 'Forwarded' in current_usage:
+            target_usage = 'ForwardedNumber'
+        else:
+            target_usage = 'DirectNumber'
+
+        payload = {
+            "usageType": target_usage,
+            "extension": { "id": ext_id }
+        }
+
+        # Use V2 PATCH endpoint as the primary mechanism
+        endpoint_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
 
         try:
-            # ATTEMPT 1: Standard DirectNumber Assignment
-            payload_direct = {
-                "usageType": "DirectNumber",
-                "extension": { "id": ext_id }
-            }
-            res = rc_api_call(endpoint_v1, method='PUT', json=payload_direct, token=token, return_response=True)
+            res = rc_api_call(endpoint_v2, method='PATCH', json=payload, token=token, return_response=True)
             status_code = getattr(res, 'status_code', 'Unknown')
             
             if res and getattr(res, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num}.")
-                continue
-                
-            # ATTEMPT 2: MobileNumber Assignment (Specific for AU Mobiles/SMS)
-            if status_code in [400, 500, 403]:
-                time.sleep(0.5)
-                payload_mobile = {
-                    "usageType": "MobileNumber",
-                    "extension": { "id": ext_id }
-                }
-                res_mobile = rc_api_call(endpoint_v1, method='PUT', json=payload_mobile, token=token, return_response=True)
-                if res_mobile and getattr(res_mobile, 'ok', False):
-                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (as MobileNumber).")
-                    continue
-                
-                # ATTEMPT 3: V2 API Fallback (Omit usageType entirely)
-                time.sleep(0.5)
-                endpoint_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
-                payload_v2 = { "extension": { "id": ext_id } }
-                res_v2 = rc_api_call(endpoint_v2, method='PATCH', json=payload_v2, token=token, return_response=True)
-                if res_v2 and getattr(res_v2, 'ok', False):
-                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (via V2 fallback).")
-                    continue
-                
-            # --- Better Error Parsing ---
-            raw_text = getattr(res, 'text', '')
-            err_msg = ""
-            try:
-                err_json = res.json() if res else {}
-                if isinstance(err_json, dict):
-                    if err_json.get('message'):
-                        err_msg = err_json.get('message')
-                    elif err_json.get('errors'):
-                        err_msg = " | ".join([e.get('message', str(e)) for e in err_json.get('errors', [])])
-            except Exception:
-                pass
-            
-            if not err_msg:
-                err_msg = raw_text.strip() if raw_text.strip() else "Empty/Unknown Response"
-                
-            if status_code == 429:
-                logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Try again.")
+                logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (as {target_usage}).")
             else:
-                logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {err_msg}")
+                # 2. Try V1 PUT Fallback if V2 PATCH fails
+                time.sleep(0.5)
+                endpoint_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
+                res_v1 = rc_api_call(endpoint_v1, method='PUT', json=payload, token=token, return_response=True)
+                
+                if res_v1 and getattr(res_v1, 'ok', False):
+                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (V1 Fallback).")
+                    continue
+                    
+                # 3. Try V2 Fallback omitting usageType entirely
+                time.sleep(0.5)
+                payload_no_usage = { "extension": { "id": ext_id } }
+                res_v2_fb = rc_api_call(endpoint_v2, method='PATCH', json=payload_no_usage, token=token, return_response=True)
+                
+                if res_v2_fb and getattr(res_v2_fb, 'ok', False):
+                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (V2 No-Usage Fallback).")
+                    continue
+                
+                # --- Error Parsing (Using the original V2 response) ---
+                raw_text = getattr(res, 'text', '')
+                err_msg = ""
+                try:
+                    err_json = res.json() if res else {}
+                    if isinstance(err_json, dict):
+                        if err_json.get('message'):
+                            err_msg = err_json.get('message')
+                        elif err_json.get('errors'):
+                            err_msg = " | ".join([e.get('message', str(e)) for e in err_json.get('errors', [])])
+                except Exception:
+                    pass
+                
+                if not err_msg:
+                    err_msg = raw_text.strip() if raw_text.strip() else "Empty/Unknown Response"
+                    
+                if status_code == 429:
+                    logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Try again.")
+                else:
+                    logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {err_msg}")
 
         except Exception as e:
             logs.append(f"❌ Error assigning {phone}: {str(e)}")
