@@ -20,9 +20,9 @@ def export_device_audit():
         data = utils.generate_device_audit(token)
         df = pd.DataFrame(data)
         
-        # Sort by Type first, then by Extension Number to keep users organized
-        if not df.empty and "Type (User, Common Area, Unassigned etc)" in df.columns:
-            df.sort_values(by=["Type (User, Common Area, Unassigned etc)", "Assigned Ext Number", "Model", "Name"], inplace=True)
+        # Sort by Site, then by Type, then by Extension Number
+        if not df.empty and "Site" in df.columns:
+            df.sort_values(by=["Site", "Type (User, Common Area, Unassigned etc)", "Assigned Ext Number", "Model", "Name"], inplace=True)
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
