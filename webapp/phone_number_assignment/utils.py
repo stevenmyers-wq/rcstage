@@ -82,7 +82,6 @@ def process_assignments(records, token):
     # Map phone string to ID using the v2 API
     all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
     phone_map = {}
-    phone_usage_map = {}
     
     for n in all_numbers:
         if n.get('phoneNumber'):
@@ -90,7 +89,6 @@ def process_assignments(records, token):
             num_id = str(n.get('id', ''))
             phone_map[phone_num] = num_id
             phone_map[phone_num.replace('+', '')] = num_id
-            phone_usage_map[num_id] = n.get('usageType', 'Unknown')
 
     # Map Extension Number to Extension ID
     all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
@@ -124,56 +122,63 @@ def process_assignments(records, token):
             logs.append(f"❌ Row {index+2}: Extension Number {ext_num} not found in the account.")
             continue
 
-        endpoint = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
-        current_usage = phone_usage_map.get(number_id, '')
-        
-        # Omit usageType first so RC natively handles mobile/SMS numbers without overriding their classification.
-        payload = {
-            "extension": { "id": ext_id }
-        }
+        # Start with the stable V1 API Endpoint
+        endpoint_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
 
         try:
-            res = rc_api_call(endpoint, method='PATCH', json=payload, token=token, return_response=True)
+            # ATTEMPT 1: Standard DirectNumber Assignment
+            payload_direct = {
+                "usageType": "DirectNumber",
+                "extension": { "id": ext_id }
+            }
+            res = rc_api_call(endpoint_v1, method='PUT', json=payload_direct, token=token, return_response=True)
             status_code = getattr(res, 'status_code', 'Unknown')
             
             if res and getattr(res, 'ok', False):
                 logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num}.")
+                continue
+                
+            # ATTEMPT 2: MobileNumber Assignment (Specific for AU Mobiles/SMS)
+            if status_code in [400, 500, 403]:
+                time.sleep(0.5)
+                payload_mobile = {
+                    "usageType": "MobileNumber",
+                    "extension": { "id": ext_id }
+                }
+                res_mobile = rc_api_call(endpoint_v1, method='PUT', json=payload_mobile, token=token, return_response=True)
+                if res_mobile and getattr(res_mobile, 'ok', False):
+                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (as MobileNumber).")
+                    continue
+                
+                # ATTEMPT 3: V2 API Fallback (Omit usageType entirely)
+                time.sleep(0.5)
+                endpoint_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
+                payload_v2 = { "extension": { "id": ext_id } }
+                res_v2 = rc_api_call(endpoint_v2, method='PATCH', json=payload_v2, token=token, return_response=True)
+                if res_v2 and getattr(res_v2, 'ok', False):
+                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (via V2 fallback).")
+                    continue
+                
+            # --- Better Error Parsing ---
+            raw_text = getattr(res, 'text', '')
+            err_msg = ""
+            try:
+                err_json = res.json() if res else {}
+                if isinstance(err_json, dict):
+                    if err_json.get('message'):
+                        err_msg = err_json.get('message')
+                    elif err_json.get('errors'):
+                        err_msg = " | ".join([e.get('message', str(e)) for e in err_json.get('errors', [])])
+            except Exception:
+                pass
+            
+            if not err_msg:
+                err_msg = raw_text.strip() if raw_text.strip() else "Empty/Unknown Response"
+                
+            if status_code == 429:
+                logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Try again.")
             else:
-                # Better Error Parsing
-                raw_text = getattr(res, 'text', '')
-                err_msg = ""
-                
-                try:
-                    err_json = res.json() if res else {}
-                    if isinstance(err_json, dict):
-                        if err_json.get('message'):
-                            err_msg = err_json.get('message')
-                        elif err_json.get('errors'):
-                            err_msg = " | ".join([e.get('message', str(e)) for e in err_json.get('errors', [])])
-                except Exception:
-                    pass
-                
-                if not err_msg:
-                    err_msg = raw_text.strip() if raw_text.strip() else f"Empty Response"
-                    
-                # Rate limit check
-                if status_code == 429:
-                    logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Try again.")
-                else:
-                    # If it failed because it was an Inventory number that strictly requires a usageType declaration
-                    if status_code in [400, 403] and "usageType" not in err_msg.lower() and current_usage == 'Inventory':
-                        time.sleep(1.0)
-                        logs.append(f"🔄 Retrying {phone} with DirectNumber classification...")
-                        fallback_payload = {
-                            "usageType": "DirectNumber",
-                            "extension": { "id": ext_id }
-                        }
-                        fb_res = rc_api_call(endpoint, method='PATCH', json=fallback_payload, token=token, return_response=True)
-                        if fb_res and getattr(fb_res, 'ok', False):
-                            logs.append(f"✅ Successfully assigned {phone} on retry.")
-                            continue
-
-                    logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {err_msg}")
+                logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {err_msg}")
 
         except Exception as e:
             logs.append(f"❌ Error assigning {phone}: {str(e)}")
