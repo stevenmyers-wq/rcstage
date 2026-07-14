@@ -32,29 +32,38 @@
             </label>
         </div>
     </div>
-    
-    <div class="mt-8 bg-slate-50 border border-slate-300 rounded-xl p-6 shadow-sm">
-        <h3 class="text-xl font-bold text-slate-800 mb-2 border-b border-slate-200 pb-2">3. API Diagnostics Sandbox</h3>
-        <p class="text-sm text-slate-600 mb-4">Enter a target phone number and extension below to run the exhaustive brute-force schema diagnostic on both V1 and V2 endpoints.</p>
-        
-        <div class="flex flex-wrap gap-4 mb-4">
-            <input type="text" id="debug-phone" placeholder="Phone (e.g. +61468209402)" class="border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 w-64">
-            <input type="text" id="debug-ext" placeholder="Target Ext (e.g. 101)" class="border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 w-48">
-            <button id="btn-run-debug" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition shadow-sm disabled:opacity-50">
-                Run Exhaustive Schema Test
-            </button>
+
+    <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
+        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">PROVISIONING LOGS</span>
+            <button onclick="document.getElementById('pnaLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
         </div>
-        
-        <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Exhaustive Test Logs</label>
-        <div id="debugLogs" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-auto border border-slate-700 whitespace-pre-wrap">Awaiting execution...</div>
+        <div id="pnaLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+            Ready for action...
+        </div>
     </div>
 </div>
 
 <script>
+function logPna(msg, type='info') {
+    const box = document.getElementById('pnaLogs');
+    if (!box) return;
+    if (box.children.length === 1 && box.children[0].classList.contains('text-gray-300')) {
+        box.innerHTML = '';
+    }
+    const entry = document.createElement('div');
+    entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+    entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    box.appendChild(entry);
+    box.scrollTop = box.scrollHeight;
+}
+
 async function downloadPnaTemplate() {
     const btn = document.getElementById('pnaDownloadBtn');
     btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Generating...`;
+    btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+    
+    logPna("Generating template and fetching inventory data...", "info");
 
     try {
         const res = await fetch('/api/phone_number_assignment/template');
@@ -72,8 +81,10 @@ async function downloadPnaTemplate() {
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
+        
+        logPna("Template downloaded successfully.", "success");
     } catch (e) {
-        alert(`Download Failed: ${e.message}`);
+        logPna(`Download Failed: ${e.message}`, "error");
     } finally {
         btn.disabled = false;
         btn.innerText = "Download Template";
@@ -82,41 +93,33 @@ async function downloadPnaTemplate() {
 
 async function uploadPnaFile(input) {
     if (!input.files || !input.files[0]) return;
-    alert("Batch upload is currently disabled while you run the Exhaustive Diagnostic Sandbox below. Once we confirm the correct schema, it will be reactivated.");
-    input.value = ''; 
-}
-
-// Sandbox Execution Logic
-document.getElementById('btn-run-debug').addEventListener('click', async () => {
-    const phone = document.getElementById('debug-phone').value.trim();
-    const ext = document.getElementById('debug-ext').value.trim();
-    const btn = document.getElementById('btn-run-debug');
-    const logBox = document.getElementById('debugLogs');
     
-    if (!phone || !ext) return alert("Please enter both a Phone Number and an Extension Number.");
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
     
-    btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Running Test...`;
-    logBox.innerHTML = "Initializing exhaustive test across 20+ schemas... This will take a moment.\n";
+    logPna(`Uploading ${file.name}... processing assignments.`, "info");
     
     try {
-        const res = await fetch('/api/phone_number_assignment/debug', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: phone, extension_number: ext })
+        const res = await fetch('/api/phone_number_assignment/upload', { 
+            method: 'POST', 
+            body: formData 
         });
         const data = await res.json();
         
         if (data.logs) {
-            logBox.innerHTML = data.logs.join('\n');
+            data.logs.forEach(l => {
+                const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
+                logPna(l, type);
+            });
+            logPna("Batch process completed.", "info");
         } else if (data.error) {
-            logBox.innerHTML = "Error: " + data.error;
+            logPna(data.error, 'error');
         }
     } catch (e) {
-        logBox.innerHTML = "Network Error: " + e.message;
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = "Run Exhaustive Schema Test";
+        logPna(`Upload Failed: ${e.message}`, 'error');
     }
-});
+    
+    input.value = ''; // clear out input
+}
 </script>
