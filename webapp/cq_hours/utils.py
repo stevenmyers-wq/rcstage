@@ -204,6 +204,24 @@ def fetch_directory(endpoint, token):
             break
     return True, records
 
+def fetch_all_queues(token):
+    """Fetches all call queues and formats them for the UI."""
+    succ, records = fetch_directory('/restapi/v1.0/account/~/call-queues', token)
+    if not succ:
+        raise Exception(f"Failed to fetch call queues: {format_api_error(records)}")
+        
+    queues = []
+    for q in records:
+        queues.append({
+            "id": str(q.get('id', '')),
+            "name": q.get('name', 'Unknown'),
+            "extensionNumber": str(q.get('extensionNumber', '')),
+            "site": q.get('site', {}).get('name', 'Main Site')
+        })
+    
+    # Sort alphabetically by name
+    return sorted(queues, key=lambda x: x['name'].lower())
+
 def _safe_get_transfer_id(transfer_data, action_type):
     if not transfer_data: return ''
     if isinstance(transfer_data, list):
@@ -369,7 +387,7 @@ def run_cq_audit(task_id, queue_ids, token):
                         else: row["Interrupt Prompt"] = g_name
                     elif g_type == 'Voicemail': row["Voicemail Greeting"] = g_name
 
-            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', token=token)
+            succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
             if succ:
                 row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
                 a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
@@ -453,7 +471,6 @@ def run_cq_audit(task_id, queue_ids, token):
             config_ws.add_data_validation(dv_tz)
             dv_tz.add("K2:K1000") 
             
-            # The Expanded Schema Validations including the full global music catalog!
             schema_validations = {
                 "E": '"Enabled,Disabled"', 
                 "M": '"Default,Custom,Off"',
@@ -657,9 +674,12 @@ def update_cq_batch(records, token, is_preview=False):
         
         orig_rule = {}
         if any(get_val(row, f) is not None for f in routing_fields):
-            get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
-            if get_succ and isinstance(rule, dict):
-                orig_rule = copy.deepcopy(rule)
+            for _attempt in range(3):
+                get_succ, rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
+                if get_succ and isinstance(rule, dict):
+                    orig_rule = copy.deepcopy(rule)
+                    break
+                time.sleep(2.0)
 
         # --- A. BASIC INFO UPDATE ---
         basic_fields = ['Queue Name', 'Status', 'Queue Email', 'Site', 'Timezone', 'Time Zone', 'Member Queue Status']
@@ -714,10 +734,28 @@ def update_cq_batch(records, token, is_preview=False):
                         
                 tz_raw = get_val(row, 'Timezone') or get_val(row, 'Time Zone')
                 if tz_raw is not None:
-                    tz_key = tz_raw.lower()
-                    if tz_key in tz_map:
+                    def find_tz_id(raw_tz):
+                        raw_lower = str(raw_tz).lower().strip()
+                        if raw_lower in tz_map: return tz_map[raw_lower]
+                        # Look for city name
+                        city = raw_lower.split('/')[-1].replace('_', ' ')
+                        for tz in tz_records:
+                            if city in str(tz.get('name', '')).lower() or city in str(tz.get('description', '')).lower():
+                                return str(tz['id'])
+                        # Fallback for common mismatches
+                        if 'eastern' in raw_lower and 'us' in raw_lower:
+                            for tz in tz_records:
+                                if 'eastern' in str(tz.get('name', '')).lower() and 'us' in str(tz.get('description', '')).lower():
+                                    return str(tz['id'])
+                        if 'melbourne' in raw_lower or 'sydney' in raw_lower or 'canberra' in raw_lower:
+                            for tz in tz_records:
+                                if 'sydney' in str(tz.get('name', '')).lower():
+                                    return str(tz['id'])
+                        return None
+
+                    new_tz_id = find_tz_id(tz_raw)
+                    if new_tz_id:
                         if 'regionalSettings' not in basic_payload: basic_payload['regionalSettings'] = {}
-                        new_tz_id = tz_map[tz_key]
                         basic_payload['regionalSettings']['timezone'] = {'id': new_tz_id}
                         
                         old_tz_id = str(old_basic.get('regionalSettings', {}).get('timezone', {}).get('id', ''))
@@ -800,8 +838,8 @@ def update_cq_batch(records, token, is_preview=False):
 
         # --- C. ROUTING, TIMERS & LEGACY AUDIO ---
         if any(get_val(row, f) is not None for f in routing_fields) and orig_rule:
-            rule = {}
-            q_set = orig_rule.get('queue', {})
+            rule = copy.deepcopy(orig_rule)
+            q_set = rule.get('queue', {})
             r_needs_update = False
             
             rt = get_val(row, 'Ring Type')
@@ -988,9 +1026,16 @@ def update_cq_batch(records, token, is_preview=False):
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
         if any(get_val(row, f) is not None for f in ah_fields):
-            get_succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='GET', token=token)
-            if get_succ and isinstance(ah_rule, dict):
-                orig_ah = copy.deepcopy(ah_rule)
+            orig_ah = {}
+            for _attempt in range(3):
+                get_succ, ah_rule_resp = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='GET', token=token)
+                if get_succ and isinstance(ah_rule_resp, dict):
+                    orig_ah = copy.deepcopy(ah_rule_resp)
+                    break
+                time.sleep(2.0)
+            
+            if orig_ah:
+                ah_rule = copy.deepcopy(orig_ah)
                 a_needs_update = False
                 
                 val_ahb = get_val(row, 'After Hours Behavior')
