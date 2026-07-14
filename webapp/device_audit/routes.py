@@ -20,15 +20,15 @@ def export_device_audit():
         data = utils.generate_device_audit(token)
         df = pd.DataFrame(data)
         
-        # Sort the DataFrame exactly as requested
+        # Sort by Type first, then by Extension Number to keep users organized
         if not df.empty and "Type (User, Common Area, Unassigned etc)" in df.columns:
-            df.sort_values(by=["Type (User, Common Area, Unassigned etc)", "Model", "Name"], inplace=True)
+            df.sort_values(by=["Type (User, Common Area, Unassigned etc)", "Assigned Ext Number", "Model", "Name"], inplace=True)
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Device Audit')
             worksheet = writer.sheets['Device Audit']
-            # Auto-adjust column widths for readability
+            # Auto-adjust column widths
             for column in worksheet.columns:
                 length = max(len(str(cell.value) or "") for cell in column)
                 worksheet.column_dimensions[column[0].column_letter].width = min(length + 5, 50)
