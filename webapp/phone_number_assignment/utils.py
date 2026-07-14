@@ -1,8 +1,6 @@
 import io
 import time
 import pandas as pd
-import requests
-from flask import current_app
 from webapp.rc_api import rc_api_call
 
 def fetch_all_pages(endpoint, token, params=None):
@@ -96,16 +94,8 @@ def process_assignments(records, token):
         if e.get('extensionNumber'):
             ext_map[str(e['extensionNumber']).strip()] = str(e['id'])
 
-    # Determine base service portal domain context dynamically (e.g. platform -> service)
-    base_url = current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
-    service_base_url = base_url.replace('platform.', 'service.')
-    endpoint_url = f"{service_base_url}/mobile/api/billing/assignNumbers"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
+    # By using the standard API Gateway, we bypass the browser cookie requirement
+    endpoint = "/mobile/api/billing/assignNumbers"
 
     logs = []
     
@@ -147,24 +137,35 @@ def process_assignments(records, token):
         }
 
         try:
-            res = requests.post(endpoint_url, headers=headers, json=payload, timeout=20)
-            status_code = res.status_code
+            # Send the request through the standard RC API Gateway using our Bearer token
+            res = rc_api_call(endpoint, method='POST', json=payload, token=token, return_response=True)
+            status_code = getattr(res, 'status_code', 'Unknown')
             
-            if res.ok:
-                res_data = res.json()
-                status_obj = res_data.get('status', {})
-                
-                if status_obj.get('success') is True or res_data.get('billingStatus') == 'Success':
-                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (via Service Web Portal API).")
-                else:
-                    err_msg = status_obj.get('message') or status_obj.get('errorCode') or "Billing Transaction Denied"
-                    logs.append(f"❌ Failed to assign {phone}: {err_msg}")
+            if res and getattr(res, 'ok', False):
+                try:
+                    res_data = res.json()
+                    status_obj = res_data.get('status', {})
+                    
+                    if status_obj.get('success') is True or res_data.get('billingStatus') == 'Success':
+                        logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (via Mobile API).")
+                    else:
+                        err_msg = status_obj.get('message') or status_obj.get('errorCode') or "Billing Transaction Denied"
+                        logs.append(f"❌ Failed to assign {phone}: {err_msg}")
+                except Exception:
+                    # In case the response is OK but not valid JSON
+                    logs.append(f"✅ Successfully assigned {phone} to Extension {ext_num} (via Mobile API).")
             else:
                 if status_code == 429:
                     logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Retrying batch recommended.")
                     time.sleep(2)
                 else:
-                    logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {res.text}")
+                    try:
+                        err_json = res.json()
+                        err_msg = err_json.get('message') or err_json.get('errorCode') or getattr(res, 'text', '')
+                    except Exception:
+                        err_msg = getattr(res, 'text', 'Unknown Error')
+                        
+                    logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {err_msg}")
                     
         except Exception as e:
             logs.append(f"❌ Error assigning {phone}: {str(e)}")
