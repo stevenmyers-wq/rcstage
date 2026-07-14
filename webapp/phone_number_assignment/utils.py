@@ -138,57 +138,46 @@ def process_assignments(records, token):
             continue
 
         number_id = str(number_data.get('id', ''))
-        payment_type = str(number_data.get('paymentType', ''))
         
-        ep_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
-        ep_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
-        
-        # Build the sequence of usageTypes to try based on metadata
-        usage_types_to_try = []
-        if payment_type == 'External':
-            # External payments usually strictly require ForwardedNumber
-            usage_types_to_try.extend(['ForwardedNumber', None, 'DirectNumber', 'MobileNumber'])
-        else:
-            # Native omission usually safest, fallback to standard voice, then mobile/forwarded
-            usage_types_to_try.extend([None, 'DirectNumber', 'MobileNumber', 'ForwardedNumber'])
-
         success = False
         attempts_log = []
 
-        # Loop through V2 attempts
-        for u_type in usage_types_to_try:
-            payload = { "extension": { "id": ext_id } }
-            if u_type:
-                payload["usageType"] = u_type
-                
-            res = rc_api_call(ep_v2, method='PATCH', json=payload, token=token, return_response=True)
-            status_code = getattr(res, 'status_code', 'Unknown')
-            
-            if res and getattr(res, 'ok', False):
-                lbl = u_type if u_type else "Native/Omitted"
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 {lbl}).")
-                success = True
-                break
-            else:
-                err_msg = extract_error(res)
-                if status_code == 429:
-                    time.sleep(2) # Backoff for rate limit
-                attempts_log.append(f"V2 {u_type or 'Omitted'}: HTTP {status_code} - {err_msg}")
-                time.sleep(0.5)
+        # ATTEMPT 1: Internal AWU Assignment Endpoint (Bypasses usageType validation completely)
+        ep_awu = f'/restapi/v1.0/account/~/phone-numbers/assign'
+        payload_awu = {
+            "comment": "Assigned via Bulk Tool",
+            "forwardedPhoneId": int(number_id),
+            "assignee": {
+                "type": "Extension",
+                "value": ext_id
+            }
+        }
+        
+        res_awu = rc_api_call(ep_awu, method='POST', json=payload_awu, token=token, return_response=True)
+        status_code_awu = getattr(res_awu, 'status_code', 'Unknown')
+        
+        if res_awu and getattr(res_awu, 'ok', False):
+            logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (AWU Internal).")
+            success = True
+        else:
+            if status_code_awu == 429:
+                time.sleep(2)
+            attempts_log.append(f"AWU Internal: HTTP {status_code_awu} - {extract_error(res_awu)}")
 
-        # Fallback to V1 if all V2 attempts failed
+        # ATTEMPT 2: V2 PATCH Fallback (If AWU is blocked for external integrations)
         if not success:
             time.sleep(0.5)
-            payload_v1 = { "extension": { "id": ext_id }, "usageType": "DirectNumber" }
-            res_v1 = rc_api_call(ep_v1, method='PUT', json=payload_v1, token=token, return_response=True)
+            ep_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
+            payload_v2 = { "extension": { "id": ext_id } }
             
-            if res_v1 and getattr(res_v1, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V1 DirectNumber).")
+            res_v2 = rc_api_call(ep_v2, method='PATCH', json=payload_v2, token=token, return_response=True)
+            status_code_v2 = getattr(res_v2, 'status_code', 'Unknown')
+            
+            if res_v2 and getattr(res_v2, 'ok', False):
+                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 Fallback).")
                 success = True
             else:
-                err_msg = extract_error(res_v1)
-                status_code = getattr(res_v1, 'status_code', 'Unknown')
-                attempts_log.append(f"V1 DirectNumber: HTTP {status_code} - {err_msg}")
+                attempts_log.append(f"V2 Native: HTTP {status_code_v2} - {extract_error(res_v2)}")
 
         # If everything failed, log all attempts for debugging
         if not success:
