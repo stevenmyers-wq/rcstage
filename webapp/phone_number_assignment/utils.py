@@ -95,16 +95,15 @@ def extract_error(res):
     return err_msg if err_msg else (raw_text.strip() if raw_text.strip() else "Empty/Unknown Response")
 
 def process_assignments(records, token):
-    # Map phone string to ID using the v2 API
+    # Map phone string to ID using the v2 API, saving full metadata
     all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
     phone_map = {}
     
     for n in all_numbers:
         if n.get('phoneNumber'):
             phone_num = n['phoneNumber'].strip()
-            num_id = str(n.get('id', ''))
-            phone_map[phone_num] = num_id
-            phone_map[phone_num.replace('+', '')] = num_id
+            phone_map[phone_num] = n
+            phone_map[phone_num.replace('+', '')] = n
 
     # Map Extension Number to Extension ID
     all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
@@ -128,8 +127,8 @@ def process_assignments(records, token):
             
         phone_clean = phone.replace('+', '')
 
-        number_id = phone_map.get(phone) or phone_map.get(phone_clean)
-        if not number_id:
+        number_data = phone_map.get(phone) or phone_map.get(phone_clean)
+        if not number_data:
             logs.append(f"❌ Row {index+2}: Phone Number {phone} not found in the account.")
             continue
 
@@ -138,54 +137,64 @@ def process_assignments(records, token):
             logs.append(f"❌ Row {index+2}: Extension Number {ext_num} not found in the account.")
             continue
 
-        # Endpoints
-        ep_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
-        ep_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
+        number_id = str(number_data.get('id', ''))
+        payment_type = str(number_data.get('paymentType', ''))
         
-        # Payloads
-        payload_no_usage = { "extension": { "id": ext_id } }
-        payload_direct = { "usageType": "DirectNumber", "extension": { "id": ext_id } }
+        ep_v2 = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
+        ep_v1 = f'/restapi/v1.0/account/~/phone-number/{number_id}'
+        
+        # Build the sequence of usageTypes to try based on metadata
+        usage_types_to_try = []
+        if payment_type == 'External':
+            # External payments usually strictly require ForwardedNumber
+            usage_types_to_try.extend(['ForwardedNumber', None, 'DirectNumber', 'MobileNumber'])
+        else:
+            # Native omission usually safest, fallback to standard voice, then mobile/forwarded
+            usage_types_to_try.extend([None, 'DirectNumber', 'MobileNumber', 'ForwardedNumber'])
 
-        try:
-            # ATTEMPT 1: V1 API - No Usage Type (Best for Mobile/SMS Numbers)
-            res1 = rc_api_call(ep_v1, method='PUT', json=payload_no_usage, token=token, return_response=True)
-            if res1 and getattr(res1, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (Native Type).")
-                continue
+        success = False
+        attempts_log = []
+
+        # Loop through V2 attempts
+        for u_type in usage_types_to_try:
+            payload = { "extension": { "id": ext_id } }
+            if u_type:
+                payload["usageType"] = u_type
+                
+            res = rc_api_call(ep_v2, method='PATCH', json=payload, token=token, return_response=True)
+            status_code = getattr(res, 'status_code', 'Unknown')
             
-            # ATTEMPT 2: V1 API - Explicit DirectNumber
-            time.sleep(0.5)
-            res2 = rc_api_call(ep_v1, method='PUT', json=payload_direct, token=token, return_response=True)
-            if res2 and getattr(res2, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (DirectNumber).")
-                continue
-
-            # ATTEMPT 3: V2 API - No Usage Type
-            time.sleep(0.5)
-            res3 = rc_api_call(ep_v2, method='PATCH', json=payload_no_usage, token=token, return_response=True)
-            if res3 and getattr(res3, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 Native).")
-                continue
-
-            # ATTEMPT 4: V2 API - Explicit DirectNumber
-            time.sleep(0.5)
-            res4 = rc_api_call(ep_v2, method='PATCH', json=payload_direct, token=token, return_response=True)
-            if res4 and getattr(res4, 'ok', False):
-                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 DirectNumber).")
-                continue
-
-            # If all attempts failed, report the V1 No-Usage error as it is usually the most accurate
-            final_err = extract_error(res1)
-            status_code = getattr(res1, 'status_code', 'Unknown')
-            
-            if status_code == 429:
-                logs.append(f"❌ Failed to assign {phone}: Rate limit hit. Try again.")
+            if res and getattr(res, 'ok', False):
+                lbl = u_type if u_type else "Native/Omitted"
+                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V2 {lbl}).")
+                success = True
+                break
             else:
-                logs.append(f"❌ Failed to assign {phone} (HTTP {status_code}): {final_err}")
+                err_msg = extract_error(res)
+                if status_code == 429:
+                    time.sleep(2) # Backoff for rate limit
+                attempts_log.append(f"V2 {u_type or 'Omitted'}: HTTP {status_code} - {err_msg}")
+                time.sleep(0.5)
 
-        except Exception as e:
-            logs.append(f"❌ Error assigning {phone}: {str(e)}")
+        # Fallback to V1 if all V2 attempts failed
+        if not success:
+            time.sleep(0.5)
+            payload_v1 = { "extension": { "id": ext_id }, "usageType": "DirectNumber" }
+            res_v1 = rc_api_call(ep_v1, method='PUT', json=payload_v1, token=token, return_response=True)
             
+            if res_v1 and getattr(res_v1, 'ok', False):
+                logs.append(f"✅ Successfully assigned {phone} to Ext {ext_num} (V1 DirectNumber).")
+                success = True
+            else:
+                err_msg = extract_error(res_v1)
+                status_code = getattr(res_v1, 'status_code', 'Unknown')
+                attempts_log.append(f"V1 DirectNumber: HTTP {status_code} - {err_msg}")
+
+        # If everything failed, log all attempts for debugging
+        if not success:
+            detail = "\n  ↳ ".join(attempts_log)
+            logs.append(f"❌ Failed to assign {phone}:\n  ↳ {detail}")
+
         time.sleep(0.6) # Pace to avoid hitting RC limits rapidly
 
     if not logs:
