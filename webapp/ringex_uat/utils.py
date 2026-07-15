@@ -97,12 +97,16 @@ class UATGenerator:
         act = action_type or rule_obj.get('callHandlingAction') or 'Unknown Action'
             
         if act in ['TransferToExtension', 'Bypass', 'Transfer']:
-            transfer = safe_dict(rule_obj, 'transfer')
-            if not transfer: 
-                t_list = safe_list(rule_obj, 'transfer')
-                if t_list and isinstance(t_list[0], dict): transfer = t_list[0]
+            if act == 'Bypass':
+                tid = str(safe_dict(rule_obj, 'extension').get('id', ''))
+            else:
+                transfer = safe_dict(rule_obj, 'transfer')
+                if not transfer: 
+                    t_list = safe_list(rule_obj, 'transfer')
+                    if t_list and isinstance(t_list[0], dict): transfer = t_list[0]
+                    
+                tid = str(safe_dict(transfer, 'extension').get('id', ''))
                 
-            tid = str(safe_dict(transfer, 'extension').get('id', ''))
             tname = self.ext_map.get(tid, {}).get('name', f"Extension {tid}") if tid else "Unknown Extension"
             text = self.ext_map.get(tid, {}).get('ext', '')
             ext_str = f" (Ext {text})" if text else ""
@@ -332,7 +336,7 @@ class UATGenerator:
                     tname, tid = self._resolve_target(rule, action, cname)
                     
                     self.add_case(f"{prefix}2. Schedule Boundaries", f"Custom Rule: {rname}", f"{path_str}Initiate a call matching conditions: {cond_str}.", f"Rule successfully intercepts the call and routes to -> {tname}.")
-                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
+                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Custom Rule '{rname}'"})
 
                 # --- AFTER HOURS ---
@@ -342,7 +346,7 @@ class UATGenerator:
                     tname, tid = self._resolve_target(rule, action, cname)
                     
                     self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of Business Hours: [{bh_str}].", f"Call executes After Hours logic and routes to -> {tname}.")
-                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
+                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"After Hours Routing"})
 
                 # --- BUSINESS HOURS / QUEUE SETTINGS ---
@@ -352,6 +356,9 @@ class UATGenerator:
                     tname, tid = self._resolve_target(rule, action, cname)
                     
                     self.add_case(f"{prefix}2. Schedule Boundaries", "Business Hours", f"{path_str}Initiate a call during Open Hours: [{bh_str}].", f"Call follows Business Hours routing path and routes to -> {tname}.")
+                    
+                    if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
+                        self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Business Hours Routing"})
                     
                     if ctype == 'Department':
                         queue_settings = safe_dict(rule, 'queue')
@@ -443,7 +450,7 @@ class UATGenerator:
                     else:
                         na_name, na_id = self._resolve_target(queue_settings, no_ans_act, cname)
                         self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call executes overflow -> {na_name}.")
-                        if na_id and self.ext_map.get(na_id, {}).get('type') in ['Department', 'IvrMenu']:
+                        if na_id and self.ext_map.get(na_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                             self.queue_to_process.append({"id": na_id, "name": self.ext_map[na_id]['name'], "ext": self.ext_map[na_id]['ext'], "type": self.ext_map[na_id]['type'], "path": f"No Answer Overflow"})
 
                 h_act = queue_settings.get('holdTimeExpirationAction')
@@ -458,7 +465,7 @@ class UATGenerator:
                     h_mins = int(hold_time) // 60 if int(hold_time) >= 60 else int(hold_time)
                     lbl = f"{h_mins} minutes" if int(hold_time) >= 60 else f"{hold_time} seconds"
                     self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires (Note: time calculated after any introductory audio finishes). Call is forcefully removed from the queue and routes to -> {h_name}.")
-                    if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu']:
+                    if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": f"Wait Time Overflow"})
                 else:
                     self.add_case(f"{prefix}7. Boundaries & Overflows", "Unlimited Wait Time", f"Remain on hold in {cname} for over 10 minutes.", "No maximum wait time limit configured. Call remains in queue indefinitely.")
@@ -466,7 +473,7 @@ class UATGenerator:
                 if max_callers and int(max_callers) > 0:
                     call_target = dids[0] if dids else f"extension {cext}"
                     self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Callers Limit ({max_callers})", f"Simultaneously call {call_target} with {max_callers} calls. Dial call #{int(max_callers) + 1}.", f"The final call breaches the capacity limit. It is forwarded and executes -> {m_name}.")
-                    if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu']:
+                    if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": f"Max Callers Overflow"})
 
                 vmail = safe_dict(queue_settings, 'voicemail')
@@ -506,7 +513,7 @@ class UATGenerator:
                         
                         self.add_case(f"{prefix}5. Routing & Distribution", f"Key Mapping: Press '{key}'", f"{path_str}Listen to prompt and press '{key}'.", f"System correctly processes input and routes to -> {tname}.")
                         
-                        if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu']:
+                        if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                             self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Key '{key}'"})
                 
                 self.add_case(f"{prefix}7. Boundaries & Overflows", "Dial-By-Extension Verification", f"While in the IVR, enter a known internal user's 3 or 4-digit extension.", "If general extension dialing is permitted, the IVR intercepts the string and transfers the call to the user.")
