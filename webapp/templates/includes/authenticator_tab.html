@@ -1,43 +1,52 @@
-<div class="space-y-4">
-<h3 class="text-xl font-bold mb-2 text-blue-700">RingCentral PKCE Connection Guide (Layer 2)</h3>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h3 class="text-heading mb-1 text-blue-700 dark:text-blue-500">RingCentral PKCE Connection Guide (Layer 2)</h3>
+        <p class="text-subheading">Securely authenticate your RingCentral app to interact with the platform APIs.</p>
+    </div>
 
-<div class="card p-4 bg-gray-50 border-l-4 border-gray-300 text-sm text-gray-700">
-    <p class="font-bold mb-2">Instructions for PKCE Authorization:</p>
-    <ul class="list-disc list-inside space-y-2">
-        <li>
-            **CRITICAL STEP: OAuth Redirect URI**
-            <p class="mt-1">In the RingCentral Developer Console, set the **OAuth Redirect URI** to this exact URL:</p>
-            <code id="redirect-uri-display" class="font-mono text-xs p-2 bg-gray-200 rounded block mt-1 overflow-x-auto border border-gray-400">
-                {{ RC_REDIRECT_URI }}
-            </code>
-        </li>
-        <li>Paste the **Client ID** from your RingCentral application into the input field below.</li>
-        <li>Click **Connect**. This will redirect you to RingCentral's login page to grant access to the customer account.</li>
-        <li>After successful login on RingCentral, you will be redirected back, and the status above will change to **Connected**.</li>
-    </ul>
-    <p class="mt-4 font-semibold">API Endpoint: N/A (Client-side flow handled by /api/rc/initiate-auth)</p>
-    <p class="text-xs text-gray-500">Rate Limit: Low (only used for initiating the connection).</p>
-</div>
+    <div class="card !p-5 bg-slate-50 dark:bg-slate-800/50 border-l-4 border-slate-400 dark:border-slate-500 text-sm text-slate-700 dark:text-slate-300 shadow-sm">
+        <p class="font-bold mb-3 text-slate-900 dark:text-slate-100">Instructions for PKCE Authorization:</p>
+        <ul class="list-disc list-inside space-y-3">
+            <li>
+                <strong>CRITICAL STEP: OAuth Redirect URI</strong>
+                <p class="mt-1.5 ml-5 text-slate-600 dark:text-slate-400">In the RingCentral Developer Console, set the <strong>OAuth Redirect URI</strong> to this exact URL:</p>
+                <code id="redirect-uri-display" class="font-mono text-xs p-2.5 bg-white dark:bg-slate-900 rounded-lg block mt-2 overflow-x-auto border border-slate-300 dark:border-slate-700 text-blue-600 dark:text-blue-400 shadow-inner">
+                    {{ RC_REDIRECT_URI }}
+                </code>
+            </li>
+            <li>Paste the <strong>Client ID</strong> from your RingCentral application into the input field below.</li>
+            <li>Click <strong>Connect</strong>. This will redirect you to RingCentral's login page to grant access to the customer account.</li>
+            <li>After successful login on RingCentral, you will be redirected back, and the status above will change to <strong>Connected</strong>.</li>
+        </ul>
+        <div class="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700 text-xs">
+            <p class="font-semibold text-slate-800 dark:text-slate-200 mb-1">API Endpoint: <span class="font-normal text-slate-500 dark:text-slate-400">N/A (Client-side flow handled by /api/rc/initiate-auth)</span></p>
+            <p class="font-semibold text-slate-800 dark:text-slate-200">Rate Limit: <span class="font-normal text-slate-500 dark:text-slate-400">Low (only used for initiating the connection).</span></p>
+        </div>
+    </div>
 
-<!-- The RC Connection Form itself is placed here -->
-<div id="rc-connection-card" class="card rc-disconnected">
-    <h2 class="text-xl font-semibold mb-4 rc-panel-title">Connection Form</h2>
-    <p class="text-sm text-gray-600">Enter the customer's application Client ID to initiate authorization.</p>
-    
-    <!-- FIX: Added the input field and buttons back into the form -->
-    <form id="rc-connect-form" class="space-y-4 mt-4">
-        <input type="text" id="rc-client-id-input" name="client_id" required
-               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500"
-               placeholder="Enter Customer/Partner's RingCentral Client ID">
-        <button type="submit" id="rc-connect-button"
-                class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition duration-150">
-            Connect and Authorize RingCentral Account
-        </button>
-        <button type="button" id="rc-disconnect-button" style="display:none;"
-                class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition duration-150">
-            Disconnect RingCentral Account
-        </button>
-    </form>
-</div>
+    <div id="rc-connection-card" class="card rc-disconnected w-full max-w-2xl">
+        <h2 class="text-xl font-bold mb-2 text-slate-800 dark:text-slate-100 rc-panel-title border-b border-slate-100 dark:border-slate-700 pb-2">Connection Form</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-5">Enter the customer's application Client ID to initiate authorization.</p>
+        
+        <form id="rc-connect-form" class="space-y-5">
+            <div>
+                <label class="input-label">Client ID</label>
+                <input type="text" id="rc-client-id-input" name="client_id" required
+                       class="input-field font-mono"
+                       placeholder="Enter Customer/Partner's RingCentral Client ID">
+            </div>
+            
+            <div class="pt-2">
+                <button type="submit" id="rc-connect-button"
+                        class="btn-danger w-full !py-3 tracking-wide uppercase">
+                    Connect and Authorize RingCentral Account
+                </button>
+                <button type="button" id="rc-disconnect-button" style="display:none;"
+                        class="btn-secondary w-full !py-3 tracking-wide uppercase">
+                    Disconnect RingCentral Account
+                </button>
+            </div>
+        </form>
+    </div>
 
 </div>
