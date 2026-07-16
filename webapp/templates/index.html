@@ -145,7 +145,7 @@
           
           <img src="{{ url_for('static', filename='RCAU Header.jpg') }}" 
                alt="RingCentral" 
-               class="h-12 sm:h-14 w-auto object-contain rounded-xl shadow-sm border border-slate-200/80 dark:border-slate-700/80 bg-white">
+               class="h-16 sm:h-20 w-auto object-contain rounded-xl shadow-sm border border-slate-200/80 dark:border-slate-700/80 bg-white">
           
           <div class="flex flex-col items-center sm:items-start">
             <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">RingCentral RCAU API Tools</h1>
@@ -406,14 +406,15 @@
       
       // Override status display logic to update the new indicator dot instead of full card background
       document.addEventListener("DOMContentLoaded", () => {
+          // Wrap the original updateRcStatusDisplay if it exists to also update the indicator dot
           if (typeof window.updateRcStatusDisplay === 'function') {
               const origUpdateRc = window.updateRcStatusDisplay;
               window.updateRcStatusDisplay = function(status, rcEmail, clientId) {
                   origUpdateRc(status, rcEmail, clientId);
                   const ind = document.getElementById('rc-status-indicator');
                   if (ind) {
-                      if (status === 'connected') ind.className = 'w-3 h-3 rounded-full bg-emerald-500 shadow-sm border border-emerald-600';
-                      else ind.className = 'w-3 h-3 rounded-full bg-rose-500 shadow-sm border border-rose-600';
+                      if (status === 'connected') ind.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
+                      else ind.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
                   }
               };
           }
@@ -424,9 +425,9 @@
                   origUpdateCx(status, region, buName);
                   const ind = document.getElementById('cxone-status-indicator');
                   if (ind) {
-                      if (status === 'connected') ind.className = 'w-3 h-3 rounded-full bg-emerald-500 shadow-sm border border-emerald-600';
-                      else if (status === 'expired') ind.className = 'w-3 h-3 rounded-full bg-amber-500 shadow-sm border border-amber-600';
-                      else ind.className = 'w-3 h-3 rounded-full bg-rose-500 shadow-sm border border-rose-600';
+                      if (status === 'connected') ind.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
+                      else if (status === 'expired') ind.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]';
+                      else ind.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
                   }
               };
           }
