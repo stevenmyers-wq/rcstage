@@ -1,103 +1,103 @@
 <audio id="global-audio-player" class="hidden"></audio>
 
-<div class="space-y-6 animate-fade-in p-4 w-full">
+<div class="space-y-6 animate-fade-in w-full">
     
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 border-b border-gray-200 pb-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <div>
-            <h2 class="text-3xl font-bold text-slate-800 mb-1">Greeting Studio</h2>
-            <p class="text-slate-500 text-sm">Audit, apply, and export custom audio across your organization.</p>
+            <h2 class="text-heading mb-1">Greeting Studio</h2>
+            <p class="text-subheading">Audit, apply, and export custom audio across your organization.</p>
         </div>
-        <div class="flex flex-wrap gap-3">
-            <button id="btn-open-upload" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        <div class="flex flex-wrap gap-3 w-full md:w-auto">
+            <button id="btn-open-upload" class="btn-primary w-full md:w-auto flex-1 md:flex-none disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 📁 Upload File
             </button>
-            <button id="btn-open-tts" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            <button id="btn-open-tts" class="btn-primary !bg-purple-600 hover:!bg-purple-700 w-full md:w-auto flex-1 md:flex-none disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 ✨ AI Studio
             </button>
-            <button id="btn-open-export" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            <button id="btn-open-export" class="btn-success w-full md:w-auto flex-1 md:flex-none disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 📥 Export Archive
             </button>
         </div>
     </div>
 
-    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end">
+    <div class="card !p-4 flex flex-wrap gap-4 items-end w-full">
         <div class="flex-grow min-w-[200px]">
-            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search Endpoints</label>
-            <input type="text" id="msg-search-input" placeholder="Name or Ext Number..." class="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+            <label class="input-label">Search Endpoints</label>
+            <input type="text" id="msg-search-input" placeholder="Name or Ext Number..." class="input-field !py-2.5">
         </div>
         
-        <div class="w-56" id="filter-type">
-            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
+        <div class="w-full sm:w-56" id="filter-type">
+            <label class="input-label">Type</label>
             <div class="relative">
-                <button class="ms-btn w-full text-left p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow">
-                    <span class="ms-label truncate text-gray-700">All Types</span>
-                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                <button class="ms-btn w-full text-left p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow outline-none">
+                    <span class="ms-label truncate">All Types</span>
+                    <svg class="w-4 h-4 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
-                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl">
-                    <div class="p-2 border-b border-gray-100">
-                        <input type="text" class="ms-search w-full p-1.5 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" placeholder="Search types...">
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl">
+                    <div class="p-2 border-b border-slate-100 dark:border-slate-700">
+                        <input type="text" class="ms-search input-field !py-1.5 !px-2 !text-xs" placeholder="Search types...">
                     </div>
-                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-gray-700"></ul>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-slate-700 dark:text-slate-300"></ul>
                 </div>
             </div>
         </div>
 
-        <div class="w-56" id="filter-site">
-            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Site</label>
+        <div class="w-full sm:w-56" id="filter-site">
+            <label class="input-label">Site</label>
             <div class="relative">
-                <button class="ms-btn w-full text-left p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow">
-                    <span class="ms-label truncate text-gray-700">All Sites</span>
-                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                <button class="ms-btn w-full text-left p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow outline-none">
+                    <span class="ms-label truncate">All Sites</span>
+                    <svg class="w-4 h-4 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
-                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl">
-                    <div class="p-2 border-b border-gray-100">
-                        <input type="text" class="ms-search w-full p-1.5 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" placeholder="Search sites...">
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl">
+                    <div class="p-2 border-b border-slate-100 dark:border-slate-700">
+                        <input type="text" class="ms-search input-field !py-1.5 !px-2 !text-xs" placeholder="Search sites...">
                     </div>
-                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-gray-700"></ul>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-slate-700 dark:text-slate-300"></ul>
                 </div>
             </div>
         </div>
 
-        <div class="flex items-center h-[42px] px-2">
+        <div class="flex items-center h-[42px] px-2 w-full sm:w-auto">
             <label class="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" id="msg-ignore-defaults" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                <span class="text-sm font-bold text-gray-500 uppercase group-hover:text-blue-600 transition-colors" title="Hide system default audio slots from previews and exports.">Custom Only</span>
+                <input type="checkbox" id="msg-ignore-defaults" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer bg-white dark:bg-slate-900">
+                <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title="Hide system default audio slots from previews and exports.">Custom Only</span>
             </label>
         </div>
 
-        <div>
-            <button id="msg-refresh-endpoints" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-lg transition border border-gray-300 text-sm h-[42px]">
+        <div class="w-full sm:w-auto">
+            <button id="msg-refresh-endpoints" class="btn-secondary w-full h-[42px] text-sm px-4">
                 Refresh List
             </button>
         </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
-        <div class="overflow-x-auto max-h-[600px]">
-            <table class="min-w-full text-sm text-left relative">
-                <thead class="bg-gray-50 text-xs text-gray-600 uppercase sticky top-0 z-10 shadow-sm select-none">
+    <div class="card !p-0 overflow-hidden relative w-full">
+        <div class="overflow-x-auto max-h-[600px] w-full">
+            <table class="data-table">
+                <thead class="sticky top-0 z-10">
                     <tr>
-                        <th class="px-4 py-3 w-12 text-center">
-                            <input type="checkbox" id="msg-select-all" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        <th class="w-12 text-center">
+                            <input type="checkbox" id="msg-select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                         </th>
-                        <th class="px-4 py-3 font-semibold w-1/4 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="name">
-                            Endpoint Name <span id="sort-icon-name" class="ml-0.5 text-blue-600 font-bold">▲</span>
+                        <th class="w-1/4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="name">
+                            Endpoint Name <span id="sort-icon-name" class="ml-0.5 text-blue-600 dark:text-blue-400 font-bold">▲</span>
                         </th>
-                        <th class="px-4 py-3 font-semibold w-24 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="ext">
-                            Ext <span id="sort-icon-ext" class="ml-0.5 text-slate-400"></span>
+                        <th class="w-24 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="ext">
+                            Ext <span id="sort-icon-ext" class="ml-0.5 text-slate-400 dark:text-slate-500"></span>
                         </th>
-                        <th class="px-4 py-3 font-semibold w-32 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="type">
-                            Type <span id="sort-icon-type" class="ml-0.5 text-slate-400"></span>
+                        <th class="w-32 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="type">
+                            Type <span id="sort-icon-type" class="ml-0.5 text-slate-400 dark:text-slate-500"></span>
                         </th>
-                        <th class="px-4 py-3 font-semibold w-32 cursor-pointer hover:bg-gray-100 transition-colors msg-sort-header" data-sort="site">
-                            Site <span id="sort-icon-site" class="ml-0.5 text-slate-400"></span>
+                        <th class="w-32 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="site">
+                            Site <span id="sort-icon-site" class="ml-0.5 text-slate-400 dark:text-slate-500"></span>
                         </th>
-                        <th class="px-4 py-3 font-medium text-right pr-6">View Greetings</th>
+                        <th class="text-right pr-6">View Greetings</th>
                     </tr>
                 </thead>
-                <tbody id="msg-tbody" class="divide-y divide-gray-100 text-gray-700">
-                    <tr><td colspan="6" class="px-4 py-12 text-center text-gray-400">
-                        <i class="fas fa-spinner fa-spin mr-2"></i> Loading endpoints...
+                <tbody id="msg-tbody">
+                    <tr><td colspan="6" class="px-4 py-12 text-center text-slate-400 dark:text-slate-500">
+                        <div class="spinner border-slate-400 dark:border-slate-500 w-5 h-5 mx-auto mb-3"></div> Loading endpoints...
                     </td></tr>
                 </tbody>
             </table>
@@ -105,52 +105,50 @@
     </div>
 </div>
 
-<div id="modal-upload" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-200">
-        <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-            <h3 class="font-bold text-gray-800 text-lg">📁 Upload Audio</h3>
-            <button class="close-modal text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+<div id="modal-upload" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">📁 Upload Audio</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
         </div>
-        <form id="form-upload" class="p-6 space-y-4">
-            <div class="text-sm text-blue-700 bg-blue-50 p-3 rounded border border-blue-200 font-medium selected-count-display">
+        <form id="form-upload" class="p-6 space-y-5">
+            <div class="text-sm text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800 font-medium selected-count-display shadow-sm">
                 Uploading to 0 selected endpoints.
             </div>
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Greeting Type</label>
-                <select name="greeting_type" class="w-full p-2 border border-gray-300 rounded-lg text-sm">
-                    </select>
+                <label class="input-label">Greeting Type</label>
+                <select name="greeting_type" class="input-field"></select>
             </div>
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Audio File (.mp3, .wav)</label>
-                <input type="file" name="file" accept=".mp3,.wav" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg">
+                <label class="input-label">Audio File (.mp3, .wav)</label>
+                <input type="file" name="file" accept=".mp3,.wav" required class="file-input">
             </div>
-            <div class="pt-4 flex justify-end gap-3">
-                <button type="button" class="close-modal bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-50 transition">Cancel</button>
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition shadow-sm">Start Upload</button>
+            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                <button type="button" class="close-modal btn-secondary">Cancel</button>
+                <button type="submit" class="btn-primary">Start Upload</button>
             </div>
         </form>
     </div>
 </div>
 
-<div id="modal-tts" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 transform scale-95 transition-transform duration-200">
-        <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-            <h3 class="font-bold text-gray-800 text-lg">✨ AI Studio</h3>
-            <button class="close-modal text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+<div id="modal-tts" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">✨ AI Studio</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
         </div>
-        <form id="form-tts" class="p-6 space-y-4">
-            <div class="text-sm text-purple-700 bg-purple-50 p-3 rounded border border-purple-200 font-medium selected-count-display">
+        <form id="form-tts" class="p-6 space-y-5">
+            <div class="text-sm text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 p-3 rounded-lg border border-purple-200 dark:border-purple-800 font-medium selected-count-display shadow-sm">
                 Generating and applying to 0 selected endpoints.
             </div>
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Greeting Type</label>
-                    <select name="greeting_type" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-purple-500">
-                        </select>
+                    <label class="input-label">Greeting Type</label>
+                    <select name="greeting_type" class="input-field focus:ring-purple-500 focus:border-purple-500"></select>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">AI Voice Actor</label>
-                    <select name="voice" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-purple-500">
+                    <label class="input-label">AI Voice Actor</label>
+                    <select name="voice" class="input-field focus:ring-purple-500 focus:border-purple-500">
                         <option value="Kore" selected>Kore (Firm Female, AU)</option>
                         <option value="Aoede">Aoede (Warm Female, AU)</option>
                         <option value="Charon">Charon (Calm Male, AU)</option>
@@ -159,55 +157,55 @@
                 </div>
             </div>
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Prompt Script</label>
-                <textarea name="text" required class="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-purple-500 h-28" placeholder="Type the greeting here. It will be generated once and uploaded to all selected endpoints."></textarea>
+                <label class="input-label">Prompt Script</label>
+                <textarea name="text" required class="input-field focus:ring-purple-500 focus:border-purple-500 h-28 resize-y" placeholder="Type the greeting here. It will be generated once and uploaded to all selected endpoints."></textarea>
             </div>
-            <div class="pt-4 flex justify-end gap-3">
-                <button type="button" class="close-modal bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-50 transition">Cancel</button>
-                <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg transition shadow-sm">Generate & Apply</button>
+            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                <button type="button" class="close-modal btn-secondary">Cancel</button>
+                <button type="submit" class="btn-primary !bg-purple-600 hover:!bg-purple-700 focus:ring-purple-500 border-transparent">Generate & Apply</button>
             </div>
         </form>
     </div>
 </div>
 
-<div id="modal-export" class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-200">
-        <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-            <h3 class="font-bold text-emerald-800 text-lg">📥 Bulk Archive Export</h3>
-            <button class="close-modal text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+<div id="modal-export" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
+            <h3 class="font-bold text-emerald-700 dark:text-emerald-500 text-lg">📥 Bulk Archive Export</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
         </div>
-        <div class="p-6 space-y-4">
-            <div class="text-sm text-emerald-700 bg-emerald-50 p-3 rounded border border-emerald-200 font-medium selected-count-display">
+        <div class="p-6 space-y-5">
+            <div class="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 font-medium selected-count-display shadow-sm">
                 Archiving 0 selected endpoints.
             </div>
-            <p class="text-sm text-gray-600">
+            <p class="text-sm text-slate-600 dark:text-slate-400">
                 You are about to export a complete backup of the active audio configurations for the selected endpoints. This will generate a ZIP file containing physical copies of all custom audio files alongside a comprehensive CSV mapping audit.
             </p>
-            <p class="text-xs text-gray-500 bg-gray-50 p-2 border border-gray-200 rounded" id="export-note-ui">
+            <p class="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-700 rounded-lg shadow-inner" id="export-note-ui">
                 <strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.
             </p>
-            <div class="pt-4 flex justify-end gap-3">
-                <button type="button" class="close-modal bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-50 transition">Cancel</button>
-                <button id="btn-trigger-export" type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg transition shadow-sm">Start Export</button>
+            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                <button type="button" class="close-modal btn-secondary">Cancel</button>
+                <button id="btn-trigger-export" type="button" class="btn-success">Start Export</button>
             </div>
         </div>
     </div>
 </div>
 
-<div id="modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center">
-        <h3 class="font-bold text-gray-800 text-lg mb-2" id="progress-title">Processing...</h3>
-        <p class="text-sm text-gray-500 mb-6" id="progress-desc">Please do not close this window.</p>
+<div id="modal-progress" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg mb-2" id="progress-title">Processing...</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6" id="progress-desc">Please do not close this window.</p>
         
-        <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
-            <div id="progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
+            <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
-        <div class="text-xs font-bold text-gray-700 text-right" id="progress-pct">0/0</div>
+        <div class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right mb-4" id="progress-pct">0/0</div>
 
-        <div id="progress-log" class="mt-4 h-32 overflow-y-auto bg-gray-900 text-left p-3 rounded-lg font-mono text-xs text-green-400 space-y-1">
-            </div>
+        <div id="progress-log" class="h-32 overflow-y-auto bg-slate-900 text-left p-3 rounded-lg font-mono text-xs text-green-400 space-y-1 shadow-inner outline-none">
+        </div>
         
-        <button id="progress-close-btn" class="mt-4 hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition">
+        <button id="progress-close-btn" class="mt-5 hidden w-full btn-secondary">
             Close & Refresh Table
         </button>
     </div>
@@ -282,9 +280,9 @@ document.addEventListener('DOMContentLoaded', () => {
             list.innerHTML = '';
             items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
                 const li = document.createElement('li');
-                li.className = 'px-2 py-1.5 hover:bg-gray-100 cursor-pointer flex items-center gap-2 rounded transition-colors';
+                li.className = 'px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-2 rounded transition-colors';
                 const checked = selectedSet.has(item.val) ? 'checked' : '';
-                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
+                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
                 
                 li.onclick = (e) => {
                     e.stopPropagation();
@@ -353,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderTable();
             }
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-500">Failed to load endpoints: ${e.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-500 dark:text-red-400 font-medium">Failed to load endpoints: ${e.message}</td></tr>`;
         }
     }
 
@@ -410,35 +408,36 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
         
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">No endpoints found matching filters.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No endpoints found matching filters.</td></tr>';
             return;
         }
 
         filtered.forEach(ext => {
             const isChecked = selectedIds.has(String(ext.id));
             const tr = document.createElement('tr');
-            tr.className = `border-b border-gray-100 transition-colors ${isChecked ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`;
+            tr.className = isChecked ? 'modified-row' : '';
             tr.dataset.extType = ext.type;
             
             const displayType = ext.type === 'Department' ? 'Call Queue' :
                                 ext.type === 'Announcement' ? 'Announcement Only' :
                                 ext.type === 'Voicemail' ? 'Message Only' : ext.type;
 
-            const badgeColor = ext.type === 'IvrMenu' ? 'bg-cyan-100 text-cyan-700' : 
-                               ext.type === 'Department' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700';
+            let badgeColor = 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+            if (ext.type === 'IvrMenu') badgeColor = 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800';
+            else if (ext.type === 'Department') badgeColor = 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
 
             const siteName = ext.site?.name || 'Main Site';
 
             tr.innerHTML = `
                 <td class="px-4 py-3 text-center">
-                    <input type="checkbox" class="row-cb h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-id="${ext.id}" ${isChecked ? 'checked' : ''}>
+                    <input type="checkbox" class="row-cb h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-id="${ext.id}" ${isChecked ? 'checked' : ''}>
                 </td>
-                <td class="px-4 py-3 font-semibold text-gray-800">${ext.name || 'Unnamed'}</td>
-                <td class="px-4 py-3 text-gray-600">${ext.extensionNumber || 'N/A'}</td>
-                <td class="px-4 py-3"><span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${badgeColor}">${displayType}</span></td>
-                <td class="px-4 py-3 text-gray-600 text-xs">${siteName}</td>
+                <td class="px-4 py-3 font-semibold">${ext.name || 'Unnamed'}</td>
+                <td class="px-4 py-3 opacity-80">${ext.extensionNumber || 'N/A'}</td>
+                <td class="px-4 py-3"><span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide border shadow-sm ${badgeColor}">${displayType}</span></td>
+                <td class="px-4 py-3 opacity-80 text-xs">${siteName}</td>
                 <td class="px-4 py-3 text-right pr-6">
-                    <button class="expand-greet-btn text-gray-400 hover:text-blue-600 transition p-1 focus:outline-none" data-id="${ext.id}" title="View Configured Audio">
+                    <button class="expand-greet-btn text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-1 focus:outline-none" data-id="${ext.id}" title="View Configured Audio">
                         <svg class="w-5 h-5 inline-block transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                         </svg>
@@ -482,10 +481,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!icon) return;
             if (currentSortCol === col) {
                 icon.textContent = sortDirection === 'asc' ? '▲' : '▼';
-                icon.className = 'ml-0.5 text-blue-600 font-bold';
+                icon.className = 'ml-0.5 text-blue-600 dark:text-blue-400 font-bold';
             } else {
                 icon.textContent = '';
-                icon.className = 'ml-0.5 text-slate-400';
+                icon.className = 'ml-0.5 text-slate-400 dark:text-slate-500';
             }
         });
     }
@@ -496,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target.checked) selectedIds.add(id);
             else selectedIds.delete(id);
             
-            e.target.closest('tr').classList.toggle('bg-blue-50/50', e.target.checked);
+            e.target.closest('tr').classList.toggle('modified-row', e.target.checked);
             updateSelectionState();
         }
     });
@@ -508,7 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = cb.dataset.id;
             if (isChecked) selectedIds.add(id);
             else selectedIds.delete(id);
-            cb.closest('tr').classList.toggle('bg-blue-50/50', isChecked);
+            cb.closest('tr').classList.toggle('modified-row', isChecked);
         });
         updateSelectionState();
     });
@@ -572,10 +571,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const exportNote = document.getElementById('export-note-ui');
         if (toggleIgnoreDefaults.checked) {
             exportNote.innerHTML = "<strong>Note:</strong> Custom Only mode is ENABLED. System presets will be entirely ignored in the ZIP output and CSV log.";
-            exportNote.className = "text-xs text-blue-700 bg-blue-50 p-2 border border-blue-200 rounded";
+            exportNote.className = "text-xs text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 border border-blue-200 dark:border-blue-800 rounded-lg shadow-inner";
         } else {
             exportNote.innerHTML = "<strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.";
-            exportNote.className = "text-xs text-gray-500 bg-gray-50 p-2 border border-gray-200 rounded";
+            exportNote.className = "text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-700 rounded-lg shadow-inner";
         }
     });
 
@@ -592,18 +591,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isHidden) {
                     subRow.classList.remove('hidden');
                     icon.classList.add('rotate-180');
-                    tr.classList.add('bg-gray-50');
+                    tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50');
                 } else {
                     subRow.classList.add('hidden');
                     icon.classList.remove('rotate-180');
-                    tr.classList.remove('bg-gray-50');
+                    tr.classList.remove('bg-slate-50', 'dark:bg-slate-800/50');
                 }
                 return;
             }
 
             const controlCell = tr.querySelector('td:last-child');
             const origCellHTML = controlCell.innerHTML;
-            controlCell.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500 mr-4"></i>';
+            controlCell.innerHTML = '<div class="spinner w-4 h-4 text-blue-500 mr-4 ml-auto"></div>';
             
             try {
                 const res = await fetch(`/api/message_management/greetings/${extId}`);
@@ -614,19 +613,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (restoredBtn) {
                     restoredBtn.querySelector('svg').classList.add('rotate-180');
                 }
-                tr.classList.add('bg-gray-50');
+                tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50');
 
                 subRow = document.createElement('tr');
                 subRow.id = `subrow-${extId}`;
-                subRow.className = 'bg-gray-50 border-b border-gray-200 shadow-inner';
+                subRow.className = 'bg-slate-50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700 shadow-inner';
                 
                 let innerHTML = `<td colspan="6" class="p-0">
-                    <div class="p-5 pl-14 bg-slate-50 border-t border-slate-200">
-                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Configured Audio Mappings</h4>
+                    <div class="p-5 pl-14 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700">
+                        <h4 class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-3">Configured Audio Mappings</h4>
                     `;
 
                 if (res.ok && data.status === 'NotActivated') {
-                    innerHTML += `<p class="text-sm text-amber-600 font-semibold py-4 flex items-center gap-1">⚠️ This extension is currently not activated in RingCentral. Custom audio files and announcements cannot be loaded, played back, or mapped until activation is complete.</p>`;
+                    innerHTML += `<p class="text-sm text-amber-600 dark:text-amber-500 font-semibold py-4 flex items-center gap-1">⚠️ This extension is currently not activated in RingCentral. Custom audio files and announcements cannot be loaded, played back, or mapped until activation is complete.</p>`;
                 } else if (res.ok && data.records && data.records.length > 0) {
                     
                     const ignoreDefaults = toggleIgnoreDefaults.checked;
@@ -636,58 +635,58 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (displayRecords.length === 0) {
-                        innerHTML += `<p class="text-sm text-gray-500 italic py-2">No custom audio records returned for this endpoint.</p>`;
+                        innerHTML += `<p class="text-sm text-slate-500 dark:text-slate-400 italic py-2">No custom audio records returned for this endpoint.</p>`;
                     } else {
-                        innerHTML += `<div class="overflow-hidden rounded border border-gray-200 bg-white">
+                        innerHTML += `<div class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                             <table class="min-w-full text-left text-sm">
-                                <thead class="bg-gray-100 text-xs text-gray-500">
+                                <thead class="bg-slate-100 dark:bg-slate-700/50 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                                     <tr>
-                                        <th class="px-4 py-2">Answering Rule / Context</th>
-                                        <th class="px-4 py-2">Greeting Type</th>
-                                        <th class="px-4 py-2">Source</th>
-                                        <th class="px-4 py-2">Name / Description</th>
-                                        <th class="px-4 py-2 text-right pr-4">Playback & Export</th>
+                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Answering Rule / Context</th>
+                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Greeting Type</th>
+                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Source</th>
+                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Name / Description</th>
+                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide text-right pr-4">Playback & Export</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-gray-100">`;
+                                <tbody class="divide-y divide-slate-100 dark:divide-slate-700">`;
                         
                         displayRecords.forEach(g => {
                             const isCustom = g.is_custom;
                             const sourceBadge = isCustom 
-                                ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 shadow-sm">Custom Audio</span>'
-                                : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200 shadow-sm">Default / System</span>';
+                                ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800 shadow-sm">Custom Audio</span>'
+                                : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 shadow-sm">Default / System</span>';
                             
                             const isIvrPrompt = g.type === 'IvrPrompt';
                             const ruleContextName = g.rule_name || 'IVR Library';
                             
                             let nameDisplay = g.name;
                             if (!isCustom && isIvrPrompt) {
-                                nameDisplay = `<span class="italic text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md border font-mono">💬 "${g.name}"</span>`;
+                                nameDisplay = `<span class="italic text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-600 font-mono shadow-sm">💬 "${g.name}"</span>`;
                             } else if (g.id === 'default') {
-                                nameDisplay = `<span class="text-gray-400 italic">System Factory Default Settings</span>`;
+                                nameDisplay = `<span class="text-slate-400 dark:text-slate-500 italic">System Factory Default Settings</span>`;
                             }
 
                             let mediaUrl = `/api/message_management/media/${extId}/${g.id}?is_ivr=${isIvrPrompt}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(g.type)}&preset_uri=${encodeURIComponent(g.preset_uri || '')}&text=${encodeURIComponent(g.name)}`;
 
                             let playbackBtn = `
-                                <div class="flex items-center justify-end gap-1">
-                                    <button class="play-audio-btn text-blue-600 hover:text-blue-900 transition focus:outline-none bg-blue-50 px-3 py-1.5 rounded border border-blue-200 font-medium text-xs flex items-center justify-center shadow-sm w-[90px]" 
+                                <div class="flex items-center justify-end gap-2">
+                                    <button class="play-audio-btn text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition focus:outline-none bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 font-bold text-xs flex items-center justify-center shadow-sm w-[90px]" 
                                             data-ext="${extId}" data-greet="${g.id}" data-custom="${isCustom}" data-ivr="${isIvrPrompt}" data-type="${g.type}" data-uri="${g.preset_uri || ''}" data-text="${encodeURIComponent(g.name)}">
-                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>
+                                        <svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>
                                     </button>
-                                    <a href="${mediaUrl}&download=true" class="text-emerald-600 hover:text-emerald-900 transition focus:outline-none bg-emerald-50 px-2 py-1.5 rounded border border-emerald-200 flex items-center justify-center shadow-sm" title="Download Audio File">
+                                    <a href="${mediaUrl}&download=true" class="text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300 transition focus:outline-none bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center justify-center shadow-sm" title="Download Audio File">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                                     </a>
                                 </div>
                             `;
 
                             innerHTML += `
-                                <tr class="hover:bg-gray-50 transition-colors">
-                                    <td class="px-4 py-2 text-slate-500 font-medium">${ruleContextName}</td>
-                                    <td class="px-4 py-2 font-semibold text-gray-700">${g.type}</td>
-                                    <td class="px-4 py-2">${sourceBadge}</td>
-                                    <td class="px-4 py-2 text-gray-600 max-w-md truncate" title="${g.name}">${nameDisplay}</td>
-                                    <td class="px-4 py-2">${playbackBtn}</td>
+                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                    <td class="px-4 py-3 text-slate-500 dark:text-slate-400 font-medium">${ruleContextName}</td>
+                                    <td class="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">${g.type}</td>
+                                    <td class="px-4 py-3">${sourceBadge}</td>
+                                    <td class="px-4 py-3 text-slate-600 dark:text-slate-300 max-w-md truncate" title="${g.name}">${nameDisplay}</td>
+                                    <td class="px-4 py-3">${playbackBtn}</td>
                                 </tr>
                             `;
                         });
@@ -695,7 +694,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         innerHTML += `</tbody></table></div>`;
                     }
                 } else {
-                    innerHTML += `<p class="text-sm text-gray-500 italic py-2">No custom or default audio records returned for this endpoint.</p>`;
+                    innerHTML += `<p class="text-sm text-slate-500 dark:text-slate-400 italic py-2">No custom or default audio records returned for this endpoint.</p>`;
                 }
                 
                 innerHTML += `</div></td>`;
@@ -724,12 +723,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (currentlyPlayingBtn && currentlyPlayingBtn !== playBtn) {
-                currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
+                currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
                 currentlyPlayingBtn.classList.remove('animate-pulse');
             }
 
             currentlyPlayingBtn = playBtn;
-            playBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-[10px]"></i> <span class="text-[11px] font-mono ml-1">Buffering...</span>';
+            playBtn.innerHTML = '<div class="spinner w-3 h-3 mr-1.5 border-blue-600 dark:border-blue-400 border-t-transparent"></div> <span class="text-[11px] font-mono">Buffering...</span>';
             
             audioPlayer.src = `/api/message_management/media/${extId}/${greetId}?is_ivr=${isIvr}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(gType)}&preset_uri=${presetUri}&text=${encodeURIComponent(gText)}`;
             audioPlayer.play().catch(e => {
@@ -744,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentlyPlayingBtn && audioPlayer.duration) {
             const pct = Math.round((audioPlayer.currentTime / audioPlayer.duration) * 100);
             currentlyPlayingBtn.innerHTML = `
-                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg> 
+                <svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg> 
                 <span class="font-mono text-[10px]">Pause (${pct}%)</span>
             `;
         }
@@ -752,14 +751,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     audioPlayer.addEventListener('pause', () => {
         if (currentlyPlayingBtn) {
-            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
+            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
             currentlyPlayingBtn.classList.remove('animate-pulse');
         }
     });
 
     audioPlayer.addEventListener('ended', () => {
         if (currentlyPlayingBtn) {
-            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
+            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
             currentlyPlayingBtn.classList.remove('animate-pulse');
             currentlyPlayingBtn = null;
         }
@@ -1023,5 +1022,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
 });
 </script>
-
-}
