@@ -1,53 +1,41 @@
-<div class="space-y-6 animate-fade-in w-full">
+<div class="space-y-8 animate-fade-in w-full">
     
-    <div class="text-center mb-8 border-b border-slate-200 dark:border-slate-700 pb-6">
-        <h2 class="text-heading mb-1">Notification Manager</h2>
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Notification Manager</h2>
         <p class="text-subheading">Audit, template, and bulk update advanced notification settings for Users and Queues.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
         
-        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
-            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
+        <div class="card flex flex-col h-full hover:-translate-y-1">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-xl shadow-sm">1</div>
+                <h3 class="text-heading text-lg">Audit Notifications</h3>
             </div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Audit Notifications</h3>
-            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
-                Generate a comprehensive CSV report. Separates global queue emails from specific user setting emails.
-            </p>
-            <button id="btn-audit-start" class="w-full bg-transparent border-2 border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 transition-colors shadow-sm">
+            <p class="text-subheading mb-8 flex-grow">Generate a comprehensive CSV report. Separates global queue emails from specific user setting emails.</p>
+            <button id="btn-audit-start" class="btn-primary w-full !py-3.5">
                 Generate Report
             </button>
         </div>
 
-        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
-            <div class="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
+        <div class="card flex flex-col h-full hover:-translate-y-1">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-xl shadow-sm">2</div>
+                <h3 class="text-heading text-lg">Get Template</h3>
             </div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Get Template</h3>
-            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
-                Download a blank CSV template. Includes clear examples for both Basic Queues and Advanced Users.
-            </p>
-            <button id="btn-download-template" class="w-full bg-transparent border-2 border-green-600 dark:border-green-500 text-green-600 dark:text-green-500 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white dark:hover:bg-green-500 transition-colors shadow-sm">
+            <p class="text-subheading mb-8 flex-grow">Download a blank CSV template. Includes clear examples for both Basic Queues and Advanced Users.</p>
+            <button id="btn-download-template" class="btn-secondary w-full !py-3.5">
                 Download Blank Template
             </button>
         </div>
 
-        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
-            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+        <div class="card flex flex-col h-full hover:-translate-y-1">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black text-xl shadow-sm">3</div>
+                <h3 class="text-heading text-lg">Update Notifications</h3>
             </div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Update Notifications</h3>
-            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
-                Upload your CSV. System automatically applies global emails for Basic mode and specific emails for Advanced mode.
-            </p>
-            <label class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-500 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer shadow-sm">
+            <p class="text-subheading mb-8 flex-grow">Upload your CSV. System automatically applies global emails for Basic mode and specific emails for Advanced mode.</p>
+            <label class="btn-primary !bg-purple-600 hover:!bg-purple-700 w-full !py-3.5 cursor-pointer block text-center">
                 Upload to Update
                 <input type="file" id="file-upload" class="hidden" accept=".csv">
             </label>
@@ -55,23 +43,23 @@
 
     </div>
 
-    <div id="status-container" class="mt-6 hidden card !p-5 bg-slate-50 dark:bg-slate-800/50">
-        <div class="flex justify-between items-center mb-3">
-            <strong id="status-text" class="text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide">Processing...</strong>
-            <button id="btn-stop" class="text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-3 py-1 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition border border-red-200 dark:border-red-800">STOP</button>
+    <div id="status-container" class="mt-8 hidden card !p-6 bg-slate-50/50 dark:bg-slate-900/30 border-0 shadow-md w-full">
+        <div class="flex justify-between items-center mb-4">
+            <strong id="status-text" class="text-heading text-lg">Processing...</strong>
+            <button id="btn-stop" class="btn-danger !py-1.5 !px-4 text-xs tracking-wider uppercase">Stop Process</button>
         </div>
-        <div class="w-full bg-slate-300 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
-            <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner">
+            <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
     </div>
 
-    <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg mt-8 !p-0 overflow-hidden border-slate-700 w-full">
-        <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
-            <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
-            <button onclick="document.getElementById('notifications-log').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
+    <div class="card bg-slate-900 dark:bg-[#0b1120] text-white shadow-xl mt-8 !p-0 overflow-hidden border-slate-800 w-full">
+        <div class="bg-slate-800/80 border-b border-slate-700 px-6 py-4 flex justify-between items-center">
+            <span class="font-mono font-bold text-xs tracking-widest text-slate-300">SYSTEM LOGS</span>
+            <button onclick="document.getElementById('notifications-log').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors font-bold">Clear</button>
         </div>
-        <div id="notifications-log" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-slate-300 shadow-inner">
-            Ready for action...
+        <div id="notifications-log" class="p-6 font-mono text-xs h-64 overflow-y-auto whitespace-pre-line text-slate-400 shadow-inner outline-none">
+            <div class="italic opacity-50">Ready for action...</div>
         </div>
     </div>
 
@@ -85,9 +73,10 @@
     const progressBar = document.getElementById('progress-bar');
 
     function log(msg, type='info') {
+        if (logBox.children.length === 1 && logBox.children[0].classList.contains('italic')) logBox.innerHTML = '';
         const entry = document.createElement('div');
-        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
-        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        entry.className = type === 'error' ? 'text-rose-400 font-bold mb-1' : (type === 'success' ? 'text-emerald-400 font-bold mb-1' : 'text-blue-300 mb-1');
+        entry.innerHTML = `<span class="text-slate-600 font-medium mr-2 select-none">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
         logBox.appendChild(entry);
         logBox.scrollTop = logBox.scrollHeight;
     }
@@ -175,7 +164,7 @@
         }
     });
 
-    // --- 2. TEMPLATE (Clarified Structure) ---
+    // --- 2. TEMPLATE ---
     document.getElementById('btn-download-template').addEventListener('click', () => {
         const template = [
             { 
@@ -251,19 +240,14 @@
             updateStatus(true, `Updating (${i+1}/${tasks.length}): ID ${extId}`, Math.round(((i+1)/tasks.length)*100));
             
             try {
-                // Map CSV to Payload
                 const payload = { 
                     id: extId,
                     advanced_mode: task['Advanced Mode'],
                     global_emails: task['Global Emails'],
-                    
-                    // Toggles
                     enable_vm: task['Enable Voicemail'],
                     enable_missed: task['Enable MissedCalls'],
                     enable_fax: task['Enable Faxes'],
                     enable_sms: task['Enable SMS'],
-                    
-                    // Specific Emails
                     vm_emails: task['Voicemail Emails'],
                     fax_emails: task['Fax Emails'],
                     sms_emails: task['SMS Emails'],
@@ -278,12 +262,12 @@
                 const resJson = await resp.json();
                 
                 if (resJson.status === 'success') {
-                    log(`✅ Updated ID ${extId}`, "success");
+                    log(`Updated ID ${extId}`, "success");
                 } else {
-                    log(`❌ Failed ID ${extId}: ${resJson.message}`, "error");
+                    log(`Failed ID ${extId}: ${resJson.message}`, "error");
                 }
             } catch (err) {
-                log(`❌ Error ID ${extId}: ${err.message}`, "error");
+                log(`Error ID ${extId}: ${err.message}`, "error");
             }
         }
         isRunning = false;
@@ -293,6 +277,6 @@
 
     document.getElementById('btn-stop').addEventListener('click', () => {
         isRunning = false;
-        log("Stopping...", "error");
+        log("Stopping requested by user...", "error");
     });
 </script>
