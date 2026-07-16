@@ -1,106 +1,122 @@
-<div class="container-fluid mt-3">
-    <h4>Multi-User Personal Address Book Updater</h4>
-    <p>Centrally manage personal contacts for multiple users. Fetch users, select them, then view and manage their combined contact list.</p>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+        <h2 class="text-heading mb-1">Multi-User Personal Address Book Updater</h2>
+        <p class="text-subheading">Centrally manage personal contacts for multiple users. Fetch users, select them, then view and manage their combined contact list.</p>
+    </div>
 
-    <div class="card">
-        <div class="card-header">
-            <strong>Step 1: Select Users</strong>
+    <div class="card !p-6 w-full">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-2 mb-4">Step 1: Select Users</h3>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-5 items-end">
+            <div>
+                <label class="input-label">Name</label>
+                <input type="text" class="input-field" id="pab-filter-name" placeholder="First/Last Name...">
+            </div>
+            <div>
+                <label class="input-label">Extension</label>
+                <input type="text" class="input-field" id="pab-filter-ext" placeholder="Extension No...">
+            </div>
+            <div>
+                <label class="input-label">Department</label>
+                <input type="text" class="input-field" id="pab-filter-dept" placeholder="Department...">
+            </div>
+            <div>
+                <label class="input-label">Site</label>
+                <input type="text" class="input-field" id="pab-filter-site" placeholder="Site...">
+            </div>
+            <div class="sm:col-span-2 lg:col-span-2 flex gap-3 h-[46px]">
+                <button class="btn-primary flex-1 whitespace-nowrap !px-2" id="pab-fetch-users-btn">
+                    <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    Fetch Users
+                </button>
+                <button class="btn-success flex-1 whitespace-nowrap !px-2 disabled:opacity-50 disabled:cursor-not-allowed" id="pab-get-contacts-btn" disabled>
+                    <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2"></path></svg>
+                    Get Contacts
+                </button>
+            </div>
         </div>
-        <div class="card-body">
-            <div class="row mb-3">
-                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-name" placeholder="First/Last Name..."></div>
-                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-ext" placeholder="Extension No..."></div>
-                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-dept" placeholder="Department..."></div>
-                <div class="col-md-2"><input type="text" class="form-control" id="pab-filter-site" placeholder="Site..."></div>
-                <div class="col-md-4">
-                    <button class="btn btn-primary" id="pab-fetch-users-btn">
-                        <i class="fas fa-users"></i> Fetch All Users
-                    </button>
-                    <button class="btn btn-success" id="pab-get-contacts-btn" disabled>
-                        <i class="fas fa-address-book"></i> Get Contacts for Selected
-                    </button>
-                </div>
-            </div>
-            <div id="pab-user-list-container" class="table-responsive" style="max-height: 300px; overflow-y: auto;">
-                <table class="table table-sm table-striped table-hover">
-                    <thead class="table-dark" style="position: sticky; top: 0;">
-                        <tr>
-                            <th><input type="checkbox" id="pab-select-all-users"></th>
-                            <th>Name</th>
-                            <th>Extension</th>
-                            <th>Department</th>
-                            <th>Site</th>
-                            <th>Email</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pab-user-list-tbody">
-                        </tbody>
-                </table>
-            </div>
-            <div id="pab-user-loader" class="text-center my-3" style="display: none;">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p>Fetching users...</p>
-            </div>
+
+        <div id="pab-user-list-container" class="overflow-x-auto w-full max-h-[300px] border border-slate-200 dark:border-slate-700 rounded-lg">
+            <table class="data-table w-full">
+                <thead class="sticky top-0 z-10 shadow-sm bg-slate-100 dark:bg-slate-800">
+                    <tr>
+                        <th class="w-12 text-center"><input type="checkbox" id="pab-select-all-users" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"></th>
+                        <th>Name</th>
+                        <th>Extension</th>
+                        <th>Department</th>
+                        <th>Site</th>
+                        <th>Email</th>
+                    </tr>
+                </thead>
+                <tbody id="pab-user-list-tbody" class="divide-y divide-slate-100 dark:divide-slate-700">
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">Click 'Fetch Users' to begin.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="pab-user-loader" class="text-center my-6 hidden">
+            <div class="spinner border-blue-600 dark:border-blue-400 w-8 h-8 mx-auto mb-3"></div>
+            <p class="text-slate-600 dark:text-slate-400 font-medium">Fetching users...</p>
         </div>
     </div>
 
-    <div class="card mt-4" id="pab-contacts-section" style="display: none;">
-        <div class="card-header">
-            <strong>Step 2: Manage Contacts</strong>
+    <div class="card !p-6 w-full mt-6 hidden" id="pab-contacts-section">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-2 mb-5">Step 2: Manage Contacts</h3>
+        
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
+            <div class="flex items-center gap-3 w-full lg:w-auto">
+                <button class="btn-danger flex-1 lg:flex-none disabled:opacity-50 disabled:cursor-not-allowed" id="pab-delete-contacts-btn" disabled>
+                    <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Delete Selected
+                </button>
+                <button class="btn-secondary flex-1 lg:flex-none" id="pab-export-csv-btn">
+                    <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Export Unique Contacts
+                </button>
+            </div>
+            <div class="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                <input type="file" id="pab-csv-upload-input" accept=".csv" class="file-input !mb-0 !w-full sm:!w-auto flex-1">
+                <select id="pab-upload-action" class="input-field !py-2 !w-full sm:!w-auto flex-1">
+                    <option value="add">Add</option>
+                    <option value="remove">Remove</option>
+                    <option value="update">Update (Sync)</option>
+                </select>
+                <button class="btn-primary !bg-amber-500 hover:!bg-amber-600 border-transparent text-white w-full sm:w-auto" id="pab-upload-csv-btn">
+                    <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Upload CSV
+                </button>
+            </div>
         </div>
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div>
-                    <button class="btn btn-danger" id="pab-delete-contacts-btn" disabled>
-                        <i class="fas fa-trash-alt"></i> Delete Selected Contacts
-                    </button>
-                    <button class="btn btn-info" id="pab-export-csv-btn">
-                        <i class="fas fa-file-csv"></i> Export Unique List to CSV
-                    </button>
-                </div>
-                <div class="d-flex align-items-center">
-                    <input class="form-control me-2" type="file" id="pab-csv-upload-input" accept=".csv">
-                    <select id="pab-upload-action" class="form-select me-2" style="width: auto;">
-                        <option value="add">Add</option>
-                        <option value="remove">Remove</option>
-                        <option value="update">Update (Sync)</option>
-                    </select>
-                    <button class="btn btn-warning" id="pab-upload-csv-btn">
-                        <i class="fas fa-upload"></i> Upload
-                    </button>
-                </div>
+
+        <div id="pab-contact-list-container" class="overflow-x-auto w-full max-h-[400px] border border-slate-200 dark:border-slate-700 rounded-lg">
+             <table class="data-table w-full">
+                <thead class="sticky top-0 z-10 shadow-sm bg-slate-100 dark:bg-slate-800">
+                    <tr>
+                        <th class="w-12 text-center"><input type="checkbox" id="pab-select-all-contacts" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"></th>
+                        <th>First Name</th>
+                        <th>Last Name</th>
+                        <th>Business Phone</th>
+                        <th>Home Phone</th>
+                        <th>Mobile Phone</th>
+                        <th>Email</th>
+                        <th>Associated Users</th>
+                    </tr>
+                </thead>
+                <tbody id="pab-contact-list-tbody" class="divide-y divide-slate-100 dark:divide-slate-700">
+                </tbody>
+            </table>
+        </div>
+
+        <div id="pab-contact-loader" class="text-center my-6 hidden">
+            <div class="spinner border-green-600 dark:border-green-400 w-8 h-8 mx-auto mb-3"></div>
+            <p id="pab-contact-loader-text" class="text-slate-600 dark:text-slate-400 font-medium">Fetching contacts...</p>
+        </div>
+
+        <div id="pab-progress-container" class="my-6 hidden bg-slate-50 dark:bg-slate-800/50 p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
+            <div class="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 mb-2 uppercase tracking-wide">
+                <span id="pab-progress-label">Uploading contacts...</span>
             </div>
-            <div id="pab-contact-list-container" class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                 <table class="table table-sm table-striped table-hover">
-                    <thead class="table-dark" style="position: sticky; top: 0;">
-                        <tr>
-                            <th><input type="checkbox" id="pab-select-all-contacts"></th>
-                            <th>First Name</th>
-                            <th>Last Name</th>
-                            <th>Business Phone</th>
-                            <th>Home Phone</th>
-                            <th>Mobile Phone</th>
-                            <th>Email</th>
-                            <th>Associated Users</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pab-contact-list-tbody">
-                        </tbody>
-                </table>
-            </div>
-             <div id="pab-contact-loader" class="text-center my-3" style="display: none;">
-                <div class="spinner-border text-success" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p id="pab-contact-loader-text">Fetching contacts...</p>
-            </div>
-            <div id="pab-progress-container" class="my-3" style="display: none;">
-                <p id="pab-progress-label">Uploading contacts...</p>
-                <div class="progress" role="progressbar" aria-label="Upload progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                    <div id="pab-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
-                </div>
+            <div class="w-full bg-slate-300 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                <div id="pab-progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%">0%</div>
             </div>
         </div>
     </div>
