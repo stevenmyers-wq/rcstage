@@ -4,75 +4,75 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/visualiser.css') }}">
 
-<div class="space-y-6 w-full animate-fade-in">
-    <div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
-        <h2 class="text-heading mb-1">Call Flow Visualiser</h2>
-        <p class="text-subheading">Enter a phone number to trace and visualize its complete routing path.</p>
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Call Flow Visualiser</h2>
+        <p class="text-subheading">Enter a phone number to trace and visualize its complete routing path natively.</p>
     </div>
 
-    <div class="card space-y-4 w-full">
-        <h4 class="text-lg font-semibold text-slate-800 dark:text-slate-100">1. Select Entry Point</h4>
+    <div class="card w-full z-20">
+        <h4 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">1. Select Entry Point</h4>
         <div class="flex flex-col md:flex-row gap-4 items-center">
-            <div class="relative w-full flex-1">
+            <div class="relative w-full flex-1 input-wrapper">
                 <input type="text" id="visualiser-search-input"
-                    class="input-field w-full"
+                    class="input-field"
                     placeholder="Loading account data…" autocomplete="off" disabled />
                 <div id="search-results-container"
-                    class="hidden absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
+                    class="hidden absolute left-0 right-0 top-[calc(100%+0.5rem)] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 max-h-72 overflow-y-auto">
                 </div>
             </div>
-            <button type="button" id="visualize-button" disabled class="btn-primary w-full md:w-auto px-8 h-[46px]">
+            <button type="button" id="visualize-button" disabled class="btn-primary w-full md:w-auto px-10 !py-3.5">
                 Visualize
             </button>
         </div>
-        <p id="loading-indicator" class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-            <span class="spinner w-3 h-3 border-2"></span> Loading account data…
+        <p id="loading-indicator" class="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-3 flex items-center gap-2">
+            <span class="spinner w-4 h-4 border-blue-600 dark:border-blue-400"></span> Loading account data…
         </p>
     </div>
 
-    <div class="card !p-0 overflow-hidden w-full flex flex-col">
-        <div class="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h4 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Call Flow Diagram</h4>
-            <button id="btn-print" class="hidden btn-secondary !py-1.5 !px-3 text-xs print:hidden">
+    <div class="card !p-0 overflow-hidden w-full flex flex-col border-0 shadow-lg z-10">
+        <div class="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h4 class="text-heading text-lg">2. Call Flow Diagram</h4>
+            <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold print:hidden">
                 🖨 Print / Save PDF
             </button>
         </div>
 
-        <div class="flex flex-wrap gap-x-4 gap-y-2 p-4 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 print:hidden items-center">
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-blue-500"></div>Phone Number</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-purple-600"></div>Auto Receptionist</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-cyan-600"></div>IVR Menu</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-amber-500"></div>Call Queue</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-emerald-600"></div>User / Agent</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-gray-500"></div>Voicemail</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-red-600"></div>External Transfer</div>
-            <div class="text-slate-400 dark:text-slate-500 ml-auto italic">Hover node to preview · Click to pin · Drag pinned panel</div>
+        <div class="flex flex-wrap gap-x-5 gap-y-3 p-5 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 print:hidden items-center">
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-blue-500"></div>Phone Number</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-purple-500"></div>Auto Receptionist</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-cyan-500"></div>IVR Menu</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-amber-500"></div>Call Queue</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-emerald-500"></div>User / Agent</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-slate-500"></div>Voicemail</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-rose-500"></div>External Transfer</div>
+            <div class="text-slate-400 dark:text-slate-500 ml-auto normal-case font-medium tracking-normal italic">Hover node to preview · Click to pin · Drag pinned panel</div>
         </div>
 
-        <div id="diagram-wrapper" class="relative w-full" style="min-height: 600px;">
-            <div id="call-flow-diagram" class="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900/50">
+        <div id="diagram-wrapper" class="relative w-full bg-slate-50/50 dark:bg-slate-900/30" style="min-height: 700px;">
+            <div id="call-flow-diagram" class="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium italic">
                 <span>Select an entry point above and click Visualize.</span>
             </div>
 
-            <div id="zoom-controls" class="absolute bottom-4 right-4 z-10 bg-white/90 dark:bg-slate-800/90 p-1.5 rounded-lg shadow-md border border-slate-200 dark:border-slate-600 flex gap-1 hidden backdrop-blur-sm print:hidden">
-                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors" id="btn-zoom-in" title="Zoom In">+</button>
-                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors" id="btn-zoom-out" title="Zoom Out">−</button>
-                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors" id="btn-reset" title="Fit to screen">⟲</button>
-                <div class="w-px h-6 bg-slate-300 dark:bg-slate-600 my-auto mx-1"></div>
-                <button class="px-3 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 text-xs font-bold transition-colors" id="btn-save-png" title="Download PNG">💾 PNG</button>
+            <div id="zoom-controls" class="absolute bottom-5 right-5 z-10 bg-white/90 dark:bg-slate-800/90 p-2 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex gap-1.5 hidden backdrop-blur-md print:hidden">
+                <button class="w-9 h-9 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors shadow-sm" id="btn-zoom-in" title="Zoom In">+</button>
+                <button class="w-9 h-9 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors shadow-sm" id="btn-zoom-out" title="Zoom Out">−</button>
+                <button class="w-9 h-9 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors shadow-sm" id="btn-reset" title="Fit to screen">⟲</button>
+                <div class="w-px h-7 bg-slate-200 dark:bg-slate-700 my-auto mx-2"></div>
+                <button class="px-4 h-9 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 text-xs font-bold transition-colors shadow-sm" id="btn-save-png" title="Download PNG">💾 PNG</button>
             </div>
         </div>
 
-        <div class="p-4 bg-blue-50 dark:bg-blue-900/20 text-sm text-slate-600 dark:text-slate-400 border-t border-blue-100 dark:border-blue-800 print:hidden">
+        <div class="p-4 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-800 dark:text-blue-300 border-t border-blue-100 dark:border-blue-800/50 print:hidden font-medium">
             💡 <strong>Hover</strong> a node to preview details · <strong>Click</strong> to pin a detail panel · <strong>Drag</strong> pinned panels to reposition · Pinned panels appear in print
         </div>
     </div>
 
-    <div class="card !p-0 overflow-hidden w-full print:hidden">
-        <div class="p-4 bg-slate-900 dark:bg-slate-950 border-b border-slate-700 flex justify-between items-center">
-            <h4 class="font-mono font-bold text-sm text-white">3. Live API Debug Log</h4>
+    <div class="card !p-0 overflow-hidden w-full print:hidden border-slate-800 shadow-xl bg-slate-900 dark:bg-[#0b1120]">
+        <div class="p-5 bg-slate-800 dark:bg-slate-900 border-b border-slate-700 flex justify-between items-center">
+            <h4 class="font-mono font-bold text-xs tracking-widest text-slate-300">3. LIVE API DEBUG LOG</h4>
         </div>
-        <div id="api-log-container" class="p-4 bg-slate-800 dark:bg-slate-900 text-green-400 font-mono text-xs h-64 overflow-y-auto leading-relaxed shadow-inner">
+        <div id="api-log-container" class="p-6 text-emerald-400 font-mono text-xs h-64 overflow-y-auto leading-relaxed outline-none">
             <div class="text-slate-500 italic">Awaiting execution...</div>
         </div>
     </div>
@@ -86,14 +86,14 @@
 
     const COLOURS = {
         phone:            { bg: '#3b82f6', border: '#1d4ed8' },
-        autoreceptionist: { bg: '#7c3aed', border: '#5b21b6' },
-        ivr:              { bg: '#0891b2', border: '#0e7490' },
-        queue:            { bg: '#d97706', border: '#92400e' },
-        user:             { bg: '#059669', border: '#065f46' },
-        voicemail:        { bg: '#6b7280', border: '#374151' },
-        external:         { bg: '#dc2626', border: '#991b1b' },
-        site:             { bg: '#475569', border: '#1e293b' },
-        unknown:          { bg: '#e5e7eb', border: '#9ca3af' },
+        autoreceptionist: { bg: '#8b5cf6', border: '#6d28d9' },
+        ivr:              { bg: '#06b6d4', border: '#0891b2' },
+        queue:            { bg: '#f59e0b', border: '#b45309' },
+        user:             { bg: '#10b981', border: '#047857' },
+        voicemail:        { bg: '#64748b', border: '#475569' },
+        external:         { bg: '#f43f5e', border: '#be123c' },
+        site:             { bg: '#334155', border: '#0f172a' },
+        unknown:          { bg: '#94a3b8', border: '#475569' },
     };
 
     let selectedId   = null;
@@ -124,12 +124,12 @@
                 searchInput.disabled = false;
             } else {
                 loadingEl.textContent = 'Error: ' + (data.message || 'Failed.');
-                loadingEl.classList.add('text-red-500');
+                loadingEl.classList.add('text-rose-500');
             }
         })
         .catch(() => {
             loadingEl.textContent = 'Connection failed.';
-            loadingEl.classList.add('text-red-500');
+            loadingEl.classList.add('text-rose-500');
         });
 
     // ── Search ───────────────────────────────────────────────────────
@@ -150,13 +150,13 @@
     function renderDropdown(results) {
         resultsList.innerHTML = '';
         if (!results.length) {
-            resultsList.innerHTML = '<div class="p-3 text-sm text-slate-500 dark:text-slate-400">No results.</div>';
+            resultsList.innerHTML = '<div class="p-4 text-sm text-slate-500 font-medium">No results.</div>';
             resultsList.classList.remove('hidden');
             return;
         }
         results.forEach(item => {
             const div = document.createElement('div');
-            div.className = 'px-4 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm text-slate-800 dark:text-slate-200 transition-colors';
+            div.className = 'px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm font-medium text-slate-800 dark:text-slate-200 transition-colors';
             div.textContent = item.text;
             div.addEventListener('click', () => {
                 searchInput.value = item.text;
@@ -180,7 +180,7 @@
         const raw = nodeData.tooltip || '';
         if (!raw) {
             const p = document.createElement('p');
-            p.className = 'tip-empty';
+            p.className = 'tip-empty text-slate-400 italic';
             p.textContent = 'No additional detail.';
             frag.appendChild(p);
             return frag;
@@ -189,12 +189,12 @@
             const lines = section.split('\n').filter(l => l.trim());
             if (!lines.length) return;
             const h = document.createElement('div');
-            h.className = 'tip-header';
+            h.className = 'tip-header font-bold text-white mb-1 mt-3 first:mt-0';
             h.textContent = lines[0];
             frag.appendChild(h);
             lines.slice(1).forEach(line => {
                 const d = document.createElement('div');
-                d.className = 'tip-item';
+                d.className = 'tip-item text-slate-300 ml-2 mb-0.5';
                 d.textContent = '· ' + line.trim();
                 frag.appendChild(d);
             });
@@ -208,7 +208,7 @@
         if (!nodeData.tooltip) return;
 
         hoverPreview = document.createElement('div');
-        hoverPreview.className = 'detail-panel hover-preview bg-slate-900 border border-slate-700 shadow-2xl z-[999] text-white opacity-95';
+        hoverPreview.className = 'detail-panel hover-preview absolute bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-xl p-4 text-xs z-[999] pointer-events-none opacity-100 max-w-sm max-h-80 overflow-y-auto whitespace-pre-wrap leading-relaxed';
         hoverPreview.appendChild(buildPanelContent(nodeData));
         wrapper.appendChild(hoverPreview);
         positionNearCursor(hoverPreview, clientX, clientY);
@@ -224,12 +224,12 @@
 
     function positionNearCursor(el, clientX, clientY) {
         const parentRect = wrapper.getBoundingClientRect();
-        const W = el.offsetWidth  || 260;
-        const H = el.offsetHeight || 160;
+        const W = el.offsetWidth  || 280;
+        const H = el.offsetHeight || 180;
         let x = clientX - parentRect.left + 16;
         let y = clientY - parentRect.top  + 16;
-        if (x + W > parentRect.width)  x = clientX - parentRect.left - W - 8;
-        if (y + H > parentRect.height) y = clientY - parentRect.top  - H - 8;
+        if (x + W > parentRect.width)  x = clientX - parentRect.left - W - 16;
+        if (y + H > parentRect.height) y = clientY - parentRect.top  - H - 16;
         el.style.left = Math.max(0, x) + 'px';
         el.style.top  = Math.max(0, y) + 'px';
     }
@@ -237,19 +237,19 @@
     // ── Pinned panels (persistent, draggable, multiple allowed) ──────
     function createPinnedPanel(nodeData, clientX, clientY) {
         const panel = document.createElement('div');
-        panel.className = 'detail-panel pinned-panel bg-slate-900 border border-slate-700 shadow-2xl z-50 text-white';
+        panel.className = 'detail-panel pinned-panel absolute bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-xl z-50 flex flex-col text-white max-w-sm';
 
         // Header
         const header = document.createElement('div');
-        header.className = 'detail-panel-header bg-slate-950 border-b border-slate-800 text-slate-100 flex justify-between items-center px-3 py-2 cursor-grab select-none rounded-t-lg';
+        header.className = 'detail-panel-header bg-slate-800/80 border-b border-slate-700 flex justify-between items-center px-4 py-3 cursor-grab select-none rounded-t-xl';
 
         const title = document.createElement('span');
-        title.className = 'detail-panel-title font-bold text-xs truncate max-w-[200px]';
+        title.className = 'detail-panel-title font-bold text-xs truncate max-w-[200px] text-white tracking-wide';
         title.textContent = (nodeData.label || '').split('\n')[0].replace('─────────────', '').trim();
         header.appendChild(title);
 
         const closeBtn = document.createElement('button');
-        closeBtn.className = 'detail-panel-close text-slate-400 hover:text-white transition';
+        closeBtn.className = 'detail-panel-close text-slate-400 hover:text-white transition font-bold text-lg leading-none';
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', () => {
             panel.remove();
@@ -260,7 +260,7 @@
 
         // Body
         const body = document.createElement('div');
-        body.className = 'detail-panel-body p-3 overflow-y-auto max-h-[40vh]';
+        body.className = 'detail-panel-body p-4 overflow-y-auto max-h-[40vh] text-xs leading-relaxed';
         body.appendChild(buildPanelContent(nodeData));
         panel.appendChild(body);
 
@@ -272,9 +272,9 @@
         const offset = pinnedPanels.length * 20; 
         let x = clientX - parentRect.left + 16 + offset;
         let y = clientY - parentRect.top  + 16 + offset;
-        const W = 260;
-        if (x + W > parentRect.width)  x = parentRect.width - W - 10;
-        if (y + 200 > parentRect.height) y = 10 + offset;
+        const W = 280;
+        if (x + W > parentRect.width)  x = parentRect.width - W - 16;
+        if (y + 200 > parentRect.height) y = 16 + offset;
         panel.style.left = Math.max(0, x) + 'px';
         panel.style.top  = Math.max(0, y) + 'px';
 
@@ -316,14 +316,11 @@
         removeHoverPreview();
 
         diagramDiv.innerHTML = `
-            <div class="flex flex-col items-center gap-3 text-slate-500 dark:text-slate-400">
-                <svg class="animate-spin h-10 w-10 text-purple-600 dark:text-purple-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
+            <div class="flex flex-col items-center gap-4 text-slate-500 dark:text-slate-400 font-medium">
+                <div class="spinner w-10 h-10 border-4 border-blue-600 dark:border-blue-400"></div>
                 <p>Tracing call flow — may take 15–30s for large accounts…</p>
             </div>`;
-        logDiv.innerHTML = '<div class="text-slate-400">Running API calls…</div>';
+        logDiv.innerHTML = '<div class="text-slate-500 italic">Running API calls…</div>';
 
         try {
             const res  = await fetch(`/api/rc/trace-flow/${selectedId}`);
@@ -335,7 +332,7 @@
                 throw new Error(data.message || 'Failed to generate flow.');
             }
         } catch (err) {
-            diagramDiv.innerHTML = `<div class="p-8 text-red-500 dark:text-red-400 font-semibold">${err.message}</div>`;
+            diagramDiv.innerHTML = `<div class="p-8 text-rose-500 font-bold bg-rose-50 dark:bg-rose-900/20 rounded-xl">${err.message}</div>`;
         } finally {
             vizBtn.disabled = false;
         }
@@ -345,7 +342,7 @@
     function renderGraph(graphData) {
         if (cy) { cy.destroy(); cy = null; }
         diagramDiv.innerHTML = '';
-        diagramDiv.style.minHeight = '600px';
+        diagramDiv.style.minHeight = '700px';
 
         const typeStyles = Object.entries(COLOURS).map(([type, c]) => ({
             selector: `node[type="${type}"]`,
@@ -362,19 +359,19 @@
                 selector: 'node',
                 style: {
                     'shape':              'round-rectangle',
-                    'corner-radius':      6,
-                    'width':              200,
+                    'corner-radius':      8,
+                    'width':              220,
                     'height':             'label',
-                    'padding':            '12px',
+                    'padding':            '14px',
                     'label':              'data(displayLabel)',
                     'text-valign':        'center',
                     'text-halign':        'center',
                     'text-wrap':          'wrap',
-                    'text-max-width':     '176px',
-                    'font-size':          '12px',
-                    'font-weight':        '400',
+                    'text-max-width':     '190px',
+                    'font-size':          '11px',
+                    'font-weight':        '700',
                     'font-family':        'Inter, system-ui, sans-serif',
-                    'color':              'rgba(255,255,255,0.95)',
+                    'color':              '#ffffff',
                     'border-width':       '2px',
                     'cursor':             'pointer',
                     'text-justification': 'center',
@@ -385,25 +382,26 @@
                 selector: 'edge',
                 style: {
                     'width':                         2,
-                    'line-color':                    isDark ? '#475569' : '#94a3b8',
-                    'target-arrow-color':            isDark ? '#475569' : '#94a3b8',
+                    'line-color':                    isDark ? '#334155' : '#cbd5e1',
+                    'target-arrow-color':            isDark ? '#334155' : '#cbd5e1',
                     'target-arrow-shape':            'triangle',
                     'curve-style':                   'unbundled-bezier',
                     'control-point-distances':       'data(cpd)',
                     'control-point-weights':         0.5,
                     'label':                         'data(label)',
-                    'font-size':                     '11px',
+                    'font-size':                     '10px',
                     'font-family':                   'Inter, system-ui, sans-serif',
-                    'font-weight':                   '500',
+                    'font-weight':                   '600',
                     'color':                         edgeColor,
                     'text-rotation':                 'none',
                     'text-background-color':         edgeBgColor,
                     'text-background-opacity':       1,
-                    'text-background-padding':       '3px 6px',
+                    'text-background-padding':       '4px 8px',
                     'text-background-shape':         'round-rectangle',
                     'text-border-color':             edgeBorderColor,
                     'text-border-width':             1,
-                    'text-border-opacity':           1,
+                    'text-wrap':                     'wrap',
+                    'text-max-width':                '160px'
                 },
             },
         ];
@@ -453,9 +451,9 @@
                 name:    'dagre',
                 rankDir: 'TB',
                 nodeSep: 80,
-                rankSep: 100,
+                rankSep: 120,
                 edgeSep: 30,
-                padding: 50,
+                padding: 60,
                 animate: false,
             },
             wheelSensitivity: 0.25,
@@ -501,7 +499,7 @@
         document.getElementById('btn-reset').onclick    = () => cy.fit(undefined, 50);
 
         document.getElementById('btn-save-png').onclick = () => {
-            const png = cy.png({ scale: 2, bg: isDark ? '#0f172a' : '#f8fafc', full: true });
+            const png = cy.png({ scale: 2, bg: isDark ? '#0b1120' : '#f8fafc', full: true });
             const a = document.createElement('a');
             a.href = png;
             a.download = 'call-flow-' + searchInput.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.png';
@@ -516,12 +514,12 @@
         if (!logs.length) return;
         logDiv.innerHTML = logs.map(l => {
             const ok  = l.status === 'SUCCESS';
-            const cls = ok ? 'text-green-400' : 'text-red-400';
-            let detail = `<span class="text-blue-300">${l.endpoint}</span>`;
-            if (!ok) detail += `<div class="pl-4 text-yellow-400">↳ ${l.status}${l.detail ? ': ' + l.detail : ''}</div>`;
-            return `<div class="mb-1 pb-1 border-b border-slate-700">
-                <span class="${cls}">${ok ? '✅' : '❌'} ${l.code} ${l.method}</span>
-                (${l.duration}) ${detail}
+            const cls = ok ? 'text-emerald-400' : 'text-rose-400 font-bold';
+            let detail = `<span class="text-blue-400/80">${l.endpoint}</span>`;
+            if (!ok) detail += `<div class="pl-5 text-amber-400 mt-1">↳ ${l.status}${l.detail ? ': ' + l.detail : ''}</div>`;
+            return `<div class="mb-2 pb-2 border-b border-slate-700/50">
+                <span class="${cls} mr-2">${ok ? '✅' : '❌'} ${l.code} ${l.method}</span>
+                <span class="text-slate-500 mr-2">(${l.duration})</span> ${detail}
             </div>`;
         }).join('');
         logDiv.scrollTop = logDiv.scrollHeight;
