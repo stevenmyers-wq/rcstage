@@ -1,16 +1,16 @@
-<div id="live-events-tab" class="flex flex-col h-full w-full animate-fade-in">
-    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
-        <h2 class="text-heading mb-1">Live Events Listener</h2>
+<div id="live-events-tab" class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Live Events Listener</h2>
         <p class="text-subheading">Real-time WebSocket subscription listener for tracking RingCentral events.</p>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <script src="{{ url_for('static', filename='js/live_events.js') }}" defer></script>
     
-    <div class="card !p-5 mb-6 w-full">
-        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Connection Controls</h3>
-        <div class="flex flex-col md:flex-row md:items-end gap-4 w-full">
-            <div class="flex-grow max-w-md">
+    <div class="card !p-6 w-full">
+        <h3 class="text-heading text-lg mb-6 border-b border-slate-100 dark:border-slate-800 pb-3">Connection Controls</h3>
+        <div class="flex flex-col xl:flex-row xl:items-end gap-6 w-full">
+            <div class="input-wrapper flex-grow max-w-md">
                 <label for="subscriptionType" class="input-label">Subscription Type:</label>
                 <select class="input-field" id="subscriptionType">
                     <option value="accountTelephony">Account Telephony Sessions</option>
@@ -20,73 +20,73 @@
                 </select>
             </div>
             
-            <div class="flex-grow max-w-sm" id="extensionIdInputContainer" style="display: none;">
+            <div class="input-wrapper flex-grow max-w-sm" id="extensionIdInputContainer" style="display: none;">
                 <label for="extensionId" class="input-label">Extension ID or Number:</label>
                 <input type="text" class="input-field" id="extensionId" placeholder="Enter Extension ID">
             </div>
 
-            <div class="flex items-center gap-3 mt-4 md:mt-0">
-                <button id="createSubscriptionBtn" class="btn-success whitespace-nowrap">
+            <div class="flex items-center gap-3">
+                <button id="createSubscriptionBtn" class="btn-success !py-3.5 whitespace-nowrap">
                     Start Listening
                 </button>
-                <button id="disconnectBtn" class="btn-danger whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <button id="disconnectBtn" class="btn-danger !py-3.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Disconnect
                 </button>
             </div>
             
-            <div class="ml-auto mt-4 md:mt-0 flex items-center mb-2">
+            <div class="xl:ml-auto flex items-center xl:mb-2">
                 <div id="connectionStatus">
-                    <span class="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full text-xs font-bold uppercase tracking-wider transition-colors shadow-sm">Status: Idle</span>
+                    <span class="badge badge-warning text-xs px-4 py-2">Status: Idle</span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow w-full">
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 flex-grow w-full">
         
-        <div class="card !p-5 flex flex-col h-full min-h-[500px]">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center">Raw Event Log</h3>
-                <div class="flex items-center gap-2 w-full sm:w-auto">
-                    <button id="saveLogBtn" class="btn-secondary !py-1.5 !px-3 text-sm flex-1 sm:flex-auto">Download</button>
-                    <button id="clearLogBtn" class="btn-secondary !py-1.5 !px-3 text-sm flex-1 sm:flex-auto">Clear</button>
+        <div class="card !p-0 flex flex-col h-full min-h-[600px] border-0 shadow-lg overflow-hidden">
+            <div class="p-6 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h3 class="text-heading text-lg">Raw Event Log</h3>
+                <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <button id="saveLogBtn" class="btn-secondary !py-2 !px-4 text-xs flex-1 sm:flex-auto">Download</button>
+                    <button id="clearLogBtn" class="btn-secondary !py-2 !px-4 text-xs flex-1 sm:flex-auto">Clear</button>
                 </div>
             </div>
-            <pre id="eventLog" class="flex-grow p-4 bg-slate-900 text-green-400 rounded-lg overflow-y-auto text-xs font-mono shadow-inner whitespace-pre-wrap h-[500px] outline-none"></pre>
+            <pre id="eventLog" class="flex-grow p-6 bg-slate-900 dark:bg-[#0b1120] text-emerald-400 overflow-y-auto text-xs font-mono shadow-inner whitespace-pre-wrap h-[600px] outline-none"></pre>
         </div>
 
-        <div class="card !p-5 flex flex-col h-full min-h-[500px]">
-            <div class="flex flex-col mb-4 gap-3">
-                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Visual SIP Ladder</h3>
-                
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <div class="flex items-center gap-2 flex-grow">
-                        <label for="callSelector" class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">Active Call:</label>
-                        <select id="callSelector" class="input-field !py-1.5 !text-sm">
+        <div class="card !p-0 flex flex-col h-full min-h-[600px] border-0 shadow-lg overflow-hidden">
+            <div class="p-6 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80 flex flex-col gap-4">
+                <h3 class="text-heading text-lg">Visual SIP Ladder</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="input-wrapper">
+                        <label for="callSelector" class="input-label">Active Call:</label>
+                        <select id="callSelector" class="input-field !py-2 !text-sm">
                             <option value="">-- No active calls --</option>
                         </select>
                     </div>
-                    <div class="flex items-center gap-2 flex-grow">
-                        <input type="text" id="ladderSearchInput" placeholder="Search calls by number or Session ID..." class="input-field !py-1.5 !text-sm">
+                    <div class="input-wrapper">
+                        <label class="input-label">&nbsp;</label>
+                        <input type="text" id="ladderSearchInput" placeholder="Search calls..." class="input-field !py-2 !text-sm">
                     </div>
                 </div>
             </div>
-            
-            <div class="flex-grow p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg overflow-auto flex items-center justify-center relative shadow-inner">
-                <div id="mermaidDiagram" class="w-full text-center text-slate-500 dark:text-slate-400 text-sm italic">
+            <div class="flex-grow p-6 bg-white dark:bg-slate-900 overflow-auto flex items-center justify-center shadow-inner">
+                <div id="mermaidDiagram" class="w-full text-center text-slate-400 dark:text-slate-500 font-medium italic">
                     Waiting for call events...
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="sipModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 transition-opacity duration-200">
-        <div class="bg-slate-900 rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-full border border-slate-700">
-            <div class="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-800 rounded-t-xl">
-                <h3 class="text-white font-mono font-bold text-lg" id="sipModalTitle">SIP Message</h3>
+    <!-- Modal -->
+    <div id="sipModal" class="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 transition-opacity duration-300">
+        <div class="card !p-0 w-full max-w-4xl flex flex-col max-h-full border-0 shadow-2xl">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-slate-700 bg-slate-800">
+                <h3 class="text-white font-mono font-bold tracking-widest text-sm" id="sipModalTitle">SIP Message</h3>
                 <button id="closeSipModalBtn" class="text-slate-400 hover:text-white text-2xl font-bold leading-none transition-colors">&times;</button>
             </div>
-            <pre id="sipModalContent" class="p-4 overflow-auto text-green-400 font-mono text-sm whitespace-pre-wrap outline-none"></pre>
+            <pre id="sipModalContent" class="p-6 overflow-auto text-emerald-400 bg-slate-900 font-mono text-xs whitespace-pre-wrap outline-none leading-relaxed"></pre>
         </div>
     </div>
 </div>
