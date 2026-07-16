@@ -1,31 +1,29 @@
 <audio id="remote-audio" hidden muted></audio>
 <audio id="local-audio" hidden></audio>
 
-<div class="container-fluid mt-3">
-    <div class="row">
-        <div class="col-12">
-            <h3 class="text-2xl font-bold text-gray-800">AI Demo Call Generator (Phase 1)</h3>
-            <p class="text-gray-500">Generate a script, render AI audio, and dial directly into RingEX.</p>
-        </div>
+<div class="w-full space-y-6">
+    <div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">AI Demo Call Generator (Phase 1)</h2>
+        <p class="text-subheading">Generate a script, render AI audio, and dial directly into RingEX.</p>
     </div>
 
-    <div class="row mt-4 flex flex-col md:flex-row gap-6">
-        <div class="w-full md:w-1/3 flex flex-col gap-4">
+    <div class="flex flex-col lg:flex-row gap-6 w-full">
+        
+        <div class="w-full lg:w-1/3 flex flex-col gap-6">
             
-            <div class="bg-white rounded-lg shadow-md border border-gray-200">
-                <div class="bg-blue-600 text-white px-4 py-3 rounded-t-lg font-semibold">
+            <div class="card !p-0 overflow-hidden">
+                <div class="bg-blue-600 dark:bg-blue-700 text-white px-5 py-4 font-semibold">
                     1. Define Scenario & Style
                 </div>
-                <div class="p-4 space-y-4">
+                <div class="p-5 space-y-5">
                     <div>
-                        <label for="scenario-input" class="block text-sm font-medium text-gray-700">What is this call about?</label>
-                        <textarea id="scenario-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" rows="3" placeholder="e.g., A frustrated customer whose internet is down."></textarea>
+                        <label for="scenario-input" class="input-label">What is this call about?</label>
+                        <textarea id="scenario-input" class="input-field" rows="3" placeholder="e.g., A frustrated customer whose internet is down."></textarea>
                     </div>
                     
-                    <!-- Accent / Language Dropdown -->
                     <div>
-                        <label for="voice-prompt-select" class="block text-sm font-medium text-gray-700">Accent & Language Style</label>
-                        <select id="voice-prompt-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white">
+                        <label for="voice-prompt-select" class="input-label">Accent & Language Style</label>
+                        <select id="voice-prompt-select" class="input-field">
                             <option value="Australian English">🇦🇺 Australian English</option>
                             <option value="American English">🇺🇸 American English</option>
                             <option value="British English">🇬🇧 British English</option>
@@ -36,114 +34,110 @@
                         </select>
                     </div>
 
-                    <!-- Voice Selection Row -->
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label for="agent-voice-select" class="block text-sm font-medium text-gray-700">Agent Voice</label>
-                            <select id="agent-voice-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white text-sm">
+                            <label for="agent-voice-select" class="input-label">Agent Voice</label>
+                            <select id="agent-voice-select" class="input-field !text-sm">
                                 <optgroup label="Female">
-                                    <option value="Kore" selected>Kore — firm &amp; professional</option>
-                                    <option value="Aoede">Aoede — warm &amp; natural</option>
-                                    <option value="Zephyr">Zephyr — bright &amp; friendly</option>
+                                    <option value="Kore" selected>Kore</option>
+                                    <option value="Aoede">Aoede</option>
+                                    <option value="Zephyr">Zephyr</option>
                                 </optgroup>
                                 <optgroup label="Male">
-                                    <option value="Charon">Charon — calm &amp; authoritative</option>
-                                    <option value="Puck">Puck — upbeat &amp; energetic</option>
-                                    <option value="Orus">Orus — firm &amp; decisive</option>
+                                    <option value="Charon">Charon</option>
+                                    <option value="Puck">Puck</option>
+                                    <option value="Orus">Orus</option>
                                 </optgroup>
                             </select>
                         </div>
                         <div>
-                            <label for="customer-voice-select" class="block text-sm font-medium text-gray-700">Customer Voice</label>
-                            <select id="customer-voice-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white text-sm">
+                            <label for="customer-voice-select" class="input-label">Customer Voice</label>
+                            <select id="customer-voice-select" class="input-field !text-sm">
                                 <optgroup label="Female">
-                                    <option value="Kore">Kore — firm &amp; professional</option>
-                                    <option value="Aoede">Aoede — warm &amp; natural</option>
-                                    <option value="Zephyr">Zephyr — bright &amp; friendly</option>
+                                    <option value="Kore">Kore</option>
+                                    <option value="Aoede">Aoede</option>
+                                    <option value="Zephyr">Zephyr</option>
                                 </optgroup>
                                 <optgroup label="Male">
-                                    <option value="Charon">Charon — calm &amp; authoritative</option>
-                                    <option value="Puck" selected>Puck — upbeat &amp; energetic</option>
-                                    <option value="Orus">Orus — firm &amp; decisive</option>
+                                    <option value="Charon">Charon</option>
+                                    <option value="Puck" selected>Puck</option>
+                                    <option value="Orus">Orus</option>
                                 </optgroup>
                             </select>
                         </div>
                     </div>
 
-                    <button id="generate-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-150">
-                        <i class="fas fa-magic mr-2"></i>Generate Content
+                    <button id="generate-btn" class="btn-success w-full">
+                        <i class="fas fa-magic"></i> Generate Content
                     </button>
                 </div>
             </div>
 
-            <div id="dialer-section" class="bg-white rounded-lg shadow-md border border-gray-200 hidden">
-                <div class="bg-purple-600 text-white px-4 py-3 rounded-t-lg font-semibold">
+            <div id="dialer-section" class="card !p-0 overflow-hidden hidden">
+                <div class="bg-purple-600 dark:bg-purple-700 text-white px-5 py-4 font-semibold">
                     2. WebRTC Live Demo
                 </div>
-                <div class="p-4 space-y-4">
-                    <p class="text-sm text-gray-600">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
+                <div class="p-5 space-y-5">
+                    <p class="text-sm text-gray-600 dark:text-gray-400">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
                     
-                    <!-- Region Selection Dropdown -->
                     <div class="flex flex-col space-y-1">
-                        <label for="demo-region-select" class="text-sm font-bold text-gray-700">Dialer Persona (Region)</label>
-                        <select id="demo-region-select" class="p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 bg-white">
+                        <label for="demo-region-select" class="input-label">Dialer Persona (Region)</label>
+                        <select id="demo-region-select" class="input-field">
                             <option value="AU" selected>Australia (AU Caller)</option>
                             <option value="UK">United Kingdom (UK Caller)</option>
                             <option value="US">United States (US Caller)</option>
                         </select>
-                        <span class="text-xs text-gray-500">Select which dedicated test account to provision the WebRTC phone with.</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">Select which dedicated test account to provision the WebRTC phone with.</span>
                     </div>
 
                     <div>
-                        <label for="dial-target" class="block text-sm font-medium text-gray-700">Target Extension / Number</label>
-                        <input type="text" id="dial-target" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 p-2 border" placeholder="e.g., 101 or +61400000000">
+                        <label for="dial-target" class="input-label">Target Extension / Number</label>
+                        <input type="text" id="dial-target" class="input-field font-mono" placeholder="e.g., 101 or +61400000000">
                     </div>
 
                     <div class="flex gap-2">
-                        <button id="call-btn" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-150">
-                            <i class="fas fa-phone mr-2"></i>Dial Target
+                        <button id="call-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1">
+                            <i class="fas fa-phone"></i> Dial Target
                         </button>
-                        <button id="hangup-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition duration-150 hidden">
-                            <i class="fas fa-phone-slash mr-2"></i>Hang Up
+                        <button id="hangup-btn" class="btn-danger flex-1 hidden">
+                            <i class="fas fa-phone-slash"></i> Hang Up
                         </button>
                     </div>
 
-                    <!-- Auto-Play button ABOVE the DTMF keypad -->
-                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition duration-150 hidden shadow-lg">
-                        <i class="fas fa-play-circle mr-2"></i>Start Automated 2-Way Demo
+                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full btn-primary hidden shadow-lg !py-3">
+                        <i class="fas fa-play-circle"></i> Start Automated Demo
                     </button>
 
-                    <div id="dtmf-keypad" class="hidden mt-2 bg-gray-100 p-4 rounded-xl border border-gray-300 w-64 mx-auto shadow-inner">
-                        <div class="text-center text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">IVR Keypad</div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="1">1</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="2">2</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="3">3</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="4">4</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="5">5</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="6">6</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="7">7</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="8">8</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="9">9</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="*">*</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="0">0</button>
-                            <button class="dtmf-btn bg-white border border-gray-300 rounded-lg shadow-sm p-3 text-xl font-bold text-gray-700 hover:bg-blue-50 active:bg-blue-200 transition" data-key="#">#</button>
+                    <div id="dtmf-keypad" class="hidden mt-4 bg-slate-100 dark:bg-slate-900 p-5 rounded-xl border border-slate-300 dark:border-slate-700 w-64 mx-auto shadow-inner">
+                        <div class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wider">IVR Keypad</div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="1">1</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="2">2</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="3">3</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="4">4</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="5">5</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="6">6</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="7">7</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="8">8</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="9">9</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="*">*</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="0">0</button>
+                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="#">#</button>
                         </div>
                     </div>
 
-                    <div id="call-status" class="mt-2 text-sm font-bold text-gray-700 bg-gray-100 p-2 rounded text-center border">
+                    <div id="call-status" class="mt-4 text-sm font-bold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-800 p-3 rounded-lg text-center border border-gray-300 dark:border-slate-700">
                         Status: Ready to provision
                     </div>
                 </div>
             </div>
-
         </div>
         
-        <div class="w-full md:w-2/3 flex flex-col">
+        <div class="w-full lg:w-2/3 flex flex-col min-w-0">
 
-            <div id="loading-indicator" class="p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg hidden mb-3">
+            <div id="loading-indicator" class="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 rounded-lg hidden mb-4 shadow-sm">
                 <div class="flex items-center">
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -151,141 +145,32 @@
                 </div>
             </div>
 
-            <!-- Sticky Playback Control Bar (hidden until content is loaded) -->
-            <div id="playback-control-bar" class="hidden bg-gray-800 text-white rounded-lg p-3 mb-3 flex items-center justify-between gap-3 shadow-lg sticky top-2 z-10">
+            <div id="playback-control-bar" class="hidden bg-slate-800 dark:bg-slate-900 text-white rounded-xl p-4 mb-4 flex flex-wrap items-center justify-between gap-4 shadow-lg sticky top-2 z-10 border border-slate-700">
                 <div class="flex items-center gap-2">
-                    <button id="playback-start-stop-btn" onclick="toggleAutoDemo()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition text-sm">
-                        <i class="fas fa-play-circle mr-1"></i>Start
+                    <button id="playback-start-stop-btn" onclick="toggleAutoDemo()" class="btn-primary !py-2 !px-4">
+                        <i class="fas fa-play-circle"></i> Start
                     </button>
-                    <button id="playback-restart-btn" onclick="restartAutoDemo()" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded transition text-sm" title="Restart from beginning">
-                        <i class="fas fa-undo mr-1"></i>Restart
+                    <button id="playback-restart-btn" onclick="restartAutoDemo()" class="btn-secondary !bg-slate-600 hover:!bg-slate-500 !text-white !border-transparent !py-2 !px-4" title="Restart from beginning">
+                        <i class="fas fa-undo"></i> Restart
                     </button>
                 </div>
-                <div id="playback-progress" class="text-sm text-gray-300 font-mono">
+                <div id="playback-progress" class="text-sm text-gray-300 font-mono font-bold">
                     Turn 0 of 0
                 </div>
-                <div class="flex items-center gap-1 text-xs text-gray-400">
-                    <span class="w-3 h-3 bg-green-400 rounded-sm inline-block"></span> Agent
-                    <span class="w-3 h-3 bg-blue-400 rounded-sm inline-block ml-2"></span> Customer
+                <div class="flex items-center gap-3 text-xs font-medium text-gray-300">
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-green-400 rounded-sm inline-block shadow-sm"></span> Agent</span>
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-blue-400 rounded-sm inline-block shadow-sm"></span> Customer</span>
                 </div>
             </div>
 
-            <div id="script-display">
-                <div class="h-full flex items-center justify-center text-gray-400 border-2 border-dashed border-gray-300 rounded-lg p-12">
+            <div id="script-display" class="flex-1 w-full min-h-[600px]">
+                <div class="h-full flex items-center justify-center text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl p-12 text-center">
                     <p>Enter a scenario and generate content to view the script here.</p>
                 </div>
             </div>
+            
         </div>
     </div>
-
-    <!-- AUDIO ROUTING GUIDE SECTION -->
-    <div class="row mt-8">
-        <div class="col-12">
-            <div class="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                <div class="bg-gray-800 text-white px-4 py-3 font-semibold flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-                    How to Route Your Audio for a Flawless Demo
-                </div>
-                <div class="p-6 bg-gray-50 text-gray-800">
-                    <p class="mb-4">To run this 2-sided AI conversation perfectly—without echo, and without your real voice bleeding into the AI's phone call—you must route your audio carefully.</p>
-                    
-                    <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded text-sm">
-                        <h4 class="font-bold text-blue-800 mb-1">What is BlackHole / VB-Cable?</h4>
-                        <p class="text-blue-900">Because your browser is playing the AI's voice, you need a way to pipe that browser audio directly into the phone call as a "microphone."</p>
-                        <ul class="list-disc ml-5 mt-2 text-blue-900">
-                            <li><strong>Mac Users</strong> use a free app called <strong>BlackHole (2ch)</strong>.</li>
-                            <li><strong>Windows Users</strong> use a free app called <strong>VB-Audio Virtual Cable (VB-Cable)</strong>.</li>
-                        </ul>
-                        <p class="mt-2 text-blue-900 italic">Think of these as invisible audio cables inside your computer. They take the sound playing out of your system and plug it directly into the microphone input of your phone app.</p>
-                    </div>
-
-                    <h4 class="text-lg font-bold mb-3 text-gray-800 border-b pb-2">Step 1: Create the "Splitter" (Do this first)</h4>
-                    <p class="mb-3 text-sm">Before opening any apps, you must create an audio splitter so that the AI conversation plays out loud on your speakers <em>and</em> gets piped into the phone system.</p>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                        <div class="bg-white p-4 rounded border border-gray-200 shadow-sm">
-                            <h5 class="font-bold mb-2 flex items-center"><span class="text-xl mr-2">🍎</span> For Mac Users:</h5>
-                            <ol class="list-decimal ml-5 text-sm space-y-1">
-                                <li>Open your Mac's <strong>Audio MIDI Setup</strong> app.</li>
-                                <li>Click the <strong>+</strong> (bottom left) and select <strong>Create Multi-Output Device</strong>.</li>
-                                <li>Check <strong>both</strong> of these boxes in the list:
-                                    <ul class="list-disc ml-5 mt-1 text-gray-600 font-mono text-xs">
-                                        <li>BlackHole 2ch</li>
-                                        <li>MacBook Pro Speakers (or your external monitor)</li>
-                                    </ul>
-                                </li>
-                            </ol>
-                        </div>
-                        <div class="bg-white p-4 rounded border border-gray-200 shadow-sm">
-                            <h5 class="font-bold mb-2 flex items-center"><span class="text-xl mr-2">🪟</span> For Windows PC Users:</h5>
-                            <ol class="list-decimal ml-5 text-sm space-y-1">
-                                <li>Install <strong>VB-Cable</strong>.</li>
-                                <li>Open the <strong>Sound Control Panel</strong> &gt; <strong>Recording</strong> tab.</li>
-                                <li>Right-click <code>CABLE Output</code> and select <strong>Properties</strong>.</li>
-                                <li>Go to the <strong>Listen</strong> tab, check the <strong>"Listen to this device"</strong> box, and select your <code>System Speakers</code> from the dropdown. Click Apply.</li>
-                            </ol>
-                        </div>
-                    </div>
-
-                    <h4 class="text-lg font-bold mb-3 text-gray-800 border-b pb-2">Step 2: The Routing Checklist</h4>
-                    <p class="mb-3 text-sm">Set your computer and applications <strong>exactly</strong> like this before you start your screen share. If one of these is wrong, you will get echo or a broken transcript.</p>
-                    
-                    <div class="overflow-x-auto rounded-lg border border-gray-200 mb-6">
-                        <table class="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th scope="col" class="px-4 py-3 text-left font-bold text-gray-700">Application / Setting</th>
-                                    <th scope="col" class="px-4 py-3 text-left font-bold text-gray-700">What to Select</th>
-                                    <th scope="col" class="px-4 py-3 text-left font-bold text-gray-700">Why you are doing it</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <tr>
-                                    <td class="px-4 py-3 font-medium text-gray-900 bg-gray-50">Computer System Output</td>
-                                    <td class="px-4 py-3 font-mono text-xs text-blue-700">Mac: Multi-Output Device<br>PC: CABLE Input</td>
-                                    <td class="px-4 py-3 text-gray-600">So the AI Agent plays out loud <em>and</em> into the virtual cable simultaneously.</td>
-                                </tr>
-                                <tr>
-                                    <td class="px-4 py-3 font-medium text-gray-900 bg-purple-50">RC App (PWA - Tester)<br><span class="font-normal text-xs text-gray-500">Receiving the Call</span></td>
-                                    <td class="px-4 py-3"><strong>Microphone:</strong> <span class="font-mono text-xs text-blue-700">BlackHole / CABLE Output</span></td>
-                                    <td class="px-4 py-3 text-gray-600">So the phone <em>only</em> sucks up the AI Agent's voice, not your real voice.</td>
-                                </tr>
-                                <tr>
-                                    <td class="px-4 py-3 font-medium text-gray-900 bg-purple-50">RC App (PWA - Tester)<br><span class="font-normal text-xs text-gray-500">Receiving the Call</span></td>
-                                    <td class="px-4 py-3"><strong>Speaker:</strong> <span class="font-mono text-xs text-blue-700">System Speakers</span></td>
-                                    <td class="px-4 py-3 text-gray-600">So the AI Customer's voice plays out loud along with the Agent.</td>
-                                </tr>
-                                <tr>
-                                    <td class="px-4 py-3 font-medium text-gray-900 bg-blue-50">RC App (Corp Account)<br><span class="font-normal text-xs text-gray-500">The Video Meeting</span></td>
-                                    <td class="px-4 py-3"><strong>Microphone:</strong> <span class="font-mono text-xs text-blue-700">Your Physical Headset</span></td>
-                                    <td class="px-4 py-3 text-gray-600">So you can talk to your audience live without it bleeding into the phone call.</td>
-                                </tr>
-                                <tr>
-                                    <td class="px-4 py-3 font-medium text-gray-900 bg-blue-50">RC App (Corp Account)<br><span class="font-normal text-xs text-gray-500">The Video Meeting</span></td>
-                                    <td class="px-4 py-3"><strong>Speaker:</strong> <span class="font-mono text-xs text-blue-700">Your Physical Headset</span></td>
-                                    <td class="px-4 py-3 text-gray-600">So you hear the audience privately through your headset.</td>
-                                </tr>
-                                <tr>
-                                    <td class="px-4 py-3 font-medium text-gray-900 bg-blue-50">RC App (Corp Account)<br><span class="font-normal text-xs text-gray-500">The Video Meeting</span></td>
-                                    <td class="px-4 py-3"><strong>Screen Share:</strong> <span class="font-mono text-xs text-blue-700">Share System Audio</span></td>
-                                    <td class="px-4 py-3 text-gray-600">So the audience hears the AI Agent and the AI Customer exactly as you do.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-                        <p class="text-sm text-yellow-800">
-                            <strong class="font-bold flex items-center"><svg class="w-4 h-4 mr-1 inline" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path></svg> The Golden Rule:</strong> 
-                            During this demo, your physical microphone is <strong>completely invisible</strong> to the phone call. The only people who can hear your real voice are the people on the RingCentral video meeting.
-                        </p>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-    </div>
-
 </div>
 
 <script src="{{ url_for('static', filename='js/ai_demo_calls.js') }}"></script>
