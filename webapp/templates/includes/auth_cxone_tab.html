@@ -1,72 +1,62 @@
-<div class="space-y-6">
-  <div>
-    <h3 class="text-heading mb-1 text-blue-700 dark:text-blue-500">
-      RCCC (CXone) Authentication
-    </h3>
-    <p class="text-subheading">Provide your CXone API keys to establish a connection.</p>
-  </div>
-
-  <div class="bg-blue-50 dark:bg-blue-900/20 p-5 border-l-4 border-blue-500 dark:border-blue-600 rounded-r-lg text-sm text-slate-700 dark:text-slate-300 shadow-sm">
-    <p class="font-bold mb-3 text-slate-900 dark:text-slate-100">Instructions:</p>
-    <ul class="list-disc list-inside space-y-2">
-      <li>Select your CXone Region.</li>
-      <li>Enter your Userhub Access Key ID and Secret Access Key.</li>
-      <li>Click Connect to store credentials securely in your session.</li>
-    </ul>
-  </div>
-
-  <div id="cxone-auth-card" class="card">
-    <div class="card-header">
-      <div>
-        <h2 class="text-lg font-bold text-slate-800 dark:text-white">CXone Connection Form</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Enter your Access Keys to authenticate against the NICE inContact API.
-        </p>
-      </div>
+<div class="space-y-8 animate-fade-in w-full max-w-3xl">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">RCCC (CXone) Authentication</h2>
+        <p class="text-subheading">Provide your CXone API keys to establish a connection to your tenant.</p>
     </div>
 
-    <form id="cxone-connect-form" class="space-y-5">
-      <div>
-        <label class="input-label" for="cx-region">Region</label>
-        <select id="cx-region" class="input-field">
-          <option value="au1">au1</option>
-          <option value="na1">na1</option>
-          <option value="na2">na2</option>
-          <option value="eu1">eu1</option>
-          <option value="uk1">uk1</option>
-        </select>
-      </div>
-      
-      <div>
-        <label class="input-label" for="cx-access">Access Key ID</label>
-        <input
-          type="password"
-          id="cx-access"
-          class="input-field font-mono"
-          required
-          placeholder="Enter Access Key"
-        />
-      </div>
-      
-      <div>
-        <label class="input-label" for="cx-secret">Secret Access Key</label>
-        <input
-          type="password"
-          id="cx-secret"
-          class="input-field font-mono"
-          required
-          placeholder="Enter Secret Key"
-        />
-      </div>
-      
-      <div class="pt-2">
-        <button type="submit" id="cxone-connect-button" class="btn-primary w-full">
-          Connect to CXone
-        </button>
-        <button type="button" id="cxone-disconnect-button" style="display: none" class="btn-secondary w-full">
-          Disconnect CXone
-        </button>
-      </div>
-    </form>
-  </div>
+    <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm">
+        <h3 class="font-bold text-blue-800 dark:text-blue-300 text-lg mb-4 flex items-center gap-2">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20A10 10 0 0112 2z"></path></svg>
+            Instructions
+        </h3>
+        <ul class="list-disc list-inside space-y-3 text-sm text-slate-700 dark:text-slate-300 font-medium">
+            <li>Select your correct CXone <strong class="text-slate-800 dark:text-slate-200">Region</strong> from the dropdown.</li>
+            <li>Enter your Userhub <strong class="text-slate-800 dark:text-slate-200">Access Key ID</strong> and <strong class="text-slate-800 dark:text-slate-200">Secret Access Key</strong>.</li>
+            <li>Click Connect to store the credentials securely in your current session.</li>
+        </ul>
+    </div>
+
+    <div id="cxone-auth-card" class="card w-full">
+        <div class="flex items-center gap-4 mb-6 border-b border-slate-100 dark:border-slate-800/80 pb-6">
+            <div class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 shadow-sm">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+            </div>
+            <div>
+                <h3 class="text-heading">CXone Connection Form</h3>
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Provide API Keys</p>
+            </div>
+        </div>
+
+        <form id="cxone-connect-form" class="space-y-6">
+            <div class="input-wrapper">
+                <label class="input-label" for="cx-region">Region</label>
+                <select id="cx-region" class="input-field">
+                    <option value="au1">au1</option>
+                    <option value="na1">na1</option>
+                    <option value="na2">na2</option>
+                    <option value="eu1">eu1</option>
+                    <option value="uk1">uk1</option>
+                </select>
+            </div>
+            
+            <div class="input-wrapper">
+                <label class="input-label" for="cx-access">Access Key ID</label>
+                <input type="password" id="cx-access" class="input-field font-mono" required placeholder="Enter Access Key"/>
+            </div>
+            
+            <div class="input-wrapper">
+                <label class="input-label" for="cx-secret">Secret Access Key</label>
+                <input type="password" id="cx-secret" class="input-field font-mono" required placeholder="Enter Secret Key"/>
+            </div>
+            
+            <div class="pt-2">
+                <button type="submit" id="cxone-connect-button" class="btn-primary w-full !py-3.5 text-base">
+                    Connect to CXone
+                </button>
+                <button type="button" id="cxone-disconnect-button" style="display: none" class="btn-secondary w-full !py-3.5 text-base">
+                    Disconnect CXone
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
