@@ -1,41 +1,40 @@
 <div class="space-y-8 animate-fade-in w-full">
-    
     <div class="mb-4">
         <h2 class="text-display mb-2">Call Queue Manager</h2>
         <p class="text-subheading">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
     </div>
 
-    <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50">
+    <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm">
         <p class="text-sm text-blue-800 dark:text-blue-300">
             Use this tool to bulk update your Call Queue configurations. <strong>You do not need to update the queue wholly.</strong> Simply leave a column blank to ignore that specific setting.
         </p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
-        
         <div class="card flex flex-col h-full hover:-translate-y-1">
-            <div class="flex items-center gap-3 mb-4">
-                <span class="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-lg shadow-sm">1</span> 
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-xl shadow-sm">1</div> 
                 <h3 class="text-heading">Audit & Export</h3>
             </div>
             <p class="text-subheading mb-6 flex-grow">Extract current queue configurations into the master template.</p>
             
-            <button id="cq-load-btn" class="btn-secondary w-full">
+            <button id="cq-load-btn" class="btn-secondary w-full !py-3">
                 Load Call Queues
             </button>
             
-            <div id="cq-filter-section" class="hidden flex-col gap-4 mt-6">
+            <div id="cq-filter-section" class="hidden flex-col gap-5 mt-6">
                 <div class="input-wrapper">
                     <label class="input-label">Search Queues</label>
-                    <input type="text" id="cq-search" placeholder="Name or extension..." class="input-field">
+                    <input type="text" id="cq-search" placeholder="Search by name or extension..." class="input-field">
                 </div>
                 <div class="input-wrapper">
                     <label class="input-label">Filter by Site</label>
                     <select id="cq-site-filter" class="input-field h-32" multiple></select>
+                    <p class="text-[10px] text-slate-400 mt-1 uppercase tracking-wider text-right">Hold Ctrl/Cmd for multiple</p>
                 </div>
-                <div class="badge badge-info self-center" id="cq-count-label">0 queues selected</div>
+                <div class="badge badge-info self-center text-xs px-4 py-1.5" id="cq-count-label">0 queues selected</div>
                 
-                <button id="cq-export-btn" class="btn-primary w-full mt-2">
+                <button id="cq-export-btn" class="btn-primary w-full mt-2 !py-3">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                     Download Filtered Audit
                 </button>
@@ -43,27 +42,27 @@
         </div>
 
         <div class="card flex flex-col h-full hover:-translate-y-1">
-            <div class="flex items-center gap-3 mb-4">
-                <span class="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-lg shadow-sm">2</span> 
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-xl shadow-sm">2</div> 
                 <h3 class="text-heading">Upload & Process</h3>
             </div>
             <p class="text-subheading mb-6">Upload your configured Excel file to safely preview and patch the queues.</p>
             
             <input type="file" id="cq-hours-file" accept=".xlsx,.csv" class="file-input mb-6">
             
-            <div id="cq-sheet-container" class="hidden mb-6">
+            <div id="cq-sheet-container" class="hidden mb-6 w-full">
                 <div class="input-wrapper">
                     <label class="input-label">Target Worksheet</label>
                     <select id="cq-sheet-select" class="input-field"></select>
                 </div>
             </div>
             
-            <div class="mt-auto space-y-3">
-                <button id="cq-preview-btn" class="btn-success w-full">
+            <div class="mt-auto space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button id="cq-preview-btn" class="btn-success w-full !py-3 disabled:opacity-50">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     Preview Changes
                 </button>
-                <button id="cq-sync-btn" class="btn-primary w-full hidden">
+                <button id="cq-sync-btn" class="btn-primary w-full !py-3 disabled:opacity-50 hidden">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                     Confirm & Sync
                 </button>
@@ -71,13 +70,23 @@
         </div>
     </div>
 
-    <div class="card !p-0 overflow-hidden w-full border-0">
+    <div class="card !p-0 overflow-hidden w-full border-0 shadow-lg">
         
-        <div class="p-6 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80">
+        <div id="cq-progress-container" class="hidden px-6 pt-5 pb-5 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wider">
+                <span id="cq-progress-text">Initializing...</span>
+                <span id="cq-progress-percent">0%</span>
+            </div>
+            <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner">
+                <div id="cq-progress-bar" class="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80">
             <div class="tab-nav">
                 <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn active">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                    Messages
+                    Modifications
                 </button>
                 <button onclick="switchTabCQ('system-log')" id="btn-system-log" class="tab-btn">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -86,8 +95,8 @@
             </div>
         </div>
 
-        <div id="tab-messages" class="tab-content block w-full">
-            <div class="table-container border-0 rounded-none shadow-none">
+        <div id="tab-messages" class="tab-content block overflow-x-auto w-full">
+            <div class="table-container border-0 rounded-none shadow-none max-h-[600px] overflow-y-auto">
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -99,23 +108,406 @@
                         </tr>
                     </thead>
                     <tbody id="changes-table-body">
-                        <tr><td colspan="5" class="py-16 text-center text-slate-400 italic">Waiting for batch upload...</td></tr>
+                        <tr><td colspan="5" class="py-16 text-center text-slate-400 dark:text-slate-500 italic font-medium">Waiting for batch upload...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
+        <div id="tab-system-log" class="tab-content hidden w-full">
+            <div class="bg-slate-900 text-slate-200 px-6 py-3 text-xs font-mono flex justify-between items-center border-b border-slate-800">
+                <span class="font-bold tracking-widest text-slate-400">RAW API LOG</span>
+                <button onclick="document.getElementById('cq-hours-log').innerHTML=''" class="text-xs text-slate-500 hover:text-white transition-colors">Clear</button>
+            </div>
+            <div id="cq-hours-log" class="bg-slate-950 text-emerald-400 p-6 font-mono text-xs h-[500px] overflow-y-auto leading-relaxed shadow-inner outline-none">
+                <div class="text-slate-600 italic">Waiting for batch upload...</div>
+            </div>
         </div>
-</div>
+    </div>
+    
+    <div id="cq-modal-progress" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+        <div class="card w-full max-w-md text-center transform scale-95 transition-transform duration-300 shadow-2xl">
+            <h3 class="text-heading mb-2" id="cq-progress-title">Compiling Audit...</h3>
+            <p class="text-subheading mb-8">Extracting configuration data. Please do not close this window.</p>
+            
+            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-3 overflow-hidden shadow-inner">
+                <div id="cq-audit-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div class="text-xs font-bold text-slate-500 text-right" id="cq-audit-progress-pct">0/0</div>
+        </div>
+    </div>
 
-<script>
-    function switchTabCQ(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('block'); el.classList.add('hidden'); });
-        document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('active'); });
+    <script>
+        function switchTabCQ(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('block'); el.classList.add('hidden'); });
+            document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('active'); });
+            
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            document.getElementById('tab-' + tabId).classList.add('block');
+            document.getElementById('btn-' + tabId).classList.add('active');
+        }
         
-        document.getElementById('tab-' + tabId).classList.remove('hidden');
-        document.getElementById('tab-' + tabId).classList.add('block');
-        document.getElementById('btn-' + tabId).classList.add('active');
-    }
-    // ... [keep rest of your exact JS]
-</script>
+        function openModal(id) {
+            const m = document.getElementById(id);
+            m.classList.remove('hidden');
+            setTimeout(() => {
+                m.classList.remove('opacity-0');
+                m.querySelector('.card').classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeModal(id) {
+            const m = document.getElementById(id);
+            m.classList.add('opacity-0');
+            m.querySelector('.card').classList.add('scale-95');
+            setTimeout(() => m.classList.add('hidden'), 300);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const previewBtn = document.getElementById('cq-preview-btn');
+            const syncBtn = document.getElementById('cq-sync-btn');
+            const fileInput = document.getElementById('cq-hours-file');
+            
+            const sheetContainer = document.getElementById('cq-sheet-container');
+            const sheetSelect = document.getElementById('cq-sheet-select');
+            
+            const logBox = document.getElementById('cq-hours-log');
+            const tableBody = document.getElementById('changes-table-body');
+            
+            const progressContainer = document.getElementById('cq-progress-container');
+            const progressBar = document.getElementById('cq-progress-bar');
+            const progressText = document.getElementById('cq-progress-text');
+            const progressPercent = document.getElementById('cq-progress-percent');
+            
+            // Audit Features
+            let allQueues = [];
+            const btnLoadQueues = document.getElementById('cq-load-btn');
+            const btnExport = document.getElementById('cq-export-btn');
+            const filterSection = document.getElementById('cq-filter-section');
+            const siteFilter = document.getElementById('cq-site-filter');
+            const searchInput = document.getElementById('cq-search');
+            const countLabel = document.getElementById('cq-count-label');
+
+            if (!previewBtn || !fileInput || !logBox) return;
+
+            function logEvent(msg, type = 'info') {
+                if (logBox.children.length === 1 && logBox.children[0].classList.contains('text-slate-600')) logBox.innerHTML = '';
+                const entry = document.createElement('div');
+                entry.innerHTML = `<span class="text-slate-600">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+                if (type === 'success') entry.classList.add('text-emerald-400');
+                else if (type === 'error') entry.classList.add('text-rose-400');
+                else entry.classList.add('text-sky-300');
+                
+                logBox.appendChild(entry);
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+            
+            // --- AUDIT LOGIC ---
+            if (btnLoadQueues) {
+                btnLoadQueues.addEventListener('click', async () => {
+                    btnLoadQueues.innerHTML = '<div class="spinner border-slate-400 w-5 h-5"></div> Loading Accounts...';
+                    btnLoadQueues.disabled = true;
+                    try {
+                        const res = await fetch('/api/cq_hours/queues');
+                        if (res.status === 401) {
+                            window.location.reload();
+                            return;
+                        }
+                        const data = await res.json();
+                        if(data.success) {
+                            allQueues = data.queues;
+                            const sites = new Set(allQueues.map(q => q.site));
+                            siteFilter.innerHTML = '';
+                            Array.from(sites).sort().forEach(s => {
+                                siteFilter.appendChild(new Option(s, s));
+                            });
+                            
+                            filterSection.classList.remove('hidden');
+                            filterSection.classList.add('flex');
+                            btnExport.classList.remove('hidden');
+                            btnLoadQueues.classList.add('hidden'); 
+                            updateQueueCount();
+                        } else {
+                            alert(data.error);
+                            btnLoadQueues.innerHTML = 'Load Call Queues';
+                            btnLoadQueues.disabled = false;
+                        }
+                    } catch (e) {
+                        alert("Failed to load queues.");
+                        btnLoadQueues.innerHTML = 'Load Call Queues';
+                        btnLoadQueues.disabled = false;
+                    } 
+                });
+            }
+
+            function getFilteredQueues() {
+                const term = searchInput.value.toLowerCase();
+                const selectedSites = Array.from(siteFilter.selectedOptions).map(opt => opt.value);
+                
+                return allQueues.filter(q => {
+                    const matchTerm = q.name.toLowerCase().includes(term) || q.extensionNumber.includes(term);
+                    const matchSite = selectedSites.length === 0 || selectedSites.includes(q.site);
+                    return matchTerm && matchSite;
+                });
+            }
+
+            function updateQueueCount() {
+                const count = getFilteredQueues().length;
+                countLabel.innerText = `${count} queues selected`;
+            }
+
+            if (searchInput) searchInput.addEventListener('input', updateQueueCount);
+            if (siteFilter) siteFilter.addEventListener('change', updateQueueCount);
+
+            if (btnExport) {
+                btnExport.addEventListener('click', async () => {
+                    const filtered = getFilteredQueues();
+                    if(filtered.length === 0) return alert("No queues selected.");
+                    const ids = filtered.map(q => q.id);
+
+                    openModal('cq-modal-progress');
+                    document.getElementById('cq-progress-title').textContent = "Compiling Audit...";
+                    document.getElementById('cq-audit-progress-bar').style.width = '0%';
+                    document.getElementById('cq-audit-progress-bar').className = 'bg-blue-600 h-full rounded-full transition-all duration-500';
+                    document.getElementById('cq-audit-progress-pct').textContent = `0/${ids.length}`;
+                    
+                    try {
+                        const res = await fetch('/api/cq_hours/audit', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({queue_ids: ids})
+                        });
+                        const data = await res.json();
+                        if(data.success) {
+                            pollAuditProgress(data.task_id);
+                        } else {
+                            throw new Error(data.error);
+                        }
+                    } catch(e) {
+                        alert("Error starting audit: " + e.message);
+                        closeModal('cq-modal-progress');
+                    }
+                });
+            }
+
+            function pollAuditProgress(taskId) {
+                const interval = setInterval(async () => {
+                    try {
+                        const res = await fetch(`/api/cq_hours/audit/status?task_id=${taskId}`);
+                        const data = await res.json();
+                        if(data.total > 0) {
+                            const pct = Math.round((data.current / data.total) * 100);
+                            document.getElementById('cq-audit-progress-bar').style.width = `${pct}%`;
+                            document.getElementById('cq-audit-progress-pct').textContent = `${data.current}/${data.total}`;
+                        }
+                        if(data.status === 'completed') {
+                            clearInterval(interval);
+                            document.getElementById('cq-progress-title').textContent = "Done!";
+                            document.getElementById('cq-audit-progress-bar').className = 'bg-emerald-500 h-full rounded-full transition-all duration-500';
+                            
+                            const link = document.createElement('a');
+                            link.href = `/api/cq_hours/audit/download?task_id=${taskId}`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            
+                            setTimeout(() => closeModal('cq-modal-progress'), 1500);
+                        } else if (data.status === 'error') {
+                            clearInterval(interval);
+                            document.getElementById('cq-progress-title').textContent = "Failed";
+                            document.getElementById('cq-audit-progress-bar').className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+                            alert("Error during audit: " + data.error);
+                            setTimeout(() => closeModal('cq-modal-progress'), 1500);
+                        }
+                    } catch (e) {}
+                }, 1000);
+            }
+
+            // --- UPLOAD LOGIC ---
+            fileInput.addEventListener('change', async () => {
+                syncBtn.classList.add('hidden');
+                previewBtn.classList.remove('hidden');
+                tableBody.innerHTML = `<tr><td colspan="5" class="py-16 text-center text-slate-400 italic">Waiting for batch upload...</td></tr>`;
+                progressContainer.classList.add('hidden');
+                
+                if (!fileInput.files[0]) {
+                    sheetContainer.classList.add('hidden');
+                    return;
+                }
+                
+                const file = fileInput.files[0];
+                if (file.name.endsWith('.csv')) {
+                    sheetContainer.classList.add('hidden');
+                    return;
+                }
+                
+                sheetContainer.classList.remove('hidden');
+                sheetSelect.innerHTML = `<option value="">Reading file...</option>`;
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    const res = await fetch('/api/cq_hours/sheets', { method: 'POST', body: formData });
+                    const sheets = await res.json();
+                    
+                    if (res.ok && Array.isArray(sheets)) {
+                        sheetSelect.innerHTML = '';
+                        sheets.forEach(sheet => {
+                            const opt = document.createElement('option');
+                            opt.value = sheet;
+                            opt.textContent = sheet;
+                            if (sheet === 'Queue Config' || sheet === 'Sheet1') opt.selected = true;
+                            sheetSelect.appendChild(opt);
+                        });
+                    } else {
+                        sheetSelect.innerHTML = `<option value="">Failed to load sheets</option>`;
+                    }
+                } catch (e) {
+                    sheetSelect.innerHTML = `<option value="">Error reading sheets</option>`;
+                }
+            });
+
+            async function runBatchProcess(action) {
+                if (!fileInput.files[0]) return alert("Please select a file to upload.");
+
+                const activeBtn = action === 'preview' ? previewBtn : syncBtn;
+                const inactiveBtn = action === 'preview' ? syncBtn : previewBtn;
+                
+                activeBtn.disabled = true;
+                inactiveBtn.disabled = true;
+                activeBtn.innerHTML = `<div class="spinner w-5 h-5 border-white"></div> ${action === 'preview' ? 'Analyzing...' : 'Syncing...'}`;
+                
+                if(action === 'preview') switchTabCQ('messages');
+                
+                progressContainer.classList.remove('hidden');
+                progressBar.style.width = '0%';
+                progressBar.className = action === 'preview' ? 'bg-emerald-500 h-full rounded-full transition-all duration-300' : 'bg-blue-600 h-full rounded-full transition-all duration-300';
+                
+                progressText.innerText = 'Uploading file...';
+                progressPercent.innerText = '0%';
+                tableBody.innerHTML = '';
+
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('action', action);
+                
+                if (!sheetContainer.classList.contains('hidden')) {
+                    formData.append('sheet_name', sheetSelect.value);
+                }
+
+                try {
+                    const res = await fetch('/api/cq_hours/upload', { method: 'POST', body: formData });
+                    if (!res.ok) {
+                        const errorData = await res.json();
+                        logEvent(`Error: ${errorData.message || res.statusText}`, "error");
+                        if (res.status === 401) setTimeout(() => window.location.href = '/api/sm_auth/logout?tab=cq_hours', 2000);
+                        throw new Error("Server rejected upload.");
+                    }
+
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder("utf-8");
+                    let buffer = "";
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        
+                        buffer += decoder.decode(value, { stream: true });
+                        let lines = buffer.split("\n");
+                        buffer = lines.pop(); 
+
+                        for (let line of lines) {
+                            if (!line.trim()) continue;
+                            try {
+                                const data = JSON.parse(line);
+                                
+                                if (data.type === 'start') {
+                                    logEvent(data.message, 'info');
+                                    progressText.innerText = data.message;
+                                } 
+                                else if (data.type === 'progress') {
+                                    const r = data.result;
+                                    logEvent(`Ext ${r.ext}: ${r.message}`, r.status);
+                                    
+                                    if (r.changes && r.changes.length > 0) {
+                                        r.changes.forEach(change => {
+                                            let statusUi = '';
+                                            if (data.is_preview) {
+                                                statusUi = `<span class="badge badge-info">Pending</span>`;
+                                            } else if (r.status === 'error') {
+                                                statusUi = `<span class="badge badge-warning">Aborted</span>`;
+                                            } else {
+                                                statusUi = `<span class="badge badge-success">Applied</span>`;
+                                            }
+                                                
+                                            const tr = document.createElement('tr');
+                                            tr.innerHTML = `
+                                                <td class="font-bold">${r.ext}</td>
+                                                <td class="font-semibold text-slate-500">${change.parameter}</td>
+                                                <td><span class="bg-rose-50/80 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 px-2 py-1 rounded-md border border-rose-100 dark:border-rose-800 text-xs font-mono">${change.old || 'None'}</span></td>
+                                                <td><span class="bg-emerald-50/80 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-2 py-1 rounded-md border border-emerald-100 dark:border-emerald-800 text-xs font-mono">${change.new || 'None'}</span></td>
+                                                <td class="text-right">${statusUi}</td>
+                                            `;
+                                            tableBody.appendChild(tr);
+                                        });
+                                    }
+                                    
+                                    if (r.status === 'error') {
+                                         const tr = document.createElement('tr');
+                                         tr.innerHTML = `
+                                            <td class="font-bold">${r.ext}</td>
+                                            <td class="font-semibold text-slate-500">System API</td>
+                                            <td class="text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-900/10 text-xs italic font-mono" colspan="2">${r.message}</td>
+                                            <td class="text-right"><span class="badge badge-danger">Failed</span></td>
+                                         `;
+                                         tableBody.appendChild(tr);
+                                    }
+
+                                    const pct = Math.round((data.current / data.total) * 100);
+                                    progressBar.style.width = `${pct}%`;
+                                    progressText.innerText = `Processing... ${data.current}/${data.total}`;
+                                    progressPercent.innerText = `${pct}%`;
+                                } 
+                                else if (data.type === 'done') {
+                                    logEvent(data.is_preview ? "Preview Complete." : "Batch Sync Complete.", "success");
+                                    progressBar.style.width = `100%`;
+                                    progressText.innerText = `Complete`;
+                                    progressPercent.innerText = `100%`;
+                                    
+                                    if (tableBody.children.length === 0) {
+                                        tableBody.innerHTML = `<tr><td colspan="5" class="py-16 text-center text-slate-400 italic">No modifications detected.</td></tr>`;
+                                    } else if (data.is_preview) {
+                                        syncBtn.classList.remove('hidden');
+                                        previewBtn.classList.add('hidden');
+                                    }
+                                } 
+                                else if (data.type === 'error') {
+                                    logEvent(`Fatal Error: ${data.message}`, "error");
+                                    if (data.message.includes('Unauthorized')) setTimeout(() => window.location.href = '/api/sm_auth/logout?tab=cq_hours', 2000);
+                                }
+                            } catch (err) { console.error("Stream parse error:", line); }
+                        }
+                    }
+                } catch (err) {
+                    if (err.message !== "Server rejected upload.") logEvent(`Network Error: ${err.message}`, "error");
+                } finally {
+                    activeBtn.disabled = false;
+                    inactiveBtn.disabled = false;
+                    previewBtn.innerHTML = `<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg> Preview Changes`;
+                    syncBtn.innerHTML = `<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg> Confirm & Sync`;
+                    
+                    if (action === 'sync') {
+                        syncBtn.classList.add('hidden');
+                        previewBtn.classList.remove('hidden');
+                        fileInput.value = '';
+                        sheetContainer.classList.add('hidden');
+                    }
+                }
+            }
+
+            previewBtn.addEventListener('click', () => runBatchProcess('preview'));
+            syncBtn.addEventListener('click', () => runBatchProcess('sync'));
+        });
+    </script>
+</div>
