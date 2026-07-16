@@ -1,30 +1,26 @@
-<div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800 mb-1">D365 + RingCX Demo</h2>
-    <p class="text-slate-500 text-sm">Manage demo environments, create leads, score &amp; route them into RingCX campaigns.</p>
+<div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+    <h2 class="text-heading mb-1">D365 + RingCX Demo</h2>
+    <p class="text-subheading">Manage demo environments, create leads, score &amp; route them into RingCX campaigns.</p>
 </div>
 
-<!-- Card 1: Environment + RingCX Connection (2-col) -->
-<div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6 w-full">
 
-    <!-- Left: D365 Environment -->
-    <div class="bg-white p-5 rounded shadow-sm border border-slate-200">
+    <div class="card !p-5">
         <div class="flex items-center justify-between mb-3">
-            <h3 class="font-bold text-slate-800">D365 Environment</h3>
+            <h3 class="font-bold text-slate-800 dark:text-slate-100">D365 Environment</h3>
             <button id="d365-add-env-btn"
-                class="hidden text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 px-3 rounded transition">
+                class="hidden btn-secondary !py-1.5 !px-3 text-xs">
                 + Add
             </button>
         </div>
-        <select id="d365-env-select"
-            class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500 mb-3">
+        <select id="d365-env-select" class="input-field mb-3">
             <option value="">Select an environment...</option>
         </select>
-        <div id="d365-env-detail" class="hidden text-xs text-slate-500 space-y-1">
-            <div><span class="font-medium text-slate-600">URL:</span> <span id="d365-env-url" class="font-mono break-all"></span></div>
-            <div><span class="font-medium text-slate-600">Owner:</span> <span id="d365-env-owner"></span></div>
+        <div id="d365-env-detail" class="hidden text-xs text-slate-500 dark:text-slate-400 space-y-1">
+            <div><span class="font-medium text-slate-600 dark:text-slate-300">URL:</span> <span id="d365-env-url" class="font-mono break-all text-slate-800 dark:text-slate-200"></span></div>
+            <div><span class="font-medium text-slate-600 dark:text-slate-300">Owner:</span> <span id="d365-env-owner" class="text-slate-800 dark:text-slate-200"></span></div>
             <div class="flex items-center gap-3 pt-2">
-                <button id="d365-test-conn-btn"
-                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 px-3 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="d365-test-conn-btn" class="btn-secondary !py-1.5 !px-3 text-xs">
                     Test Connection
                 </button>
                 <span id="d365-test-conn-status"></span>
@@ -32,130 +28,116 @@
         </div>
     </div>
 
-    <!-- Right: RingCX Connection -->
-    <div class="bg-white p-5 rounded shadow-sm border border-slate-200">
+    <div class="card !p-5">
         <div class="flex items-center justify-between mb-3">
-            <h3 class="font-bold text-slate-800">RingCX Connection</h3>
+            <h3 class="font-bold text-slate-800 dark:text-slate-100">RingCX Connection</h3>
             <span id="d365-ringcx-status-badge"
-                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                 Disconnected
             </span>
         </div>
-        <p class="text-sm text-slate-500 mb-3">
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">
             Uses your active RingCentral session. Make sure you're connected via the RC Auth tab first.
         </p>
         <div class="flex gap-3 mb-3">
-            <button id="d365-ringcx-connect-btn"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <button id="d365-ringcx-connect-btn" class="btn-primary text-sm !py-2 !px-4">
                 Connect to RingCX
             </button>
-            <button id="d365-ringcx-disconnect-btn"
-                class="hidden bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold py-2 px-4 rounded border border-slate-300 transition">
+            <button id="d365-ringcx-disconnect-btn" class="hidden btn-secondary text-sm !py-2 !px-4">
                 Disconnect
             </button>
         </div>
-        <div id="d365-ringcx-account-row" class="hidden text-xs text-slate-500">
-            <span class="font-medium text-slate-600">Account ID:</span>
-            <span id="d365-ringcx-account-id" class="font-mono ml-1 text-slate-800"></span>
-            <p class="text-xs text-slate-400 mt-1">Session token refreshes automatically every 4 minutes.</p>
+        <div id="d365-ringcx-account-row" class="hidden text-xs text-slate-500 dark:text-slate-400">
+            <span class="font-medium text-slate-600 dark:text-slate-300">Account ID:</span>
+            <span id="d365-ringcx-account-id" class="font-mono ml-1 text-slate-800 dark:text-slate-200"></span>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Session token refreshes automatically every 4 minutes.</p>
         </div>
     </div>
 
 </div>
 
-<!-- Card 2: Campaign IDs -->
-<div class="bg-white p-5 rounded shadow-sm border border-slate-200 mb-6">
-    <div class="flex items-center justify-between mb-4">
+<div class="card !p-5 mb-6 w-full">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
         <div>
-            <h3 class="font-bold text-slate-800">Campaign IDs</h3>
-            <p class="text-xs text-slate-500 mt-0.5">Saved per user. Connect to RingCX first to load campaigns.</p>
+            <h3 class="font-bold text-slate-800 dark:text-slate-100">Campaign IDs</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Saved per user. Connect to RingCX first to load campaigns.</p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 w-full sm:w-auto">
             <button id="d365-reload-campaigns-btn"
-                class="text-xs text-slate-400 hover:text-slate-600 transition hidden">
+                class="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition hidden">
                 Reload
             </button>
-            <button id="d365-save-state-btn"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <button id="d365-save-state-btn" class="btn-primary text-sm !py-2 !px-4 w-full sm:w-auto">
                 Save
             </button>
         </div>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Human Campaign</label>
-            <select id="d365-human-campaign-id"
-                class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+            <label class="input-label">Human Campaign</label>
+            <select id="d365-human-campaign-id" class="input-field !py-2 !text-sm">
                 <option value="">Connect to RingCX to load...</option>
             </select>
-            <p class="text-xs text-slate-400 mt-1">WebScore ≥ 60 → this campaign</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">WebScore ≥ 60 → this campaign</p>
         </div>
         <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">AI Campaign</label>
-            <select id="d365-ai-campaign-id"
-                class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+            <label class="input-label">AI Campaign</label>
+            <select id="d365-ai-campaign-id" class="input-field !py-2 !text-sm">
                 <option value="">Connect to RingCX to load...</option>
             </select>
-            <p class="text-xs text-slate-400 mt-1">WebScore &lt; 60 → this campaign</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">WebScore &lt; 60 → this campaign</p>
         </div>
         <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Booking Campaign</label>
-            <select id="d365-booking-campaign-id"
-                class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+            <label class="input-label">Booking Campaign</label>
+            <select id="d365-booking-campaign-id" class="input-field !py-2 !text-sm">
                 <option value="">Connect to RingCX to load...</option>
             </select>
-            <p class="text-xs text-slate-400 mt-1">HOT disposition → follow-up booking</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">HOT disposition → follow-up booking</p>
         </div>
     </div>
 </div>
 
-<!-- Card 3: Demo Leads -->
-<div class="bg-white p-5 rounded shadow-sm border border-slate-200 mb-6">
-    <div class="flex items-center justify-between mb-4">
-        <h3 class="font-bold text-slate-800">Demo Leads</h3>
-        <div class="flex items-center gap-3">
-            <button id="d365-delete-demo-btn"
-                class="hidden bg-red-50 hover:bg-red-100 text-red-700 text-sm font-semibold py-2 px-4 rounded border border-red-200 transition">
+<div class="card !p-5 mb-6 w-full">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100">Demo Leads</h3>
+        <div class="flex items-center gap-3 w-full sm:w-auto">
+            <button id="d365-delete-demo-btn" class="hidden btn-danger text-sm !py-1.5 !px-3">
                 Delete All Demo Leads
             </button>
-            <button id="d365-refresh-leads-btn"
-                class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 px-3 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <button id="d365-refresh-leads-btn" class="btn-secondary text-sm !py-1.5 !px-3 w-full sm:w-auto">
                 Pull Leads
             </button>
         </div>
     </div>
 
-    <!-- Phone number input + create -->
     <div class="mb-4">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Phone Numbers (E.164, one per line)</label>
+        <label class="input-label">Phone Numbers (E.164, one per line)</label>
         <textarea id="d365-phone-numbers" rows="3"
             placeholder="+61412345678&#10;+61498765432"
-            class="w-full border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 focus:border-blue-500 resize-y"></textarea>
+            class="input-field font-mono resize-y"></textarea>
         <div class="flex items-center gap-3 mt-2">
-            <button id="d365-create-leads-btn"
-                class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <button id="d365-create-leads-btn" class="btn-success text-sm !py-2 !px-4">
                 Create Leads in D365
             </button>
-            <span id="d365-create-leads-status" class="text-xs text-slate-500"></span>
+            <span id="d365-create-leads-status" class="text-xs text-slate-500 dark:text-slate-400"></span>
         </div>
     </div>
 
-    <!-- Lead table states -->
-    <div id="d365-leads-loading" class="hidden py-6 text-center text-sm text-slate-400 italic">Loading leads...</div>
-    <div id="d365-no-env" class="py-6 text-center text-sm text-slate-400 italic">Select an environment to view leads.</div>
+    <div id="d365-leads-loading" class="hidden py-6 text-center text-sm text-slate-400 dark:text-slate-500 italic">Loading leads...</div>
+    <div id="d365-no-env" class="py-6 text-center text-sm text-slate-400 dark:text-slate-500 italic">Select an environment to view leads.</div>
 
-    <div id="d365-leads-table-wrapper" class="hidden overflow-x-auto">
-        <table class="w-full text-sm">
+    <div id="d365-leads-table-wrapper" class="hidden overflow-x-auto w-full">
+        <table class="data-table">
             <thead>
-                <tr class="border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wide">
-                    <th class="text-left py-2 pr-3">Name</th>
-                    <th class="text-left py-2 pr-3">Phone</th>
-                    <th class="text-left py-2 pr-3">Move Type</th>
-                    <th class="text-left py-2 pr-3">Origin → Dest</th>
-                    <th class="text-left py-2 pr-3">WebScore</th>
-                    <th class="text-left py-2 pr-3">Campaign</th>
-                    <th class="text-left py-2 pr-3">Disposition</th>
-                    <th class="text-left py-2">Demo?</th>
+                <tr>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Move Type</th>
+                    <th>Origin → Dest</th>
+                    <th>WebScore</th>
+                    <th>Campaign</th>
+                    <th>Disposition</th>
+                    <th>Demo?</th>
                 </tr>
             </thead>
             <tbody id="d365-leads-table-body"></tbody>
@@ -163,137 +145,129 @@
     </div>
 </div>
 
-<!-- Card 4: Score & Route -->
-<div class="bg-white p-5 rounded shadow-sm border border-slate-200 mb-6">
-    <div class="mb-4">
-        <h3 class="font-bold text-slate-800">Score &amp; Route</h3>
-        <p class="text-xs text-slate-500 mt-0.5">
+<div class="card !p-5 mb-6 w-full">
+    <div class="mb-4 border-b border-slate-100 dark:border-slate-700 pb-2">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100">Score &amp; Route</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Each lead is scored 0–100 based on job size and urgency.
             High-priority leads go to a human agent; the rest go to the AI agent.
         </p>
     </div>
 
-    <!-- Scoring criteria (always visible — customer can read along) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 mb-5 pb-5 border-b border-slate-100">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 mb-5 pb-5 border-b border-slate-100 dark:border-slate-700">
         <div>
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Job Size</p>
+            <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Job Size</p>
             <table class="w-full text-sm">
-                <tbody>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">Commercial Interstate</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">40 pts</td>
-                    </tr>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">Commercial Local</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">30 pts</td>
-                    </tr>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">Residential Interstate</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">25 pts</td>
+                <tbody class="divide-y divide-slate-50 dark:divide-slate-800">
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">Commercial Interstate</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">40 pts</td>
                     </tr>
                     <tr>
-                        <td class="py-1.5 text-slate-600">Residential Local</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">15 pts</td>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">Commercial Local</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">30 pts</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">Residential Interstate</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">25 pts</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">Residential Local</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">15 pts</td>
                     </tr>
                 </tbody>
             </table>
         </div>
         <div>
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Urgency (days until move)</p>
+            <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Urgency (days until move)</p>
             <table class="w-full text-sm">
-                <tbody>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">Under 14 days</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">+40 pts</td>
-                    </tr>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">14 – 30 days</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">+30 pts</td>
-                    </tr>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">31 – 60 days</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">+20 pts</td>
-                    </tr>
-                    <tr class="border-b border-slate-50">
-                        <td class="py-1.5 text-slate-600">61 – 90 days</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">+10 pts</td>
+                <tbody class="divide-y divide-slate-50 dark:divide-slate-800">
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">Under 14 days</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">+40 pts</td>
                     </tr>
                     <tr>
-                        <td class="py-1.5 text-slate-600">90+ days</td>
-                        <td class="py-1.5 text-right font-semibold text-slate-800 tabular-nums">+5 pts</td>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">14 – 30 days</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">+30 pts</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">31 – 60 days</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">+20 pts</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">61 – 90 days</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">+10 pts</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1.5 text-slate-600 dark:text-slate-300">90+ days</td>
+                        <td class="py-1.5 text-right font-semibold text-slate-800 dark:text-slate-100 tabular-nums">+5 pts</td>
                     </tr>
                 </tbody>
             </table>
         </div>
     </div>
 
-    <!-- Routing threshold -->
     <div class="flex flex-wrap items-center gap-4 mb-5 text-sm">
         <div class="flex items-center gap-2">
             <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500"></span>
-            <span class="text-slate-600">Score ≥ 60 → <strong class="text-slate-800">Human Agent Campaign</strong></span>
+            <span class="text-slate-600 dark:text-slate-300">Score ≥ 60 → <strong class="text-slate-800 dark:text-slate-100">Human Agent Campaign</strong></span>
         </div>
-        <span class="text-slate-200 hidden sm:inline">|</span>
+        <span class="text-slate-200 dark:text-slate-700 hidden sm:inline">|</span>
         <div class="flex items-center gap-2">
             <span class="inline-block w-2.5 h-2.5 rounded-full bg-purple-500"></span>
-            <span class="text-slate-600">Score &lt; 60 → <strong class="text-slate-800">AI Agent Campaign</strong></span>
+            <span class="text-slate-600 dark:text-slate-300">Score &lt; 60 → <strong class="text-slate-800 dark:text-slate-100">AI Agent Campaign</strong></span>
         </div>
     </div>
 
-    <!-- Split controls -->
     <div class="flex flex-wrap items-end gap-5 mb-4">
         <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">
-                High priority leads <span class="font-normal text-slate-400">(score ≥ 60)</span>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                High priority leads <span class="font-normal text-slate-400 dark:text-slate-500">(score ≥ 60)</span>
             </label>
             <div class="flex items-center gap-2">
                 <input id="d365-human-count" type="number" min="0" value="0"
-                    class="w-20 border border-slate-300 rounded p-2 text-sm text-center font-semibold focus:ring-green-500 focus:border-green-500">
-                <span class="text-xs font-medium text-green-600">→ Human Agent</span>
+                    class="w-20 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-white rounded p-2 text-sm text-center font-semibold focus:ring-green-500 focus:border-green-500">
+                <span class="text-xs font-medium text-green-600 dark:text-green-400">→ Human Agent</span>
             </div>
         </div>
         <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">
-                Low priority leads <span class="font-normal text-slate-400">(score &lt; 60)</span>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                Low priority leads <span class="font-normal text-slate-400 dark:text-slate-500">(score &lt; 60)</span>
             </label>
             <div class="flex items-center gap-2">
                 <input id="d365-ai-count" type="number" min="0" value="0"
-                    class="w-20 border border-slate-300 rounded p-2 text-sm text-center font-semibold focus:ring-purple-500 focus:border-purple-500">
-                <span class="text-xs font-medium text-purple-600">→ AI Agent</span>
+                    class="w-20 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-white rounded p-2 text-sm text-center font-semibold focus:ring-purple-500 focus:border-purple-500">
+                <span class="text-xs font-medium text-purple-600 dark:text-purple-400">→ AI Agent</span>
             </div>
         </div>
         <div class="pb-1">
-            <p id="d365-split-hint" class="text-xs text-slate-400"></p>
+            <p id="d365-split-hint" class="text-xs text-slate-400 dark:text-slate-500"></p>
         </div>
     </div>
 
-    <!-- Actions -->
     <div class="flex flex-wrap items-center gap-3 mb-4">
         <button id="d365-score-btn"
             class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
             Score Leads
         </button>
-        <button id="d365-push-btn"
-            class="hidden bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+        <button id="d365-push-btn" class="hidden btn-primary text-sm !py-2 !px-4">
             Push to RingCX
         </button>
-        <button id="d365-check-ringcx-btn"
-            class="hidden bg-slate-600 hover:bg-slate-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+        <button id="d365-check-ringcx-btn" class="hidden btn-secondary !bg-slate-600 hover:!bg-slate-500 !text-white text-sm !py-2 !px-4 border-transparent">
             Check RingCX
         </button>
-        <span id="d365-score-route-status" class="text-xs text-slate-500"></span>
+        <span id="d365-score-route-status" class="text-xs text-slate-500 dark:text-slate-400"></span>
     </div>
 
-    <!-- Score results table (hidden until scoring runs) -->
-    <div id="d365-score-results" class="hidden overflow-x-auto">
-        <table class="w-full text-sm">
+    <div id="d365-score-results" class="hidden overflow-x-auto w-full">
+        <table class="data-table">
             <thead>
-                <tr class="border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wide">
-                    <th class="text-left py-2 pr-4">Name</th>
-                    <th class="text-left py-2 pr-4">Move Type</th>
-                    <th class="text-left py-2 pr-4">Move Date</th>
-                    <th class="text-left py-2 pr-4">WebScore</th>
-                    <th class="text-left py-2">Routed To</th>
+                <tr>
+                    <th>Name</th>
+                    <th>Move Type</th>
+                    <th>Move Date</th>
+                    <th>WebScore</th>
+                    <th>Routed To</th>
                 </tr>
             </thead>
             <tbody id="d365-score-results-body"></tbody>
@@ -301,33 +275,29 @@
     </div>
 </div>
 
-<!-- Card 5: Live Dashboard -->
-<div class="bg-white p-5 rounded shadow-sm border border-slate-200 mb-6">
+<div class="card !p-5 mb-6 w-full">
 
-    <!-- Header -->
     <div class="flex items-center justify-between mb-1">
         <div class="flex items-center gap-2">
-            <h3 class="font-bold text-slate-800">Live Dashboard</h3>
+            <h3 class="font-bold text-slate-800 dark:text-slate-100">Live Dashboard</h3>
             <span id="live-feed-status-dot"
-                class="inline-block w-2 h-2 rounded-full bg-slate-300"
+                class="inline-block w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600"
                 title="SSE disconnected"></span>
-            <span id="live-feed-status-label" class="text-xs text-slate-400">not connected</span>
+            <span id="live-feed-status-label" class="text-xs text-slate-400 dark:text-slate-500">not connected</span>
         </div>
-        <button id="d365-refresh-outcomes-btn" class="text-xs text-slate-400 hover:text-slate-600 transition">
+        <button id="d365-refresh-outcomes-btn" class="text-xs text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition">
             Refresh
         </button>
     </div>
-    <p class="text-xs text-slate-400 mb-4">All metrics are calculated from D365 and automation data only — no RingCX call metrics.</p>
+    <p class="text-xs text-slate-400 dark:text-slate-500 mb-4 border-b border-slate-100 dark:border-slate-700 pb-2">All metrics are calculated from D365 and automation data only — no RingCX call metrics.</p>
 
-    <!-- Metric tiles -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
 
-        <!-- Automation Speed -->
-        <div class="bg-blue-50 rounded p-3 text-center relative group">
-            <div id="dash-speed" class="text-2xl font-bold text-blue-700">—</div>
-            <div class="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-lg p-3 text-center relative group">
+            <div id="dash-speed" class="text-2xl font-bold text-blue-700 dark:text-blue-400">—</div>
+            <div class="text-xs font-semibold text-blue-800 dark:text-blue-300 mt-1 flex items-center justify-center gap-1 uppercase tracking-wide">
                 Automation Speed
-                <span class="text-slate-300 cursor-help">ⓘ</span>
+                <span class="text-blue-300 dark:text-blue-500 cursor-help">ⓘ</span>
             </div>
             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-800 text-white text-xs rounded-lg p-3 shadow-xl invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity pointer-events-none z-30 text-left">
                 <p class="font-semibold mb-1">Automation Speed</p>
@@ -336,12 +306,11 @@
             </div>
         </div>
 
-        <!-- HOT Leads -->
-        <div class="bg-green-50 rounded p-3 text-center relative group">
-            <div id="outcomes-hot" class="text-2xl font-bold text-green-700">—</div>
-            <div class="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+        <div class="bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800 rounded-lg p-3 text-center relative group">
+            <div id="outcomes-hot" class="text-2xl font-bold text-green-700 dark:text-green-400">—</div>
+            <div class="text-xs font-semibold text-green-800 dark:text-green-300 mt-1 flex items-center justify-center gap-1 uppercase tracking-wide">
                 HOT Leads
-                <span class="text-slate-300 cursor-help">ⓘ</span>
+                <span class="text-green-300 dark:text-green-500 cursor-help">ⓘ</span>
             </div>
             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-800 text-white text-xs rounded-lg p-3 shadow-xl invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity pointer-events-none z-30 text-left">
                 <p class="font-semibold mb-1">HOT Leads</p>
@@ -350,12 +319,11 @@
             </div>
         </div>
 
-        <!-- Conversion Rate -->
-        <div class="bg-amber-50 rounded p-3 text-center relative group">
-            <div id="dash-conv" class="text-2xl font-bold text-amber-700">—</div>
-            <div class="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+        <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg p-3 text-center relative group">
+            <div id="dash-conv" class="text-2xl font-bold text-amber-700 dark:text-amber-400">—</div>
+            <div class="text-xs font-semibold text-amber-800 dark:text-amber-300 mt-1 flex items-center justify-center gap-1 uppercase tracking-wide">
                 Conversion Rate
-                <span class="text-slate-300 cursor-help">ⓘ</span>
+                <span class="text-amber-300 dark:text-amber-500 cursor-help">ⓘ</span>
             </div>
             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-800 text-white text-xs rounded-lg p-3 shadow-xl invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity pointer-events-none z-30 text-left">
                 <p class="font-semibold mb-1">Conversion Rate</p>
@@ -364,12 +332,11 @@
             </div>
         </div>
 
-        <!-- Dispositions Received -->
-        <div class="bg-slate-50 rounded p-3 text-center relative group">
-            <div id="outcomes-called" class="text-2xl font-bold text-slate-800">—</div>
-            <div class="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+        <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-center relative group">
+            <div id="outcomes-called" class="text-2xl font-bold text-slate-800 dark:text-slate-100">—</div>
+            <div class="text-xs font-semibold text-slate-600 dark:text-slate-400 mt-1 flex items-center justify-center gap-1 uppercase tracking-wide">
                 Dispositions
-                <span class="text-slate-300 cursor-help">ⓘ</span>
+                <span class="text-slate-400 dark:text-slate-500 cursor-help">ⓘ</span>
             </div>
             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-800 text-white text-xs rounded-lg p-3 shadow-xl invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity pointer-events-none z-30 text-left">
                 <p class="font-semibold mb-1">Dispositions Received</p>
@@ -380,75 +347,71 @@
 
     </div>
 
-    <!-- AI vs Human comparison -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5 relative group">
 
-        <!-- Human -->
-        <div class="border border-green-200 bg-green-50/40 rounded-lg p-4">
-            <div class="flex items-center justify-between mb-3">
+        <div class="border border-green-200 dark:border-green-800 bg-green-50/40 dark:bg-green-900/10 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3 border-b border-green-100 dark:border-green-800/50 pb-2">
                 <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span>
-                    <span class="font-semibold text-sm text-slate-800">Human Agent</span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block shadow-sm"></span>
+                    <span class="font-semibold text-sm text-slate-800 dark:text-slate-200">Human Agent</span>
                 </div>
-                <span class="text-xs text-slate-400">Score ≥ 60</span>
+                <span class="text-xs font-mono text-slate-500 dark:text-slate-400 bg-green-100 dark:bg-green-900/30 px-2 rounded">Score ≥ 60</span>
             </div>
             <div class="grid grid-cols-3 gap-2 mb-3 text-center">
                 <div>
-                    <div id="dash-human-total" class="text-xl font-bold text-slate-800">—</div>
-                    <div class="text-xs text-slate-500">Pushed</div>
+                    <div id="dash-human-total" class="text-xl font-bold text-slate-800 dark:text-slate-200">—</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Pushed</div>
                 </div>
                 <div>
-                    <div id="dash-human-called" class="text-xl font-bold text-slate-800">—</div>
-                    <div class="text-xs text-slate-500">Dispositioned</div>
+                    <div id="dash-human-called" class="text-xl font-bold text-slate-800 dark:text-slate-200">—</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Dispositioned</div>
                 </div>
                 <div>
-                    <div id="dash-human-hot" class="text-xl font-bold text-green-700">—</div>
-                    <div class="text-xs text-slate-500">HOT</div>
+                    <div id="dash-human-hot" class="text-xl font-bold text-green-700 dark:text-green-400">—</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">HOT</div>
                 </div>
             </div>
             <div class="flex items-center gap-2">
-                <div class="flex-1 bg-green-100 rounded-full h-2">
-                    <div id="dash-human-bar" class="bg-green-500 h-2 rounded-full transition-all" style="width:0%"></div>
+                <div class="flex-1 bg-green-100 dark:bg-green-900/30 rounded-full h-2 overflow-hidden border border-green-200 dark:border-green-800">
+                    <div id="dash-human-bar" class="bg-green-500 h-full transition-all" style="width:0%"></div>
                 </div>
-                <span id="dash-human-pct" class="text-xs font-semibold text-green-700 w-8 text-right">—</span>
+                <span id="dash-human-pct" class="text-xs font-semibold text-green-700 dark:text-green-400 w-8 text-right">—</span>
             </div>
         </div>
 
-        <!-- AI -->
-        <div class="border border-purple-200 bg-purple-50/40 rounded-lg p-4">
-            <div class="flex items-center justify-between mb-3">
+        <div class="border border-purple-200 dark:border-purple-800 bg-purple-50/40 dark:bg-purple-900/10 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3 border-b border-purple-100 dark:border-purple-800/50 pb-2">
                 <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block"></span>
-                    <span class="font-semibold text-sm text-slate-800">AI Agent</span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block shadow-sm"></span>
+                    <span class="font-semibold text-sm text-slate-800 dark:text-slate-200">AI Agent</span>
                 </div>
-                <span class="text-xs text-slate-400">Score &lt; 60</span>
+                <span class="text-xs font-mono text-slate-500 dark:text-slate-400 bg-purple-100 dark:bg-purple-900/30 px-2 rounded">Score &lt; 60</span>
             </div>
             <div class="grid grid-cols-3 gap-2 mb-3 text-center">
                 <div>
-                    <div id="dash-ai-total" class="text-xl font-bold text-slate-800">—</div>
-                    <div class="text-xs text-slate-500">Pushed</div>
+                    <div id="dash-ai-total" class="text-xl font-bold text-slate-800 dark:text-slate-200">—</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Pushed</div>
                 </div>
                 <div>
-                    <div id="dash-ai-called" class="text-xl font-bold text-slate-800">—</div>
-                    <div class="text-xs text-slate-500">Dispositioned</div>
+                    <div id="dash-ai-called" class="text-xl font-bold text-slate-800 dark:text-slate-200">—</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">Dispositioned</div>
                 </div>
                 <div>
-                    <div id="dash-ai-hot" class="text-xl font-bold text-purple-700">—</div>
-                    <div class="text-xs text-slate-500">HOT</div>
+                    <div id="dash-ai-hot" class="text-xl font-bold text-purple-700 dark:text-purple-400">—</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400">HOT</div>
                 </div>
             </div>
             <div class="flex items-center gap-2">
-                <div class="flex-1 bg-purple-100 rounded-full h-2">
-                    <div id="dash-ai-bar" class="bg-purple-500 h-2 rounded-full transition-all" style="width:0%"></div>
+                <div class="flex-1 bg-purple-100 dark:bg-purple-900/30 rounded-full h-2 overflow-hidden border border-purple-200 dark:border-purple-800">
+                    <div id="dash-ai-bar" class="bg-purple-500 h-full transition-all" style="width:0%"></div>
                 </div>
-                <span id="dash-ai-pct" class="text-xs font-semibold text-purple-700 w-8 text-right">—</span>
+                <span id="dash-ai-pct" class="text-xs font-semibold text-purple-700 dark:text-purple-400 w-8 text-right">—</span>
             </div>
         </div>
 
-        <!-- Tooltip for the whole comparison -->
-        <div class="absolute -top-2 right-0">
+        <div class="absolute -top-3 right-0">
             <div class="relative group/tip inline-block">
-                <span class="text-slate-300 hover:text-slate-500 cursor-help text-xs">ⓘ</span>
+                <span class="text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 cursor-help text-sm bg-white dark:bg-slate-800 rounded-full px-1 shadow-sm border border-slate-200 dark:border-slate-700">ⓘ</span>
                 <div class="absolute bottom-full right-0 mb-2 w-72 bg-slate-800 text-white text-xs rounded-lg p-3 shadow-xl invisible opacity-0 group-hover/tip:visible group-hover/tip:opacity-100 transition-opacity pointer-events-none z-30 text-left">
                     <p class="font-semibold mb-1">AI vs Human Comparison</p>
                     <p class="text-slate-300 mb-2">Same lead pool, split by campaign assignment. Lets you compare HOT conversion rates between the AI agent and your human agents side by side.</p>
@@ -459,105 +422,93 @@
 
     </div>
 
-    <!-- Webhook URL (reference) -->
-    <div class="bg-slate-50 border border-slate-200 rounded p-3 mb-4">
-        <p class="text-xs font-medium text-slate-600 mb-1">RingCX Web Service URL</p>
-        <code id="postback-url-display" class="text-xs text-slate-700 break-all">Loading…</code>
-        <p class="text-xs text-slate-400 mt-1">
-            Body type: <strong>FORM</strong> · Required fields:
-            <code>externId → #lead_extern_id#</code>,
-            <code>disposition → #agent_disposition#</code>
+    <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3 mb-4 shadow-sm">
+        <p class="text-xs font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wide">RingCX Web Service URL</p>
+        <code id="postback-url-display" class="block text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2 rounded text-slate-700 dark:text-slate-300 break-all mb-2 shadow-inner">Loading…</code>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+            Body type: <strong class="text-slate-700 dark:text-slate-300">FORM</strong> · Required fields:
+            <code class="bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700">externId → #lead_extern_id#</code>,
+            <code class="bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700">disposition → #agent_disposition#</code>
         </p>
     </div>
 
-    <!-- Lead status table -->
-    <div id="live-feed-empty" class="text-sm text-slate-400 text-center py-6 hidden">
+    <div id="live-feed-empty" class="text-sm text-slate-400 dark:text-slate-500 text-center py-6 hidden italic bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
         No leads found. Create and push leads above to see them here.
     </div>
-    <div id="live-feed-table-wrap" class="overflow-x-auto hidden">
-        <table class="w-full text-sm">
+    <div id="live-feed-table-wrap" class="overflow-x-auto hidden w-full">
+        <table class="data-table">
             <thead>
-                <tr class="border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wide">
-                    <th class="text-left py-2 pr-2">Name</th>
-                    <th class="text-left py-2 pr-2">Phone</th>
-                    <th class="text-left py-2 pr-2">Score</th>
-                    <th class="text-left py-2 pr-2">Campaign</th>
-                    <th class="text-left py-2 pr-2">Move Type</th>
-                    <th class="text-left py-2 pr-2">Origin → Dest</th>
-                    <th class="text-left py-2 pr-2">Disposition</th>
-                    <th class="text-left py-2 pr-2">Time</th>
-                    <th class="text-left py-2">Actions</th>
+                <tr>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Score</th>
+                    <th>Campaign</th>
+                    <th>Move Type</th>
+                    <th>Origin → Dest</th>
+                    <th>Disposition</th>
+                    <th>Time</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="live-feed-body"></tbody>
         </table>
     </div>
 
-    <p id="outcomes-status" class="text-xs text-slate-400 mt-2"></p>
+    <p id="outcomes-status" class="text-xs text-slate-400 dark:text-slate-500 mt-3 text-right"></p>
 </div>
 
-<!-- Modal: Add Environment -->
-<div id="d365-add-env-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <h3 class="font-bold text-slate-800">Add D365 Environment</h3>
+<div id="d365-add-env-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 border border-slate-200 dark:border-slate-700">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">Add D365 Environment</h3>
             <button id="d365-modal-close-btn"
-                class="text-slate-400 hover:text-slate-600 transition text-2xl leading-none">&times;</button>
+                class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition text-2xl leading-none">&times;</button>
         </div>
-        <div class="px-5 py-4 space-y-3">
+        <div class="px-5 py-4 space-y-4">
             <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
-                <input id="d365-modal-name" type="text" placeholder="e.g. ANZ Bank Sandbox"
-                    class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                <label class="input-label">Name</label>
+                <input id="d365-modal-name" type="text" placeholder="e.g. ANZ Bank Sandbox" class="input-field">
             </div>
             <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Tenant ID</label>
-                <input id="d365-modal-tenant" type="text" placeholder="Azure Tenant GUID"
-                    class="w-full border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 focus:border-blue-500">
+                <label class="input-label">Tenant ID</label>
+                <input id="d365-modal-tenant" type="text" placeholder="Azure Tenant GUID" class="input-field font-mono text-sm">
             </div>
             <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Client ID</label>
-                <input id="d365-modal-client-id" type="text" placeholder="App Registration Client ID"
-                    class="w-full border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 focus:border-blue-500">
+                <label class="input-label">Client ID</label>
+                <input id="d365-modal-client-id" type="text" placeholder="App Registration Client ID" class="input-field font-mono text-sm">
             </div>
             <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Client Secret</label>
-                <input id="d365-modal-secret" type="password" placeholder="Client secret value"
-                    class="w-full border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 focus:border-blue-500">
+                <label class="input-label">Client Secret</label>
+                <input id="d365-modal-secret" type="password" placeholder="Client secret value" class="input-field font-mono text-sm">
             </div>
             <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Environment URL</label>
-                <input id="d365-modal-url" type="text" placeholder="https://org.crm.dynamics.com"
-                    class="w-full border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 focus:border-blue-500">
+                <label class="input-label">Environment URL</label>
+                <input id="d365-modal-url" type="text" placeholder="https://org.crm.dynamics.com" class="input-field font-mono text-sm">
             </div>
         </div>
-        <div class="flex gap-3 px-5 py-4 border-t border-slate-100">
-            <button id="d365-modal-save-btn"
-                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+        <div class="flex gap-3 px-5 py-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 rounded-b-xl">
+            <button id="d365-modal-save-btn" class="btn-primary flex-1">
                 Save Environment
             </button>
-            <button id="d365-modal-cancel-btn"
-                class="bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold py-2 px-4 rounded border border-slate-300 transition">
+            <button id="d365-modal-cancel-btn" class="btn-secondary">
                 Cancel
             </button>
         </div>
     </div>
 </div>
 
-<!-- Modal: Delete Confirmation -->
-<div id="d365-delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4">
-        <div class="px-5 pt-5 pb-3">
-            <h3 class="font-bold text-slate-800 mb-2">Delete All Demo Leads?</h3>
-            <p class="text-sm text-slate-500">This will permanently delete all demo leads from D365 and Firestore for this environment. This cannot be undone.</p>
+<div id="d365-delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm mx-4 border border-slate-200 dark:border-slate-700 text-center p-6">
+        <div class="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-200 dark:border-red-800">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </div>
-        <div class="flex gap-3 px-5 pb-5">
-            <button id="d365-delete-confirm-btn"
-                class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 text-xl mb-2">Delete All Demo Leads?</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">This will permanently delete all demo leads from D365 and Firestore for this environment. This cannot be undone.</p>
+        <div class="flex gap-3">
+            <button id="d365-delete-confirm-btn" class="btn-danger flex-1">
                 Yes, Delete All
             </button>
-            <button id="d365-delete-cancel-btn"
-                class="bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold py-2 px-4 rounded border border-slate-300 transition">
+            <button id="d365-delete-cancel-btn" class="btn-secondary flex-1">
                 Cancel
             </button>
         </div>
