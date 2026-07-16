@@ -1,70 +1,77 @@
-<div class="mb-6">
-    <h2 class="text-heading mb-1">Agent Form</h2>
-    <p class="text-subheading">Preview and debug the AI-assisted triage form that agents see during calls.</p>
-</div>
-
-<!-- Active call selector + iframe URL -->
-<div class="flex flex-col lg:flex-row gap-4 mb-5 items-end w-full">
-    <div class="flex-1 w-full">
-        <label class="input-label">Active Call</label>
-        <div class="flex flex-col sm:flex-row gap-2 w-full">
-            <select id="af-dialog-select" class="input-field sm:flex-1">
-                <option value="">No active calls — make sure RingCX Streaming tab is connected</option>
-            </select>
-            <button id="af-refresh-btn" class="btn-secondary w-full sm:w-auto">
-                Refresh
-            </button>
-            <button id="af-load-btn" class="btn-primary w-full sm:w-auto">
-                Load Form
-            </button>
-        </div>
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Agent Form</h2>
+        <p class="text-subheading">Preview and debug the AI-assisted triage form that agents see during calls.</p>
     </div>
 
-    <div class="w-full lg:w-96">
-        <label class="input-label">Agent Script iframe URL</label>
-        <div class="flex gap-2 items-center w-full">
-            <code id="af-iframe-url" class="flex-1 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-3 py-2.5 font-mono text-slate-500 dark:text-slate-400 truncate">
-                Select a call to generate URL
-            </code>
-            <button id="af-copy-url-btn" class="btn-secondary !py-2 !px-3 text-xs w-auto">
-                Copy
-            </button>
-        </div>
-        <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Paste this URL into the RingCX agent script iframe config.</p>
-    </div>
-</div>
-
-<!-- Side-by-side: transcript + form iframe -->
-<div class="flex flex-col lg:flex-row gap-4 w-full h-[800px] lg:h-[calc(100vh-280px)] lg:min-h-[500px]">
-
-    <!-- Left: Live transcript -->
-    <div class="w-full lg:w-2/5 flex flex-col card !p-0 overflow-hidden flex-shrink-0 h-[400px] lg:h-full">
-        <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
-            <div>
-                <h3 class="font-bold text-slate-800 dark:text-slate-200 text-sm">Live Transcript</h3>
-                <p id="af-call-info" class="text-xs text-slate-400 dark:text-slate-500"></p>
+    <!-- Active call selector + iframe URL -->
+    <div class="flex flex-col lg:flex-row gap-6 mb-6 items-end w-full">
+        <div class="flex-1 w-full">
+            <div class="input-wrapper">
+                <label class="input-label">Active Call Target</label>
+                <div class="flex flex-col sm:flex-row gap-3 w-full">
+                    <select id="af-dialog-select" class="input-field sm:flex-1">
+                        <option value="">No active calls — make sure RingCX Streaming tab is connected</option>
+                    </select>
+                    <button id="af-refresh-btn" class="btn-secondary w-full sm:w-auto px-6">
+                        Refresh
+                    </button>
+                    <button id="af-load-btn" class="btn-primary w-full sm:w-auto px-8">
+                        Load Form
+                    </button>
+                </div>
             </div>
-            <button id="af-clear-btn" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">Clear</button>
         </div>
-        <div id="af-transcript-container" class="flex-1 overflow-y-auto p-3 space-y-2 bg-white dark:bg-slate-800">
-            <p id="af-transcript-placeholder" class="text-slate-400 dark:text-slate-500 text-xs text-center mt-6">
-                Load a call to see the transcript here.
-            </p>
+
+        <div class="w-full lg:w-[400px]">
+            <div class="input-wrapper">
+                <label class="input-label">Agent Script iframe URL</label>
+                <div class="flex gap-2 items-center w-full">
+                    <code id="af-iframe-url" class="flex-1 text-xs bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3.5 font-mono text-slate-500 dark:text-slate-400 truncate shadow-inner">
+                        Select a call to generate URL
+                    </code>
+                    <button id="af-copy-url-btn" class="btn-secondary !py-3 !px-4 text-xs w-auto">
+                        Copy
+                    </button>
+                </div>
+                <p class="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mt-1.5 ml-1">Paste this URL into the RingCX agent script iframe config.</p>
+            </div>
         </div>
     </div>
 
-    <!-- Right: Agent form iframe -->
-    <div class="flex-1 w-full flex flex-col card !p-0 overflow-hidden h-[600px] lg:h-full">
-        <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-            <h3 class="font-bold text-slate-800 dark:text-slate-200 text-sm">Agent Form Preview</h3>
-            <p class="text-xs text-slate-400 dark:text-slate-500">This is exactly what the agent sees in their RingCX script panel.</p>
-        </div>
-        <div id="af-iframe-placeholder" class="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500 text-sm bg-white dark:bg-slate-800">
-            Select an active call and click Load Form.
-        </div>
-        <iframe id="af-form-iframe" class="hidden flex-1 w-full h-full border-0 bg-white" style="min-height: 0;"></iframe>
-    </div>
+    <!-- Side-by-side: transcript + form iframe -->
+    <div class="flex flex-col lg:flex-row gap-8 w-full h-[800px] lg:h-[calc(100vh-320px)] lg:min-h-[500px]">
 
+        <!-- Left: Live transcript -->
+        <div class="w-full lg:w-2/5 flex flex-col card !p-0 overflow-hidden flex-shrink-0 h-[400px] lg:h-full border-0 shadow-lg">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+                <div>
+                    <h3 class="text-heading text-lg">Live Transcript</h3>
+                    <p id="af-call-info" class="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1"></p>
+                </div>
+                <button id="af-clear-btn" class="btn-secondary !py-1.5 !px-3 text-xs">Clear</button>
+            </div>
+            <div id="af-transcript-container" class="flex-1 overflow-y-auto p-5 space-y-4 bg-white dark:bg-[#0b1120]">
+                <p id="af-transcript-placeholder" class="text-slate-400 dark:text-slate-500 font-medium text-sm text-center mt-12">
+                    Load a call to see the transcript here.
+                </p>
+            </div>
+        </div>
+
+        <!-- Right: Agent form iframe -->
+        <div class="flex-1 w-full flex flex-col card !p-0 overflow-hidden h-[600px] lg:h-full border-0 shadow-lg">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30">
+                <h3 class="text-heading text-lg">Agent Form Preview</h3>
+                <p class="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1">This is exactly what the agent sees in their RingCX script panel.</p>
+            </div>
+            <div id="af-iframe-placeholder" class="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium text-sm bg-slate-50/50 dark:bg-[#0b1120]">
+                Select an active call and click Load Form.
+            </div>
+            <iframe id="af-form-iframe" class="hidden flex-1 w-full h-full border-0 bg-transparent" style="min-height: 0;"></iframe>
+        </div>
+
+    </div>
 </div>
 
+<!-- Links to your existing external JS file -->
 <script src="{{ url_for('static', filename='js/agent_form_tab.js') }}"></script>
