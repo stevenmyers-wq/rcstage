@@ -1,50 +1,50 @@
-<div class="card space-y-6 w-full">
-    <div class="border-b border-slate-200 dark:border-slate-700 pb-4">
-        <h2 class="text-heading mb-1">Admin Analytics Dashboard</h2>
+<div class="card space-y-8 w-full border-0 shadow-lg !p-8">
+    <div class="border-b border-slate-200 dark:border-slate-800/80 pb-6 mb-2">
+        <h2 class="text-display mb-2">Admin Analytics Dashboard</h2>
         <p class="text-subheading">Real-time usage metrics and API health monitoring.</p>
     </div>
     
-    <div id="analytics-loading" class="text-center py-8">
-        <div class="spinner mx-auto"></div>
-        <p class="mt-4 text-gray-500 dark:text-gray-400">Loading analytics data...</p>
+    <div id="analytics-loading" class="text-center py-16">
+        <div class="spinner w-10 h-10 border-4 border-blue-600 mx-auto mb-4"></div>
+        <p class="font-bold text-slate-500 dark:text-slate-400">Loading analytics data...</p>
     </div>
 
-    <div id="analytics-content" class="hidden space-y-6 w-full">
+    <div id="analytics-content" class="hidden space-y-8 w-full">
 
         <!-- KPI STAT CARDS -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="card !p-5 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Actions (Last 1000)</span>
-                <span id="stat-total" class="text-3xl font-bold text-gray-800 dark:text-white">—</span>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="card !p-6 flex flex-col gap-2 hover:-translate-y-1">
+                <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Actions (Last 1k)</span>
+                <span id="stat-total" class="text-4xl font-extrabold text-slate-800 dark:text-white">—</span>
             </div>
-            <div class="card !p-5 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Unique Users</span>
-                <span id="stat-unique-users" class="text-3xl font-bold text-blue-600 dark:text-blue-400">—</span>
+            <div class="card !p-6 flex flex-col gap-2 hover:-translate-y-1">
+                <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Unique Users</span>
+                <span id="stat-unique-users" class="text-4xl font-extrabold text-blue-600 dark:text-blue-400">—</span>
             </div>
-            <div class="card !p-5 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">This Week vs Last Week</span>
-                <span id="stat-wow" class="text-3xl font-bold text-gray-800 dark:text-white">—</span>
-                <span id="stat-wow-sub" class="text-xs text-gray-500 dark:text-gray-400"></span>
+            <div class="card !p-6 flex flex-col gap-2 hover:-translate-y-1">
+                <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">This Wk vs Last Wk</span>
+                <span id="stat-wow" class="text-4xl font-extrabold text-slate-800 dark:text-white">—</span>
+                <span id="stat-wow-sub" class="text-xs font-semibold text-slate-500 dark:text-slate-400"></span>
             </div>
-            <div class="card !p-5 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">New Users This Week</span>
-                <span id="stat-new-users" class="text-3xl font-bold text-green-600 dark:text-green-400">—</span>
+            <div class="card !p-6 flex flex-col gap-2 hover:-translate-y-1">
+                <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">New Users This Wk</span>
+                <span id="stat-new-users" class="text-4xl font-extrabold text-emerald-600 dark:text-emerald-400">—</span>
             </div>
         </div>
 
         <!-- CHARTS ROW 1 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
             <!-- Tool Popularity (Bar Chart) -->
-            <div class="card !p-5">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Tool Usage Popularity</h3>
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-6">Tool Usage Popularity</h3>
                 <div class="relative h-64 w-full">
                     <canvas id="toolPopularityChart"></canvas>
                 </div>
             </div>
 
             <!-- API Success vs Error (Doughnut) -->
-            <div class="card !p-5">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">API Actions Health</h3>
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-6">API Actions Health</h3>
                 <div class="relative h-64 w-full">
                     <canvas id="statusRatioChart"></canvas>
                 </div>
@@ -52,24 +52,24 @@
         </div>
 
         <!-- Activity Over Time (Line Chart) -->
-        <div class="card !p-5 w-full">
-            <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Activity Over Time (Last 1000 Actions)</h3>
+        <div class="card !p-6 w-full">
+            <h3 class="text-heading text-lg mb-6">Activity Over Time (Last 1000 Actions)</h3>
             <div class="relative h-72 w-full">
                 <canvas id="activityChart"></canvas>
             </div>
         </div>
 
         <!-- CHARTS ROW 2 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
 
             <!-- Top Users Leaderboard -->
-            <div class="card !p-5">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Top Users</h3>
-                <div id="leaderboard-table" class="overflow-x-auto w-full">
+            <div class="card !p-6 flex flex-col h-full">
+                <h3 class="text-heading text-lg mb-6">Top Users</h3>
+                <div id="leaderboard-table" class="table-container border-0 rounded-none shadow-none flex-grow">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>#</th>
+                                <th>Rank</th>
                                 <th>User</th>
                                 <th class="text-right">Actions</th>
                             </tr>
@@ -80,8 +80,8 @@
             </div>
 
             <!-- Per-Tool Error Breakdown -->
-            <div class="card !p-5">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Error Rate by Tool</h3>
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-6">Error Rate by Tool</h3>
                 <div class="relative h-64 w-full">
                     <canvas id="toolErrorChart"></canvas>
                 </div>
@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const isDark = document.documentElement.classList.contains('dark');
             const textColor = isDark ? '#94a3b8' : '#64748b';
-            const gridColor = isDark ? '#334155' : '#e2e8f0';
+            const gridColor = isDark ? '#1e293b' : '#f1f5f9';
 
             const total = Object.values(data.tool_popularity).reduce((a, b) => a + b, 0);
             document.getElementById('stat-total').textContent = total.toLocaleString();
@@ -118,15 +118,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const wowPct = data.wow_pct ?? 0;
             wowEl.textContent = `${data.this_week_count ?? 0}`;
             if (wow > 0) {
-                wowEl.className = 'text-3xl font-bold text-green-600 dark:text-green-400';
+                wowEl.className = 'text-4xl font-extrabold text-emerald-600 dark:text-emerald-400';
                 wowSub.textContent = `▲ ${wow} (${wowPct}%) vs last week`;
             } else if (wow < 0) {
-                wowEl.className = 'text-3xl font-bold text-red-500 dark:text-red-400';
+                wowEl.className = 'text-4xl font-extrabold text-rose-500 dark:text-rose-400';
                 wowSub.textContent = `▼ ${Math.abs(wow)} (${Math.abs(wowPct)}%) vs last week`;
             } else {
-                wowEl.className = 'text-3xl font-bold text-gray-800 dark:text-white';
+                wowEl.className = 'text-4xl font-extrabold text-slate-800 dark:text-white';
                 wowSub.textContent = 'No change vs last week';
             }
+
+            // Global Chart Defaults
+            Chart.defaults.font.family = 'Inter, sans-serif';
+            Chart.defaults.color = textColor;
 
             const tools = Object.keys(data.tool_popularity);
             const toolCounts = Object.values(data.tool_popularity);
@@ -134,17 +138,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'bar',
                 data: {
                     labels: tools,
-                    datasets: [{ label: 'Times Used', data: toolCounts, backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: 'rgb(59, 130, 246)', borderWidth: 1 }]
+                    datasets: [{ label: 'Times Used', data: toolCounts, backgroundColor: '#3b82f6', borderRadius: 6 }]
                 },
                 options: { 
                     indexAxis: 'y', 
                     responsive: true, 
                     maintainAspectRatio: false,
                     scales: {
-                        x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                        y: { ticks: { color: textColor }, grid: { display: false } }
+                        x: { ticks: { font: { weight: '600' } }, grid: { color: gridColor, drawBorder: false } },
+                        y: { ticks: { font: { weight: '600' } }, grid: { display: false, drawBorder: false } }
                     },
-                    plugins: { legend: { labels: { color: textColor } } }
+                    plugins: { legend: { display: false } }
                 }
             });
 
@@ -152,12 +156,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'doughnut',
                 data: {
                     labels: ['Success', 'Error'],
-                    datasets: [{ data: [data.status_ratio.success || 0, data.status_ratio.error || 0], backgroundColor: ['#10B981', '#EF4444'], borderColor: isDark ? '#1e293b' : '#fff' }]
+                    datasets: [{ data: [data.status_ratio.success || 0, data.status_ratio.error || 0], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }]
                 },
                 options: { 
                     responsive: true, 
                     maintainAspectRatio: false,
-                    plugins: { legend: { labels: { color: textColor } } }
+                    cutout: '75%',
+                    plugins: { legend: { position: 'bottom', labels: { padding: 20, font: { weight: 'bold' } } } }
                 }
             });
 
@@ -167,16 +172,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'line',
                 data: {
                     labels: dates,
-                    datasets: [{ label: 'Daily Actions', data: dateCounts, fill: true, backgroundColor: 'rgba(99, 102, 241, 0.2)', borderColor: 'rgb(99, 102, 241)', tension: 0.1 }]
+                    datasets: [{ label: 'Daily Actions', data: dateCounts, fill: true, backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: '#6366f1', tension: 0.4, borderWidth: 3, pointBackgroundColor: '#6366f1', pointRadius: 4 }]
                 },
                 options: { 
                     responsive: true, 
                     maintainAspectRatio: false,
                     scales: {
-                        x: { ticks: { color: textColor }, grid: { color: gridColor } },
-                        y: { ticks: { color: textColor }, grid: { color: gridColor } }
+                        x: { grid: { display: false, drawBorder: false }, ticks: { font: { weight: '600' } } },
+                        y: { grid: { color: gridColor, drawBorder: false }, ticks: { font: { weight: '600' } } }
                     },
-                    plugins: { legend: { labels: { color: textColor } } }
+                    plugins: { legend: { display: false } }
                 }
             });
 
@@ -184,13 +189,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const tbody = document.getElementById('leaderboard-body');
             const medals = ['🥇', '🥈', '🥉'];
             leaderboard.forEach((user, i) => {
-                const rank = medals[i] || `${i + 1}.`;
+                const rank = medals[i] || `<span class="text-slate-400 font-bold ml-1">${i + 1}.</span>`;
                 const row = document.createElement('tr');
                 const displayEmail = user.email.replace('@ringcentral.com', '');
                 row.innerHTML = `
-                    <td class="opacity-70">${rank}</td>
-                    <td class="font-medium">${displayEmail}</td>
-                    <td class="text-right font-bold text-blue-600 dark:text-blue-400">${user.count}</td>
+                    <td class="text-lg">${rank}</td>
+                    <td class="font-bold text-slate-700 dark:text-slate-200">${displayEmail}</td>
+                    <td class="text-right font-black text-blue-600 dark:text-blue-400 text-lg">${user.count}</td>
                 `;
                 tbody.appendChild(row);
             });
@@ -210,9 +215,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         datasets: [{
                             label: 'Error Rate (%)',
                             data: errorPcts,
-                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
-                            borderColor: 'rgb(239, 68, 68)',
-                            borderWidth: 1
+                            backgroundColor: '#f43f5e',
+                            borderRadius: 6
                         }]
                     },
                     options: {
@@ -220,12 +224,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { max: 100, ticks: { callback: v => v + '%', color: textColor }, grid: { color: gridColor } },
-                            y: { ticks: { color: textColor }, grid: { display: false } }
+                            x: { max: 100, ticks: { callback: v => v + '%', font: { weight: '600' } }, grid: { color: gridColor, drawBorder: false } },
+                            y: { grid: { display: false, drawBorder: false }, ticks: { font: { weight: '600' } } }
                         },
                         plugins: {
-                            legend: { labels: { color: textColor } },
+                            legend: { display: false },
                             tooltip: {
+                                backgroundColor: 'rgba(15,23,42,0.95)',
+                                titleFont: { size: 13, weight: 'bold' },
+                                bodyFont: { size: 12 },
+                                padding: 12,
+                                cornerRadius: 8,
                                 callbacks: {
                                     label: ctx => {
                                         const tool = errorTools[ctx.dataIndex][1];
@@ -238,11 +247,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             } else {
                 document.getElementById('toolErrorChart').parentElement.innerHTML =
-                    '<p class="text-sm text-green-600 dark:text-green-400 font-medium flex items-center gap-2"><span>✅</span> No errors recorded in the last 1000 actions.</p>';
+                    '<div class="flex items-center justify-center h-full"><p class="text-sm text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 rounded-xl">✅ No errors recorded in the last 1000 actions.</p></div>';
             }
 
         }).catch(err => {
-            document.getElementById('analytics-loading').innerHTML = '<p class="text-red-500 dark:text-red-400">Failed to load data.</p>';
+            document.getElementById('analytics-loading').innerHTML = '<p class="text-rose-500 font-bold">Failed to load data.</p>';
         });
 });
 </script>
