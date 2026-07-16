@@ -1,52 +1,52 @@
-<div class="space-y-6 animate-fade-in p-4 w-full">
-    <div class="mb-4 border-b border-gray-200 pb-4">
-        <h2 class="text-3xl font-bold text-slate-800 mb-1">Phone Number Assignment</h2>
-        <p class="text-slate-500 text-sm">Bulk assign available phone numbers from inventory to extensions using Excel.</p>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+        <h2 class="text-heading mb-1">Phone Number Assignment</h2>
+        <p class="text-subheading">Bulk assign available phone numbers from inventory to extensions using Excel.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group">
-            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
+            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
                 <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">1. Download Template & Inventory</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">1. Download Template & Inventory</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
                 Generates an Excel file with an assignment template tab, plus reference tabs listing all available numbers in inventory and all extension numbers.
             </p>
-            <button onclick="downloadPnaTemplate()" id="pnaDownloadBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+            <button onclick="downloadPnaTemplate()" id="pnaDownloadBtn" class="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
                 Download Template
             </button>
         </div>
 
-        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group">
-            <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
+            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
                 <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">2. Upload & Apply</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">2. Upload & Apply</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
                 Upload your completed template. Ensure the "Phone Number" and "Extension Number" columns are filled out on the first tab.
             </p>
-            <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer block text-center shadow-sm">
+            <label class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-500 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer block text-center shadow-sm">
                 Upload and Assign
                 <input type="file" class="hidden" accept=".xlsx,.xls,.csv" onchange="uploadPnaFile(this)">
             </label>
         </div>
     </div>
     
-    <div class="mt-8 bg-slate-50 border border-slate-300 rounded-xl p-6 shadow-sm">
-        <h3 class="text-xl font-bold text-slate-800 mb-2 border-b border-slate-200 pb-2">3. V2 Business Mobile API Sandbox</h3>
-        <p class="text-sm text-slate-600 mb-4">Enter a target phone number and extension below. This tests if the newly discovered V2 Business Mobile endpoints can successfully process the assignment.</p>
+    <div class="card !p-6 bg-slate-50 dark:bg-slate-900/50 border-slate-300 dark:border-slate-700 mt-8 w-full shadow-inner">
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">3. V2 Business Mobile API Sandbox</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Enter a target phone number and extension below. This tests if the newly discovered V2 Business Mobile endpoints can successfully process the assignment.</p>
         
-        <div class="flex flex-wrap gap-4 mb-4">
-            <input type="text" id="debug-phone" placeholder="Phone (e.g. +61468209402)" class="border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 w-64">
-            <input type="text" id="debug-ext" placeholder="Target Ext (e.g. 1105)" class="border border-slate-300 rounded p-2 text-sm font-mono focus:ring-blue-500 w-48">
-            <button id="btn-run-debug" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition shadow-sm disabled:opacity-50">
+        <div class="flex flex-col sm:flex-row gap-4 mb-4 w-full">
+            <input type="text" id="debug-phone" placeholder="Phone (e.g. +61468209402)" class="input-field font-mono w-full sm:w-64">
+            <input type="text" id="debug-ext" placeholder="Target Ext (e.g. 1105)" class="input-field font-mono w-full sm:w-48">
+            <button id="btn-run-debug" class="btn-danger w-full sm:w-auto px-6 whitespace-nowrap disabled:opacity-50">
                 Run V2 API Test
             </button>
         </div>
         
-        <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Exhaustive Test Logs</label>
-        <div id="debugLogs" class="w-full h-96 bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-auto border border-slate-700 whitespace-pre-line">Awaiting execution...</div>
+        <label class="input-label">Exhaustive Test Logs</label>
+        <div id="debugLogs" class="w-full h-96 bg-slate-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-auto border border-slate-700 whitespace-pre-line shadow-inner outline-none">Awaiting execution...</div>
     </div>
 </div>
 
@@ -54,7 +54,7 @@
 function logPna(msg, type='info') {
     const box = document.getElementById('pnaLogs');
     if (!box) return;
-    if (box.children.length === 1 && box.children[0].classList.contains('text-gray-300')) {
+    if (box.children.length === 1 && box.children[0].classList.contains('text-slate-300')) {
         box.innerHTML = '';
     }
     const entry = document.createElement('div');
@@ -67,7 +67,7 @@ function logPna(msg, type='info') {
 async function downloadPnaTemplate() {
     const btn = document.getElementById('pnaDownloadBtn');
     btn.disabled = true;
-    btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+    btn.innerHTML = `<div class="spinner border-white dark:border-white w-4 h-4 mr-2"></div> Generating...`;
     
     logPna("Generating template and fetching inventory data...", "info");
 
@@ -113,7 +113,7 @@ document.getElementById('btn-run-debug').addEventListener('click', async () => {
     if (!phone || !ext) return alert("Please enter both a Phone Number and an Extension Number.");
     
     btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Running Test...`;
+    btn.innerHTML = `<div class="spinner border-white dark:border-white w-4 h-4 mr-2"></div> Running Test...`;
     logBox.innerHTML = "Initializing test on V2 Business Mobile endpoints...\n";
     
     try {
