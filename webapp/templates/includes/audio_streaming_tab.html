@@ -1,115 +1,100 @@
-<div class="mb-6">
-    <h2 class="text-2xl font-bold text-slate-800 mb-1">RingCX Streaming</h2>
-    <p class="text-slate-500 text-sm">Connect to RingCX to monitor live call audio and transcription.</p>
+<div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+    <h2 class="text-heading mb-1">RingCX Streaming</h2>
+    <p class="text-subheading">Connect to RingCX to monitor live call audio and transcription.</p>
 </div>
 
 <div class="flex flex-col xl:flex-row gap-6 items-start w-full">
 
-    <!-- Left panel -->
     <div class="w-full xl:w-1/3 flex flex-col gap-4 flex-shrink-0">
 
-        <!-- Connection Card -->
-        <div class="bg-white p-5 rounded shadow-sm border border-slate-200">
+        <div class="card !p-5">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="font-bold text-slate-800">RingCX Connection</h3>
-                <span id="ringcx-status-badge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                <h3 class="font-bold text-slate-800 dark:text-slate-100">RingCX Connection</h3>
+                <span id="ringcx-status-badge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                     Disconnected
                 </span>
             </div>
-            <p class="text-sm text-slate-500 mb-4">
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
                 Uses your active RingCentral session to authenticate with RingCX.
                 Make sure you are connected via the RC Auth tab first.
             </p>
             <div class="flex gap-3">
-                <button id="ringcx-connect-btn"
-                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="ringcx-connect-btn" class="btn-primary flex-1">
                     Connect to RingCX
                 </button>
-                <button id="ringcx-disconnect-btn"
-                    class="hidden bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold py-2 px-4 rounded border border-slate-300 transition duration-150 ease-in-out">
+                <button id="ringcx-disconnect-btn" class="hidden btn-secondary flex-1">
                     Disconnect
                 </button>
             </div>
         </div>
 
-        <!-- Account Info -->
-        <div id="ringcx-account-info" class="hidden bg-white p-5 rounded shadow-sm border border-slate-200">
-            <h3 class="font-bold text-slate-800 mb-3">Account Details</h3>
-            <div class="flex items-center gap-2 text-sm text-slate-600">
-                <span class="font-medium text-slate-700">Main Account ID:</span>
-                <span id="ringcx-main-account-id" class="font-mono text-slate-800"></span>
+        <div id="ringcx-account-info" class="hidden card !p-5">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-3">Account Details</h3>
+            <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <span class="font-medium text-slate-700 dark:text-slate-200">Main Account ID:</span>
+                <span id="ringcx-main-account-id" class="font-mono text-slate-800 dark:text-white"></span>
             </div>
-            <p class="text-xs text-slate-400 mt-3">Session token refreshes automatically every 4 minutes.</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-3">Session token refreshes automatically every 4 minutes.</p>
         </div>
 
-        <!-- Sub-account selector -->
-        <div id="ringcx-sub-account-section" class="hidden bg-white p-5 rounded shadow-sm border border-slate-200">
-            <h3 class="font-bold text-slate-800 mb-1">Select Sub-Account</h3>
-            <p class="text-sm text-slate-500 mb-3">Choose the sub-account you want to configure streaming on.</p>
+        <div id="ringcx-sub-account-section" class="hidden card !p-5">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-1">Select Sub-Account</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Choose the sub-account you want to configure streaming on.</p>
             <p id="ringcx-sub-account-loading" class="text-sm text-slate-400 italic">Loading accounts...</p>
-            <select id="ringcx-sub-account-select"
-                class="hidden w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
-            </select>
+            <select id="ringcx-sub-account-select" class="hidden input-field"></select>
         </div>
 
-        <!-- Workflow Studio URL -->
-        <div id="ringcx-grpc-url-section" class="hidden bg-white p-5 rounded shadow-sm border border-blue-100">
-            <h3 class="font-bold text-slate-800 mb-1">Workflow Studio URL</h3>
-            <p class="text-sm text-slate-500 mb-3">
+        <div id="ringcx-grpc-url-section" class="hidden card !p-5 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-1">Workflow Studio URL</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">
                 Use this URL when configuring a <strong>Start Streaming</strong> node in RingCX Workflow Studio.
             </p>
             <div class="flex items-center gap-2">
-                <code id="grpc-url-display" class="flex-1 text-xs bg-slate-50 border border-slate-200 rounded px-3 py-2 font-mono text-slate-700 break-all"></code>
-                <button id="copy-grpc-url-btn"
-                    class="flex-shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold py-2 px-3 rounded transition duration-150">
+                <code id="grpc-url-display" class="flex-1 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300 break-all"></code>
+                <button id="copy-grpc-url-btn" class="btn-secondary !py-2 !px-3 text-xs flex-shrink-0">
                     Copy
                 </button>
             </div>
-            <p class="text-xs text-slate-400 mt-2">Set credentials to Basic Auth in Workflow Studio. Any username/password is accepted.</p>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-2">Set credentials to Basic Auth in Workflow Studio. Any username/password is accepted.</p>
         </div>
 
-        <!-- Active call picker -->
-        <div class="bg-white p-5 rounded shadow-sm border border-slate-200">
+        <div class="card !p-5">
             <div class="flex items-center justify-between mb-1">
-                <h3 class="font-bold text-slate-800">Active Calls</h3>
-                <button id="refresh-dialogs-btn" class="text-xs text-slate-400 hover:text-slate-600 transition">
+                <h3 class="font-bold text-slate-800 dark:text-slate-100">Active Calls</h3>
+                <button id="refresh-dialogs-btn" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition">
                     Refresh
                 </button>
             </div>
-            <p class="text-sm text-slate-500 mb-3">Select a live call to monitor its transcript.</p>
-            <select id="active-dialog-select"
-                class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500 mb-3">
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Select a live call to monitor its transcript.</p>
+            <select id="active-dialog-select" class="input-field mb-3">
                 <option value="">No active calls</option>
             </select>
             <div class="flex gap-2">
-                <button id="start-listening-btn"
-                    class="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-3 rounded transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="start-listening-btn" class="btn-success flex-1 disabled:opacity-50 disabled:cursor-not-allowed">
                     Listen
                 </button>
-                <button id="stop-listening-btn"
-                    class="hidden flex-1 bg-slate-500 hover:bg-slate-600 text-white text-sm font-semibold py-2 px-3 rounded transition duration-150">
+                <button id="stop-listening-btn" class="hidden btn-secondary flex-1">
                     Stop
                 </button>
             </div>
-            <div id="sse-status" class="mt-2 text-xs text-slate-400"></div>
+            <div id="sse-status" class="mt-2 text-xs text-slate-400 dark:text-slate-500"></div>
         </div>
 
     </div>
 
-    <!-- Right panel: transcript -->
     <div class="flex-1 w-full min-w-0">
-        <div class="bg-white rounded shadow-sm border border-slate-200 flex flex-col" style="min-height: 500px;">
-            <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div class="card !p-0 flex flex-col overflow-hidden h-[600px] xl:h-[800px]">
+            <div class="px-5 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
                 <div>
-                    <h3 class="font-bold text-slate-800">Live Transcript</h3>
-                    <p id="transcript-call-info" class="text-xs text-slate-400 mt-0.5"></p>
+                    <h3 class="font-bold text-slate-800 dark:text-slate-100">Live Transcript</h3>
+                    <p id="transcript-call-info" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5"></p>
                 </div>
-                <button id="clear-transcript-btn" class="text-xs text-slate-400 hover:text-slate-600 transition">
+                <button id="clear-transcript-btn" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition">
                     Clear
                 </button>
             </div>
-            <div id="transcript-container" class="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col">
-                <p id="transcript-placeholder" class="text-slate-400 text-sm text-center mt-8">
+            <div id="transcript-container" class="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col bg-white dark:bg-slate-900">
+                <p id="transcript-placeholder" class="text-slate-400 dark:text-slate-500 text-sm text-center mt-8">
                     Select an active call and click Listen to begin monitoring.
                 </p>
             </div>
