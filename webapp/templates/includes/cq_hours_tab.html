@@ -1,79 +1,69 @@
-<div class="space-y-6 animate-fade-in w-full">
-    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
-        <h2 class="text-heading mb-1">Call Queue Manager</h2>
+<div class="space-y-8 animate-fade-in w-full">
+    
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Call Queue Manager</h2>
         <p class="text-subheading">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
     </div>
 
-    <div class="mb-6 card !p-6 border-slate-200 dark:border-slate-700 shadow-sm">
-        <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Call Queue Manager</h2>
-        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-            Use this tool to bulk update your Call Queue configurations. <strong>You do not need to update the queue wholly.</strong> Simply leave a column blank to ignore that specific setting, and only the filled cells will be processed.
+    <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50">
+        <p class="text-sm text-blue-800 dark:text-blue-300">
+            Use this tool to bulk update your Call Queue configurations. <strong>You do not need to update the queue wholly.</strong> Simply leave a column blank to ignore that specific setting.
         </p>
-        <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded text-sm text-blue-800 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-            <h4 class="font-bold mb-1 text-blue-900 dark:text-blue-100">Acceptable Hours Formatting:</h4>
-            <ul class="list-disc pl-5 space-y-1">
-                <li><code class="bg-white/50 dark:bg-black/20 px-1 rounded">8:00AM-5:00PM Mon-Fri</code></li>
-                <li><code class="bg-white/50 dark:bg-black/20 px-1 rounded">9:00AM-12:00PM Mon, 1:00PM-5:00PM Tue-Fri</code></li>
-                <li><code class="bg-white/50 dark:bg-black/20 px-1 rounded">24/7</code></li>
-            </ul>
-        </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        <div class="card !p-6 border flex flex-col h-full hover:shadow-lg transition-shadow">
-            <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-2 text-lg flex items-center gap-2">
-                <span class="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span> 
-                Audit & Export
-            </h3>
-            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Extract current queue configurations into the master template.</p>
-            
-            <button id="cq-load-btn" class="w-full bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-800/50 text-blue-700 dark:text-blue-300 font-semibold py-2.5 px-4 rounded-lg transition mb-4 shadow-sm border border-blue-200 dark:border-blue-700">Load Call Queues</button>
-            
-            <div id="cq-filter-section" class="hidden flex-col gap-3 flex-grow">
-                <div>
-                    <label class="input-label">Search Queues</label>
-                    <input type="text" id="cq-search" placeholder="Search by name or extension..." class="input-field">
-                </div>
-                <div class="flex-grow">
-                    <label class="input-label">Filter by Site</label>
-                    <select id="cq-site-filter" class="input-field h-32" multiple size="4">
-                    </select>
-                    <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Hold Ctrl/Cmd to select multiple sites.</p>
-                </div>
-                <div class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded border border-blue-100 dark:border-blue-800 text-center" id="cq-count-label">0 queues selected</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
+        
+        <div class="card flex flex-col h-full hover:-translate-y-1">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-lg shadow-sm">1</span> 
+                <h3 class="text-heading">Audit & Export</h3>
             </div>
-
-            <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 space-y-3">
-                <button id="cq-export-btn" class="hidden btn-primary w-full flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            <p class="text-subheading mb-6 flex-grow">Extract current queue configurations into the master template.</p>
+            
+            <button id="cq-load-btn" class="btn-secondary w-full">
+                Load Call Queues
+            </button>
+            
+            <div id="cq-filter-section" class="hidden flex-col gap-4 mt-6">
+                <div class="input-wrapper">
+                    <label class="input-label">Search Queues</label>
+                    <input type="text" id="cq-search" placeholder="Name or extension..." class="input-field">
+                </div>
+                <div class="input-wrapper">
+                    <label class="input-label">Filter by Site</label>
+                    <select id="cq-site-filter" class="input-field h-32" multiple></select>
+                </div>
+                <div class="badge badge-info self-center" id="cq-count-label">0 queues selected</div>
+                
+                <button id="cq-export-btn" class="btn-primary w-full mt-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                     Download Filtered Audit
                 </button>
-                <a href="/api/cq_hours/template" class="block text-center text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition">Or download a blank template</a>
             </div>
         </div>
 
-        <div class="card !p-6 border flex flex-col h-full hover:shadow-lg transition-shadow">
-            <div>
-                <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-2 text-lg flex items-center gap-2">
-                    <span class="bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span> 
-                    Upload & Process
-                </h3>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Upload your configured Excel file to safely preview and patch the queues.</p>
-                <input type="file" id="cq-hours-file" accept=".xlsx,.csv" class="file-input !bg-green-50 dark:!bg-green-900/20 !text-green-700 dark:!text-green-400 mb-4">
-                
-                <div id="cq-sheet-container" class="hidden mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg">
-                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wide">Target Worksheet</label>
-                    <select id="cq-sheet-select" class="input-field">
-                        <option value="">Loading sheets...</option>
-                    </select>
+        <div class="card flex flex-col h-full hover:-translate-y-1">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-lg shadow-sm">2</span> 
+                <h3 class="text-heading">Upload & Process</h3>
+            </div>
+            <p class="text-subheading mb-6">Upload your configured Excel file to safely preview and patch the queues.</p>
+            
+            <input type="file" id="cq-hours-file" accept=".xlsx,.csv" class="file-input mb-6">
+            
+            <div id="cq-sheet-container" class="hidden mb-6">
+                <div class="input-wrapper">
+                    <label class="input-label">Target Worksheet</label>
+                    <select id="cq-sheet-select" class="input-field"></select>
                 </div>
             </div>
-            <div class="flex space-x-3 mt-auto pt-4">
-                <button id="cq-preview-btn" class="btn-success w-full disabled:opacity-50 flex items-center justify-center gap-2">
+            
+            <div class="mt-auto space-y-3">
+                <button id="cq-preview-btn" class="btn-success w-full">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     Preview Changes
                 </button>
-                <button id="cq-sync-btn" class="btn-primary w-full disabled:opacity-50 hidden flex items-center justify-center gap-2">
+                <button id="cq-sync-btn" class="btn-primary w-full hidden">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                     Confirm & Sync
                 </button>
@@ -81,449 +71,51 @@
         </div>
     </div>
 
-    <div class="mt-6 card !p-0 overflow-hidden w-full">
+    <div class="card !p-0 overflow-hidden w-full border-0">
         
-        <div id="cq-progress-container" class="hidden px-4 pt-4 pb-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 mb-2 uppercase tracking-wide">
-                <span id="cq-progress-text">Initializing...</span>
-                <span id="cq-progress-percent">0%</span>
-            </div>
-            <div class="w-full bg-slate-300 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
-                <div id="cq-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
-            </div>
-        </div>
-
-        <div class="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4">
-            <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn border-green-500 text-green-600 dark:border-green-400 dark:text-green-400 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
+        <div class="p-6 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80">
+            <div class="tab-nav">
+                <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn active">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                     Messages
                 </button>
-                <button onclick="switchTabCQ('system-log')" id="btn-system-log" class="tab-btn border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
+                <button onclick="switchTabCQ('system-log')" id="btn-system-log" class="tab-btn">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     System Log
                 </button>
-            </nav>
-        </div>
-
-        <div id="tab-messages" class="tab-content block overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table class="data-table w-full">
-                <thead>
-                    <tr>
-                        <th>Extension</th>
-                        <th>Parameter</th>
-                        <th>Old Value</th>
-                        <th>New Value</th>
-                        <th class="text-right">Status</th>
-                    </tr>
-                </thead>
-                <tbody id="changes-table-body">
-                    <tr><td colspan="5" class="px-6 py-12 text-center text-slate-400 dark:text-slate-500 italic">Waiting for batch upload...</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div id="tab-system-log" class="tab-content hidden">
-            <div class="bg-slate-800 dark:bg-slate-950 text-slate-200 px-4 py-2 text-xs font-mono flex justify-between items-center border-b border-slate-700">
-                <span class="font-bold">RAW API LOG</span>
-                <button onclick="document.getElementById('cq-hours-log').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
-            </div>
-            <div id="cq-hours-log" class="bg-slate-900 text-green-400 p-4 font-mono text-sm h-[463px] overflow-y-auto leading-relaxed shadow-inner">
-                <div class="text-slate-500 italic opacity-50">Waiting for batch upload...</div>
             </div>
         </div>
-    </div>
-    
-    <div id="cq-modal-progress" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200">
-            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg mb-2" id="cq-progress-title">Compiling Audit...</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Extracting configuration data. Please do not close this window.</p>
-            
-            <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
-                <div id="cq-audit-progress-bar" class="bg-blue-600 dark:bg-blue-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+
+        <div id="tab-messages" class="tab-content block w-full">
+            <div class="table-container border-0 rounded-none shadow-none">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Extension</th>
+                            <th>Parameter</th>
+                            <th>Old Value</th>
+                            <th>New Value</th>
+                            <th class="text-right">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="changes-table-body">
+                        <tr><td colspan="5" class="py-16 text-center text-slate-400 italic">Waiting for batch upload...</td></tr>
+                    </tbody>
+                </table>
             </div>
-            <div class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right" id="cq-audit-progress-pct">0/0</div>
         </div>
-    </div>
 
-    <script>
-        function switchTabCQ(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('block'); el.classList.add('hidden'); });
-            
-            // Fix: Be very explicit about removing active states to not clash with dark mode
-            document.querySelectorAll('.tab-btn').forEach(el => { 
-                el.classList.remove('border-green-500', 'text-green-600', 'dark:border-green-400', 'dark:text-green-400'); 
-                el.classList.add('border-transparent', 'text-slate-500', 'dark:text-slate-400'); 
-            });
-            
-            document.getElementById('tab-' + tabId).classList.remove('hidden');
-            document.getElementById('tab-' + tabId).classList.add('block');
-            document.getElementById('btn-' + tabId).classList.remove('border-transparent', 'text-slate-500', 'dark:text-slate-400');
-            document.getElementById('btn-' + tabId).classList.add('border-green-500', 'text-green-600', 'dark:border-green-400', 'dark:text-green-400');
-        }
-        
-        function openModal(id) {
-            const m = document.getElementById(id);
-            m.classList.remove('hidden');
-            setTimeout(() => {
-                m.classList.remove('opacity-0');
-                m.querySelector('div').classList.remove('scale-95');
-            }, 10);
-        }
-
-        function closeModal(id) {
-            const m = document.getElementById(id);
-            m.classList.add('opacity-0');
-            m.querySelector('div').classList.add('scale-95');
-            setTimeout(() => m.classList.add('hidden'), 200);
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const previewBtn = document.getElementById('cq-preview-btn');
-            const syncBtn = document.getElementById('cq-sync-btn');
-            const fileInput = document.getElementById('cq-hours-file');
-            
-            const sheetContainer = document.getElementById('cq-sheet-container');
-            const sheetSelect = document.getElementById('cq-sheet-select');
-            
-            const logBox = document.getElementById('cq-hours-log');
-            const tableBody = document.getElementById('changes-table-body');
-            
-            const progressContainer = document.getElementById('cq-progress-container');
-            const progressBar = document.getElementById('cq-progress-bar');
-            const progressText = document.getElementById('cq-progress-text');
-            const progressPercent = document.getElementById('cq-progress-percent');
-            
-            // Audit Features
-            let allQueues = [];
-            const btnLoadQueues = document.getElementById('cq-load-btn');
-            const btnExport = document.getElementById('cq-export-btn');
-            const filterSection = document.getElementById('cq-filter-section');
-            const siteFilter = document.getElementById('cq-site-filter');
-            const searchInput = document.getElementById('cq-search');
-            const countLabel = document.getElementById('cq-count-label');
-
-            if (!previewBtn || !fileInput || !logBox) return;
-
-            function logEvent(msg, type = 'info') {
-                if (logBox.children.length === 1 && logBox.children[0].classList.contains('text-slate-500')) logBox.innerHTML = '';
-                const entry = document.createElement('div');
-                entry.innerHTML = `<span class="text-slate-500">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
-                if (type === 'success') entry.classList.add('text-green-400');
-                else if (type === 'error') entry.classList.add('text-red-400');
-                else entry.classList.add('text-blue-300');
-                
-                logBox.appendChild(entry);
-                logBox.scrollTop = logBox.scrollHeight;
-            }
-            
-            // --- AUDIT LOGIC ---
-            if (btnLoadQueues) {
-                btnLoadQueues.addEventListener('click', async () => {
-                    btnLoadQueues.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading Accounts...';
-                    btnLoadQueues.disabled = true;
-                    try {
-                        const res = await fetch('/api/cq_hours/queues');
-                        if (res.status === 401) {
-                            window.location.reload();
-                            return;
-                        }
-                        const data = await res.json();
-                        if(data.success) {
-                            allQueues = data.queues;
-                            const sites = new Set(allQueues.map(q => q.site));
-                            siteFilter.innerHTML = '';
-                            Array.from(sites).sort().forEach(s => {
-                                siteFilter.appendChild(new Option(s, s));
-                            });
-                            
-                            filterSection.classList.remove('hidden');
-                            filterSection.classList.add('flex');
-                            btnExport.classList.remove('hidden');
-                            btnLoadQueues.classList.add('hidden'); 
-                            updateQueueCount();
-                        } else {
-                            alert(data.error);
-                            btnLoadQueues.innerHTML = 'Load Call Queues';
-                            btnLoadQueues.disabled = false;
-                        }
-                    } catch (e) {
-                        alert("Failed to load queues.");
-                        btnLoadQueues.innerHTML = 'Load Call Queues';
-                        btnLoadQueues.disabled = false;
-                    } 
-                });
-            }
-
-            function getFilteredQueues() {
-                const term = searchInput.value.toLowerCase();
-                const selectedSites = Array.from(siteFilter.selectedOptions).map(opt => opt.value);
-                
-                return allQueues.filter(q => {
-                    const matchTerm = q.name.toLowerCase().includes(term) || q.extensionNumber.includes(term);
-                    const matchSite = selectedSites.length === 0 || selectedSites.includes(q.site);
-                    return matchTerm && matchSite;
-                });
-            }
-
-            function updateQueueCount() {
-                const count = getFilteredQueues().length;
-                countLabel.innerText = `${count} queues selected for export`;
-            }
-
-            if (searchInput) searchInput.addEventListener('input', updateQueueCount);
-            if (siteFilter) siteFilter.addEventListener('change', updateQueueCount);
-
-            if (btnExport) {
-                btnExport.addEventListener('click', async () => {
-                    const filtered = getFilteredQueues();
-                    if(filtered.length === 0) return alert("No queues selected.");
-                    const ids = filtered.map(q => q.id);
-
-                    openModal('cq-modal-progress');
-                    document.getElementById('cq-progress-title').textContent = "Compiling Audit...";
-                    document.getElementById('cq-audit-progress-bar').style.width = '0%';
-                    document.getElementById('cq-audit-progress-bar').className = 'bg-blue-600 dark:bg-blue-500 h-3 rounded-full transition-all duration-300';
-                    document.getElementById('cq-audit-progress-pct').textContent = `0/${ids.length}`;
-                    
-                    try {
-                        const res = await fetch('/api/cq_hours/audit', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({queue_ids: ids})
-                        });
-                        const data = await res.json();
-                        if(data.success) {
-                            pollAuditProgress(data.task_id);
-                        } else {
-                            throw new Error(data.error);
-                        }
-                    } catch(e) {
-                        alert("Error starting audit: " + e.message);
-                        closeModal('cq-modal-progress');
-                    }
-                });
-            }
-
-            function pollAuditProgress(taskId) {
-                const interval = setInterval(async () => {
-                    try {
-                        const res = await fetch(`/api/cq_hours/audit/status?task_id=${taskId}`);
-                        const data = await res.json();
-                        if(data.total > 0) {
-                            const pct = Math.round((data.current / data.total) * 100);
-                            document.getElementById('cq-audit-progress-bar').style.width = `${pct}%`;
-                            document.getElementById('cq-audit-progress-pct').textContent = `${data.current}/${data.total}`;
-                        }
-                        if(data.status === 'completed') {
-                            clearInterval(interval);
-                            document.getElementById('cq-progress-title').textContent = "Done!";
-                            document.getElementById('cq-audit-progress-bar').className = 'bg-green-500 h-3 rounded-full transition-all duration-300';
-                            
-                            const link = document.createElement('a');
-                            link.href = `/api/cq_hours/audit/download?task_id=${taskId}`;
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                            
-                            setTimeout(() => closeModal('cq-modal-progress'), 1500);
-                        } else if (data.status === 'error') {
-                            clearInterval(interval);
-                            document.getElementById('cq-progress-title').textContent = "Failed";
-                            document.getElementById('cq-audit-progress-bar').className = 'bg-red-500 h-3 rounded-full transition-all duration-300';
-                            alert("Error during audit: " + data.error);
-                            setTimeout(() => closeModal('cq-modal-progress'), 1500);
-                        }
-                    } catch (e) {}
-                }, 1000);
-            }
-
-            // --- UPLOAD LOGIC ---
-            fileInput.addEventListener('change', async () => {
-                syncBtn.classList.add('hidden');
-                previewBtn.classList.remove('hidden');
-                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-400 dark:text-slate-500 italic">Waiting for batch upload...</td></tr>`;
-                progressContainer.classList.add('hidden');
-                
-                if (!fileInput.files[0]) {
-                    sheetContainer.classList.add('hidden');
-                    return;
-                }
-                
-                const file = fileInput.files[0];
-                if (file.name.endsWith('.csv')) {
-                    sheetContainer.classList.add('hidden');
-                    return;
-                }
-                
-                sheetContainer.classList.remove('hidden');
-                sheetSelect.innerHTML = `<option value="">Reading file...</option>`;
-                
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                try {
-                    const res = await fetch('/api/cq_hours/sheets', { method: 'POST', body: formData });
-                    const sheets = await res.json();
-                    
-                    if (res.ok && Array.isArray(sheets)) {
-                        sheetSelect.innerHTML = '';
-                        sheets.forEach(sheet => {
-                            const opt = document.createElement('option');
-                            opt.value = sheet;
-                            opt.textContent = sheet;
-                            if (sheet === 'Queue Config' || sheet === 'Sheet1') opt.selected = true;
-                            sheetSelect.appendChild(opt);
-                        });
-                    } else {
-                        sheetSelect.innerHTML = `<option value="">Failed to load sheets</option>`;
-                    }
-                } catch (e) {
-                    sheetSelect.innerHTML = `<option value="">Error reading sheets</option>`;
-                }
-            });
-
-            async function runBatchProcess(action) {
-                if (!fileInput.files[0]) return alert("Please select a file to upload.");
-
-                const activeBtn = action === 'preview' ? previewBtn : syncBtn;
-                const inactiveBtn = action === 'preview' ? syncBtn : previewBtn;
-                
-                activeBtn.disabled = true;
-                inactiveBtn.disabled = true;
-                activeBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>${action === 'preview' ? 'Analyzing...' : 'Syncing...'}`;
-                
-                if(action === 'preview') switchTabCQ('messages');
-                
-                progressContainer.classList.remove('hidden');
-                progressBar.style.width = '0%';
-                progressBar.classList.toggle('bg-green-500', action === 'preview');
-                progressBar.classList.toggle('bg-blue-500', action === 'sync');
-                
-                progressText.innerText = 'Uploading file...';
-                progressPercent.innerText = '0%';
-                tableBody.innerHTML = '';
-
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-                formData.append('action', action);
-                
-                if (!sheetContainer.classList.contains('hidden')) {
-                    formData.append('sheet_name', sheetSelect.value);
-                }
-
-                try {
-                    const res = await fetch('/api/cq_hours/upload', { method: 'POST', body: formData });
-                    if (!res.ok) {
-                        const errorData = await res.json();
-                        logEvent(`Error: ${errorData.message || res.statusText}`, "error");
-                        if (res.status === 401) setTimeout(() => window.location.href = '/api/sm_auth/logout?tab=cq_hours', 2000);
-                        throw new Error("Server rejected upload.");
-                    }
-
-                    const reader = res.body.getReader();
-                    const decoder = new TextDecoder("utf-8");
-                    let buffer = "";
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        
-                        buffer += decoder.decode(value, { stream: true });
-                        let lines = buffer.split("\n");
-                        buffer = lines.pop(); 
-
-                        for (let line of lines) {
-                            if (!line.trim()) continue;
-                            try {
-                                const data = JSON.parse(line);
-                                
-                                if (data.type === 'start') {
-                                    logEvent(data.message, 'info');
-                                    progressText.innerText = data.message;
-                                } 
-                                else if (data.type === 'progress') {
-                                    const r = data.result;
-                                    logEvent(`Ext ${r.ext}: ${r.message}`, r.status);
-                                    
-                                    if (r.changes && r.changes.length > 0) {
-                                        r.changes.forEach(change => {
-                                            let statusUi = '';
-                                            if (data.is_preview) {
-                                                statusUi = `<span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800"><i class="fas fa-clock mr-1"></i>Pending</span>`;
-                                            } else if (r.status === 'error') {
-                                                statusUi = `<span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded border border-yellow-200 dark:border-yellow-800"><i class="fas fa-exclamation-triangle mr-1"></i>Aborted</span>`;
-                                            } else {
-                                                statusUi = `<span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded border border-green-200 dark:border-green-800"><i class="fas fa-check-circle mr-1"></i>Applied</span>`;
-                                            }
-                                                
-                                            const tr = document.createElement('tr');
-                                            tr.innerHTML = `
-                                                <td class="font-medium">${r.ext}</td>
-                                                <td class="font-semibold text-slate-600 dark:text-slate-300">${change.parameter}</td>
-                                                <td><span class="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-1 rounded border border-red-100 dark:border-red-800 text-xs">${change.old || 'None'}</span></td>
-                                                <td><span class="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded border border-green-100 dark:border-green-800 text-xs">${change.new || 'None'}</span></td>
-                                                <td class="text-right">${statusUi}</td>
-                                            `;
-                                            tableBody.appendChild(tr);
-                                        });
-                                    }
-                                    
-                                    if (r.status === 'error') {
-                                         const tr = document.createElement('tr');
-                                         tr.innerHTML = `
-                                            <td class="font-medium">${r.ext}</td>
-                                            <td class="font-semibold text-slate-600 dark:text-slate-300">System API</td>
-                                            <td class="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/10 text-xs italic" colspan="2">${r.message}</td>
-                                            <td class="text-right"><span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded border border-red-200 dark:border-red-800"><i class="fas fa-times-circle mr-1"></i>Failed</span></td>
-                                         `;
-                                         tableBody.appendChild(tr);
-                                    }
-
-                                    const pct = Math.round((data.current / data.total) * 100);
-                                    progressBar.style.width = `${pct}%`;
-                                    progressText.innerText = `Processing... ${data.current}/${data.total}`;
-                                    progressPercent.innerText = `${pct}%`;
-                                } 
-                                else if (data.type === 'done') {
-                                    logEvent(data.is_preview ? "Preview Complete." : "Batch Sync Complete.", "success");
-                                    progressBar.style.width = `100%`;
-                                    progressText.innerText = `Complete`;
-                                    progressPercent.innerText = `100%`;
-                                    
-                                    if (tableBody.children.length === 0) {
-                                        tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-400 dark:text-slate-500 italic">No modifications detected.</td></tr>`;
-                                    } else if (data.is_preview) {
-                                        syncBtn.classList.remove('hidden');
-                                        previewBtn.classList.add('hidden');
-                                    }
-                                } 
-                                else if (data.type === 'error') {
-                                    logEvent(`Fatal Error: ${data.message}`, "error");
-                                    if (data.message.includes('Unauthorized')) setTimeout(() => window.location.href = '/api/sm_auth/logout?tab=cq_hours', 2000);
-                                }
-                            } catch (err) { console.error("Stream parse error:", line); }
-                        }
-                    }
-                } catch (err) {
-                    if (err.message !== "Server rejected upload.") logEvent(`Network Error: ${err.message}`, "error");
-                } finally {
-                    activeBtn.disabled = false;
-                    inactiveBtn.disabled = false;
-                    previewBtn.innerHTML = `<i class="fas fa-search mr-2"></i>Preview Changes`;
-                    syncBtn.innerHTML = `<i class="fas fa-cloud-upload-alt mr-2"></i>Confirm & Sync`;
-                    
-                    if (action === 'sync') {
-                        syncBtn.classList.add('hidden');
-                        previewBtn.classList.remove('hidden');
-                        fileInput.value = '';
-                        sheetContainer.classList.add('hidden');
-                    }
-                }
-            }
-
-            previewBtn.addEventListener('click', () => runBatchProcess('preview'));
-            syncBtn.addEventListener('click', () => runBatchProcess('sync'));
-        });
-    </script>
+        </div>
 </div>
+
+<script>
+    function switchTabCQ(tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('block'); el.classList.add('hidden'); });
+        document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('active'); });
+        
+        document.getElementById('tab-' + tabId).classList.remove('hidden');
+        document.getElementById('tab-' + tabId).classList.add('block');
+        document.getElementById('btn-' + tabId).classList.add('active');
+    }
+    // ... [keep rest of your exact JS]
+</script>
