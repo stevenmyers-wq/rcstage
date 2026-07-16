@@ -137,13 +137,17 @@
 
     <div id="app-container" class="max-w-[1800px] w-full mx-auto space-y-8">
       
-      <div class="flex flex-col md:flex-row justify-between items-center mb-8 px-4 sm:px-0 mt-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 items-center mb-8 px-4 sm:px-0 mt-4 gap-6">
         
-        <div class="flex flex-col sm:flex-row items-center gap-4 md:gap-5 text-center md:text-left">
-          <img src="{{ url_for('static', filename='img/RingCentral-Video-launches-in-Australia.jpg') }}" 
+        <div class="hidden lg:block"></div>
+        
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
+          
+          <img src="{{ url_for('static', filename='RCAU Header.jpg') }}" 
                alt="RingCentral" 
-               class="h-12 sm:h-14 w-auto object-contain rounded-xl shadow-sm border border-slate-200/80 dark:border-slate-700/80">
-          <div>
+               class="h-12 sm:h-14 w-auto object-contain rounded-xl shadow-sm border border-slate-200/80 dark:border-slate-700/80 bg-white">
+          
+          <div class="flex flex-col items-center sm:items-start">
             <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">RingCentral RCAU API Tools</h1>
             <p class="text-slate-500 dark:text-slate-400 mt-1 text-sm font-medium">
               Cloud Run Service URL: {{ RC_REDIRECT_URI | default("http://localhost:8080/auth/callback") | replace("/auth/callback", "") }}
@@ -151,11 +155,13 @@
           </div>
         </div>
         
-        <button id="theme-toggle" class="mt-4 md:mt-0 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition outline-none border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2 flex-shrink-0">
-          <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
-          <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
-          <span id="theme-toggle-text" class="text-sm font-bold tracking-wide"></span>
-        </button>
+        <div class="flex justify-center lg:justify-end">
+          <button id="theme-toggle" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition outline-none border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2">
+            <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+            <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+            <span id="theme-toggle-text" class="text-sm font-bold tracking-wide"></span>
+          </button>
+        </div>
       </div>
 
       {% if not AUTHENTICATED %}
