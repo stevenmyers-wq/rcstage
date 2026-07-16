@@ -1,79 +1,79 @@
-<div class="space-y-6 animate-fade-in p-4 w-full">
-    <div class="mb-4 border-b border-gray-200 pb-4">
-        <h2 class="text-3xl font-bold text-slate-800 mb-1">Call Queue Manager</h2>
-        <p class="text-slate-500 text-sm">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Call Queue Manager</h2>
+        <p class="text-subheading">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
     </div>
 
-    <div class="mb-6 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-        <h2 class="text-xl font-bold text-gray-800 mb-2">Call Queue Manager</h2>
-        <p class="text-sm text-gray-600 mb-4">
+    <div class="mb-6 card !p-6 border-slate-200 dark:border-slate-700 shadow-sm">
+        <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Call Queue Manager</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
             Use this tool to bulk update your Call Queue configurations. <strong>You do not need to update the queue wholly.</strong> Simply leave a column blank to ignore that specific setting, and only the filled cells will be processed.
         </p>
-        <div class="bg-blue-50 p-4 rounded text-sm text-blue-800 border border-blue-100">
-            <h4 class="font-bold mb-1">Acceptable Hours Formatting:</h4>
+        <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded text-sm text-blue-800 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
+            <h4 class="font-bold mb-1 text-blue-900 dark:text-blue-100">Acceptable Hours Formatting:</h4>
             <ul class="list-disc pl-5 space-y-1">
-                <li><code>8:00AM-5:00PM Mon-Fri</code></li>
-                <li><code>9:00AM-12:00PM Mon, 1:00PM-5:00PM Tue-Fri</code></li>
-                <li><code>24/7</code></li>
+                <li><code class="bg-white/50 dark:bg-black/20 px-1 rounded">8:00AM-5:00PM Mon-Fri</code></li>
+                <li><code class="bg-white/50 dark:bg-black/20 px-1 rounded">9:00AM-12:00PM Mon, 1:00PM-5:00PM Tue-Fri</code></li>
+                <li><code class="bg-white/50 dark:bg-black/20 px-1 rounded">24/7</code></li>
             </ul>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="card p-6 border shadow-sm flex flex-col h-full hover:shadow-lg transition-shadow">
-            <h3 class="font-bold text-gray-800 mb-2 text-lg flex items-center gap-2">
-                <span class="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span> 
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <div class="card !p-6 border flex flex-col h-full hover:shadow-lg transition-shadow">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-2 text-lg flex items-center gap-2">
+                <span class="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span> 
                 Audit & Export
             </h3>
-            <p class="text-sm text-gray-600 mb-4">Extract current queue configurations into the master template.</p>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Extract current queue configurations into the master template.</p>
             
-            <button id="cq-load-btn" class="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold py-2.5 px-4 rounded-lg transition mb-4 shadow-sm">Load Call Queues</button>
+            <button id="cq-load-btn" class="w-full bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-800/50 text-blue-700 dark:text-blue-300 font-semibold py-2.5 px-4 rounded-lg transition mb-4 shadow-sm border border-blue-200 dark:border-blue-700">Load Call Queues</button>
             
             <div id="cq-filter-section" class="hidden flex-col gap-3 flex-grow">
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search Queues</label>
-                    <input type="text" id="cq-search" placeholder="Search by name or extension..." class="border border-gray-300 p-2.5 rounded-lg text-sm w-full focus:ring-blue-500 focus:border-blue-500">
+                    <label class="input-label">Search Queues</label>
+                    <input type="text" id="cq-search" placeholder="Search by name or extension..." class="input-field">
                 </div>
                 <div class="flex-grow">
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Filter by Site</label>
-                    <select id="cq-site-filter" class="border border-gray-300 p-2.5 rounded-lg text-sm w-full focus:ring-blue-500 focus:border-blue-500 h-32" multiple size="4">
+                    <label class="input-label">Filter by Site</label>
+                    <select id="cq-site-filter" class="input-field h-32" multiple size="4">
                     </select>
-                    <p class="text-xs text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple sites.</p>
+                    <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Hold Ctrl/Cmd to select multiple sites.</p>
                 </div>
-                <div class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded border border-blue-100 text-center" id="cq-count-label">0 queues selected</div>
+                <div class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded border border-blue-100 dark:border-blue-800 text-center" id="cq-count-label">0 queues selected</div>
             </div>
 
-            <div class="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                <button id="cq-export-btn" class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-sm flex items-center justify-center gap-2">
+            <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 space-y-3">
+                <button id="cq-export-btn" class="hidden btn-primary w-full flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     Download Filtered Audit
                 </button>
-                <a href="/api/cq_hours/template" class="block text-center text-xs font-semibold text-gray-500 hover:text-blue-600 transition">Or download a blank template</a>
+                <a href="/api/cq_hours/template" class="block text-center text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition">Or download a blank template</a>
             </div>
         </div>
 
-        <div class="card p-6 border shadow-sm flex flex-col h-full hover:shadow-lg transition-shadow">
+        <div class="card !p-6 border flex flex-col h-full hover:shadow-lg transition-shadow">
             <div>
-                <h3 class="font-bold text-gray-800 mb-2 text-lg flex items-center gap-2">
-                    <span class="bg-green-100 text-green-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span> 
+                <h3 class="font-bold text-slate-800 dark:text-slate-100 mb-2 text-lg flex items-center gap-2">
+                    <span class="bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span> 
                     Upload & Process
                 </h3>
-                <p class="text-sm text-gray-600 mb-4">Upload your configured Excel file to safely preview and patch the queues.</p>
-                <input type="file" id="cq-hours-file" accept=".xlsx,.csv" class="mb-4 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer">
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Upload your configured Excel file to safely preview and patch the queues.</p>
+                <input type="file" id="cq-hours-file" accept=".xlsx,.csv" class="file-input !bg-green-50 dark:!bg-green-900/20 !text-green-700 dark:!text-green-400 mb-4">
                 
-                <div id="cq-sheet-container" class="hidden mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                    <label class="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wide">Target Worksheet</label>
-                    <select id="cq-sheet-select" class="w-full border border-gray-300 rounded p-2 text-sm text-gray-800 shadow-sm focus:ring-green-500 focus:border-green-500">
+                <div id="cq-sheet-container" class="hidden mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wide">Target Worksheet</label>
+                    <select id="cq-sheet-select" class="input-field">
                         <option value="">Loading sheets...</option>
                     </select>
                 </div>
             </div>
             <div class="flex space-x-3 mt-auto pt-4">
-                <button id="cq-preview-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                <button id="cq-preview-btn" class="btn-success w-full disabled:opacity-50 flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     Preview Changes
                 </button>
-                <button id="cq-sync-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-sm disabled:opacity-50 hidden flex items-center justify-center gap-2">
+                <button id="cq-sync-btn" class="btn-primary w-full disabled:opacity-50 hidden flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                     Confirm & Sync
                 </button>
@@ -81,25 +81,25 @@
         </div>
     </div>
 
-    <div class="mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+    <div class="mt-6 card !p-0 overflow-hidden w-full">
         
-        <div id="cq-progress-container" class="hidden px-4 pt-4 pb-4 bg-gray-50 border-b border-gray-200">
-            <div class="flex justify-between text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">
+        <div id="cq-progress-container" class="hidden px-4 pt-4 pb-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 mb-2 uppercase tracking-wide">
                 <span id="cq-progress-text">Initializing...</span>
                 <span id="cq-progress-percent">0%</span>
             </div>
-            <div class="w-full bg-gray-300 rounded-full h-2.5 overflow-hidden">
+            <div class="w-full bg-slate-300 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
                 <div id="cq-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
             </div>
         </div>
 
-        <div class="border-b border-gray-200 bg-gray-50 px-4">
+        <div class="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4">
             <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn border-green-500 text-green-600 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
+                <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn border-green-500 text-green-600 dark:border-green-400 dark:text-green-400 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                     Messages
                 </button>
-                <button onclick="switchTabCQ('system-log')" id="btn-system-log" class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
+                <button onclick="switchTabCQ('system-log')" id="btn-system-log" class="tab-btn border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     System Log
                 </button>
@@ -107,54 +107,59 @@
         </div>
 
         <div id="tab-messages" class="tab-content block overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table class="min-w-full divide-y divide-gray-200 text-left text-sm">
-                <thead class="bg-gray-50 sticky top-0 shadow-sm">
+            <table class="data-table w-full">
+                <thead>
                     <tr>
-                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">Extension</th>
-                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">Parameter</th>
-                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">Old Value</th>
-                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs">New Value</th>
-                        <th class="px-6 py-3 font-semibold text-gray-600 uppercase tracking-wider text-xs text-right">Status</th>
+                        <th>Extension</th>
+                        <th>Parameter</th>
+                        <th>Old Value</th>
+                        <th>New Value</th>
+                        <th class="text-right">Status</th>
                     </tr>
                 </thead>
-                <tbody id="changes-table-body" class="bg-white divide-y divide-gray-100">
-                    <tr><td colspan="5" class="px-6 py-12 text-center text-gray-400 italic">Waiting for batch upload...</td></tr>
+                <tbody id="changes-table-body">
+                    <tr><td colspan="5" class="px-6 py-12 text-center text-slate-400 dark:text-slate-500 italic">Waiting for batch upload...</td></tr>
                 </tbody>
             </table>
         </div>
 
         <div id="tab-system-log" class="tab-content hidden">
-            <div class="bg-gray-800 text-gray-200 px-4 py-2 text-xs font-mono flex justify-between items-center">
+            <div class="bg-slate-800 dark:bg-slate-950 text-slate-200 px-4 py-2 text-xs font-mono flex justify-between items-center border-b border-slate-700">
                 <span class="font-bold">RAW API LOG</span>
-                <button onclick="document.getElementById('cq-hours-log').innerHTML=''" class="text-xs text-gray-400 hover:text-white transition-colors">Clear</button>
+                <button onclick="document.getElementById('cq-hours-log').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
             </div>
-            <div id="cq-hours-log" class="bg-gray-900 text-green-400 p-4 font-mono text-sm h-[463px] overflow-y-auto leading-relaxed">
-                <div class="text-gray-500 italic opacity-50">Waiting for batch upload...</div>
+            <div id="cq-hours-log" class="bg-slate-900 text-green-400 p-4 font-mono text-sm h-[463px] overflow-y-auto leading-relaxed shadow-inner">
+                <div class="text-slate-500 italic opacity-50">Waiting for batch upload...</div>
             </div>
         </div>
     </div>
     
-    <div id="cq-modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200">
-            <h3 class="font-bold text-gray-800 text-lg mb-2" id="cq-progress-title">Compiling Audit...</h3>
-            <p class="text-sm text-gray-500 mb-6">Extracting configuration data. Please do not close this window.</p>
+    <div id="cq-modal-progress" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg mb-2" id="cq-progress-title">Compiling Audit...</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Extracting configuration data. Please do not close this window.</p>
             
-            <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
-                <div id="cq-audit-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+            <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
+                <div id="cq-audit-progress-bar" class="bg-blue-600 dark:bg-blue-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
             </div>
-            <div class="text-xs font-bold text-gray-700 text-right" id="cq-audit-progress-pct">0/0</div>
+            <div class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right" id="cq-audit-progress-pct">0/0</div>
         </div>
     </div>
 
     <script>
         function switchTabCQ(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('block'); el.classList.add('hidden'); });
-            document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('border-green-500', 'text-green-600'); el.classList.add('border-transparent', 'text-gray-500'); });
+            
+            // Fix: Be very explicit about removing active states to not clash with dark mode
+            document.querySelectorAll('.tab-btn').forEach(el => { 
+                el.classList.remove('border-green-500', 'text-green-600', 'dark:border-green-400', 'dark:text-green-400'); 
+                el.classList.add('border-transparent', 'text-slate-500', 'dark:text-slate-400'); 
+            });
             
             document.getElementById('tab-' + tabId).classList.remove('hidden');
             document.getElementById('tab-' + tabId).classList.add('block');
-            document.getElementById('btn-' + tabId).classList.remove('border-transparent', 'text-gray-500');
-            document.getElementById('btn-' + tabId).classList.add('border-green-500', 'text-green-600');
+            document.getElementById('btn-' + tabId).classList.remove('border-transparent', 'text-slate-500', 'dark:text-slate-400');
+            document.getElementById('btn-' + tabId).classList.add('border-green-500', 'text-green-600', 'dark:border-green-400', 'dark:text-green-400');
         }
         
         function openModal(id) {
@@ -201,9 +206,9 @@
             if (!previewBtn || !fileInput || !logBox) return;
 
             function logEvent(msg, type = 'info') {
-                if (logBox.children.length === 1 && logBox.children[0].classList.contains('text-gray-500')) logBox.innerHTML = '';
+                if (logBox.children.length === 1 && logBox.children[0].classList.contains('text-slate-500')) logBox.innerHTML = '';
                 const entry = document.createElement('div');
-                entry.innerHTML = `<span class="text-gray-500">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+                entry.innerHTML = `<span class="text-slate-500">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
                 if (type === 'success') entry.classList.add('text-green-400');
                 else if (type === 'error') entry.classList.add('text-red-400');
                 else entry.classList.add('text-blue-300');
@@ -278,7 +283,7 @@
                     openModal('cq-modal-progress');
                     document.getElementById('cq-progress-title').textContent = "Compiling Audit...";
                     document.getElementById('cq-audit-progress-bar').style.width = '0%';
-                    document.getElementById('cq-audit-progress-bar').className = 'bg-blue-600 h-3 rounded-full transition-all duration-300';
+                    document.getElementById('cq-audit-progress-bar').className = 'bg-blue-600 dark:bg-blue-500 h-3 rounded-full transition-all duration-300';
                     document.getElementById('cq-audit-progress-pct').textContent = `0/${ids.length}`;
                     
                     try {
@@ -337,7 +342,7 @@
             fileInput.addEventListener('change', async () => {
                 syncBtn.classList.add('hidden');
                 previewBtn.classList.remove('hidden');
-                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400 italic">Waiting for batch upload...</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-400 dark:text-slate-500 italic">Waiting for batch upload...</td></tr>`;
                 progressContainer.classList.add('hidden');
                 
                 if (!fileInput.files[0]) {
@@ -441,38 +446,36 @@
                                     const r = data.result;
                                     logEvent(`Ext ${r.ext}: ${r.message}`, r.status);
                                     
-                                    // 1. Structure Fix: Independently append changes
                                     if (r.changes && r.changes.length > 0) {
                                         r.changes.forEach(change => {
                                             let statusUi = '';
                                             if (data.is_preview) {
-                                                statusUi = `<span class="inline-flex items-center text-xs font-bold text-blue-600"><i class="fas fa-clock mr-1"></i>Pending</span>`;
+                                                statusUi = `<span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800"><i class="fas fa-clock mr-1"></i>Pending</span>`;
                                             } else if (r.status === 'error') {
-                                                statusUi = `<span class="inline-flex items-center text-xs font-bold text-yellow-600"><i class="fas fa-exclamation-triangle mr-1"></i>Aborted</span>`;
+                                                statusUi = `<span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded border border-yellow-200 dark:border-yellow-800"><i class="fas fa-exclamation-triangle mr-1"></i>Aborted</span>`;
                                             } else {
-                                                statusUi = `<span class="inline-flex items-center text-xs font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Applied</span>`;
+                                                statusUi = `<span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded border border-green-200 dark:border-green-800"><i class="fas fa-check-circle mr-1"></i>Applied</span>`;
                                             }
                                                 
                                             const tr = document.createElement('tr');
                                             tr.innerHTML = `
-                                                <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">${r.ext}</td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-gray-600 font-semibold">${change.parameter}</td>
-                                                <td class="px-6 py-4"><span class="bg-red-50 text-red-700 px-2 py-1 rounded border border-red-100 text-xs">${change.old || 'None'}</span></td>
-                                                <td class="px-6 py-4"><span class="bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 text-xs">${change.new || 'None'}</span></td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-right">${statusUi}</td>
+                                                <td class="font-medium">${r.ext}</td>
+                                                <td class="font-semibold text-slate-600 dark:text-slate-300">${change.parameter}</td>
+                                                <td><span class="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-1 rounded border border-red-100 dark:border-red-800 text-xs">${change.old || 'None'}</span></td>
+                                                <td><span class="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded border border-green-100 dark:border-green-800 text-xs">${change.new || 'None'}</span></td>
+                                                <td class="text-right">${statusUi}</td>
                                             `;
                                             tableBody.appendChild(tr);
                                         });
                                     }
                                     
-                                    // 2. Structure Fix: Independently append errors without else-if swallowing
                                     if (r.status === 'error') {
                                          const tr = document.createElement('tr');
                                          tr.innerHTML = `
-                                            <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">${r.ext}</td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-gray-600 font-semibold">System API</td>
-                                            <td class="px-6 py-4 text-red-600 bg-red-50 text-xs italic" colspan="2">${r.message}</td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-right"><span class="inline-flex items-center text-xs font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Failed</span></td>
+                                            <td class="font-medium">${r.ext}</td>
+                                            <td class="font-semibold text-slate-600 dark:text-slate-300">System API</td>
+                                            <td class="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/10 text-xs italic" colspan="2">${r.message}</td>
+                                            <td class="text-right"><span class="inline-flex items-center text-[10px] uppercase tracking-wide font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded border border-red-200 dark:border-red-800"><i class="fas fa-times-circle mr-1"></i>Failed</span></td>
                                          `;
                                          tableBody.appendChild(tr);
                                     }
@@ -489,7 +492,7 @@
                                     progressPercent.innerText = `100%`;
                                     
                                     if (tableBody.children.length === 0) {
-                                        tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400 italic">No modifications detected.</td></tr>`;
+                                        tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-400 dark:text-slate-500 italic">No modifications detected.</td></tr>`;
                                     } else if (data.is_preview) {
                                         syncBtn.classList.remove('hidden');
                                         previewBtn.classList.add('hidden');
