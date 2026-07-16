@@ -1,57 +1,69 @@
-<h3 class="text-heading mb-4 border-b border-slate-200 dark:border-slate-700 pb-2 w-full">Configuration Files</h3>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 w-full">
-    
-    <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-800 shadow-sm">
-        <div class="text-blue-500 mb-3 text-4xl drop-shadow-sm">📄</div>
-        <h4 class="font-bold text-slate-700 dark:text-slate-200 mb-4 text-lg">LOA (PDF)</h4>
-        
-        <label class="cursor-pointer block mb-4">
-            <span class="text-blue-600 dark:text-blue-400 font-bold hover:underline bg-blue-50 dark:bg-blue-900/30 px-5 py-2.5 rounded-full border border-blue-200 dark:border-blue-800 inline-block transition-colors">Upload LOA File</span>
-            <input type="file" id="loa-file" class="hidden" accept="application/pdf">
-        </label>
-        <p id="loa-filename" class="text-xs text-slate-500 dark:text-slate-400 font-mono mb-5 truncate px-4">No file selected</p>
-        
-        <div class="flex items-center justify-center gap-3 mb-5">
-            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
-            <span class="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">OR</span>
-            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
-        </div>
-
-        <label class="block text-left">
-            <span class="input-label !text-blue-600 dark:!text-blue-400">Paste Google Drive Link</span>
-            <input type="url" id="loa-url" class="input-field mt-1" placeholder="https://drive.google.com/file/d/...">
-        </label>
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Port Mapping</h2>
+        <p class="text-subheading">Upload LOA and BRD files to extract, interpret, and match incoming carrier phone lines.</p>
     </div>
 
-    <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-800 shadow-sm">
-        <div class="text-green-500 mb-3 text-4xl drop-shadow-sm">📊</div>
-        <h4 class="font-bold text-slate-700 dark:text-slate-200 mb-4 text-lg">BRD (Excel)</h4>
-        
-        <label class="cursor-pointer block mb-4">
-            <span class="text-green-600 dark:text-green-400 font-bold hover:underline bg-green-50 dark:bg-green-900/30 px-5 py-2.5 rounded-full border border-green-200 dark:border-green-800 inline-block transition-colors">Upload BRD File</span>
-            <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
-        </label>
-        <p id="brd-filename" class="text-xs text-slate-500 dark:text-slate-400 font-mono mb-5 truncate px-4">No file selected</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-4 w-full">
+        <div class="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
+            <div>
+                <div class="text-blue-500 mb-3 text-4xl drop-shadow-sm">Document</div>
+                <h4 class="text-heading text-lg mb-4">LOA (PDF)</h4>
+                
+                <label class="cursor-pointer inline-block mb-4">
+                    <span class="btn-secondary text-blue-600 dark:text-blue-400 font-bold hover:bg-blue-50 dark:hover:bg-blue-900/20 border-blue-200 dark:border-blue-800">Upload LOA File</span>
+                    <input type="file" id="loa-file" class="hidden" accept="application/pdf">
+                </label>
+                <p id="loa-filename" class="text-xs text-slate-400 font-mono mb-5 truncate px-4">No file selected</p>
+            </div>
+            
+            <div>
+                <div class="flex items-center justify-center gap-3 mb-5">
+                    <hr class="w-1/4 border-slate-100 dark:border-slate-700">
+                    <span class="text-[10px] text-slate-400 font-black uppercase tracking-widest">OR</span>
+                    <hr class="w-1/4 border-slate-100 dark:border-slate-700">
+                </div>
 
-        <div class="flex items-center justify-center gap-3 mb-5">
-            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
-            <span class="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">OR</span>
-            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
+                <div class="input-wrapper text-left">
+                    <label class="input-label !text-blue-600 dark:!text-blue-400">Paste Google Drive Link</label>
+                    <input type="url" id="loa-url" class="input-field" placeholder="https://drive.google.com/file/d/...">
+                </div>
+            </div>
         </div>
 
-        <label class="block text-left">
-            <span class="input-label !text-green-600 dark:!text-green-400">Paste Google Drive Link</span>
-            <input type="url" id="brd-url" class="input-field mt-1" placeholder="https://docs.google.com/spreadsheets/d/...">
-        </label>
+        <div class="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
+            <div>
+                <div class="text-emerald-500 mb-3 text-4xl drop-shadow-sm">Spreadsheet</div>
+                <h4 class="text-heading text-lg mb-4">BRD (Excel)</h4>
+                
+                <label class="cursor-pointer inline-block mb-4">
+                    <span class="btn-secondary text-emerald-600 dark:text-emerald-400 font-bold hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">Upload BRD File</span>
+                    <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
+                </label>
+                <p id="brd-filename" class="text-xs text-slate-400 font-mono mb-5 truncate px-4">No file selected</p>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-center gap-3 mb-5">
+                    <hr class="w-1/4 border-slate-100 dark:border-slate-700">
+                    <span class="text-[10px] text-slate-400 font-black uppercase tracking-widest">OR</span>
+                    <hr class="w-1/4 border-slate-100 dark:border-slate-700">
+                </div>
+
+                <div class="input-wrapper text-left">
+                    <label class="input-label !text-emerald-600 dark:!text-emerald-400">Paste Google Drive Link</label>
+                    <input type="url" id="brd-url" class="input-field" placeholder="https://docs.google.com/spreadsheets/d/...">
+                </div>
+            </div>
+        </div>
     </div>
-    
+
+    <button id="pm-submit-btn" class="btn-primary w-full !py-4 text-base shadow-md disabled:opacity-50" disabled>
+        Submit & Process Files
+    </button>
+
+    <div id="pm-status" class="hidden mt-6 card !py-4 text-center text-sm font-medium"></div>
 </div>
-
-<button id="pm-submit-btn" class="btn-primary w-full !py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md" disabled>
-    Submit & Process Files
-</button>
-
-<div id="pm-status" class="hidden mt-6 card !py-4 text-center"></div>
 
 <script>
     if (document.getElementById('pm-submit-btn')) {
@@ -104,10 +116,10 @@
             if (brdUrl.value.trim()) formData.append('brd_url', brdUrl.value.trim());
 
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
+            submitBtn.innerHTML = '<div class="spinner border-white w-4 h-4 mr-2"></div> Processing AI Mapping... (This can take 30s+)';
             
-            statusDiv.className = "mt-6 card !py-4 text-center bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 block";
-            statusDiv.innerHTML = "Processing files, extracting numbers with Gemini, and querying live RingCentral API...";
+            statusDiv.className = "card !py-4 text-center bg-blue-50/60 dark:bg-blue-900/10 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm block";
+            statusDiv.innerHTML = "Processing deployment objects, parsing matching sets with Gemini, and cross-matching RingCentral inventory...";
 
             try {
                 const response = await fetch('/api/port_mapping/process', {
@@ -126,19 +138,19 @@
                     a.click();
                     window.URL.revokeObjectURL(url);
                     
-                    statusDiv.className = "mt-6 card !py-4 text-center bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800 block";
-                    statusDiv.innerHTML = "<strong>✅ Mapping Complete!</strong> File downloaded successfully.";
+                    statusDiv.className = "card !py-4 text-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60 block";
+                    statusDiv.innerHTML = "<strong>✅ Mapping Engine Succeeded!</strong> Aggregated spreadsheet has been downloaded.";
                 } else {
                     const data = await response.json();
                     if(response.status === 401) {
                         alert("Session expired. Please Authorize & Bridge again.");
                         window.location.href = '/api/sm_auth/logout?tab=port_mapping';
                     }
-                    throw new Error(data.error || "An unknown error occurred.");
+                    throw new Error(data.error || "An unknown provisioning error occurred.");
                 }
             } catch (err) {
-                statusDiv.className = "mt-6 card !py-4 text-center bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800 block";
-                statusDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+                statusDiv.className = "card !py-4 text-center bg-rose-50 dark:bg-rose-900/10 text-rose-800 dark:text-rose-400 border-rose-200 dark:border-rose-800 block";
+                statusDiv.innerHTML = `<strong>❌ File Compilation Fault:</strong> ${err.message}`;
             } finally {
                 submitBtn.innerHTML = 'Submit & Process Files';
                 checkInputs(); 
