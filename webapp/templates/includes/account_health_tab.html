@@ -5,74 +5,69 @@
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 
-<div class="space-y-6">
-    <div class="flex items-center justify-between">
+<div class="space-y-6 w-full">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-            <h3 class="text-xl font-bold text-blue-700">Account Discovery</h3>
-            <p class="text-sm text-gray-500 mt-1">Polls the connected RingCentral account and builds a complete picture for pre-engagement discovery.</p>
+            <h3 class="text-heading">Account Discovery</h3>
+            <p class="text-subheading mt-1">Polls the connected RingCentral account and builds a complete picture for pre-engagement discovery.</p>
         </div>
-        <div class="flex items-center gap-3">
-            <span id="discovery-timestamp" class="text-xs text-gray-400 hidden"></span>
-            <label class="text-xs text-gray-500 flex items-center gap-1">
+        <div class="flex items-center gap-3 w-full md:w-auto">
+            <span id="discovery-timestamp" class="text-xs text-gray-400 dark:text-gray-500 hidden"></span>
+            <label class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                 Range:
-                <select id="discovery-days" class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select id="discovery-days" class="input-field !py-1 !px-2 !text-xs !w-auto">
                     <option value="30" selected>Last month</option>
                     <option value="7">Last week</option>
                 </select>
             </label>
-            <button id="btn-rerun" class="hidden text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded border border-gray-300 transition">
-                🔄 Re-run Discovery
+            <button id="btn-rerun" class="hidden btn-secondary !py-1.5 !px-3 text-sm">
+                🔄 Re-run
             </button>
-            <button id="btn-run" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition">
+            <button id="btn-run" class="btn-primary flex-1 md:flex-none">
                 Run Discovery
             </button>
         </div>
     </div>
 
-    <!-- Progress / idle state -->
-    <div id="discovery-idle" class="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
+    <div id="discovery-idle" class="card p-12 text-center text-gray-400 dark:text-gray-500">
         <div class="text-4xl mb-3">🔍</div>
-        <p class="font-medium">Click <strong>Run Discovery</strong> to poll the connected account.</p>
+        <p class="font-medium text-gray-600 dark:text-gray-300">Click <strong>Run Discovery</strong> to poll the connected account.</p>
         <p class="text-sm mt-1">This runs in the background — you can use other tools while it loads.</p>
     </div>
 
-    <div id="discovery-running" class="hidden bg-white rounded-xl border border-blue-200 p-8">
+    <div id="discovery-running" class="hidden card border-blue-200 dark:border-blue-800 p-8">
         <div class="text-center">
-            <svg class="animate-spin h-10 w-10 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg class="animate-spin h-10 w-10 text-blue-600 dark:text-blue-400 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            <p class="font-semibold text-blue-700">Discovery running…</p>
-            <p class="text-sm text-gray-500 mt-1">For large accounts this can take 3–5 minutes. You can navigate away and come back.</p>
+            <p class="font-semibold text-blue-700 dark:text-blue-400">Discovery running…</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">For large accounts this can take 3–5 minutes. You can navigate away and come back.</p>
         </div>
-        <!-- Live progress log — streams API activity while discovery runs -->
         <div class="mt-6">
             <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Progress log</span>
-                <span id="log-count" class="text-xs text-gray-400"></span>
+                <span class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Progress log</span>
+                <span id="log-count" class="text-xs text-gray-400 dark:text-gray-500"></span>
             </div>
             <div id="log-console"
-                 class="bg-slate-900 text-slate-100 rounded-lg border border-slate-700 p-3 font-mono text-xs leading-relaxed overflow-y-auto"
+                 class="bg-slate-900 text-slate-100 rounded-lg border border-slate-700 p-3 font-mono text-xs leading-relaxed overflow-y-auto shadow-inner"
                  style="height: 220px;">
                 <div class="text-slate-500 italic">Waiting for activity…</div>
             </div>
         </div>
     </div>
 
-    <!-- Results (hidden until done) -->
-    <div id="discovery-results" class="hidden space-y-8">
+    <div id="discovery-results" class="hidden space-y-8 w-full">
 
-        <!-- Summary Cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3" id="summary-cards"></div>
 
-        <!-- Call Flow Sankey -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div class="flex items-center justify-between mb-4">
+        <div class="card">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between mb-4 gap-4">
                 <div>
-                    <h4 class="text-lg font-semibold text-gray-800">Call Flow Distribution — Top 10 Inbound Numbers</h4>
-                    <p class="text-xs text-gray-500 mt-0.5">Traces where external calls end up · Ribbon width = call volume · <span id="sankey-date-range" class="font-medium text-blue-600"></span></p>
+                    <h4 class="text-lg font-semibold text-gray-800 dark:text-slate-100">Call Flow Distribution — Top 10 Inbound Numbers</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Traces where external calls end up · Ribbon width = call volume · <span id="sankey-date-range" class="font-medium text-blue-600 dark:text-blue-400"></span></p>
                 </div>
-                <div class="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> DID</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-cyan-500 inline-block"></span> IVR</span>
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span> Auto-Reception</span>
@@ -83,61 +78,53 @@
                     <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Abandoned</span>
                 </div>
             </div>
-            <div id="sankey-container" style="min-height:500px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; overflow:auto; padding:16px;"></div>
+            <div id="sankey-container" class="min-h-[500px] bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 overflow-auto p-4 w-full"></div>
         </div>
 
-        <!-- Metric sections -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Call Volume -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
-                <h4 class="font-semibold text-gray-800">📊 Call Volume <span id="volume-window-label" class="text-xs font-normal text-gray-400">(last 30 days)</span></h4>
-                <div class="relative h-56"><canvas id="chart-volume"></canvas></div>
-                <div id="table-volume"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+            <div class="card space-y-4">
+                <h4 class="font-semibold text-gray-800 dark:text-slate-100">📊 Call Volume <span id="volume-window-label" class="text-xs font-normal text-gray-400">(last 30 days)</span></h4>
+                <div class="relative h-56 w-full"><canvas id="chart-volume"></canvas></div>
+                <div id="table-volume" class="w-full"></div>
             </div>
 
-            <!-- Wait Time -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
-                <h4 class="font-semibold text-gray-800">⏱ Avg Wait Time <span class="text-xs font-normal text-gray-400">· upsell: Position in Queue / EWT</span></h4>
-                <div class="relative h-56"><canvas id="chart-wait"></canvas></div>
-                <div id="table-wait"></div>
+            <div class="card space-y-4">
+                <h4 class="font-semibold text-gray-800 dark:text-slate-100">⏱ Avg Wait Time <span class="text-xs font-normal text-gray-400">· upsell: Position in Queue / EWT</span></h4>
+                <div class="relative h-56 w-full"><canvas id="chart-wait"></canvas></div>
+                <div id="table-wait" class="w-full"></div>
             </div>
 
-            <!-- Voicemail Rate -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
-                <h4 class="font-semibold text-gray-800">📬 Voicemail Rate <span class="text-xs font-normal text-gray-400">· upsell: AI Receptionist</span></h4>
-                <div class="relative h-56"><canvas id="chart-voicemail"></canvas></div>
-                <div id="table-voicemail"></div>
+            <div class="card space-y-4">
+                <h4 class="font-semibold text-gray-800 dark:text-slate-100">📬 Voicemail Rate <span class="text-xs font-normal text-gray-400">· upsell: AI Receptionist</span></h4>
+                <div class="relative h-56 w-full"><canvas id="chart-voicemail"></canvas></div>
+                <div id="table-voicemail" class="w-full"></div>
             </div>
 
-            <!-- Handle Time -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
-                <h4 class="font-semibold text-gray-800">🎙 Avg Handle Time <span class="text-xs font-normal text-gray-400">· upsell: AI Conversation Expert</span></h4>
-                <div class="relative h-56"><canvas id="chart-handle"></canvas></div>
-                <div id="table-handle"></div>
+            <div class="card space-y-4">
+                <h4 class="font-semibold text-gray-800 dark:text-slate-100">🎙 Avg Handle Time <span class="text-xs font-normal text-gray-400">· upsell: AI Conversation Expert</span></h4>
+                <div class="relative h-56 w-full"><canvas id="chart-handle"></canvas></div>
+                <div id="table-handle" class="w-full"></div>
             </div>
 
-            <!-- Abandonment Rate -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4 lg:col-span-2">
-                <h4 class="font-semibold text-gray-800">🚪 Abandonment Rate <span class="text-xs font-normal text-gray-400">· upsell: Callback, Staffing Review</span></h4>
-                <div class="relative h-56"><canvas id="chart-abandon"></canvas></div>
-                <div id="table-abandon"></div>
+            <div class="card space-y-4 lg:col-span-2">
+                <h4 class="font-semibold text-gray-800 dark:text-slate-100">🚪 Abandonment Rate <span class="text-xs font-normal text-gray-400">· upsell: Callback, Staffing Review</span></h4>
+                <div class="relative h-56 w-full"><canvas id="chart-abandon"></canvas></div>
+                <div id="table-abandon" class="w-full"></div>
             </div>
         </div>
 
-        <!-- IVR Complexity -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h4 class="font-semibold text-gray-800 mb-4">🌿 IVR Complexity <span class="text-xs font-normal text-gray-400">Ranked by number of key options configured</span></h4>
-            <div id="table-ivr"></div>
+        <div class="card">
+            <h4 class="font-semibold text-gray-800 dark:text-slate-100 mb-4">🌿 IVR Complexity <span class="text-xs font-normal text-gray-400">Ranked by number of key options configured</span></h4>
+            <div id="table-ivr" class="w-full"></div>
         </div>
 
-        <!-- Per-DID call flow diagrams -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="card">
             <div class="flex items-baseline justify-between mb-1">
-                <h4 class="font-semibold text-gray-800">📞 Top 10 Call Flows <span class="text-xs font-normal text-gray-400">Config view for each top DID</span></h4>
+                <h4 class="font-semibold text-gray-800 dark:text-slate-100">📞 Top 10 Call Flows <span class="text-xs font-normal text-gray-400">Config view for each top DID</span></h4>
                 <span id="flows-progress" class="text-xs text-gray-400"></span>
             </div>
-            <p class="text-xs text-gray-500 mb-4">One diagram per top DID, traced live from current config. These use the same engine as the Call Flow Visualiser tab.</p>
-            <div id="flow-diagrams" class="space-y-4"></div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">One diagram per top DID, traced live from current config. These use the same engine as the Call Flow Visualiser tab.</p>
+            <div id="flow-diagrams" class="space-y-4 w-full"></div>
         </div>
 
     </div>
@@ -147,7 +134,7 @@
 (function() {
     let discoveryData = null;
     let pollInterval  = null;
-    let cyHeatmap     = null;  // kept for compat, no longer used
+    let cyHeatmap     = null;  
     const charts      = {};
 
     const btnRun      = document.getElementById('btn-run');
@@ -189,7 +176,6 @@
         const res  = await fetch('/api/account_health/status');
         const json = await res.json();
 
-        // Always update the log console while we have logs, regardless of status
         if (Array.isArray(json.logs)) {
             renderLogs(json.logs);
         }
@@ -209,7 +195,6 @@
                 tsEl.textContent = `Last run: ${d.toLocaleString()}`;
                 tsEl.classList.remove('hidden');
             }
-            // Sync dropdown to the value the last run actually used
             if (daysEl && json.data.discovery_days) {
                 daysEl.value = String(json.data.discovery_days);
             }
@@ -227,12 +212,10 @@
         }
     }
 
-    // Check on load if discovery already ran
     pollStatus();
 
     // ── Render all ───────────────────────────────────────────────────
     function renderAll(data) {
-        // Show date range using the actual window the backend ran for
         const windowDays = data.discovery_days || 30;
         const now = new Date();
         const from = new Date(now - windowDays * 24 * 60 * 60 * 1000);
@@ -240,7 +223,6 @@
         const drEl = document.getElementById('sankey-date-range');
         if (drEl) drEl.textContent = `${fmt(from)} – ${fmt(now)}`;
 
-        // Update the "(last N days)" label on the Call Volume card
         const volLabel = document.getElementById('volume-window-label');
         if (volLabel) volLabel.textContent = `(last ${windowDays === 7 ? 'week' : '30 days'})`;
 
@@ -268,15 +250,14 @@
         ];
         const container = document.getElementById('summary-cards');
         container.innerHTML = cards.map(c => `
-            <div class="bg-white rounded-xl border border-gray-200 p-4 text-center shadow-sm">
-                <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">${c.label}</div>
-                <div class="text-2xl font-bold text-gray-800">${c.value}</div>
+            <div class="card !p-4 text-center">
+                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">${c.label}</div>
+                <div class="text-2xl font-bold text-gray-800 dark:text-slate-100">${c.value}</div>
                 ${c.sub ? `<div class="text-xs text-gray-400 mt-0.5">${c.sub}</div>` : ''}
             </div>
         `).join('');
     }
 
-    // ── Queue heatmap ────────────────────────────────────────────────
     // ── Sankey rendering (D3) ────────────────────────────────────────
     const NODE_COLOURS = {
         did:       '#3b82f6',   // blue
@@ -294,19 +275,15 @@
     };
 
     function renderSankey(data) {
-        console.log('[Sankey] render called with', data);
         const container = document.getElementById('sankey-container');
         container.innerHTML = '';
 
         if (!data.nodes || !data.nodes.length) {
-            console.log('[Sankey] no nodes, showing empty state');
             container.innerHTML = '<div class="p-12 text-center text-gray-400">No inbound call traffic data available for the selected period.</div>';
             return;
         }
 
-        // Dimensions
         const W = Math.max(container.clientWidth - 32, 900);
-        // Height scales with node count so dense flows don't get squashed
         const H = Math.max(500, data.nodes.length * 28);
 
         const svg = d3.select(container).append('svg')
@@ -321,15 +298,11 @@
             .extent([[8, 8], [W - 8, H - 8]])
             .nodeAlign(d3.sankeyJustify);
 
-        // d3-sankey mutates input, so deep-clone
         const graph = {
             nodes: data.nodes.map(n => ({ ...n })),
             links: data.links.map(l => ({ ...l })),
         };
 
-        // d3-sankey uses numeric indexes for source/target when nodeId isn't
-        // given as string keys. Our payload uses numeric indexes already,
-        // so convert to reference by id for nodeId accessor to work.
         graph.links.forEach(l => {
             l.source = graph.nodes[l.source].id;
             l.target = graph.nodes[l.target].id;
@@ -343,7 +316,6 @@
             return;
         }
 
-        // Links (ribbons)
         const link = svg.append('g')
             .attr('fill', 'none')
             .attr('stroke-opacity', 0.4)
@@ -367,7 +339,6 @@
                     hideSankeyTip();
                 });
 
-        // Nodes (rectangles)
         const node = svg.append('g')
             .selectAll('g')
             .data(layout.nodes)
@@ -389,20 +360,22 @@
             .on('mouseout', hideSankeyTip)
             .on('click', (event, d) => {
                 if (d.type === 'did') {
-                    // Strip prefix "did:" to get the phone number
                     const phone = d.id.replace(/^did:/, '');
                     window.location.href = `/?tab=call_flow&number=${encodeURIComponent(phone)}`;
                 }
             });
 
-        // Labels
+        // Use appropriate text color based on document dark mode class
+        const isDark = document.documentElement.classList.contains('dark');
+        const textFill = isDark ? '#e2e8f0' : '#1e293b';
+
         node.append('text')
             .attr('x',        d => d.x0 < W / 2 ? d.x1 + 6 : d.x0 - 6)
             .attr('y',        d => (d.y1 + d.y0) / 2)
             .attr('dy',       '0.35em')
             .attr('text-anchor', d => d.x0 < W / 2 ? 'start' : 'end')
             .style('font-size', '11px')
-            .style('fill', '#1e293b')
+            .style('fill', textFill)
             .style('pointer-events', 'none')
             .each(function (d) {
                 const t = d3.select(this);
@@ -416,7 +389,6 @@
             });
     }
 
-    // Sankey tooltip (shared)
     let sankeyTip = null;
     function showSankeyTip(text, e) {
         hideSankeyTip();
@@ -436,18 +408,15 @@
     }
 
     // ── Metric section (chart + table) ───────────────────────────────
-    // countField (optional): name of a raw-count field on the queue object.
-    // If provided, the table shows "rate% (count/total)" to give context
-    // so that 100% voicemail on a 2-call queue reads differently from
-    // 100% on a 500-call queue.
     function renderMetricSection(queues, key, field, label, colour, fmt, unit, countField) {
-        // Only include queues that have data for this field
         const withData = queues
             .filter(q => q[field] != null && q[field] > 0)
             .sort((a, b) => b[field] - a[field]);
 
-        // Chart
         const ctx = document.getElementById(`chart-${key}`);
+        const isDark = document.documentElement.classList.contains('dark');
+        const textColor = isDark ? '#94a3b8' : '#64748b';
+
         if (ctx) {
             if (charts[key]) charts[key].destroy();
             charts[key] = new Chart(ctx, {
@@ -483,14 +452,13 @@
                         }
                     },
                     scales: {
-                        x: { ticks: { callback: v => fmt(v) } },
-                        y: { ticks: { font: { size: 11 } } }
+                        x: { ticks: { callback: v => fmt(v), color: textColor }, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
+                        y: { ticks: { font: { size: 11 }, color: textColor }, grid: { display: false } }
                     }
                 }
             });
         }
 
-        // Table
         const tableEl = document.getElementById(`table-${key}`);
         if (tableEl) {
             if (!withData.length) {
@@ -501,29 +469,29 @@
             const showCount = !!countField;
             tableEl.innerHTML = `
                 <div class="overflow-x-auto mt-2">
-                    <table class="min-w-full text-sm">
+                    <table class="data-table">
                         <thead>
-                            <tr class="border-b text-left text-xs text-gray-500">
-                                <th class="py-2 pr-4 font-medium">Queue</th>
-                                <th class="py-2 pr-4 font-medium">Ext</th>
-                                <th class="py-2 pr-4 font-medium">${label}</th>
-                                ${showCount ? '<th class="py-2 pr-4 font-medium">Calls</th>' : ''}
-                                <th class="py-2 w-32 font-medium"></th>
+                            <tr>
+                                <th>Queue</th>
+                                <th>Ext</th>
+                                <th>${label}</th>
+                                ${showCount ? '<th>Calls</th>' : ''}
+                                <th class="w-32"></th>
                             </tr>
                         </thead>
                         <tbody>
                             ${withData.map(q => {
                                 const countCell = showCount
-                                    ? `<td class="py-2 pr-4 text-gray-500 text-xs">${(q[countField] ?? 0).toLocaleString()} / ${(q.total_calls ?? 0).toLocaleString()}</td>`
+                                    ? `<td class="text-xs opacity-70">${(q[countField] ?? 0).toLocaleString()} / ${(q.total_calls ?? 0).toLocaleString()}</td>`
                                     : '';
                                 return `
-                                <tr class="border-b last:border-0 hover:bg-gray-50">
-                                    <td class="py-2 pr-4 font-medium text-gray-800">${q.name}</td>
-                                    <td class="py-2 pr-4 text-gray-500">${q.extensionNumber || ''}</td>
-                                    <td class="py-2 pr-4 font-bold" style="color:${colour}">${fmt(q[field])}</td>
+                                <tr>
+                                    <td class="font-medium">${q.name}</td>
+                                    <td class="opacity-70">${q.extensionNumber || ''}</td>
+                                    <td class="font-bold" style="color:${colour}">${fmt(q[field])}</td>
                                     ${countCell}
-                                    <td class="py-2">
-                                        <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <td>
+                                        <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                                             <div class="h-2 rounded-full" style="width:${Math.round(q[field]/maxVal*100)}%;background:${colour}"></div>
                                         </div>
                                     </td>
@@ -544,24 +512,24 @@
         }
         const max = ivrs[0]?.key_count || 1;
         el.innerHTML = `
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
+            <div class="overflow-x-auto w-full">
+                <table class="data-table">
                     <thead>
-                        <tr class="border-b text-left text-xs text-gray-500">
-                            <th class="py-2 pr-4 font-medium">IVR Name</th>
-                            <th class="py-2 pr-4 font-medium">Ext</th>
-                            <th class="py-2 pr-4 font-medium">Key Options</th>
-                            <th class="py-2 w-40 font-medium"></th>
+                        <tr>
+                            <th>IVR Name</th>
+                            <th>Ext</th>
+                            <th>Key Options</th>
+                            <th class="w-40"></th>
                         </tr>
                     </thead>
                     <tbody>
                         ${ivrs.map(ivr => `
-                            <tr class="border-b last:border-0 hover:bg-gray-50">
-                                <td class="py-2 pr-4 font-medium text-gray-800">${ivr.name}</td>
-                                <td class="py-2 pr-4 text-gray-500">${ivr.extensionNumber || ''}</td>
-                                <td class="py-2 pr-4 font-bold text-cyan-600">${ivr.key_count}</td>
-                                <td class="py-2">
-                                    <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <tr>
+                                <td class="font-medium">${ivr.name}</td>
+                                <td class="opacity-70">${ivr.extensionNumber || ''}</td>
+                                <td class="font-bold text-cyan-600 dark:text-cyan-400">${ivr.key_count}</td>
+                                <td>
+                                    <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                                         <div class="h-2 rounded-full bg-cyan-500" style="width:${Math.round(ivr.key_count/max*100)}%"></div>
                                     </div>
                                 </td>
@@ -589,12 +557,10 @@
         const countEl   = document.getElementById('log-count');
         if (!consoleEl) return;
 
-        // Build the full rendering each time (simple & safe — logs are capped at 500).
         const html = logs.map(entry => {
             const line = entry.line || '';
             const ts = entry.ts ? new Date(entry.ts) : null;
             const tsLabel = ts ? ts.toLocaleTimeString('en-AU', { hour12: false }) : '';
-            // Colour-code by content so the eye can skim
             let cls = 'text-slate-300';
             if (/cycle detected|failed|error|HTTP [45]\d{2}/i.test(line)) cls = 'text-rose-300';
             else if (/Sankey result|bucketed into|paths traced/i.test(line)) cls = 'text-emerald-300';
@@ -607,18 +573,12 @@
         }).join('');
 
         consoleEl.innerHTML = html;
-        // Auto-scroll to bottom so newest lines are in view
         consoleEl.scrollTop = consoleEl.scrollHeight;
         if (countEl) countEl.textContent = `${logs.length} event${logs.length === 1 ? '' : 's'}`;
         lastLogCount = logs.length;
     }
 
-    // ── Per-DID call flow diagrams (bottom of screen) ────────────────
-    // Uses the SAME endpoint as the Call Flow Visualiser tab
-    // (/api/rc/trace-flow/company_<phone>) — which means these cards
-    // succeed even when the in-process tracer used for the Sankey gives
-    // up. We're just driving the working code path from the client.
-
+    // ── Per-DID call flow diagrams ────────────────
     const FLOW_COLOURS = {
         phone:            { bg: '#3b82f6', border: '#1d4ed8' },
         autoreceptionist: { bg: '#7c3aed', border: '#5b21b6' },
@@ -631,7 +591,6 @@
         unknown:          { bg: '#e5e7eb', border: '#9ca3af' },
     };
 
-    // Register dagre with Cytoscape once
     let _dagreRegistered = false;
     function _registerDagre() {
         if (_dagreRegistered) return true;
@@ -645,14 +604,7 @@
         return true;
     }
 
-    // Cache so re-renders don't re-fetch
-    // _flowCache: stores results from the /api/rc/trace-flow/ fallback when
-    // retry is clicked on a DID that came back empty from discovery.
     const _flowCache = {};
-
-    // _didFlowsFromDiscovery: pre-fetched raw tracer graphs keyed by phone
-    // number, stashed by build_sankey_data() on the backend. Instant render,
-    // zero additional RC API calls for the common case.
     let _didFlowsFromDiscovery = {};
 
     async function renderPerDIDFlows(topDids, didFlows) {
@@ -670,29 +622,25 @@
 
         _registerDagre();
 
-        // Build all cards up-front. Since we already have the flow data,
-        // rendering is synchronous and instant.
         topDids.forEach((did, idx) => {
             const card = document.createElement('div');
-            card.className = 'border border-gray-200 rounded-lg bg-gray-50 overflow-hidden';
+            card.className = 'border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50 overflow-hidden';
             card.id = `flow-card-${idx}`;
             card.innerHTML = `
-                <div class="px-4 py-2 bg-white border-b border-gray-200 flex items-center justify-between">
+                <div class="px-4 py-2 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                     <div>
-                        <span class="font-semibold text-gray-800">${did.phoneNumber || ''}</span>
-                        <span class="ml-2 text-xs text-gray-400">${did.name && did.name !== did.phoneNumber ? did.name : ''}</span>
+                        <span class="font-semibold text-slate-800 dark:text-slate-200">${did.phoneNumber || ''}</span>
+                        <span class="ml-2 text-xs text-slate-500">${did.name && did.name !== did.phoneNumber ? did.name : ''}</span>
                     </div>
-                    <div class="text-xs text-gray-500 flex items-center gap-2">
-                        <span class="font-medium text-gray-700">${(did.total_calls || 0).toLocaleString()}</span> calls
-                        <span id="flow-status-${idx}" class="ml-2 text-gray-400"></span>
-                        <button id="flow-retry-${idx}" class="hidden ml-1 px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded transition">Retry</button>
+                    <div class="text-xs text-slate-500 flex items-center gap-2">
+                        <span class="font-medium text-slate-700 dark:text-slate-300">${(did.total_calls || 0).toLocaleString()}</span> calls
+                        <span id="flow-status-${idx}" class="ml-2 opacity-70"></span>
+                        <button id="flow-retry-${idx}" class="hidden ml-1 px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded transition">Retry</button>
                     </div>
                 </div>
-                <div id="flow-diagram-${idx}" style="height: 280px; background: #fafafa;"></div>`;
+                <div id="flow-diagram-${idx}" style="height: 280px; background: transparent;"></div>`;
             container.appendChild(card);
 
-            // Wire retry — if clicked, re-fetch from /api/rc/trace-flow/
-            // as a last-resort fallback. Each retry hits RC afresh.
             const retryBtn = document.getElementById(`flow-retry-${idx}`);
             if (retryBtn) {
                 retryBtn.addEventListener('click', async () => {
@@ -701,11 +649,9 @@
                 });
             }
 
-            // Render from the pre-fetched data synchronously
             _renderOneFlow(idx, did);
         });
 
-        // Update progress counter based on how many cards got real data
         const rendered = topDids.filter(d => {
             const f = _didFlowsFromDiscovery[d.phoneNumber];
             return f && f.nodes && f.nodes.length > 1;
@@ -713,10 +659,6 @@
         if (progress) progress.textContent = `${rendered} / ${topDids.length} have routing data`;
     }
 
-    /**
-     * Render one per-DID flow card from the pre-fetched discovery data.
-     * Synchronous, no API calls.
-     */
     function _renderOneFlow(idx, did) {
         const statusEl  = document.getElementById(`flow-status-${idx}`);
         const diagramEl = document.getElementById(`flow-diagram-${idx}`);
@@ -726,10 +668,10 @@
         if (!flowData || !flowData.nodes || flowData.nodes.length <= 1) {
             if (statusEl) {
                 statusEl.textContent = 'no routing data';
-                statusEl.className = 'ml-2 text-gray-400 italic';
+                statusEl.className = 'ml-2 opacity-70 italic';
             }
             if (diagramEl) {
-                diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400 italic">Tracer returned no downstream routing during discovery. Click Retry to try again.</div>';
+                diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-xs opacity-70 italic">Tracer returned no downstream routing. Click Retry to try again.</div>';
             }
             if (retryEl) retryEl.classList.remove('hidden');
             return;
@@ -738,14 +680,10 @@
         _renderFlowInto(diagramEl, flowData);
         if (statusEl) {
             statusEl.textContent = `${flowData.nodes.length} nodes`;
-            statusEl.className = 'ml-2 text-emerald-600';
+            statusEl.className = 'ml-2 text-emerald-600 dark:text-emerald-400';
         }
     }
 
-    /**
-     * Fallback: re-fetch one DID's flow live from the visualiser endpoint.
-     * Only invoked via the Retry button on cards that came back empty.
-     */
     async function _loadOneFlowViaFetch(idx, did) {
         const statusEl  = document.getElementById(`flow-status-${idx}`);
         const diagramEl = document.getElementById(`flow-diagram-${idx}`);
@@ -757,23 +695,21 @@
             if (!flowData || !flowData.nodes || flowData.nodes.length <= 1) {
                 if (statusEl) {
                     statusEl.textContent = 'still no routing';
-                    statusEl.className = 'ml-2 text-gray-400 italic';
+                    statusEl.className = 'ml-2 opacity-70 italic';
                 }
                 if (diagramEl) {
-                    diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-xs text-gray-400 italic">Still no routing data. This DID may genuinely have no config, or the RC rate budget is exhausted — wait a minute and try again.</div>';
+                    diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-xs opacity-70 italic text-center p-4">Still no routing data. This DID may genuinely have no config, or the RC rate budget is exhausted.</div>';
                 }
                 if (retryEl) retryEl.classList.remove('hidden');
             } else {
                 _renderFlowInto(diagramEl, flowData);
                 if (statusEl) {
                     statusEl.textContent = `${flowData.nodes.length} nodes`;
-                    statusEl.className = 'ml-2 text-emerald-600';
+                    statusEl.className = 'ml-2 text-emerald-600 dark:text-emerald-400';
                 }
-                // Save for future reference
                 _didFlowsFromDiscovery[did.phoneNumber] = flowData;
             }
         } catch (e) {
-            console.warn('[account_health] flow fetch failed for', did.phoneNumber, e);
             if (statusEl) {
                 statusEl.textContent = 'failed';
                 statusEl.className = 'ml-2 text-red-500';
@@ -792,12 +728,7 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = await res.json();
         if (body.status !== 'success') throw new Error(body.message || 'trace failed');
-        // Only cache results that actually have downstream routing. An
-        // empty trace (just the phone node) probably means the backend
-        // tracer got rate-limited, so we want Retry to re-fetch instead
-        // of returning the cached empty result.
-        if (body.graph_data && body.graph_data.nodes &&
-            body.graph_data.nodes.length > 1) {
+        if (body.graph_data && body.graph_data.nodes && body.graph_data.nodes.length > 1) {
             _flowCache[phone] = body.graph_data;
         }
         return body.graph_data;
@@ -816,16 +747,12 @@
             style: { 'background-color': c.bg, 'border-color': c.border },
         }));
 
-        // Compact node labels for the small card view — just the first line.
-        // Full label is kept in the data for tooltips if we add them later.
         const nodeElements = graphData.nodes.map(n => {
             const d = n.data;
             const displayLabel = (d.label || '').split('\n')[0].trim() || d.type || '?';
             return { data: { ...d, displayLabel } };
         });
 
-        // Spread parallel edges so multiple IVR options between the same
-        // two nodes don't overlap.
         const pairCount = {};
         graphData.edges.forEach(e => {
             const key = `${e.data.source}__${e.data.target}`;
@@ -841,6 +768,11 @@
             const offset = total === 1 ? 0 : (idx - (total - 1) / 2) * spread;
             return { data: { ...e.data, cpd: offset } };
         });
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const edgeColor = isDark ? '#94a3b8' : '#475569';
+        const edgeBgColor = isDark ? '#1e293b' : '#ffffff';
+        const edgeBorderColor = isDark ? '#334155' : '#cbd5e1';
 
         const stylesheet = [
             {
@@ -868,8 +800,8 @@
                 selector: 'edge',
                 style: {
                     'width':                   1.5,
-                    'line-color':              '#94a3b8',
-                    'target-arrow-color':      '#94a3b8',
+                    'line-color':              isDark ? '#475569' : '#94a3b8',
+                    'target-arrow-color':      isDark ? '#475569' : '#94a3b8',
                     'target-arrow-shape':      'triangle',
                     'arrow-scale':             0.8,
                     'curve-style':             'unbundled-bezier',
@@ -878,11 +810,13 @@
                     'label':                   'data(label)',
                     'font-size':               '9px',
                     'font-family':             'Inter, system-ui, sans-serif',
-                    'color':                   '#475569',
-                    'text-background-color':   '#ffffff',
+                    'color':                   edgeColor,
+                    'text-background-color':   edgeBgColor,
                     'text-background-opacity': 1,
                     'text-background-padding': '2px 4px',
                     'text-background-shape':   'round-rectangle',
+                    'text-border-color':       edgeBorderColor,
+                    'text-border-width':       1,
                 },
             },
         ];
@@ -912,12 +846,10 @@
                 maxZoom: 2,
             });
         } catch (e) {
-            console.error('[account_health] Cytoscape render failed:', e);
             containerEl.innerHTML = `<div class="h-full flex items-center justify-center text-xs text-red-400">Render failed: ${_escape(String(e.message || e))}</div>`;
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────
     function fmtSecs(s) {
         if (!s) return '0s';
         if (s < 60) return `${s}s`;
