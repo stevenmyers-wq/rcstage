@@ -1,405 +1,119 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="light">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Personal Injury Triage</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Form</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
-
-        .field-accepted { border-left: 3px solid #22c55e !important; }
-        .field-accepted input,
-        .field-accepted textarea,
-        .field-accepted select {
-            border-color: #86efac;
-            background: #f0fdf4;
+    <script>
+      // Mirror the parent window's Tailwind config
+      tailwind.config = {
+        darkMode: 'class',
+        theme: { extend: { fontFamily: { sans: ['Inter', 'Roboto', 'sans-serif'] } } }
+      }
+    </script>
+    <style type="text/tailwindcss">
+      @layer base {
+        body { 
+            @apply bg-transparent text-slate-700 dark:text-slate-300 font-sans antialiased transition-colors duration-300; 
         }
-
-        .suggestion-box {
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            border-radius: 8px;
-            padding: 8px 10px;
-            margin-top: 4px;
-            font-size: 0.78rem;
-            color: #1e40af;
-            line-height: 1.5;
+        ::-webkit-scrollbar { @apply w-2 h-2; }
+        ::-webkit-scrollbar-track { @apply bg-transparent; }
+        ::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-slate-700 rounded-full; }
+      }
+      @layer components {
+        .input-label { 
+            @apply block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 ml-1; 
         }
-
-        .update-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            background: #fef3c7;
-            border: 1px solid #fcd34d;
-            color: #92400e;
-            border-radius: 9999px;
-            padding: 2px 8px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 4px;
+        .input-field { 
+            @apply w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none shadow-sm; 
         }
-        .update-badge:hover { background: #fde68a; }
-
-        .listening-dot {
-            width: 6px; height: 6px;
-            background: #22c55e;
-            border-radius: 50%;
-            animation: pulse 1.5s infinite;
-            display: inline-block;
+        .btn-primary { 
+            @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-blue-600 text-white shadow-sm hover:bg-blue-700 focus:ring-4 focus:ring-blue-500/30 transition-all duration-200 w-full; 
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-
-        .transcript-bubble-agent {
-            background: #3b82f6;
-            color: white;
-            border-radius: 12px 12px 2px 12px;
-            padding: 5px 10px;
-            font-size: 0.72rem;
-            max-width: 90%;
-            margin-left: auto;
-            margin-bottom: 4px;
-        }
-        .transcript-bubble-contact {
-            background: #e2e8f0;
-            color: #1e293b;
-            border-radius: 12px 12px 12px 2px;
-            padding: 5px 10px;
-            font-size: 0.72rem;
-            max-width: 90%;
-            margin-bottom: 4px;
-        }
-        .transcript-label {
-            font-size: 0.65rem;
-            color: #94a3b8;
-            margin-bottom: 2px;
-        }
+      }
     </style>
 </head>
-<body class="h-screen overflow-hidden">
-
-<div class="flex h-full">
-
-    <!-- Left: Narrow transcript sidebar (25%) -->
-    <div class="flex flex-col border-r border-slate-200 bg-white" style="width: 25%; min-width: 160px;">
-        <div class="px-3 py-2 border-b border-slate-100 flex items-center gap-2 flex-shrink-0">
-            <span id="listening-dot" class="listening-dot hidden"></span>
-            <h2 class="text-xs font-bold text-slate-600">Transcript</h2>
-            <span id="call-info" class="text-xs text-slate-400 ml-auto truncate"></span>
+<body class="p-4 sm:p-6">
+    <div id="form-container" class="max-w-2xl mx-auto space-y-6">
+        <div class="border-b border-slate-200 dark:border-slate-800/80 pb-4 mb-6">
+            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">Active Call Triage</h2>
+            <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">Please confirm the details below with the caller.</p>
         </div>
-        <div id="transcript-container" class="flex-1 overflow-y-auto p-2">
-            <p id="transcript-placeholder" class="text-slate-400 text-xs text-center mt-4">
-                Waiting...
-            </p>
-        </div>
-    </div>
-
-    <!-- Right: Full form (75%) -->
-    <div class="flex-1 flex flex-col overflow-hidden" style="width: 75%;">
-        <div class="px-4 py-2 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
-            <h2 class="text-sm font-bold text-slate-700">Personal Injury Triage</h2>
-            <div class="flex items-center gap-3">
-                <span id="ai-status" class="text-xs text-slate-400"></span>
-                <button id="submit-btn"
-                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-1.5 px-3 rounded transition">
-                    Submit
-                </button>
+        
+        <form id="triage-form" class="space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                    <label class="input-label">First Name</label>
+                    <input type="text" id="firstName" class="input-field" placeholder="Caller's first name">
+                </div>
+                <div>
+                    <label class="input-label">Last Name</label>
+                    <input type="text" id="lastName" class="input-field" placeholder="Caller's last name">
+                </div>
             </div>
-        </div>
-
-        <div class="flex-1 overflow-y-auto p-4">
-            <form id="triage-form" class="space-y-4">
-
-                {% set current_section = namespace(name='') %}
-                {% for field in form_fields %}
-                    {% if field.section != current_section.name %}
-                        {% set current_section.name = field.section %}
-                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider pt-2 {% if not loop.first %}border-t border-slate-100{% endif %}">
-                            {{ field.section }}
-                        </h3>
-                    {% endif %}
-
-                    <div class="space-y-1 pl-1 border-l-2 border-transparent transition-all" id="field-wrapper-{{ field.id }}">
-                        <label class="block text-xs font-medium text-slate-600" for="{{ field.id }}">
-                            {{ field.label }}
-                        </label>
-
-                        {% if field.type == 'textarea' %}
-                            <textarea id="{{ field.id }}" name="{{ field.id }}" rows="2"
-                                class="w-full border border-slate-200 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                                placeholder="Listening..."></textarea>
-                        {% elif field.type == 'select' %}
-                            <select id="{{ field.id }}" name="{{ field.id }}"
-                                class="w-full border border-slate-200 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                                <option value="">— Select —</option>
-                                {% for opt in field.options %}
-                                    <option value="{{ opt }}">{{ opt }}</option>
-                                {% endfor %}
-                            </select>
-                        {% else %}
-                            <input type="text" id="{{ field.id }}" name="{{ field.id }}"
-                                class="w-full border border-slate-200 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Listening..." />
-                        {% endif %}
-
-                        <!-- AI suggestion area -->
-                        <div id="suggestion-area-{{ field.id }}"></div>
-                    </div>
-                {% endfor %}
-
-            </form>
-        </div>
+            
+            <div>
+                <label class="input-label">Reason for calling</label>
+                <textarea id="reason" class="input-field h-28 resize-y" placeholder="Brief description of the issue..."></textarea>
+            </div>
+            
+            <div>
+                <label class="input-label">Priority Level</label>
+                <select id="priority" class="input-field">
+                    <option value="low">Low - General Inquiry</option>
+                    <option value="medium">Medium - Needs Attention</option>
+                    <option value="high">High - Urgent Issue</option>
+                </select>
+            </div>
+            
+            <div class="pt-4">
+                <button type="submit" class="btn-primary">Submit Triage Notes</button>
+            </div>
+        </form>
+        
+        <div id="status-msg" class="hidden mt-6 p-4 rounded-xl text-sm font-bold text-center border"></div>
     </div>
 
-</div>
-
-<script>
-const DIALOG_ID = {{ dialog_id | tojson }};
-const ANI = {{ ani | tojson }};
-
-let eventSource = null;
-let transcriptLines = [];
-let finalLineCount = 0;
-let interimBubbles = {};
-const AI_TRIGGER_EVERY = 3;
-
-// Track accepted values: {fieldId: acceptedValue}
-const acceptedValues = {};
-
-// Pre-populate phone from ANI
-if (ANI) {
-    const phoneField = document.getElementById('caller_phone');
-    if (phoneField) {
-        phoneField.value = ANI;
-        const wrapper = document.getElementById('field-wrapper-caller_phone');
-        if (wrapper) wrapper.classList.add('field-accepted');
-        acceptedValues['caller_phone'] = ANI;
-    }
-    document.getElementById('call-info').textContent = ANI;
-}
-
-if (DIALOG_ID) {
-    startSSE();
-} else {
-    document.getElementById('transcript-placeholder').textContent =
-        'No dialog ID. Check agent script config.';
-}
-
-function startSSE() {
-    document.getElementById('listening-dot').classList.remove('hidden');
-    eventSource = new EventSource(`/api/audio_streaming/transcript-stream/${DIALOG_ID}`);
-
-    eventSource.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        if (data.type === 'connected') return;
-        handleTranscriptEvent(data);
-    };
-
-    eventSource.onerror = () => {
-        document.getElementById('listening-dot').classList.add('hidden');
-        document.getElementById('ai-status').textContent = 'Connection lost';
-    };
-}
-
-function handleTranscriptEvent(data) {
-    const placeholder = document.getElementById('transcript-placeholder');
-    if (placeholder) placeholder.style.display = 'none';
-
-    const container = document.getElementById('transcript-container');
-    const isAgent = data.participant_type === 'AGENT';
-    const segmentId = data.segment_id;
-
-    if (!data.is_final) {
-        if (interimBubbles[segmentId]) {
-            interimBubbles[segmentId].querySelector('.bubble-text').textContent = data.text;
-        } else {
-            const bubble = createBubble(data, false);
-            interimBubbles[segmentId] = bubble;
-            container.appendChild(bubble);
-            container.scrollTop = container.scrollHeight;
-        }
-    } else {
-        if (interimBubbles[segmentId]) {
-            interimBubbles[segmentId].querySelector('.bubble-text').textContent = data.text;
-            interimBubbles[segmentId].classList.remove('opacity-50');
-            delete interimBubbles[segmentId];
-        } else {
-            container.appendChild(createBubble(data, true));
-            container.scrollTop = container.scrollHeight;
-        }
-
-        const speaker = isAgent ? 'Agent' : 'Caller';
-        transcriptLines.push(`${speaker}: ${data.text}`);
-        finalLineCount++;
-
-        if (finalLineCount % AI_TRIGGER_EVERY === 0) {
-            requestSuggestions();
-        }
-    }
-}
-
-function createBubble(data, isFinal) {
-    const isAgent = data.participant_type === 'AGENT';
-    const wrapper = document.createElement('div');
-    wrapper.className = isAgent ? 'text-right mb-1' : 'text-left mb-1';
-    if (!isFinal) wrapper.classList.add('opacity-50');
-
-    const label = document.createElement('div');
-    label.className = 'transcript-label ' + (isAgent ? 'text-right' : '');
-    label.textContent = isAgent ? 'Agent' : 'Caller';
-
-    const bubble = document.createElement('div');
-    bubble.className = `bubble-text ${isAgent ? 'transcript-bubble-agent' : 'transcript-bubble-contact'}`;
-    bubble.textContent = data.text;
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(bubble);
-    return wrapper;
-}
-
-// --- AI Suggestions ---
-async function requestSuggestions() {
-    const aiStatus = document.getElementById('ai-status');
-    aiStatus.textContent = 'AI thinking...';
-
-    try {
-        const response = await fetch('/agent-form/suggest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript: transcriptLines.join('\n') })
-        });
-        const data = await response.json();
-        if (response.ok && data.suggestions) {
-            renderSuggestions(data.suggestions);
-            aiStatus.textContent = `AI updated ${new Date().toLocaleTimeString()}`;
-        } else {
-            aiStatus.textContent = 'AI error';
-        }
-    } catch {
-        aiStatus.textContent = 'AI error';
-    }
-}
-
-function renderSuggestions(suggestions) {
-    Object.entries(suggestions).forEach(([fieldId, value]) => {
-        if (!value) return;
-        const suggestionArea = document.getElementById(`suggestion-area-${fieldId}`);
-        if (!suggestionArea) return;
-
-        const newValue = String(value).trim();
-        if (!newValue) return;
-
-        const isAccepted = fieldId in acceptedValues;
-
-        if (isAccepted) {
-            const accepted = String(acceptedValues[fieldId]).trim().toLowerCase();
-            const incoming = newValue.toLowerCase();
-
-            // Same or contained within accepted — skip silently
-            if (incoming === accepted || accepted.includes(incoming) || incoming.includes(accepted)) {
-                return;
+    <script>
+        // Check if the parent window is in dark mode, and apply it to the iframe body
+        function syncTheme() {
+            if (window.parent && window.parent.document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
             }
-
-            // Genuinely different — show update indicator
-            showUpdateIndicator(fieldId, newValue);
-        } else {
-            // Not yet accepted — replace existing suggestion
-            suggestionArea.innerHTML = '';
-            showSuggestion(fieldId, newValue, suggestionArea);
         }
-    });
-}
+        
+        // Initial sync
+        syncTheme();
+        
+        // Optional: Listen for messages from parent if it toggles theme dynamically
+        window.addEventListener('message', (event) => {
+            if (event.data === 'theme-toggled') {
+                syncTheme();
+            }
+        });
 
-function showSuggestion(fieldId, value, container) {
-    const box = document.createElement('div');
-    box.className = 'suggestion-box';
-
-    const text = document.createElement('div');
-    text.className = 'mb-2 leading-relaxed';
-    text.textContent = value;
-
-    const actions = document.createElement('div');
-    actions.className = 'flex gap-3 mt-1';
-
-    const acceptBtn = document.createElement('button');
-    acceptBtn.type = 'button';
-    acceptBtn.className = 'text-xs font-semibold text-blue-700 hover:text-blue-900';
-    acceptBtn.textContent = '✓ Accept';
-    acceptBtn.addEventListener('click', () => {
-        acceptValue(fieldId, value);
-        container.innerHTML = '';
-    });
-
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'text-xs font-semibold text-slate-500 hover:text-slate-700';
-    editBtn.textContent = '✎ Edit';
-    editBtn.addEventListener('click', () => {
-        const field = document.getElementById(fieldId);
-        if (field) {
-            field.value = value;
-            field.focus();
-        }
-        container.innerHTML = '';
-    });
-
-    const dismissBtn = document.createElement('button');
-    dismissBtn.type = 'button';
-    dismissBtn.className = 'text-xs font-semibold text-slate-400 hover:text-slate-600';
-    dismissBtn.textContent = '✕ Dismiss';
-    dismissBtn.addEventListener('click', () => {
-        container.innerHTML = '';
-    });
-
-    actions.appendChild(acceptBtn);
-    actions.appendChild(editBtn);
-    actions.appendChild(dismissBtn);
-    box.appendChild(text);
-    box.appendChild(actions);
-    container.appendChild(box);
-}
-
-function showUpdateIndicator(fieldId, newValue) {
-    const suggestionArea = document.getElementById(`suggestion-area-${fieldId}`);
-    if (!suggestionArea) return;
-
-    // Replace any existing indicator — don't stack
-    suggestionArea.innerHTML = '';
-
-    const badge = document.createElement('div');
-    badge.className = 'update-badge';
-    badge.innerHTML = '⟳ AI has an update — click to review';
-    badge.addEventListener('click', () => {
-        suggestionArea.innerHTML = '';
-        showSuggestion(fieldId, newValue, suggestionArea);
-    });
-
-    suggestionArea.appendChild(badge);
-}
-
-function acceptValue(fieldId, value) {
-    const field = document.getElementById(fieldId);
-    if (field) field.value = value;
-    acceptedValues[fieldId] = value;
-    const wrapper = document.getElementById(`field-wrapper-${fieldId}`);
-    if (wrapper) wrapper.classList.add('field-accepted');
-}
-
-// --- Submit ---
-document.getElementById('submit-btn').addEventListener('click', () => {
-    const form = document.getElementById('triage-form');
-    const formData = new FormData(form);
-    const result = {};
-    formData.forEach((v, k) => { if (v) result[k] = v; });
-    console.log('Form submitted:', result);
-    alert('Triage form submitted.\n(CRM integration coming soon.)');
-});
-</script>
-
+        // Form submission simulation
+        document.getElementById('triage-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true;
+            btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Submitting...';
+            
+            setTimeout(() => {
+                const status = document.getElementById('status-msg');
+                status.textContent = 'Triage notes submitted successfully!';
+                status.className = 'mt-6 p-4 rounded-xl text-sm font-bold text-center bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 block';
+                
+                btn.disabled = false;
+                btn.textContent = 'Submit Triage Notes';
+                e.target.reset();
+                
+                setTimeout(() => status.classList.add('hidden'), 4000);
+            }, 1000);
+        });
+    </script>
 </body>
 </html>
