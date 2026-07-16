@@ -1,22 +1,31 @@
-<div class="space-y-4">
-<h3 class="text-xl font-bold mb-2 text-blue-700">SIP Credentials Fetcher</h3>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+        <h2 class="text-heading mb-1 text-blue-700 dark:text-blue-500">SIP Credentials Fetcher</h2>
+        <p class="text-subheading">Retrieve the SIP provision information for a device for manual configuration.</p>
+    </div>
 
-<div class="card p-4 bg-gray-50 border-l-4 border-yellow-500 text-sm text-gray-700">
-    <p class="font-bold mb-2">Instructions & Notes:</p>
-    <ul class="list-disc list-inside space-y-2">
-        <li>**Prerequisite:** RC Account must be connected (Layer 2 Auth).</li>
-        <li>**Function:** This retrieves the SIP provision information for a device, typically used for manual softphone or physical phone configuration.</li>
-        <li>**API Endpoint:** <code>GET /restapi/v1.0/account/~/extension/&lt;extId&gt;/sip-provision</code></li>
-        <li>**Rate Limit:** Moderate. (Typically 40-50 calls per minute, per API Key/App)</li>
-        <li>**Execution Time:** Fast (sub-second).</li>
-    </ul>
-</div>
+    <div class="card !p-5 bg-amber-50 dark:bg-amber-900/10 border-l-4 border-amber-500 dark:border-amber-600 text-sm text-slate-700 dark:text-slate-300 shadow-sm">
+        <p class="font-bold mb-3 text-slate-900 dark:text-slate-100">Instructions & Notes:</p>
+        <ul class="list-disc list-inside space-y-2">
+            <li><strong>Prerequisite:</strong> RC Account must be connected via Impersonation or the Main Bridge.</li>
+            <li><strong>Function:</strong> This retrieves the SIP provision information for a device, typically used for manual softphone or physical phone configuration.</li>
+            <li><strong>API Endpoint:</strong> <code class="bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700 text-xs font-mono">GET /restapi/v1.0/account/~/extension/&lt;extId&gt;/sip-provision</code></li>
+            <li><strong>Rate Limit:</strong> Moderate. (Typically 40-50 calls per minute, per API Key/App)</li>
+            <li><strong>Execution Time:</strong> Fast (sub-second).</li>
+        </ul>
+    </div>
 
-<form class="card space-y-3">
-    <input type="text" placeholder="Enter Extension ID or Device ID" class="w-full p-3 border border-gray-300 rounded-lg">
-    <button type="button" onclick="runPlaceholderFunction('sip-fetcher')" class="bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition">
-        Fetch SIP Credentials
-    </button>
-</form>
-
+    <form class="card space-y-5 max-w-xl mx-auto w-full">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 pb-2">Fetch Credentials</h3>
+        <div>
+            <label class="input-label">Extension ID or Device ID</label>
+            <input type="text" placeholder="e.g. 610867124" class="input-field font-mono">
+        </div>
+        <div class="pt-2">
+            <button type="button" onclick="alert('Feature logic to be hooked up via standard endpoints.')" class="btn-primary w-full !py-3 uppercase tracking-wide">
+                <svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                Fetch SIP Credentials
+            </button>
+        </div>
+    </form>
 </div>
