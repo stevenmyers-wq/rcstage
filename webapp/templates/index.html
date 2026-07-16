@@ -1,38 +1,52 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RingCentral RCAU API Tools</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'Roboto', 'sans-serif'] }
+          }
+        }
+      }
+    </script>
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
     <style>
-      body { font-family: "Roboto", sans-serif; background-color: #f8f9fa; padding: 20px; }
-      .card { background-color: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 32px; }
-      .rc-connected { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
-      .rc-disconnected { background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
-      .rc-expired { background-color: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
       .message-box { padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
-      #app-container { max-width: 1400px; margin-left: auto; margin-right: auto; }
+      /* Removed the static #app-container max-width to allow fluid stretching */
     </style>
   </head>
-  <body>
+  <body class="transition-colors duration-200">
     <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 message-box w-96 hidden z-50"></div>
 
-    <div id="app-container" class="w-full space-y-8">
-      <div>
-        <h1 class="text-4xl font-bold text-center text-gray-800">RingCentral RCAU API Tools</h1>
-        <p class="text-center text-gray-500">
-          Cloud Run Service URL: {{ RC_REDIRECT_URI | default("http://localhost:8080/auth/callback") | replace("/auth/callback", "") }}
-        </p>
+    <div id="app-container" class="w-full h-full space-y-8">
+      <div class="flex flex-col md:flex-row justify-between items-center mb-8">
+        <div class="text-center md:text-left">
+          <h1 class="text-4xl font-bold text-gray-800 dark:text-white">RingCentral RCAU API Tools</h1>
+          <p class="text-gray-500 dark:text-gray-400 mt-1">
+            Cloud Run Service URL: {{ RC_REDIRECT_URI | default("http://localhost:8080/auth/callback") | replace("/auth/callback", "") }}
+          </p>
+        </div>
+        
+        <button id="theme-toggle" class="mt-4 md:mt-0 p-2 rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-slate-600 transition outline-none focus:ring-2 focus:ring-blue-500">
+          <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+          <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+        </button>
       </div>
 
       {% if not AUTHENTICATED %}
       <div id="login-screen" class="card max-w-2xl mx-auto">
-        <h2 class="text-2xl font-semibold mb-4 text-gray-700">Login to RCAU Tools</h2>
-        <p class="text-gray-600 mb-6">Sign in with your RingCentral Google account to unlock the dashboard.</p>
+        <h2 class="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">Login to RCAU Tools</h2>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">Sign in with your RingCentral Google account to unlock the dashboard.</p>
         <div class="flex flex-col items-center justify-center space-y-4 mt-6">
           <script src="https://accounts.google.com/gsi/client" async defer></script>
           <script>
@@ -55,47 +69,50 @@
       </div>
 
       {% else %}
-      <div id="app-dashboard" class="space-y-6">
+      <div id="app-dashboard" class="space-y-6 w-full">
         <div class="space-y-4">
-          <div class="flex justify-between items-center p-3 bg-indigo-100 rounded-lg shadow-md">
-            <div class="text-lg font-medium text-gray-700">Welcome! Role: <span class="font-bold">{{ USER_ROLE }}</span></div>
-            <a href="{{ url_for('core.logout') }}" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition duration-150 shadow-md">Logout</a>
+          <div class="flex justify-between items-center p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg shadow-sm border border-indigo-200 dark:border-indigo-800">
+            <div class="text-lg font-medium text-gray-700 dark:text-gray-300">Welcome! Role: <span class="font-bold text-indigo-700 dark:text-indigo-400">{{ USER_ROLE }}</span></div>
+            <a href="{{ url_for('core.logout') }}" class="btn-secondary !bg-red-500 hover:!bg-red-600 !text-white !border-transparent text-sm">Logout</a>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div id="rc-connection-card" class="card rc-disconnected p-4 shadow-sm border border-red-200">
+            <div id="rc-connection-card" class="card rc-disconnected p-4 shadow-sm">
               <div class="flex justify-between items-center">
                 <div class="space-y-1">
-                  <h2 class="text-lg font-bold text-gray-800">RingEX Connection</h2>
+                  <h2 class="text-lg font-bold">RingEX Connection</h2>
                   <div id="rc-status-display" class="font-semibold text-sm">Status: Disconnected</div>
                 </div>
                 <div class="text-right">
-                  <div id="current-rc-email" class="text-xs font-medium text-gray-600" style="display: none"></div>
+                  <div id="current-rc-email" class="text-xs font-medium opacity-80" style="display: none"></div>
                 </div>
               </div>
             </div>
 
-            <div id="cxone-connection-card-status" class="card rc-disconnected p-4 shadow-sm border border-blue-200">
+            <div id="cxone-connection-card-status" class="card rc-disconnected p-4 shadow-sm">
               <div class="flex justify-between items-center">
                 <div class="space-y-1">
-                  <h2 class="text-lg font-bold text-gray-800">RCCC (CXone) Connection</h2>
+                  <h2 class="text-lg font-bold">RCCC (CXone) Connection</h2>
                   <div id="cxone-status-display" class="font-semibold text-sm">Status: Disconnected</div>
                 </div>
                 <div class="text-right">
-                  <div id="current-cxone-region" class="text-xs font-medium text-gray-600" style="display: none"></div>
+                  <div id="current-cxone-region" class="text-xs font-medium opacity-80" style="display: none"></div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="flex flex-col md:flex-row gap-6 items-start">
-          <div class="w-full md:w-64 flex-shrink-0">
-            <nav class="flex flex-col space-y-1" aria-label="Tabs">
-              <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mt-2 mb-2 pl-4">Authentication</div>
-              <a href="{{ url_for('core.index', tab='auth_rex') }}" class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == 'auth_rex' %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}">REX Authentication</a>
-              <a href="{{ url_for('core.index', tab='auth_cxone') }}" class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == 'auth_cxone' %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}">RCCC (CXOne) Authentication</a>
-              <hr class="my-4 border-gray-200">
+        <div class="flex flex-col lg:flex-row gap-6 items-start w-full">
+          <div class="w-full lg:w-72 flex-shrink-0">
+            <nav class="flex flex-col space-y-1 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 py-4" aria-label="Tabs">
+              <div class="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mt-2 mb-2 pl-6">Authentication</div>
+              
+              <a href="{{ url_for('core.index', tab='auth_rex') }}" class="group flex items-center px-6 py-3 text-sm font-medium border-l-4 transition-all duration-200 {% if current_tab == 'auth_rex' %} bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 {% else %} border-transparent text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 hover:text-gray-900 dark:hover:text-white {% endif %}">REX Authentication</a>
+              
+              <a href="{{ url_for('core.index', tab='auth_cxone') }}" class="group flex items-center px-6 py-3 text-sm font-medium border-l-4 transition-all duration-200 {% if current_tab == 'auth_cxone' %} bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 {% else %} border-transparent text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 hover:text-gray-900 dark:hover:text-white {% endif %}">RCCC (CXOne) Authentication</a>
+              
+              <hr class="my-4 border-gray-100 dark:border-slate-700">
 
               {% set nav_groups = [
                 { 'id': 'cc_tools', 'title': 'CC Tools', 'tabs': [ ('cxone_audio_converter', 'CXone Audio Converter', 'Convert audio files to 8kHz, mono, u-law'), ('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts') ] },
@@ -107,13 +124,13 @@
               {% for group in nav_groups %}
                 {% set is_active_group = group.tabs | selectattr(0, 'equalto', current_tab) | list | length > 0 %}
                 <div class="nav-group mt-2">
-                  <button class="nav-toggle flex items-center justify-between w-full px-4 py-3 rounded-r-lg hover:bg-gray-200 text-gray-700 font-bold transition-colors focus:outline-none" onclick="toggleNavGroup('{{ group.id }}-menu', this)">
-                      <div class="flex items-center text-xs uppercase tracking-wider text-gray-500 font-bold">{{ group.title }}</div>
+                  <button class="nav-toggle flex items-center justify-between w-full px-6 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 text-gray-700 dark:text-slate-300 font-bold transition-colors focus:outline-none" onclick="toggleNavGroup('{{ group.id }}-menu', this)">
+                      <div class="flex items-center text-xs uppercase tracking-wider">{{ group.title }}</div>
                       <svg class="nav-chevron w-4 h-4 text-gray-500 transform transition-transform duration-200 {% if is_active_group %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                   </button>
-                  <div id="{{ group.id }}-menu" class="{% if not is_active_group %}hidden{% endif %} flex-col mt-1 space-y-1">
+                  <div id="{{ group.id }}-menu" class="{% if not is_active_group %}hidden{% endif %} flex-col space-y-1 pb-2">
                       {% for tab_id, tab_name, tab_desc in group.tabs %}
-                      <a href="{{ url_for('core.index', tab=tab_id) }}" title="{{ tab_desc }}" class="group flex items-center pl-8 pr-4 py-2 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 {% if current_tab == tab_id %} bg-white border-blue-600 text-blue-700 shadow-sm {% else %} border-transparent text-gray-600 hover:bg-gray-200 hover:text-gray-900 {% endif %}">
+                      <a href="{{ url_for('core.index', tab=tab_id) }}" title="{{ tab_desc }}" class="group flex items-center pl-10 pr-4 py-2.5 text-sm font-medium border-l-4 transition-all duration-200 {% if current_tab == tab_id %} bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 {% else %} border-transparent text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/30 hover:text-gray-900 dark:hover:text-slate-200 {% endif %}">
                           {{ tab_name }}
                       </a>
                       {% endfor %}
@@ -122,15 +139,15 @@
               {% endfor %} 
 
               {% if USER_ROLE == 'Admin' %}
-              <hr class="my-4 border-gray-200">
-              <a href="{{ url_for('core.index', tab='admin_dashboard') }}" class="group flex items-center px-4 py-3 text-sm font-medium rounded-r-lg border-l-4 transition-all duration-200 mt-4 {% if current_tab == 'admin_dashboard' %}bg-red-50 border-red-600 text-red-700 shadow-sm{% else %}border-transparent text-red-600 hover:bg-red-100 hover:text-red-900{% endif %}" title="Admin Analytics Dashboard">Admin Dashboard</a>
+              <hr class="my-4 border-gray-100 dark:border-slate-700">
+              <a href="{{ url_for('core.index', tab='admin_dashboard') }}" class="group flex items-center px-6 py-3 text-sm font-medium border-l-4 transition-all duration-200 mt-4 {% if current_tab == 'admin_dashboard' %}bg-red-50 dark:bg-red-900/20 border-red-600 text-red-700 dark:text-red-400{% else %}border-transparent text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10{% endif %}" title="Admin Analytics Dashboard">Admin Dashboard</a>
               {% endif %}
             </nav>
 
             {% if USER_ROLE == 'Admin' %}
-            <div class="mt-8 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
-              <h3 class="text-sm font-bold text-red-800 mb-1">Admin Mode</h3>
-              <p class="text-xs text-red-700">Manage admins in settings.</p>
+            <div class="mt-8 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded-r-lg">
+              <h3 class="text-sm font-bold text-red-800 dark:text-red-400 mb-1">Admin Mode</h3>
+              <p class="text-xs text-red-700 dark:text-red-300">Manage admins in settings.</p>
             </div>
             {% endif %}
           </div>
@@ -141,37 +158,37 @@
             
             {% if current_tab in sm_auth_tabs %}
                 {% if not session.get('sm_employee_token') %}
-                    <div class="mb-4 border-b border-gray-200 pb-4">
-                        <h2 class="text-3xl font-bold text-slate-800 mb-1">Tool Locked</h2>
-                        <p class="text-slate-500 text-sm">Please authenticate to access this tool.</p>
+                    <div class="mb-4 border-b border-gray-200 dark:border-slate-700 pb-4">
+                        <h2 class="text-3xl font-bold text-slate-800 dark:text-white mb-1">Tool Locked</h2>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm">Please authenticate to access this tool.</p>
                     </div>
-                    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6 mx-auto">
-                        <h3 class="font-bold text-slate-800 mb-2">Partner Authentication Required</h3>
-                        <p class="text-sm text-slate-600 mb-6">You must securely authenticate with your RingCentral employee account to access the internal partner bridge for UC tools.</p>
-                        <a href="/api/sm_auth/login?tab={{ current_tab }}" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition block text-center uppercase tracking-wide">
+                    <div class="w-full max-w-2xl card mt-6 mx-auto">
+                        <h3 class="font-bold text-slate-800 dark:text-white mb-2">Partner Authentication Required</h3>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">You must securely authenticate with your RingCentral employee account to access the internal partner bridge for UC tools.</p>
+                        <a href="/api/sm_auth/login?tab={{ current_tab }}" class="btn-primary w-full text-center uppercase tracking-wide">
                             Sign In To Partner Bridge
                         </a>
                     </div>
                 {% elif not session.get('sm_isolated_token') %}
-                    <div class="mb-4 border-b border-gray-200 pb-4">
-                        <h2 class="text-3xl font-bold text-slate-800 mb-1">Target Account Required</h2>
-                        <p class="text-slate-500 text-sm">Please provide a target account ID.</p>
+                    <div class="mb-4 border-b border-gray-200 dark:border-slate-700 pb-4">
+                        <h2 class="text-3xl font-bold text-slate-800 dark:text-white mb-1">Target Account Required</h2>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm">Please provide a target account ID.</p>
                     </div>
-                    <div class="w-full max-w-2xl bg-white p-6 rounded-xl shadow-md border border-gray-200 mt-6 mx-auto">
+                    <div class="w-full max-w-2xl card mt-6 mx-auto">
                         <div class="flex justify-between items-start mb-2">
-                            <h3 class="font-bold text-slate-800">Impersonation Required</h3>
-                            <span class="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-1 rounded">Authenticated ✓</span>
+                            <h3 class="font-bold text-slate-800 dark:text-white">Impersonation Required</h3>
+                            <span class="text-[10px] bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-bold px-2 py-1 rounded">Authenticated ✓</span>
                         </div>
-                        <p class="text-sm text-slate-600 mb-6">Enter the <strong>Target Customer Account ID</strong> to grant this tool access to the customer's account.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">Enter the <strong>Target Customer Account ID</strong> to grant this tool access to the customer's account.</p>
                         <div class="space-y-4">
-                            <input type="text" id="globalTargetAccountId" class="border p-3 w-full rounded font-mono text-sm" placeholder="Target Account ID (e.g. 777100124)">
-                            <button onclick="startGlobalBridge('{{ current_tab }}')" id="globalBridgeBtn" class="bg-blue-600 hover:bg-blue-700 text-white p-3 w-full font-bold rounded shadow transition">
+                            <input type="text" id="globalTargetAccountId" class="input-field font-mono" placeholder="Target Account ID (e.g. 777100124)">
+                            <button onclick="startGlobalBridge('{{ current_tab }}')" id="globalBridgeBtn" class="btn-primary w-full uppercase">
                                 BRIDGE CONNECTION
                             </button>
                             <div id="globalBridgeError" class="text-red-500 text-xs font-bold hidden text-center mt-2"></div>
                         </div>
-                        <div class="mt-4 border-t pt-4 text-center">
-                            <a href="/api/sm_auth/full_logout?tab={{ current_tab }}" class="text-xs text-red-500 hover:underline">Log Out of Partner Bridge</a>
+                        <div class="mt-6 border-t border-slate-100 dark:border-slate-700 pt-4 text-center">
+                            <a href="/api/sm_auth/full_logout?tab={{ current_tab }}" class="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 hover:underline">Log Out of Partner Bridge</a>
                         </div>
                     </div>
                     <script>
@@ -192,15 +209,15 @@
                         }
                     </script>
                 {% else %}
-                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
+                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex justify-between items-center mb-6 shadow-sm">
                         <div>
-                            <span class="text-[10px] font-bold text-blue-500 uppercase block tracking-wider">Active Impersonation Context</span>
-                            <span class="font-bold text-slate-800 text-sm">{{ session.get('sm_target_name') }} <span class="text-xs text-slate-500 font-mono font-normal ml-1">({{ session.get('sm_target_id') }})</span></span>
+                            <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase block tracking-wider">Active Impersonation Context</span>
+                            <span class="font-bold text-slate-800 dark:text-slate-200 text-sm">{{ session.get('sm_target_name') }} <span class="text-xs text-slate-500 dark:text-slate-400 font-mono font-normal ml-1">({{ session.get('sm_target_id') }})</span></span>
                         </div>
-                        <a href="/api/sm_auth/logout?tab={{ current_tab }}" class="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded font-bold text-slate-600 hover:text-red-600 hover:border-red-300 transition shadow-sm">EXIT / LOGOUT</a>
+                        <a href="/api/sm_auth/logout?tab={{ current_tab }}" class="text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 px-3 py-1.5 rounded font-bold text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-500 transition shadow-sm">EXIT / LOGOUT</a>
                     </div>
                     
-                    <div class="bg-transparent">
+                    <div class="bg-transparent w-full">
                         {% if current_tab == 'air_management' %} {% include 'includes/air_management_tab.html' %} 
                         {% elif current_tab == 'presence' %} {% include 'includes/presence_tab.html' %} 
                         {% elif current_tab == 'bulk_opening' %} {% include 'includes/bulk_opening_tab.html' %}
@@ -228,7 +245,7 @@
                 {% endif %}
                 
             {% else %}
-                <div class="bg-transparent">
+                <div class="bg-transparent w-full">
                     {% if current_tab == 'auth_rex' %} {% include 'includes/auth_rex_tab.html' %} 
                     {% elif current_tab == 'auth_cxone' %} {% include 'includes/auth_cxone_tab.html' %} 
                     {% elif current_tab == 'analytics' %} {% include 'includes/analytics_tab.html' %} 
@@ -242,8 +259,9 @@
                     {% elif current_tab == 'ai_demo_calls' %} {% include 'includes/ai_demo_calls_tab.html' %} 
                     {% elif current_tab == 'click_to_call' %} {% include 'includes/click_to_call_tab.html' %} 
                     {% else %}
-                    <div class="card text-center py-12">
-                        <p class="text-gray-500 text-lg">Select a tool from the sidebar to begin.</p>
+                    <div class="card text-center py-16 flex flex-col items-center">
+                        <svg class="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        <p class="text-gray-500 dark:text-gray-400 text-lg font-medium">Select a tool from the sidebar to begin.</p>
                     </div>
                     {% endif %}
                 </div>
