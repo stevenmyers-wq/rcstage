@@ -1,88 +1,91 @@
-<div class="space-y-6 animate-fade-in p-4">
-    <div class="flex justify-between items-center mb-8">
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
         <div>
-            <h2 class="text-3xl font-bold text-gray-800">BLF Presence Management</h2>
-            <p class="text-gray-600 mt-2">Audit and bulk update Busy Lamp Field (BLF) configurations.</p>
+            <h2 class="text-heading mb-1">BLF Presence Management</h2>
+            <p class="text-subheading">Audit and bulk update Busy Lamp Field (BLF) configurations.</p>
         </div>
-        <button id="toggle-sandbox" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-300">Toggle Diagnostics Sandbox</button>
+        <button id="toggle-sandbox" class="btn-secondary whitespace-nowrap !py-2 !px-4 text-sm w-full md:w-auto">Toggle Diagnostics Sandbox</button>
     </div>
 
-    <div id="main-ui">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-                <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+    <div id="main-ui" class="w-full">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+            <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+                <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                 </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">Audit BLF</h3>
-                <button id="generate-audit-btn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">Generate Report</button>
+                <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Audit BLF</h3>
+                <button id="generate-audit-btn" class="w-full bg-transparent border-2 border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 transition-colors shadow-sm mt-auto">Generate Report</button>
             </div>
 
-            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-                <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
+            <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+                <div class="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors shadow-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                 </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">Get Template</h3>
-                <a href="/api/presence/template" class="w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors block text-center">Download Template</a>
+                <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Get Template</h3>
+                <a href="/api/presence/template" class="w-full bg-transparent border-2 border-green-600 dark:border-green-500 text-green-600 dark:text-green-500 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white dark:hover:bg-green-500 transition-colors block text-center shadow-sm mt-auto">Download Template</a>
             </div>
 
-            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-                <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+            <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+                <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                 </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">Update Lines</h3>
-                <label id="upload-btn-label" class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer text-center">
+                <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Update Lines</h3>
+                <label id="upload-btn-label" class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-500 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer text-center shadow-sm mt-auto block">
                     Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">
                 </label>
             </div>
         </div>
 
-        <div id="upload-status" class="hidden mt-2 p-4 rounded-lg text-sm border shadow-sm"></div>
+        <div id="upload-status" class="hidden mt-6 card !py-4 text-center"></div>
 
-        <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden mt-8">
-            <div class="bg-gray-50 px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div class="flex items-center gap-3 w-full md:w-auto">
-                    <select id="site-select" class="rounded-lg text-sm border-gray-300 py-2"><option value="">All Sites</option></select>
-                    <input type="text" id="global-search" class="rounded-lg text-sm border-gray-300 py-2 px-3 w-full md:w-64" placeholder="Search...">
-                    <button id="refresh-users-btn" class="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700">Refresh</button>
+        <div class="card !p-0 overflow-hidden mt-8 w-full">
+            <div class="bg-slate-50 dark:bg-slate-800/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                    <select id="site-select" class="input-field !py-2 sm:w-auto w-full"><option value="">All Sites</option></select>
+                    <input type="text" id="global-search" class="input-field !py-2 sm:w-64 w-full" placeholder="Search...">
+                    <button id="refresh-users-btn" class="btn-primary !bg-slate-800 hover:!bg-slate-700 dark:!bg-slate-700 dark:hover:!bg-slate-600 border-transparent text-sm px-4 py-2 w-full sm:w-auto whitespace-nowrap">Refresh</button>
                 </div>
             </div>
-            <div class="overflow-x-auto max-h-[600px]">
-                <table class="min-w-full text-left text-sm text-gray-600">
-                    <thead class="bg-gray-50 sticky top-0 z-10">
+            <div class="overflow-x-auto max-h-[600px] w-full">
+                <table class="data-table">
+                    <thead class="sticky top-0 z-10 shadow-sm">
                         <tr>
-                            <th class="px-4 py-3 text-center border-b"><input type="checkbox" id="select-all"></th>
-                            <th class="px-4 py-3 font-bold border-b">NAME</th>
-                            <th class="px-4 py-3 font-bold border-b">EXTENSION</th>
-                            <th class="px-4 py-3 font-bold border-b">EXTENSION ID</th>
-                            <th class="px-4 py-3 font-bold border-b">SITE</th>
+                            <th class="w-12 text-center border-b border-slate-200 dark:border-slate-700"><input type="checkbox" id="select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"></th>
+                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">NAME</th>
+                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">EXTENSION</th>
+                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">EXTENSION ID</th>
+                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">SITE</th>
                         </tr>
-                        <tr class="bg-white">
+                        <tr class="bg-white dark:bg-slate-800">
                             <th></th>
-                            <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="1" placeholder="Filter Name..."></th>
-                            <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="2" placeholder="Filter Ext..."></th>
-                            <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="3" placeholder="Filter ID..."></th>
-                            <th class="px-4 py-2"><input type="text" class="w-full border rounded text-xs inline-filter p-1" data-col="4" placeholder="Filter Site..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="1" placeholder="Filter Name..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="2" placeholder="Filter Ext..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="3" placeholder="Filter ID..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="4" placeholder="Filter Site..."></th>
                         </tr>
                     </thead>
-                    <tbody id="users-table-body" class="divide-y divide-gray-100"></tbody>
+                    <tbody id="users-table-body" class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <div id="sandbox-ui" class="hidden mt-8 bg-gray-50 p-6 rounded-xl border border-gray-300">
-        <h3 class="text-2xl font-bold mb-4 text-red-600">API Sandbox (Raw PUT Test)</h3>
-        <p class="mb-4 text-gray-700">Target User ID (e.g. 610867124): <input type="text" id="sb-ext-id" class="border rounded p-2 ml-2 w-64" value="610867124"></p>
+    <div id="sandbox-ui" class="hidden mt-8 card bg-slate-50 dark:bg-slate-900/50 border-slate-300 dark:border-slate-700 shadow-inner w-full">
+        <h3 class="text-2xl font-bold mb-4 text-red-600 dark:text-red-400 border-b border-slate-200 dark:border-slate-700 pb-2">API Sandbox (Raw PUT Test)</h3>
+        <div class="flex items-center gap-3 mb-5 w-full">
+            <label class="text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">Target User ID:</label>
+            <input type="text" id="sb-ext-id" class="input-field font-mono !w-64" placeholder="e.g. 610867124" value="610867124">
+        </div>
         
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
             <div>
-                <label class="font-bold text-gray-700 block mb-2">Raw JSON Payload:</label>
-                <textarea id="sb-payload" class="w-full h-64 border rounded p-4 font-mono text-sm" placeholder="Enter JSON here..."></textarea>
-                <button id="sb-send" class="mt-4 bg-red-600 text-white font-bold py-2 px-6 rounded hover:bg-red-700">FIRE API REQUEST</button>
+                <label class="input-label">Raw JSON Payload:</label>
+                <textarea id="sb-payload" class="w-full h-64 input-field font-mono text-xs resize-y" placeholder="Enter JSON here..."></textarea>
+                <button id="sb-send" class="btn-danger w-full mt-4">FIRE API REQUEST</button>
             </div>
             <div>
-                <label class="font-bold text-gray-700 block mb-2">API Response:</label>
-                <div id="sb-response" class="w-full h-64 bg-black text-green-400 p-4 rounded font-mono text-sm overflow-auto">Awaiting execution...</div>
+                <label class="input-label">API Response:</label>
+                <div id="sb-response" class="w-full h-64 bg-black text-green-400 p-4 rounded-lg font-mono text-xs overflow-auto border border-slate-700 shadow-inner">Awaiting execution...</div>
             </div>
         </div>
     </div>
@@ -132,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchUsers() {
-        usersTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8">Loading users...</td></tr>';
+        usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-slate-400 dark:text-slate-500 italic"><div class="spinner w-5 h-5 mx-auto mb-3"></div>Loading users...</td></tr>`;
         const resp = await fetch('/api/presence/users');
         const data = await resp.json();
         if (data.status === 'success') { allUsersData = data.users; renderTable(); }
@@ -158,11 +161,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!match) return;
 
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td class="px-4 py-3 text-center"><input type="checkbox" class="user-checkbox" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
-                            <td class="px-4 py-3 font-medium text-gray-800">${rowData[0]}</td>
-                            <td class="px-4 py-3">${rowData[1]}</td>
-                            <td class="px-4 py-3 text-xs text-gray-500">${rowData[2]}</td>
-                            <td class="px-4 py-3">${rowData[3]}</td>`;
+            tr.className = "hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors";
+            tr.innerHTML = `<td class="px-4 py-3 text-center"><input type="checkbox" class="user-checkbox h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
+                            <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">${rowData[0]}</td>
+                            <td class="px-4 py-3 text-slate-700 dark:text-slate-300">${rowData[1]}</td>
+                            <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 font-mono">${rowData[2]}</td>
+                            <td class="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">${rowData[3]}</td>`;
             usersTableBody.appendChild(tr);
         });
     }
@@ -186,13 +190,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = document.getElementById('upload-status');
         const label = document.getElementById('upload-btn-label');
         label.innerText = "Updating...";
-        status.className = "p-4 rounded-lg text-sm border bg-blue-50 text-blue-800 border-blue-200 block";
+        status.className = "mt-6 card !py-4 text-center bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 block";
         status.innerText = "Processing...";
         const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
         const data = await resp.json();
         label.innerHTML = 'Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">';
-        status.className = `p-4 rounded-lg text-sm border block ${data.status === 'completed' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`;
-        status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
+        status.className = `mt-6 card !py-4 text-center block ${data.status === 'completed' ? 'bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800'}`;
+        status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2 text-left inline-block"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
     };
 });
 </script>
