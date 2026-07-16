@@ -1,28 +1,28 @@
 <audio id="remote-audio" hidden muted></audio>
 <audio id="local-audio" hidden></audio>
 
-<div class="w-full space-y-6">
-    <div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4">
-        <h2 class="text-heading mb-1">AI Demo Call Generator (Phase 1)</h2>
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-800/80 pb-6">
+        <h2 class="text-display mb-2">AI Demo Call Generator</h2>
         <p class="text-subheading">Generate a script, render AI audio, and dial directly into RingEX.</p>
     </div>
 
-    <div class="flex flex-col lg:flex-row gap-6 w-full">
+    <div class="flex flex-col lg:flex-row gap-8 w-full">
         
-        <!-- Controls Column -->
-        <div class="w-full lg:w-1/3 flex flex-col gap-6">
+        <div class="w-full lg:w-1/3 flex flex-col gap-8">
             
-            <div class="card !p-0 overflow-hidden">
-                <div class="bg-blue-600 dark:bg-blue-700 text-white px-5 py-4 font-semibold">
-                    1. Define Scenario & Style
+            <div class="card !p-0 overflow-hidden flex flex-col hover:-translate-y-1 transition-transform duration-300">
+                <div class="bg-blue-600 dark:bg-blue-500 text-white px-6 py-4 font-bold tracking-wide flex items-center gap-3">
+                    <span class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm">1</span>
+                    Define Scenario & Style
                 </div>
-                <div class="p-5 space-y-5">
-                    <div>
+                <div class="p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
+                    <div class="input-wrapper">
                         <label for="scenario-input" class="input-label">What is this call about?</label>
-                        <textarea id="scenario-input" class="input-field" rows="3" placeholder="e.g., A frustrated customer whose internet is down."></textarea>
+                        <textarea id="scenario-input" class="input-field resize-y" rows="3" placeholder="e.g., A frustrated customer whose internet is down."></textarea>
                     </div>
                     
-                    <div>
+                    <div class="input-wrapper">
                         <label for="voice-prompt-select" class="input-label">Accent & Language Style</label>
                         <select id="voice-prompt-select" class="input-field">
                             <option value="Australian English">🇦🇺 Australian English</option>
@@ -35,10 +35,10 @@
                         </select>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="input-wrapper">
                             <label for="agent-voice-select" class="input-label">Agent Voice</label>
-                            <select id="agent-voice-select" class="input-field !text-sm">
+                            <select id="agent-voice-select" class="input-field">
                                 <optgroup label="Female">
                                     <option value="Kore" selected>Kore</option>
                                     <option value="Aoede">Aoede</option>
@@ -51,9 +51,9 @@
                                 </optgroup>
                             </select>
                         </div>
-                        <div>
+                        <div class="input-wrapper">
                             <label for="customer-voice-select" class="input-label">Customer Voice</label>
-                            <select id="customer-voice-select" class="input-field !text-sm">
+                            <select id="customer-voice-select" class="input-field">
                                 <optgroup label="Female">
                                     <option value="Kore">Kore</option>
                                     <option value="Aoede">Aoede</option>
@@ -68,107 +68,113 @@
                         </div>
                     </div>
 
-                    <button id="generate-btn" class="btn-success w-full">
-                        <i class="fas fa-magic"></i> Generate Content
+                    <button id="generate-btn" class="btn-primary w-full !py-3.5">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                        Generate Content
                     </button>
                 </div>
             </div>
 
-            <div id="dialer-section" class="card !p-0 overflow-hidden hidden">
-                <div class="bg-purple-600 dark:bg-purple-700 text-white px-5 py-4 font-semibold">
-                    2. WebRTC Live Demo
+            <div id="dialer-section" class="card !p-0 overflow-hidden flex flex-col hidden hover:-translate-y-1 transition-transform duration-300">
+                <div class="bg-purple-600 dark:bg-purple-500 text-white px-6 py-4 font-bold tracking-wide flex items-center gap-3">
+                    <span class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm">2</span>
+                    WebRTC Live Demo
                 </div>
-                <div class="p-5 space-y-5">
-                    <p class="text-sm text-gray-600 dark:text-gray-400">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
+                <div class="p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
+                    <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Enter your RingEX Extension or Phone Number below to initiate the live call.</p>
                     
-                    <div class="flex flex-col space-y-1">
+                    <div class="input-wrapper">
                         <label for="demo-region-select" class="input-label">Dialer Persona (Region)</label>
                         <select id="demo-region-select" class="input-field">
                             <option value="AU" selected>Australia (AU Caller)</option>
                             <option value="UK">United Kingdom (UK Caller)</option>
                             <option value="US">United States (US Caller)</option>
                         </select>
-                        <span class="text-xs text-gray-500 dark:text-gray-400">Select which dedicated test account to provision the WebRTC phone with.</span>
+                        <span class="text-[10px] uppercase tracking-wider font-bold text-slate-400 mt-1 ml-1">Selects the dedicated test account used.</span>
                     </div>
 
-                    <div>
+                    <div class="input-wrapper">
                         <label for="dial-target" class="input-label">Target Extension / Number</label>
                         <input type="text" id="dial-target" class="input-field font-mono" placeholder="e.g., 101 or +61400000000">
                     </div>
 
-                    <div class="flex gap-2">
-                        <button id="call-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1">
-                            <i class="fas fa-phone"></i> Dial Target
+                    <div class="flex gap-3">
+                        <button id="call-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 !shadow-[0_4px_14px_0_rgb(147,51,234,0.39)] hover:!shadow-[0_6px_20px_rgba(147,51,234,0.23)] flex-1 !py-3.5">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                            Dial Target
                         </button>
-                        <button id="hangup-btn" class="btn-danger flex-1 hidden">
-                            <i class="fas fa-phone-slash"></i> Hang Up
+                        <button id="hangup-btn" class="btn-danger flex-1 !py-3.5 hidden">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.516l2.257-1.13a1 1 0 00.502-1.21L9.22 3.683A1 1 0 008.27 3H5z"></path></svg>
+                            Hang Up
                         </button>
                     </div>
 
-                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full btn-primary hidden shadow-lg !py-3">
-                        <i class="fas fa-play-circle"></i> Start Automated Demo
+                    <button id="auto-play-btn" onclick="startAutoDemo()" class="w-full btn-primary !bg-slate-800 hover:!bg-slate-900 hidden shadow-xl !py-3.5 mt-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Start Automated Demo
                     </button>
 
-                    <div id="dtmf-keypad" class="hidden mt-4 bg-slate-100 dark:bg-slate-900 p-5 rounded-xl border border-slate-300 dark:border-slate-700 w-64 mx-auto shadow-inner">
-                        <div class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wider">IVR Keypad</div>
+                    <div id="dtmf-keypad" class="hidden mt-6 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 w-64 mx-auto shadow-sm">
+                        <div class="text-center text-xs font-bold text-slate-400 dark:text-slate-500 mb-5 uppercase tracking-widest">IVR Keypad</div>
                         <div class="grid grid-cols-3 gap-3">
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="1">1</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="2">2</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="3">3</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="4">4</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="5">5</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="6">6</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="7">7</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="8">8</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="9">9</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="*">*</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="0">0</button>
-                            <button class="dtmf-btn bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm p-4 text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" data-key="#">#</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="1">1</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="2">2</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="3">3</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="4">4</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="5">5</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="6">6</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="7">7</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="8">8</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="9">9</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="*">*</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="0">0</button>
+                            <button class="dtmf-btn bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm py-4 text-xl font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-colors" data-key="#">#</button>
                         </div>
                     </div>
 
-                    <div id="call-status" class="mt-4 text-sm font-bold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-800 p-3 rounded-lg text-center border border-gray-300 dark:border-slate-700">
+                    <div id="call-status" class="mt-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center border-t border-slate-200 dark:border-slate-700 pt-4">
                         Status: Ready to provision
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- Right Script/Visualizer Column -->
         <div class="w-full lg:w-2/3 flex flex-col min-w-0">
 
-            <div id="loading-indicator" class="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 rounded-lg hidden mb-4 shadow-sm">
-                <div class="flex items-center">
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <strong>Gemini is thinking...</strong>&nbsp;Writing the script and rendering expressive audio.
+            <div id="loading-indicator" class="hidden card !p-5 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800/50 mb-6 shadow-sm">
+                <div class="flex items-center text-blue-800 dark:text-blue-300 font-medium">
+                    <div class="spinner w-5 h-5 border-blue-600 dark:border-blue-400 mr-4"></div>
+                    <div>
+                        <strong class="block mb-0.5">Gemini is thinking...</strong>
+                        <span class="text-sm opacity-80">Writing the script and rendering expressive audio.</span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Sticky Playback Control Bar -->
-            <div id="playback-control-bar" class="hidden bg-slate-800 dark:bg-slate-900 text-white rounded-xl p-4 mb-4 flex flex-wrap items-center justify-between gap-4 shadow-lg sticky top-2 z-10 border border-slate-700">
-                <div class="flex items-center gap-2">
-                    <button id="playback-start-stop-btn" onclick="toggleAutoDemo()" class="btn-primary !py-2 !px-4">
-                        <i class="fas fa-play-circle"></i> Start
+            <div id="playback-control-bar" class="hidden bg-slate-800 dark:bg-slate-900 text-white rounded-2xl p-5 mb-6 flex flex-wrap items-center justify-between gap-4 shadow-xl sticky top-6 z-30 border border-slate-700">
+                <div class="flex items-center gap-3">
+                    <button id="playback-start-stop-btn" onclick="toggleAutoDemo()" class="btn-primary !bg-blue-500 hover:!bg-blue-400 !shadow-none !py-2.5 !px-5 text-sm">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Start
                     </button>
-                    <button id="playback-restart-btn" onclick="restartAutoDemo()" class="btn-secondary !bg-slate-600 hover:!bg-slate-500 !text-white !border-transparent !py-2 !px-4" title="Restart from beginning">
-                        <i class="fas fa-undo"></i> Restart
+                    <button id="playback-restart-btn" onclick="restartAutoDemo()" class="btn-secondary !bg-slate-700 hover:!bg-slate-600 !text-white !border-transparent !py-2.5 !px-5 text-sm" title="Restart from beginning">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                        Restart
                     </button>
                 </div>
-                <div id="playback-progress" class="text-sm text-gray-300 font-mono font-bold">
+                <div id="playback-progress" class="text-sm text-slate-300 font-mono font-bold tracking-widest uppercase">
                     Turn 0 of 0
                 </div>
-                <div class="flex items-center gap-3 text-xs font-medium text-gray-300">
-                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-green-400 rounded-sm inline-block shadow-sm"></span> Agent</span>
-                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-blue-400 rounded-sm inline-block shadow-sm"></span> Customer</span>
+                <div class="flex items-center gap-4 text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 bg-emerald-400 rounded shadow-sm"></span> Agent</span>
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 bg-blue-400 rounded shadow-sm"></span> Customer</span>
                 </div>
             </div>
 
-            <div id="script-display" class="flex-1 w-full min-h-[600px]">
-                <div class="h-full flex items-center justify-center text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl p-12 text-center">
-                    <p>Enter a scenario and generate content to view the script here.</p>
+            <div id="script-display" class="flex-1 w-full min-h-[600px] card">
+                <div class="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700/50 rounded-xl p-12 text-center">
+                    <svg class="w-12 h-12 mb-4 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                    <p class="font-medium">Enter a scenario and generate content to view the script here.</p>
                 </div>
             </div>
             
