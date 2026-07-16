@@ -1,8 +1,8 @@
 <style>
     .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
-    .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
-    .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .table-container::-webkit-scrollbar-track { @apply bg-slate-100 dark:bg-slate-800; }
+    .table-container::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-slate-600 rounded; }
+    .table-container::-webkit-scrollbar-thumb:hover { @apply bg-slate-400 dark:bg-slate-500; }
     
     .chevron { transition: transform 0.2s ease-in-out; }
     .chevron.open { transform: rotate(90deg); }
@@ -14,10 +14,84 @@
         bottom: 0;
         left: 20px;
         width: 2px;
-        background-color: #e2e8f0;
+        @apply bg-slate-200 dark:bg-slate-700;
     }
 </style>
 
+<div class="mb-6">
+    <h2 class="text-heading">Business Analytics Records</h2>
+    <p class="text-subheading">Fetch granular, call-by-call logs to view end-to-end routing journeys and segment breakdowns.</p>
+</div>
+
+<div class="flex flex-col xl:flex-row gap-6 items-start w-full">
+    
+    <div class="w-full xl:w-1/4 card flex-shrink-0">
+        <h3 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-4">Report Parameters</h3>
+        
+        <form id="analyticsForm" class="space-y-4">
+            <div>
+                <label class="input-label">Dimension</label>
+                <select id="dimension" class="input-field">
+                    <option value="Queues">Call Queues</option>
+                    <option value="Users">Users</option>
+                    <option value="Sites">Sites</option>
+                    <option value="IVRs">IVR Menus</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="input-label">Start Date & Time</label>
+                <input type="datetime-local" id="timeFrom" class="input-field" required>
+            </div>
+
+            <div>
+                <label class="input-label">End Date & Time</label>
+                <input type="datetime-local" id="timeTo" class="input-field" required>
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn-primary w-full mt-2">
+                Fetch Call Flow Records
+            </button>
+            
+            <div id="errorMsg" class="text-red-500 dark:text-red-400 text-xs font-medium hidden mt-2 p-2 bg-red-50 dark:bg-red-900/30 rounded border border-red-100 dark:border-red-800"></div>
+        </form>
+    </div>
+
+    <div class="w-full xl:w-3/4 card !p-0 overflow-hidden min-w-0">
+        <div class="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
+            <h3 class="font-bold text-slate-700 dark:text-slate-200">End-to-End Call Journeys</h3>
+            <button onclick="exportToCSV()" class="btn-success !py-1.5 !px-3 text-xs hidden" id="exportBtn">
+                Export Summary CSV
+            </button>
+        </div>
+        
+        <div class="table-container overflow-x-auto w-full">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="w-8"></th>
+                        <th scope="col">Start Time</th>
+                        <th scope="col">Call ID</th>
+                        <th scope="col">Originator</th>
+                        <th scope="col" class="text-center">Hops</th>
+                        <th scope="col" class="text-center">Final Result</th>
+                        <th scope="col" class="text-center">Total Duration</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody" class="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-slate-400 dark:text-slate-500">
+                            <svg class="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                            </svg>
+                            Select parameters and click "Fetch Call Flow Records" to view granular logs.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 <div class="mb-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-1">Business Analytics Records</h2>
     <p class="text-slate-500 text-sm">Fetch granular, call-by-call logs to view end-to-end routing journeys and segment breakdowns.</p>
