@@ -5,53 +5,52 @@
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 
-<div class="space-y-6 w-full">
-    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div>
-            <h3 class="text-heading">Account Discovery</h3>
-            <p class="text-subheading mt-1">Polls the connected RingCentral account and builds a complete picture for pre-engagement discovery.</p>
+            <h2 class="text-display mb-2">Account Discovery</h2>
+            <p class="text-subheading">Polls the connected RingCentral account and builds a complete picture for pre-engagement discovery.</p>
         </div>
-        <div class="flex items-center gap-3 w-full md:w-auto">
-            <span id="discovery-timestamp" class="text-xs text-gray-400 dark:text-gray-500 hidden"></span>
-            <label class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                Range:
-                <select id="discovery-days" class="input-field !py-1 !px-2 !text-xs !w-auto">
+        <div class="flex flex-wrap items-center gap-3 w-full md:w-auto bg-white dark:bg-slate-800/80 p-2 rounded-2xl border border-slate-200/60 dark:border-slate-700/50 shadow-sm">
+            <span id="discovery-timestamp" class="text-xs font-medium text-slate-400 dark:text-slate-500 hidden pl-2"></span>
+            <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden md:block mx-1"></div>
+            <label class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2 pl-2 md:pl-0">
+                Range
+                <select id="discovery-days" class="input-field !py-2 !px-3 !rounded-xl !w-36 text-sm normal-case">
                     <option value="30" selected>Last month</option>
                     <option value="7">Last week</option>
                 </select>
             </label>
-            <button id="btn-rerun" class="hidden btn-secondary !py-1.5 !px-3 text-sm">
+            <button id="btn-rerun" class="hidden btn-secondary !py-2 !px-4 text-sm whitespace-nowrap">
                 🔄 Re-run
             </button>
-            <button id="btn-run" class="btn-primary flex-1 md:flex-none">
+            <button id="btn-run" class="btn-primary !py-2 !px-6 text-sm flex-1 md:flex-none">
                 Run Discovery
             </button>
         </div>
     </div>
 
-    <div id="discovery-idle" class="card p-12 text-center text-gray-400 dark:text-gray-500">
-        <div class="text-4xl mb-3">🔍</div>
-        <p class="font-medium text-gray-600 dark:text-gray-300">Click <strong>Run Discovery</strong> to poll the connected account.</p>
-        <p class="text-sm mt-1">This runs in the background — you can use other tools while it loads.</p>
+    <div id="discovery-idle" class="card py-24 text-center border-dashed border-2 border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 shadow-none">
+        <div class="text-5xl mb-4 drop-shadow-sm">🔍</div>
+        <h3 class="text-xl font-bold text-slate-700 dark:text-slate-200 mb-2">Ready to scan account</h3>
+        <p class="text-slate-500 dark:text-slate-400">Click <strong>Run Discovery</strong> to poll the connected account.</p>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mt-2 font-medium">This runs in the background — you can use other tools while it loads.</p>
     </div>
 
-    <div id="discovery-running" class="hidden card border-blue-200 dark:border-blue-800 p-8">
-        <div class="text-center">
-            <svg class="animate-spin h-10 w-10 text-blue-600 dark:text-blue-400 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-            <p class="font-semibold text-blue-700 dark:text-blue-400">Discovery running…</p>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">For large accounts this can take 3–5 minutes. You can navigate away and come back.</p>
+    <div id="discovery-running" class="hidden card border-blue-200 dark:border-blue-800/50 bg-blue-50/30 dark:bg-blue-900/10">
+        <div class="text-center py-8">
+            <div class="spinner w-10 h-10 border-4 border-blue-600 dark:border-blue-400 mx-auto mb-6"></div>
+            <h3 class="text-xl font-bold text-blue-700 dark:text-blue-400 mb-2">Discovery running…</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400">For large accounts this can take 3–5 minutes. You can navigate away and come back.</p>
         </div>
-        <div class="mt-6">
-            <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Progress log</span>
-                <span id="log-count" class="text-xs text-gray-400 dark:text-gray-500"></span>
+        <div class="mt-4 border-t border-blue-100 dark:border-blue-800/50 pt-6">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Progress log</span>
+                <span id="log-count" class="badge badge-info px-3 py-1"></span>
             </div>
             <div id="log-console"
-                 class="bg-slate-900 text-slate-100 rounded-lg border border-slate-700 p-3 font-mono text-xs leading-relaxed overflow-y-auto shadow-inner"
-                 style="height: 220px;">
+                 class="bg-slate-900 dark:bg-[#0b1120] text-slate-100 rounded-2xl border border-slate-800 p-4 font-mono text-xs leading-relaxed overflow-y-auto shadow-inner"
+                 style="height: 240px;">
                 <div class="text-slate-500 italic">Waiting for activity…</div>
             </div>
         </div>
@@ -59,72 +58,73 @@
 
     <div id="discovery-results" class="hidden space-y-8 w-full">
 
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3" id="summary-cards"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4" id="summary-cards"></div>
 
-        <div class="card">
-            <div class="flex flex-col lg:flex-row lg:items-center justify-between mb-4 gap-4">
+        <div class="card !p-6">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4 border-b border-slate-100 dark:border-slate-800/80 pb-4">
                 <div>
-                    <h4 class="text-lg font-semibold text-gray-800 dark:text-slate-100">Call Flow Distribution — Top 10 Inbound Numbers</h4>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Traces where external calls end up · Ribbon width = call volume · <span id="sankey-date-range" class="font-medium text-blue-600 dark:text-blue-400"></span></p>
+                    <h4 class="text-lg font-bold text-slate-800 dark:text-slate-100">Call Flow Distribution — Top 10 Inbound Numbers</h4>
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">Traces where external calls end up · Ribbon width = call volume · <span id="sankey-date-range" class="text-blue-600 dark:text-blue-400 font-bold"></span></p>
                 </div>
-                <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> DID</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-cyan-500 inline-block"></span> IVR</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span> Auto-Reception</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span> Queue</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> User</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full" style="background:#16a34a"></span> Answered</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-violet-500 inline-block"></span> Voicemail</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Abandoned</span>
+                <div class="flex items-center gap-4 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex-wrap">
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm"></span> DID</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-sm"></span> IVR</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm"></span> Auto-Reception</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm"></span> Queue</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm"></span> User</span>
+                    <div class="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background:#16a34a"></span> Answered</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500 shadow-sm"></span> Voicemail</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm"></span> Abandoned</span>
                 </div>
             </div>
-            <div id="sankey-container" class="min-h-[500px] bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 overflow-auto p-4 w-full"></div>
+            <div id="sankey-container" class="min-h-[550px] w-full bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 p-2 overflow-x-auto"></div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
-            <div class="card space-y-4">
-                <h4 class="font-semibold text-gray-800 dark:text-slate-100">📊 Call Volume <span id="volume-window-label" class="text-xs font-normal text-gray-400">(last 30 days)</span></h4>
-                <div class="relative h-56 w-full"><canvas id="chart-volume"></canvas></div>
-                <div id="table-volume" class="w-full"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+            <div class="card !p-6 flex flex-col h-full">
+                <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-6">📊 Call Volume <span id="volume-window-label" class="text-xs font-semibold text-slate-400 dark:text-slate-500 ml-2 uppercase tracking-wide"></span></h4>
+                <div class="relative h-64 w-full mb-6"><canvas id="chart-volume"></canvas></div>
+                <div id="table-volume" class="w-full mt-auto"></div>
             </div>
 
-            <div class="card space-y-4">
-                <h4 class="font-semibold text-gray-800 dark:text-slate-100">⏱ Avg Wait Time <span class="text-xs font-normal text-gray-400">· upsell: Position in Queue / EWT</span></h4>
-                <div class="relative h-56 w-full"><canvas id="chart-wait"></canvas></div>
-                <div id="table-wait" class="w-full"></div>
+            <div class="card !p-6 flex flex-col h-full">
+                <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-6">⏱ Avg Wait Time <span class="text-[10px] font-bold text-amber-600 dark:text-amber-500 ml-2 bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded-md uppercase tracking-wider">upsell: EWT / Pos in Queue</span></h4>
+                <div class="relative h-64 w-full mb-6"><canvas id="chart-wait"></canvas></div>
+                <div id="table-wait" class="w-full mt-auto"></div>
             </div>
 
-            <div class="card space-y-4">
-                <h4 class="font-semibold text-gray-800 dark:text-slate-100">📬 Voicemail Rate <span class="text-xs font-normal text-gray-400">· upsell: AI Receptionist</span></h4>
-                <div class="relative h-56 w-full"><canvas id="chart-voicemail"></canvas></div>
-                <div id="table-voicemail" class="w-full"></div>
+            <div class="card !p-6 flex flex-col h-full">
+                <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-6">📬 Voicemail Rate <span class="text-[10px] font-bold text-purple-600 dark:text-purple-400 ml-2 bg-purple-50 dark:bg-purple-900/30 px-2 py-1 rounded-md uppercase tracking-wider">upsell: AI Receptionist</span></h4>
+                <div class="relative h-64 w-full mb-6"><canvas id="chart-voicemail"></canvas></div>
+                <div id="table-voicemail" class="w-full mt-auto"></div>
             </div>
 
-            <div class="card space-y-4">
-                <h4 class="font-semibold text-gray-800 dark:text-slate-100">🎙 Avg Handle Time <span class="text-xs font-normal text-gray-400">· upsell: AI Conversation Expert</span></h4>
-                <div class="relative h-56 w-full"><canvas id="chart-handle"></canvas></div>
-                <div id="table-handle" class="w-full"></div>
+            <div class="card !p-6 flex flex-col h-full">
+                <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-6">🎙 Avg Handle Time <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 ml-2 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-md uppercase tracking-wider">upsell: AI Conv Expert</span></h4>
+                <div class="relative h-64 w-full mb-6"><canvas id="chart-handle"></canvas></div>
+                <div id="table-handle" class="w-full mt-auto"></div>
             </div>
 
-            <div class="card space-y-4 lg:col-span-2">
-                <h4 class="font-semibold text-gray-800 dark:text-slate-100">🚪 Abandonment Rate <span class="text-xs font-normal text-gray-400">· upsell: Callback, Staffing Review</span></h4>
-                <div class="relative h-56 w-full"><canvas id="chart-abandon"></canvas></div>
-                <div id="table-abandon" class="w-full"></div>
+            <div class="card !p-6 flex flex-col h-full lg:col-span-2">
+                <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-6">🚪 Abandonment Rate <span class="text-[10px] font-bold text-rose-600 dark:text-rose-400 ml-2 bg-rose-50 dark:bg-rose-900/30 px-2 py-1 rounded-md uppercase tracking-wider">upsell: Callback & Staffing</span></h4>
+                <div class="relative h-72 w-full mb-6"><canvas id="chart-abandon"></canvas></div>
+                <div id="table-abandon" class="w-full mt-auto"></div>
             </div>
         </div>
 
-        <div class="card">
-            <h4 class="font-semibold text-gray-800 dark:text-slate-100 mb-4">🌿 IVR Complexity <span class="text-xs font-normal text-gray-400">Ranked by number of key options configured</span></h4>
+        <div class="card !p-6">
+            <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100 mb-6">🌿 IVR Complexity <span class="text-xs font-semibold text-slate-400 dark:text-slate-500 ml-2 uppercase tracking-wide">Ranked by options configured</span></h4>
             <div id="table-ivr" class="w-full"></div>
         </div>
 
-        <div class="card">
-            <div class="flex items-baseline justify-between mb-1">
-                <h4 class="font-semibold text-gray-800 dark:text-slate-100">📞 Top 10 Call Flows <span class="text-xs font-normal text-gray-400">Config view for each top DID</span></h4>
-                <span id="flows-progress" class="text-xs text-gray-400"></span>
+        <div class="card !p-6">
+            <div class="flex items-center justify-between mb-2">
+                <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100">📞 Top 10 Call Flows</h4>
+                <span id="flows-progress" class="badge badge-success px-3 py-1"></span>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">One diagram per top DID, traced live from current config. These use the same engine as the Call Flow Visualiser tab.</p>
-            <div id="flow-diagrams" class="space-y-4 w-full"></div>
+            <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-6 border-b border-slate-100 dark:border-slate-800/80 pb-4">Live configuration tracing for each top DID. These use the same engine as the Visualiser tool.</p>
+            <div id="flow-diagrams" class="space-y-6 w-full"></div>
         </div>
 
     </div>
@@ -230,9 +230,9 @@
         renderSankey(data.sankey || {nodes: [], links: []});
         renderMetricSection(data.queues || [], 'volume',   'total_calls',        'Call Volume',     '#3b82f6', v => v.toLocaleString(),       'calls');
         renderMetricSection(data.queues || [], 'wait',     'avg_wait_seconds',   'Avg Wait (s)',    '#f59e0b', v => fmtSecs(v),               's');
-        renderMetricSection(data.queues || [], 'voicemail','voicemail_rate',     'Voicemail Rate',  '#8b5cf6', v => v + '%',                  '%', 'voicemail');
-        renderMetricSection(data.queues || [], 'handle',   'avg_handle_seconds', 'Avg Handle Time', '#06b6d4', v => fmtSecs(v),               's');
-        renderMetricSection(data.queues || [], 'abandon',  'abandonment_rate',   'Abandonment Rate','#ef4444', v => v + '%',                  '%', 'abandoned');
+        renderMetricSection(data.queues || [], 'voicemail','voicemail_rate',     'Voicemail Rate',  '#a855f7', v => v + '%',                  '%', 'voicemail');
+        renderMetricSection(data.queues || [], 'handle',   'avg_handle_seconds', 'Avg Handle Time', '#0ea5e9', v => fmtSecs(v),               's');
+        renderMetricSection(data.queues || [], 'abandon',  'abandonment_rate',   'Abandonment Rate','#f43f5e', v => v + '%',                  '%', 'abandoned');
         renderIVRTable(data.ivr_complexity || []);
         renderPerDIDFlows(data.top_dids || [], data.did_flows || {});
     }
@@ -246,14 +246,14 @@
             { label: 'Queues',       value: data.total_queues ?? '—',           sub: '' },
             { label: 'IVRs',         value: data.total_ivrs ?? '—',             sub: '' },
             { label: 'Numbers',      value: data.total_numbers ?? '—',          sub: `${data.direct_numbers ?? 0} direct` },
-            { label: 'SCIM',         value: data.scim_enabled ? '✅ On' : '❌ Off', sub: '' },
+            { label: 'SCIM',         value: data.scim_enabled ? 'On' : 'Off', sub: '' },
         ];
         const container = document.getElementById('summary-cards');
         container.innerHTML = cards.map(c => `
-            <div class="card !p-4 text-center">
-                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">${c.label}</div>
-                <div class="text-2xl font-bold text-gray-800 dark:text-slate-100">${c.value}</div>
-                ${c.sub ? `<div class="text-xs text-gray-400 mt-0.5">${c.sub}</div>` : ''}
+            <div class="card !p-5 text-center flex flex-col justify-center hover:-translate-y-1">
+                <div class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">${c.label}</div>
+                <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">${c.value}</div>
+                ${c.sub ? `<div class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">${c.sub}</div>` : ''}
             </div>
         `).join('');
     }
@@ -262,16 +262,16 @@
     const NODE_COLOURS = {
         did:       '#3b82f6',   // blue
         ivr:       '#06b6d4',   // cyan
-        ar:        '#8b5cf6',   // purple (auto-receptionist / site)
+        ar:        '#8b5cf6',   // purple
         queue:     '#f59e0b',   // amber
         user:      '#10b981',   // emerald
-        external:  '#64748b',   // slate (external transfer)
-        answered:  '#16a34a',   // green — outcome: answered
-        voicemail: '#a855f7',   // violet — outcome: voicemail
-        abandoned: '#ef4444',   // red — outcome: abandoned
-        other:     '#94a3b8',   // light slate — outcome: other
-        unrouted:  '#6b7280',   // grey — DID shortfall bucket
-        unknown:   '#9ca3af',   // light grey — tracer couldn't resolve this extension
+        external:  '#64748b',   // slate
+        answered:  '#16a34a',   // green
+        voicemail: '#a855f7',   // violet
+        abandoned: '#f43f5e',   // rose
+        other:     '#94a3b8',   // light slate
+        unrouted:  '#6b7280',   // grey
+        unknown:   '#9ca3af',   // light grey
     };
 
     function renderSankey(data) {
@@ -279,12 +279,12 @@
         container.innerHTML = '';
 
         if (!data.nodes || !data.nodes.length) {
-            container.innerHTML = '<div class="p-12 text-center text-gray-400">No inbound call traffic data available for the selected period.</div>';
+            container.innerHTML = '<div class="p-16 text-center text-slate-400 font-medium">No inbound call traffic data available for the selected period.</div>';
             return;
         }
 
         const W = Math.max(container.clientWidth - 32, 900);
-        const H = Math.max(500, data.nodes.length * 28);
+        const H = Math.max(550, data.nodes.length * 30);
 
         const svg = d3.select(container).append('svg')
             .attr('width',  W)
@@ -293,9 +293,9 @@
 
         const sankey = d3.sankey()
             .nodeId(d => d.id)
-            .nodeWidth(18)
-            .nodePadding(14)
-            .extent([[8, 8], [W - 8, H - 8]])
+            .nodeWidth(16)
+            .nodePadding(16)
+            .extent([[12, 12], [W - 12, H - 12]])
             .nodeAlign(d3.sankeyJustify);
 
         const graph = {
@@ -312,13 +312,13 @@
         try {
             layout = sankey(graph);
         } catch (e) {
-            container.innerHTML = `<div class="p-12 text-center text-red-500">Error rendering Sankey: ${e.message}</div>`;
+            container.innerHTML = `<div class="p-12 text-center text-rose-500 font-bold">Error rendering Sankey: ${e.message}</div>`;
             return;
         }
 
         const link = svg.append('g')
             .attr('fill', 'none')
-            .attr('stroke-opacity', 0.4)
+            .attr('stroke-opacity', 0.3)
             .selectAll('path')
             .data(layout.links)
             .join('path')
@@ -327,7 +327,7 @@
                 .attr('stroke-width', d => Math.max(1, d.width))
                 .style('cursor', 'pointer')
                 .on('mouseover', function (event, d) {
-                    d3.select(this).attr('stroke-opacity', 0.7);
+                    d3.select(this).attr('stroke-opacity', 0.6);
                     showSankeyTip(
                         `${d.source.label} → ${d.target.label}\n${d.value.toLocaleString()} calls`,
                         event
@@ -335,7 +335,7 @@
                 })
                 .on('mousemove', moveSankeyTip)
                 .on('mouseout', function () {
-                    d3.select(this).attr('stroke-opacity', 0.4);
+                    d3.select(this).attr('stroke-opacity', 0.3);
                     hideSankeyTip();
                 });
 
@@ -351,7 +351,7 @@
             .attr('height', d => Math.max(1, d.y1 - d.y0))
             .attr('width',  d => d.x1 - d.x0)
             .attr('fill',   d => NODE_COLOURS[d.type] || '#64748b')
-            .attr('rx', 2)
+            .attr('rx', 4)
             .on('mouseover', function (event, d) {
                 const lbl = {did: 'Inbound Number', ivr: 'IVR Menu', queue: 'Call Queue', user: 'User'}[d.type] || d.type;
                 showSankeyTip(`${d.label}\n${lbl}\n${d.value.toLocaleString()} calls`, event);
@@ -365,26 +365,28 @@
                 }
             });
 
-        // Use appropriate text color based on document dark mode class
         const isDark = document.documentElement.classList.contains('dark');
-        const textFill = isDark ? '#e2e8f0' : '#1e293b';
+        const textFill = isDark ? '#f1f5f9' : '#1e293b';
+        const subtextFill = isDark ? '#94a3b8' : '#64748b';
 
         node.append('text')
-            .attr('x',        d => d.x0 < W / 2 ? d.x1 + 6 : d.x0 - 6)
+            .attr('x',        d => d.x0 < W / 2 ? d.x1 + 8 : d.x0 - 8)
             .attr('y',        d => (d.y1 + d.y0) / 2)
             .attr('dy',       '0.35em')
             .attr('text-anchor', d => d.x0 < W / 2 ? 'start' : 'end')
-            .style('font-size', '11px')
+            .style('font-size', '12px')
             .style('fill', textFill)
             .style('pointer-events', 'none')
             .each(function (d) {
                 const t = d3.select(this);
                 const label = d.label.length > 28 ? d.label.slice(0, 27) + '…' : d.label;
-                t.append('tspan').text(label).style('font-weight', '600');
+                t.append('tspan').text(label).style('font-weight', '700');
                 t.append('tspan')
-                    .attr('x',  d.x0 < W / 2 ? d.x1 + 6 : d.x0 - 6)
-                    .attr('dy', '1.2em')
-                    .style('fill', '#64748b')
+                    .attr('x',  d.x0 < W / 2 ? d.x1 + 8 : d.x0 - 8)
+                    .attr('dy', '1.4em')
+                    .style('font-size', '10px')
+                    .style('font-weight', '600')
+                    .style('fill', subtextFill)
                     .text(`${d.value.toLocaleString()} calls`);
             });
     }
@@ -393,15 +395,15 @@
     function showSankeyTip(text, e) {
         hideSankeyTip();
         sankeyTip = document.createElement('div');
-        sankeyTip.style.cssText = 'position:fixed;background:#1e293b;color:#f1f5f9;padding:8px 12px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;line-height:1.6;pointer-events:none;white-space:pre-line;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.3);max-width:280px';
+        sankeyTip.style.cssText = 'position:fixed;background:rgba(15,23,42,0.95);backdrop-filter:blur(8px);color:#f8fafc;padding:10px 14px;border-radius:12px;font-size:12px;font-weight:500;font-family:Inter,sans-serif;line-height:1.6;pointer-events:none;white-space:pre-line;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);max-width:280px';
         sankeyTip.textContent = text;
         document.body.appendChild(sankeyTip);
         moveSankeyTip(e);
     }
     function moveSankeyTip(e) {
         if (!sankeyTip) return;
-        sankeyTip.style.left = (e.clientX + 14) + 'px';
-        sankeyTip.style.top  = (e.clientY + 14) + 'px';
+        sankeyTip.style.left = (e.clientX + 16) + 'px';
+        sankeyTip.style.top  = (e.clientY + 16) + 'px';
     }
     function hideSankeyTip() {
         if (sankeyTip) { sankeyTip.remove(); sankeyTip = null; }
@@ -426,10 +428,10 @@
                     datasets: [{
                         label,
                         data: withData.map(q => q[field]),
-                        backgroundColor: colour + 'cc',
+                        backgroundColor: colour + 'dd',
                         borderColor: colour,
-                        borderWidth: 1,
-                        borderRadius: 4,
+                        borderWidth: 0,
+                        borderRadius: 6,
                     }]
                 },
                 options: {
@@ -439,6 +441,11 @@
                     plugins: {
                         legend: { display: false },
                         tooltip: {
+                            backgroundColor: 'rgba(15,23,42,0.95)',
+                            padding: 12,
+                            titleFont: { family: 'Inter', size: 13, weight: 'bold' },
+                            bodyFont: { family: 'Inter', size: 12 },
+                            cornerRadius: 8,
                             callbacks: {
                                 label: (item) => {
                                     const q = withData[item.dataIndex];
@@ -452,8 +459,8 @@
                         }
                     },
                     scales: {
-                        x: { ticks: { callback: v => fmt(v), color: textColor }, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
-                        y: { ticks: { font: { size: 11 }, color: textColor }, grid: { display: false } }
+                        x: { ticks: { callback: v => fmt(v), color: textColor, font: {family:'Inter', weight: 600} }, grid: { color: isDark ? '#1e293b' : '#f1f5f9', drawBorder: false } },
+                        y: { ticks: { font: { family: 'Inter', size: 11, weight: 500 }, color: textColor }, grid: { display: false, drawBorder: false } }
                     }
                 }
             });
@@ -462,13 +469,13 @@
         const tableEl = document.getElementById(`table-${key}`);
         if (tableEl) {
             if (!withData.length) {
-                tableEl.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">No data available</p>';
+                tableEl.innerHTML = '<p class="text-sm text-slate-400 text-center py-6 font-medium bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">No data available</p>';
                 return;
             }
             const maxVal = withData[0][field] || 1;
             const showCount = !!countField;
             tableEl.innerHTML = `
-                <div class="overflow-x-auto mt-2">
+                <div class="table-container shadow-none border-0 rounded-none mt-2">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -482,17 +489,17 @@
                         <tbody>
                             ${withData.map(q => {
                                 const countCell = showCount
-                                    ? `<td class="text-xs opacity-70">${(q[countField] ?? 0).toLocaleString()} / ${(q.total_calls ?? 0).toLocaleString()}</td>`
+                                    ? `<td class="text-[11px] font-bold text-slate-400 dark:text-slate-500">${(q[countField] ?? 0).toLocaleString()} / ${(q.total_calls ?? 0).toLocaleString()}</td>`
                                     : '';
                                 return `
                                 <tr>
-                                    <td class="font-medium">${q.name}</td>
-                                    <td class="opacity-70">${q.extensionNumber || ''}</td>
-                                    <td class="font-bold" style="color:${colour}">${fmt(q[field])}</td>
+                                    <td class="font-bold text-slate-700 dark:text-slate-200">${q.name}</td>
+                                    <td class="font-mono text-xs text-slate-500">${q.extensionNumber || ''}</td>
+                                    <td class="font-black" style="color:${colour}">${fmt(q[field])}</td>
                                     ${countCell}
                                     <td>
-                                        <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                            <div class="h-2 rounded-full" style="width:${Math.round(q[field]/maxVal*100)}%;background:${colour}"></div>
+                                        <div class="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
+                                            <div class="h-full rounded-full" style="width:${Math.round(q[field]/maxVal*100)}%;background:${colour}"></div>
                                         </div>
                                     </td>
                                 </tr>`;
@@ -507,12 +514,12 @@
     function renderIVRTable(ivrs) {
         const el = document.getElementById('table-ivr');
         if (!ivrs.length) {
-            el.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">No IVRs found</p>';
+            el.innerHTML = '<p class="text-sm text-slate-400 text-center py-8 font-medium">No IVRs found</p>';
             return;
         }
         const max = ivrs[0]?.key_count || 1;
         el.innerHTML = `
-            <div class="overflow-x-auto w-full">
+            <div class="table-container shadow-none border-0 rounded-none">
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -525,12 +532,12 @@
                     <tbody>
                         ${ivrs.map(ivr => `
                             <tr>
-                                <td class="font-medium">${ivr.name}</td>
-                                <td class="opacity-70">${ivr.extensionNumber || ''}</td>
-                                <td class="font-bold text-cyan-600 dark:text-cyan-400">${ivr.key_count}</td>
+                                <td class="font-bold text-slate-700 dark:text-slate-200">${ivr.name}</td>
+                                <td class="font-mono text-xs text-slate-500">${ivr.extensionNumber || ''}</td>
+                                <td><span class="badge badge-info text-sm !px-3 !py-1">${ivr.key_count}</span></td>
                                 <td>
-                                    <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                        <div class="h-2 rounded-full bg-cyan-500" style="width:${Math.round(ivr.key_count/max*100)}%"></div>
+                                    <div class="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
+                                        <div class="h-full rounded-full bg-cyan-500" style="width:${Math.round(ivr.key_count/max*100)}%"></div>
                                     </div>
                                 </td>
                             </tr>
@@ -548,7 +555,7 @@
         const console = document.getElementById('log-console');
         const count = document.getElementById('log-count');
         if (console) console.innerHTML = '<div class="text-slate-500 italic">Waiting for activity…</div>';
-        if (count) count.textContent = '';
+        if (count) count.textContent = '0 events';
     }
 
     function renderLogs(logs) {
@@ -562,14 +569,14 @@
             const ts = entry.ts ? new Date(entry.ts) : null;
             const tsLabel = ts ? ts.toLocaleTimeString('en-AU', { hour12: false }) : '';
             let cls = 'text-slate-300';
-            if (/cycle detected|failed|error|HTTP [45]\d{2}/i.test(line)) cls = 'text-rose-300';
-            else if (/Sankey result|bucketed into|paths traced/i.test(line)) cls = 'text-emerald-300';
+            if (/cycle detected|failed|error|HTTP [45]\d{2}/i.test(line)) cls = 'text-rose-400 font-bold';
+            else if (/Sankey result|bucketed into|paths traced/i.test(line)) cls = 'text-emerald-400';
             else if (/BulkCallLog|Analytics OK|CallLog/.test(line))        cls = 'text-sky-300';
             const safeLine = line
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
-            return `<div class="${cls}"><span class="text-slate-500 mr-2">${tsLabel}</span>${safeLine}</div>`;
+            return `<div class="${cls} mb-1 border-b border-slate-800/50 pb-1"><span class="text-slate-500 mr-3 font-semibold select-none">${tsLabel}</span>${safeLine}</div>`;
         }).join('');
 
         consoleEl.innerHTML = html;
@@ -584,11 +591,11 @@
         autoreceptionist: { bg: '#7c3aed', border: '#5b21b6' },
         ivr:              { bg: '#0891b2', border: '#0e7490' },
         queue:            { bg: '#d97706', border: '#92400e' },
-        user:             { bg: '#059669', border: '#065f46' },
-        voicemail:        { bg: '#6b7280', border: '#374151' },
-        external:         { bg: '#dc2626', border: '#991b1b' },
-        site:             { bg: '#475569', border: '#1e293b' },
-        unknown:          { bg: '#e5e7eb', border: '#9ca3af' },
+        user:             { bg: '#10b981', border: '#059669' },
+        voicemail:        { bg: '#64748b', border: '#475569' },
+        external:         { bg: '#f43f5e', border: '#e11d48' },
+        site:             { bg: '#334155', border: '#0f172a' },
+        unknown:          { bg: '#cbd5e1', border: '#94a3b8' },
     };
 
     let _dagreRegistered = false;
@@ -616,7 +623,7 @@
         container.innerHTML = '';
 
         if (!topDids || topDids.length === 0) {
-            container.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">No top DIDs to trace.</p>';
+            container.innerHTML = '<p class="text-sm text-slate-400 text-center py-12 font-medium bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">No top DIDs to trace.</p>';
             return;
         }
 
@@ -624,21 +631,22 @@
 
         topDids.forEach((did, idx) => {
             const card = document.createElement('div');
-            card.className = 'border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50 overflow-hidden';
+            card.className = 'border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-800/80 overflow-hidden shadow-sm hover:shadow-md transition-shadow';
             card.id = `flow-card-${idx}`;
             card.innerHTML = `
-                <div class="px-4 py-2 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <div class="px-5 py-4 bg-slate-50 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                        <span class="font-semibold text-slate-800 dark:text-slate-200">${did.phoneNumber || ''}</span>
-                        <span class="ml-2 text-xs text-slate-500">${did.name && did.name !== did.phoneNumber ? did.name : ''}</span>
+                        <span class="font-bold text-lg text-slate-800 dark:text-slate-100 tracking-tight">${did.phoneNumber || ''}</span>
+                        <span class="ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">${did.name && did.name !== did.phoneNumber ? did.name : ''}</span>
                     </div>
-                    <div class="text-xs text-slate-500 flex items-center gap-2">
-                        <span class="font-medium text-slate-700 dark:text-slate-300">${(did.total_calls || 0).toLocaleString()}</span> calls
-                        <span id="flow-status-${idx}" class="ml-2 opacity-70"></span>
-                        <button id="flow-retry-${idx}" class="hidden ml-1 px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded transition">Retry</button>
+                    <div class="text-xs font-bold text-slate-500 flex items-center gap-3 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-blue-600 dark:text-blue-400 text-sm">${(did.total_calls || 0).toLocaleString()}</span> calls
+                        <div class="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>
+                        <span id="flow-status-${idx}" class="text-slate-400">Loading...</span>
+                        <button id="flow-retry-${idx}" class="hidden ml-1 px-2.5 py-1 text-xs font-bold bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-md transition">Retry</button>
                     </div>
                 </div>
-                <div id="flow-diagram-${idx}" style="height: 280px; background: transparent;"></div>`;
+                <div id="flow-diagram-${idx}" style="height: 320px;" class="bg-slate-50/50 dark:bg-slate-900/30"></div>`;
             container.appendChild(card);
 
             const retryBtn = document.getElementById(`flow-retry-${idx}`);
@@ -656,7 +664,7 @@
             const f = _didFlowsFromDiscovery[d.phoneNumber];
             return f && f.nodes && f.nodes.length > 1;
         }).length;
-        if (progress) progress.textContent = `${rendered} / ${topDids.length} have routing data`;
+        if (progress) progress.textContent = `${rendered} / ${topDids.length} traced`;
     }
 
     function _renderOneFlow(idx, did) {
@@ -668,10 +676,10 @@
         if (!flowData || !flowData.nodes || flowData.nodes.length <= 1) {
             if (statusEl) {
                 statusEl.textContent = 'no routing data';
-                statusEl.className = 'ml-2 opacity-70 italic';
+                statusEl.className = 'text-slate-400 italic';
             }
             if (diagramEl) {
-                diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-xs opacity-70 italic">Tracer returned no downstream routing. Click Retry to try again.</div>';
+                diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-sm font-medium text-slate-400 italic">Tracer returned no downstream routing. Click Retry to try again.</div>';
             }
             if (retryEl) retryEl.classList.remove('hidden');
             return;
@@ -680,7 +688,7 @@
         _renderFlowInto(diagramEl, flowData);
         if (statusEl) {
             statusEl.textContent = `${flowData.nodes.length} nodes`;
-            statusEl.className = 'ml-2 text-emerald-600 dark:text-emerald-400';
+            statusEl.className = 'text-emerald-600 dark:text-emerald-400';
         }
     }
 
@@ -688,34 +696,34 @@
         const statusEl  = document.getElementById(`flow-status-${idx}`);
         const diagramEl = document.getElementById(`flow-diagram-${idx}`);
         const retryEl   = document.getElementById(`flow-retry-${idx}`);
-        if (statusEl) { statusEl.textContent = 'retrying…'; statusEl.className = 'ml-2 text-blue-500'; }
+        if (statusEl) { statusEl.textContent = 'retrying…'; statusEl.className = 'text-blue-500 animate-pulse'; }
 
         try {
             const flowData = await _fetchFlowData(did.phoneNumber);
             if (!flowData || !flowData.nodes || flowData.nodes.length <= 1) {
                 if (statusEl) {
                     statusEl.textContent = 'still no routing';
-                    statusEl.className = 'ml-2 opacity-70 italic';
+                    statusEl.className = 'text-slate-400 italic';
                 }
                 if (diagramEl) {
-                    diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-xs opacity-70 italic text-center p-4">Still no routing data. This DID may genuinely have no config, or the RC rate budget is exhausted.</div>';
+                    diagramEl.innerHTML = '<div class="h-full flex items-center justify-center text-sm font-medium text-slate-400 italic text-center p-6">Still no routing data. This DID may genuinely have no config, or the RC rate budget is exhausted.</div>';
                 }
                 if (retryEl) retryEl.classList.remove('hidden');
             } else {
                 _renderFlowInto(diagramEl, flowData);
                 if (statusEl) {
                     statusEl.textContent = `${flowData.nodes.length} nodes`;
-                    statusEl.className = 'ml-2 text-emerald-600 dark:text-emerald-400';
+                    statusEl.className = 'text-emerald-600 dark:text-emerald-400';
                 }
                 _didFlowsFromDiscovery[did.phoneNumber] = flowData;
             }
         } catch (e) {
             if (statusEl) {
                 statusEl.textContent = 'failed';
-                statusEl.className = 'ml-2 text-red-500';
+                statusEl.className = 'text-rose-500';
             }
             if (diagramEl) {
-                diagramEl.innerHTML = `<div class="h-full flex items-center justify-center text-xs text-red-400">Failed: ${_escape(String(e.message || e))}</div>`;
+                diagramEl.innerHTML = `<div class="h-full flex items-center justify-center text-sm font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/10">Failed: ${_escape(String(e.message || e))}</div>`;
             }
             if (retryEl) retryEl.classList.remove('hidden');
         }
@@ -779,41 +787,42 @@
                 selector: 'node',
                 style: {
                     'shape':           'round-rectangle',
-                    'corner-radius':   4,
+                    'corner-radius':   8,
                     'width':           'label',
                     'height':          'label',
-                    'padding':         '8px',
+                    'padding':         '10px 14px',
                     'label':           'data(displayLabel)',
                     'text-valign':     'center',
                     'text-halign':     'center',
                     'text-wrap':       'wrap',
-                    'text-max-width':  '140px',
-                    'font-size':       '10px',
-                    'font-weight':     '500',
+                    'text-max-width':  '150px',
+                    'font-size':       '11px',
+                    'font-weight':     '700',
                     'font-family':     'Inter, system-ui, sans-serif',
-                    'color':           'rgba(255,255,255,0.95)',
-                    'border-width':    '1.5px',
+                    'color':           'rgba(255,255,255,0.98)',
+                    'border-width':    '2px',
                 },
             },
             ...typeStyles,
             {
                 selector: 'edge',
                 style: {
-                    'width':                   1.5,
-                    'line-color':              isDark ? '#475569' : '#94a3b8',
-                    'target-arrow-color':      isDark ? '#475569' : '#94a3b8',
+                    'width':                   2,
+                    'line-color':              isDark ? '#334155' : '#cbd5e1',
+                    'target-arrow-color':      isDark ? '#334155' : '#cbd5e1',
                     'target-arrow-shape':      'triangle',
-                    'arrow-scale':             0.8,
+                    'arrow-scale':             1,
                     'curve-style':             'unbundled-bezier',
                     'control-point-distances': 'data(cpd)',
                     'control-point-weights':   0.5,
                     'label':                   'data(label)',
-                    'font-size':               '9px',
+                    'font-size':               '10px',
                     'font-family':             'Inter, system-ui, sans-serif',
+                    'font-weight':             '600',
                     'color':                   edgeColor,
                     'text-background-color':   edgeBgColor,
                     'text-background-opacity': 1,
-                    'text-background-padding': '2px 4px',
+                    'text-background-padding': '3px 6px',
                     'text-background-shape':   'round-rectangle',
                     'text-border-color':       edgeBorderColor,
                     'text-border-width':       1,
@@ -830,23 +839,23 @@
                 layout: hasDagre ? {
                     name:    'dagre',
                     rankDir: 'LR',
-                    nodeSep: 30,
-                    rankSep: 80,
-                    edgeSep: 15,
-                    padding: 20,
+                    nodeSep: 40,
+                    rankSep: 100,
+                    edgeSep: 20,
+                    padding: 30,
                     animate: false,
                 } : {
                     name:    'breadthfirst',
                     directed: true,
-                    padding:  20,
+                    padding:  30,
                     spacingFactor: 1.2,
                 },
                 wheelSensitivity: 0.2,
                 minZoom: 0.1,
-                maxZoom: 2,
+                maxZoom: 2.5,
             });
         } catch (e) {
-            containerEl.innerHTML = `<div class="h-full flex items-center justify-center text-xs text-red-400">Render failed: ${_escape(String(e.message || e))}</div>`;
+            containerEl.innerHTML = `<div class="h-full flex items-center justify-center text-sm font-bold text-rose-500">Render failed: ${_escape(String(e.message || e))}</div>`;
         }
     }
 
