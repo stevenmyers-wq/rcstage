@@ -1,23 +1,35 @@
-<div class="space-y-4">
-<h3 class="text-xl font-bold mb-2 text-blue-700">Device Swap</h3>
+<div class="space-y-6 w-full animate-fade-in">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+        <h2 class="text-heading mb-1 text-blue-700 dark:text-blue-500">Device Swap</h2>
+        <p class="text-subheading">Swap digital lines and DLs between two existing devices safely.</p>
+    </div>
 
-<div class="card p-4 bg-gray-50 border-l-4 border-yellow-500 text-sm text-gray-700">
-    <p class="font-bold mb-2">Instructions & Notes:</p>
-    <ul class="list-disc list-inside space-y-2">
-        <li>**Prerequisite:** RC Account must be connected.</li>
-        <li>**Function:** Swaps the digital line assignments (DLs) between two existing devices (Device A and Device B). This is a multi-step, destructive operation.</li>
-        <li>**API Endpoint:** Requires sequences of <code>PUT /restapi/v1.0/account/~/device/&lt;deviceId&gt;</code> calls to update the line assignments.</li>
-        <li>**Rate Limit:** Low/Moderate. Treat as complex provisioning (high chance of hitting 20+ calls/minute limits).</li>
-        <li>**Execution Time:** Moderate (several seconds for the sequence of calls).</li>
-    </ul>
-</div>
+    <div class="card !p-5 bg-amber-50 dark:bg-amber-900/10 border-l-4 border-amber-500 dark:border-amber-600 text-sm text-slate-700 dark:text-slate-300 shadow-sm">
+        <p class="font-bold mb-3 text-slate-900 dark:text-slate-100">Instructions & Notes:</p>
+        <ul class="list-disc list-inside space-y-2">
+            <li><strong>Prerequisite:</strong> RC Account must be connected via Impersonation or the Main Bridge.</li>
+            <li><strong>Function:</strong> Swaps the digital line assignments (DLs) between two existing devices (Device A and Device B). This is a multi-step, destructive operation.</li>
+            <li><strong>API Endpoint:</strong> Requires sequences of <code class="bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700 text-xs">PUT /restapi/v1.0/account/~/device/&lt;deviceId&gt;</code> calls to update the line assignments.</li>
+            <li><strong>Rate Limit:</strong> Low/Moderate. Treat as complex provisioning (high chance of hitting 20+ calls/minute limits).</li>
+            <li><strong>Execution Time:</strong> Moderate (several seconds for the sequence of calls).</li>
+        </ul>
+    </div>
 
-<form class="card space-y-3">
-    <input type="text" placeholder="Source Device ID (A)" class="w-full p-3 border border-gray-300 rounded-lg">
-    <input type="text" placeholder="Target Device ID (B)" class="w-full p-3 border border-gray-300 rounded-lg">
-    <button type="button" class="bg-red-500 text-white py-2 px-4 rounded-lg hover:bg-red-600 transition">
-        Execute Device Swap
-    </button>
-</form>
-
+    <form class="card space-y-5 max-w-xl mx-auto w-full">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 pb-2">Target Devices</h3>
+        <div>
+            <label class="input-label">Source Device ID (A)</label>
+            <input type="text" placeholder="e.g. 800100222" class="input-field font-mono">
+        </div>
+        <div>
+            <label class="input-label">Target Device ID (B)</label>
+            <input type="text" placeholder="e.g. 800100333" class="input-field font-mono">
+        </div>
+        <div class="pt-2">
+            <button type="button" class="btn-danger w-full !py-3 uppercase tracking-wide">
+                <svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                Execute Device Swap
+            </button>
+        </div>
+    </form>
 </div>
