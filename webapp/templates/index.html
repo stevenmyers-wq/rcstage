@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RingCentral RCAU API Tools</title>
     
+    <!-- Official RingCentral Favicon -->
     <link rel="icon" type="image/x-icon" href="https://www.ringcentral.com/favicon.ico">
     
+    <!-- ANTI-FLICKER SCRIPT & INSTANT STYLES -->
     <script>
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
@@ -14,9 +16,24 @@
             document.documentElement.classList.remove('dark');
         }
     </script>
+    <style>
+        /* INSTANT render colors to prevent the Tailwind CDN white flash */
+        html { background-color: #f8fafc; }
+        html.dark { background-color: #0b1120; }
+        body { visibility: hidden; } /* Prevents FOUC of unstyled text */
+        html.tailwind-loaded body { visibility: visible; }
+    </style>
 
+    <!-- Load Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Unhide body instantly once Tailwind initializes
+        document.addEventListener('DOMContentLoaded', () => {
+            document.documentElement.classList.add('tailwind-loaded');
+        });
+    </script>
     
+    <!-- Configure Tailwind & Design System -->
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -28,10 +45,12 @@
       }
     </script>
     
+    <!-- Centralized Design System -->
     <style type="text/tailwindcss">
       @layer base {
         body {
-          @apply bg-slate-50 text-slate-700 dark:bg-[#0b1120] dark:text-slate-300 font-sans antialiased transition-colors duration-300;
+          @apply bg-slate-50 text-slate-700 dark:bg-[#0b1120] dark:text-slate-300 font-sans antialiased;
+          /* Removed transition-colors to prevent fade-in flash on page load */
         }
         ::-webkit-scrollbar { @apply w-2 h-2; }
         ::-webkit-scrollbar-track { @apply bg-transparent; }
@@ -135,12 +154,16 @@
   <body>
     <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 w-96 hidden z-50 p-4 rounded-xl shadow-xl text-sm font-medium text-center transition-all"></div>
 
+    <!-- Main Container -->
     <div id="app-container" class="max-w-[1800px] w-full mx-auto space-y-8">
       
+      <!-- Perfectly Centered Header with CSS Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-3 items-center mb-8 px-4 sm:px-0 mt-4 gap-6">
         
+        <!-- Left Spacer -->
         <div class="hidden lg:block"></div>
         
+        <!-- Logo & Title Group (Centered) -->
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
           
           <img src="{{ url_for('static', filename='RCAU Header.jpg') }}" 
@@ -155,6 +178,7 @@
           </div>
         </div>
         
+        <!-- Theme Toggle Button (Right Aligned) -->
         <div class="flex justify-center lg:justify-end">
           <button id="theme-toggle" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition outline-none border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2">
             <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
@@ -164,12 +188,13 @@
         </div>
       </div>
 
+      <!-- Login Screen -->
       {% if not AUTHENTICATED %}
       <div id="login-screen" class="card max-w-lg mx-auto text-center mt-20">
-        <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-blue-100 dark:border-blue-800">
+        <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-200 dark:border-slate-700">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
         </div>
-        <h2 class="text-2xl font-bold mb-2 text-slate-800 dark:text-white">Login to RCAU Tools</h2>
+        <h2 class="text-2xl font-bold mb-2 text-slate-800 dark:text-white">RingCentral Employee Login</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400 mb-8 font-medium">Sign in with your RingCentral Google account to unlock the dashboard.</p>
         <div class="flex flex-col items-center justify-center">
           <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -193,8 +218,10 @@
       </div>
 
       {% else %}
+      <!-- Main Dashboard -->
       <div id="app-dashboard" class="space-y-6 w-full">
         
+        <!-- User Ribbon & Status Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="card !p-5 flex flex-col justify-center bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 border-indigo-100 dark:border-indigo-800/30">
                 <p class="text-xs font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 mb-1">Authenticated</p>
@@ -222,6 +249,7 @@
         </div>
 
         <div class="flex flex-col lg:flex-row gap-8 items-start w-full">
+          <!-- Sidebar Navigation -->
           <div class="w-full lg:w-72 flex-shrink-0">
             <nav class="flex flex-col space-y-1 card !p-3" aria-label="Tabs">
               
@@ -266,6 +294,7 @@
             </nav>
           </div>
 
+          <!-- Main Content Area -->
           <div class="flex-1 w-full min-w-0">
             
             {% set sm_auth_tabs = ['air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'device_audit', 'device_ringing_audit', 'device_swap', 'extension_number_changer', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'port_mapping', 'user_templates'] %}
@@ -276,10 +305,10 @@
                         <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-slate-200 dark:border-slate-700 shadow-sm">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                         </div>
-                        <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">Internal RC Authentication Required</h3>
+                        <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">RingCentral Employee Login</h3>
                         <p class="text-slate-500 dark:text-slate-400 mb-8 font-medium">You must securely authenticate with your RingCentral employee account to access the internal bridge for UC tools.</p>
                         <a href="/api/sm_auth/login?tab={{ current_tab }}" class="btn-primary px-8">
-                            Log In
+                            Sign In
                         </a>
                     </div>
                 {% elif not session.get('sm_isolated_token') %}
@@ -406,15 +435,14 @@
       
       // Override status display logic to update the new indicator dot instead of full card background
       document.addEventListener("DOMContentLoaded", () => {
-          // Wrap the original updateRcStatusDisplay if it exists to also update the indicator dot
           if (typeof window.updateRcStatusDisplay === 'function') {
               const origUpdateRc = window.updateRcStatusDisplay;
               window.updateRcStatusDisplay = function(status, rcEmail, clientId) {
                   origUpdateRc(status, rcEmail, clientId);
                   const ind = document.getElementById('rc-status-indicator');
                   if (ind) {
-                      if (status === 'connected') ind.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
-                      else ind.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+                      if (status === 'connected') ind.className = 'w-3 h-3 rounded-full bg-emerald-500 shadow-sm border border-emerald-600';
+                      else ind.className = 'w-3 h-3 rounded-full bg-rose-500 shadow-sm border border-rose-600';
                   }
               };
           }
@@ -425,9 +453,9 @@
                   origUpdateCx(status, region, buName);
                   const ind = document.getElementById('cxone-status-indicator');
                   if (ind) {
-                      if (status === 'connected') ind.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
-                      else if (status === 'expired') ind.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]';
-                      else ind.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+                      if (status === 'connected') ind.className = 'w-3 h-3 rounded-full bg-emerald-500 shadow-sm border border-emerald-600';
+                      else if (status === 'expired') ind.className = 'w-3 h-3 rounded-full bg-amber-500 shadow-sm border border-amber-600';
+                      else ind.className = 'w-3 h-3 rounded-full bg-rose-500 shadow-sm border border-rose-600';
                   }
               };
           }
