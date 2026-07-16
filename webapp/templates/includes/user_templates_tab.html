@@ -1,72 +1,72 @@
-<div class="space-y-6 animate-fade-in p-4 w-full">
-    <div class="mb-4 border-b border-gray-200 pb-4">
-        <h2 class="text-3xl font-bold text-slate-800 mb-1">User Template Application</h2>
-        <p class="text-slate-500 text-sm">Bulk apply User Templates across the entire account or specific sites using Excel.</p>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">User Template Application</h2>
+        <p class="text-subheading">Bulk apply User Templates across the entire account or specific sites using Excel.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
         
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full hover:shadow-md transition-shadow">
+        <div class="card flex flex-col h-full hover:shadow-lg transition-all duration-200 group !p-6">
             <div class="flex items-center gap-3 mb-4">
-                <div class="bg-blue-100 text-blue-600 p-3 rounded-lg">
+                <div class="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 p-3 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                 </div>
                 <div>
-                    <h3 class="font-bold text-lg text-gray-800">1. Download User Roster</h3>
-                    <p class="text-xs text-gray-500">Get an Excel sheet with a template dropdown.</p>
+                    <h3 class="font-bold text-lg text-slate-800 dark:text-slate-100">1. Download User Roster</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Get an Excel sheet with a template dropdown.</p>
                 </div>
             </div>
             
-            <div class="flex-grow space-y-4 text-sm text-gray-600 mb-6">
+            <div class="flex-grow space-y-4 text-sm text-slate-600 dark:text-slate-400 mb-6">
                 <p>Click below to generate a spreadsheet containing all active users on the account. The <strong>Template to Apply</strong> column will feature a dropdown pre-populated with all templates available on the tenant.</p>
             </div>
 
-            <button id="btn-dl-templates" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition disabled:opacity-50">
+            <button id="btn-dl-templates" class="btn-primary w-full !py-3 disabled:opacity-50">
                 Download Spreadsheet
             </button>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full hover:shadow-md transition-shadow">
+        <div class="card flex flex-col h-full hover:shadow-lg transition-all duration-200 group !p-6">
             <div class="flex items-center gap-3 mb-4">
-                <div class="bg-emerald-100 text-emerald-600 p-3 rounded-lg">
+                <div class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 p-3 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                 </div>
                 <div>
-                    <h3 class="font-bold text-lg text-gray-800">2. Upload & Apply</h3>
-                    <p class="text-xs text-gray-500">Apply the selected templates to the users.</p>
+                    <h3 class="font-bold text-lg text-slate-800 dark:text-slate-100">2. Upload & Apply</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Apply the selected templates to the users.</p>
                 </div>
             </div>
             
-            <div class="flex-grow space-y-4 text-sm text-gray-600 mb-6">
+            <div class="flex-grow space-y-4 text-sm text-slate-600 dark:text-slate-400 mb-6">
                 <p>Upload your configured spreadsheet. The system will automatically chunk requests into batches of 100 to safely process thousands of users.</p>
                 
-                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+                <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-900/50 shadow-inner">
                     <input type="file" id="template-zip-file" accept=".xlsx" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                    <svg class="mx-auto h-8 w-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                    <p class="text-sm font-bold text-emerald-600" id="template-filename">Select Excel File</p>
-                    <p class="text-xs text-gray-500 mt-1">Drag and drop or click to browse</p>
+                    <svg class="mx-auto h-8 w-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="text-sm font-bold text-emerald-600 dark:text-emerald-500" id="template-filename">Select Excel File</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Drag and drop or click to browse</p>
                 </div>
             </div>
 
-            <button id="btn-up-templates" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition disabled:opacity-50" disabled>
+            <button id="btn-up-templates" class="btn-success w-full !py-3 disabled:opacity-50" disabled>
                 Start Bulk Apply
             </button>
         </div>
     </div>
 </div>
 
-<div id="ut-modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center">
-        <h3 class="font-bold text-gray-800 text-lg mb-2" id="ut-progress-title">Applying Templates...</h3>
-        <p class="text-sm text-gray-500 mb-6" id="ut-progress-desc">Processing batches of 100 users. Please do not close this window.</p>
+<div id="ut-modal-progress" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg mb-2" id="ut-progress-title">Applying Templates...</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6" id="ut-progress-desc">Processing batches of 100 users. Please do not close this window.</p>
         
-        <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
-            <div id="ut-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
+            <div id="ut-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
-        <div class="text-xs font-bold text-gray-700 text-right" id="ut-progress-pct">0%</div>
-        <div class="text-xs font-mono text-blue-600 text-left mt-2 truncate" id="ut-progress-msg">Initializing...</div>
+        <div class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right" id="ut-progress-pct">0%</div>
+        <div class="text-xs font-mono text-blue-600 dark:text-blue-400 text-left mt-3 bg-blue-50 dark:bg-blue-900/30 p-2 border border-blue-100 dark:border-blue-800 rounded truncate" id="ut-progress-msg">Initializing...</div>
         
-        <button id="ut-progress-close-btn" class="mt-6 hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition">
+        <button id="ut-progress-close-btn" class="mt-6 hidden w-full btn-secondary">
             Close
         </button>
     </div>
@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnDownload.addEventListener('click', () => {
         btnDownload.disabled = true;
-        btnDownload.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating...';
+        btnDownload.innerHTML = '<div class="spinner border-white dark:border-white w-5 h-5 mr-2 inline-block align-middle"></div> Generating...';
         
         window.location.href = '/api/user_templates/download';
         
@@ -113,10 +113,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function openProgressModal() {
         progTitle.textContent = "Applying Templates...";
         progBar.style.width = '0%';
-        progBar.className = 'bg-blue-600 h-3 rounded-full transition-all duration-300';
+        progBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
         progPct.textContent = '0%';
         progMsg.textContent = 'Initializing...';
-        progMsg.className = 'text-xs font-mono text-blue-600 text-left mt-2 truncate';
+        progMsg.className = 'text-xs font-mono text-blue-600 dark:text-blue-400 text-left mt-3 bg-blue-50 dark:bg-blue-900/30 p-2 border border-blue-100 dark:border-blue-800 rounded truncate';
         btnClose.classList.add('hidden');
         
         modal.classList.remove('hidden');
@@ -151,6 +151,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     progBar.classList.replace('bg-blue-600', 'bg-green-500');
                     progTitle.textContent = 'Success!';
                     progMsg.classList.replace('text-blue-600', 'text-green-600');
+                    progMsg.classList.replace('dark:text-blue-400', 'dark:text-green-400');
+                    progMsg.classList.replace('bg-blue-50', 'bg-green-50');
+                    progMsg.classList.replace('dark:bg-blue-900/30', 'dark:bg-green-900/30');
+                    progMsg.classList.replace('border-blue-100', 'border-green-100');
+                    progMsg.classList.replace('dark:border-blue-800', 'dark:border-green-800');
                     btnClose.classList.remove('hidden');
                 } else if (data.status === 'error') {
                     clearInterval(pollInterval);
@@ -158,6 +163,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     progTitle.textContent = 'Failed';
                     progMsg.textContent = data.error;
                     progMsg.classList.replace('text-blue-600', 'text-red-600');
+                    progMsg.classList.replace('dark:text-blue-400', 'dark:text-red-400');
+                    progMsg.classList.replace('bg-blue-50', 'bg-red-50');
+                    progMsg.classList.replace('dark:bg-blue-900/30', 'dark:bg-red-900/30');
+                    progMsg.classList.replace('border-blue-100', 'border-red-100');
+                    progMsg.classList.replace('dark:border-blue-800', 'dark:border-red-800');
                     btnClose.classList.remove('hidden');
                 }
             } catch (e) {
@@ -190,6 +200,11 @@ document.addEventListener('DOMContentLoaded', () => {
             progTitle.textContent = 'Upload Failed';
             progMsg.textContent = err.message;
             progMsg.classList.replace('text-blue-600', 'text-red-600');
+            progMsg.classList.replace('dark:text-blue-400', 'dark:text-red-400');
+            progMsg.classList.replace('bg-blue-50', 'bg-red-50');
+            progMsg.classList.replace('dark:bg-blue-900/30', 'dark:bg-red-900/30');
+            progMsg.classList.replace('border-blue-100', 'border-red-100');
+            progMsg.classList.replace('dark:border-blue-800', 'dark:border-red-800');
             btnClose.classList.remove('hidden');
             btnUpload.disabled = false;
         }
