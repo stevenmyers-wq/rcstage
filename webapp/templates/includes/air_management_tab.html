@@ -2,167 +2,169 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 
-<div class="space-y-6 animate-fade-in w-full">
+<div class="space-y-8 animate-fade-in w-full">
     
-    <div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4">
-        <h2 class="text-heading mb-1">AIR (AI Receptionist) Manager</h2>
+    <div class="mb-4">
+        <h2 class="text-display mb-2">AIR (AI Receptionist) Manager</h2>
         <p class="text-subheading">Audit, Create, Modify, and Visualize AI Receptionists in bulk.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
         
-        <div class="card group flex flex-col items-center text-center hover:shadow-lg !p-6">
-            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-14 h-14 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Audit AIR</h3>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mb-6 flex-grow">
+            <h3 class="text-heading text-lg mb-2">Audit AIR</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
                 Generate a comprehensive Excel report of ALL AI Receptionists and their active Skills.
             </p>
-            <button onclick="auditAir()" id="airAuditBtn" class="w-full bg-transparent border-2 border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 dark:hover:text-white transition-colors">
+            <button onclick="auditAir()" id="airAuditBtn" class="w-full btn-secondary !text-blue-600 dark:!text-blue-400 hover:!bg-blue-50 dark:hover:!bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 Generate Report
             </button>
         </div>
 
-        <div class="card group flex flex-col items-center text-center hover:shadow-lg !p-6">
-            <div class="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Create AIR</h3>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mb-6 flex-grow">
-                Download a blank template to define new AI Receptionists. Fill it out and upload to provision them instantly.
+            <h3 class="text-heading text-lg mb-2">Create AIR</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
+                Download a blank template to define new Receptionists. Fill it out and upload to provision.
             </p>
             <div class="w-full space-y-2">
-                <a href="/api/air/template" class="block w-full bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-medium py-2 px-4 rounded-lg text-sm transition">
-                    1. Download Blank Template
+                <a href="/api/air/template" class="btn-secondary w-full !text-xs !py-2 block">
+                    1. Blank Template
                 </a>
-                <label class="block w-full bg-transparent border-2 border-green-600 text-green-600 dark:border-green-400 dark:text-green-400 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white dark:hover:bg-green-500 dark:hover:text-white transition-colors cursor-pointer">
+                <label class="btn-primary !bg-emerald-600 hover:!bg-emerald-700 w-full !text-xs !py-2 block cursor-pointer shadow-sm">
                     2. Upload & Create
                     <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadAir(this)">
                 </label>
             </div>
         </div>
 
-        <div class="card group flex flex-col items-center text-center hover:shadow-lg !p-6">
-            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-14 h-14 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Update AIR</h3>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mb-6 flex-grow">
-                Use the "Audit" report, modify properties like Transfer Logic or Context Targets, and upload here to sync changes.
+            <h3 class="text-heading text-lg mb-2">Update AIR</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
+                Use the "Audit" report, modify properties like Transfer Logic or Targets, and upload here.
             </p>
-            <label class="w-full bg-transparent border-2 border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 dark:hover:text-white transition-colors cursor-pointer">
+            <label class="btn-secondary !text-purple-600 dark:!text-purple-400 hover:!bg-purple-50 dark:hover:!bg-purple-900/20 border-purple-200 dark:border-purple-800 w-full block cursor-pointer">
                 Upload to Update
                 <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadAir(this)">
             </label>
         </div>
 
-        <div class="card group flex flex-col items-center text-center hover:shadow-lg !p-6">
-            <div class="w-16 h-16 bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-14 h-14 bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-amber-600 group-hover:text-white transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Visualize AIR</h3>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mb-6 flex-grow">
-                View a visual node map of an AI Receptionist's routing contexts, fallbacks, and idle timeouts.
+            <h3 class="text-heading text-lg mb-2">Visualize AIR</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
+                View a visual node map of an AI Receptionist's routing contexts, fallbacks, and timeouts.
             </p>
-            <button id="airVisualizeBtn" class="w-full bg-transparent border-2 border-amber-600 text-amber-600 dark:border-amber-400 dark:text-amber-400 font-semibold py-2 px-4 rounded-lg hover:bg-amber-600 hover:text-white dark:hover:bg-amber-500 dark:hover:text-white transition-colors">
+            <button id="airVisualizeBtn" class="btn-secondary !text-amber-600 dark:!text-amber-400 hover:!bg-amber-50 dark:hover:!bg-amber-900/20 border-amber-200 dark:border-amber-800 w-full">
                 Open Visualizer
             </button>
         </div>
 
-        <div class="card group flex flex-col items-center text-center hover:shadow-lg !p-6">
-            <div class="w-16 h-16 bg-teal-100 dark:bg-teal-900/50 text-teal-600 dark:text-teal-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-teal-600 group-hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-14 h-14 bg-teal-100 dark:bg-teal-900/50 text-teal-600 dark:text-teal-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-teal-600 group-hover:text-white transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Export Transcripts</h3>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mb-6 flex-grow">
+            <h3 class="text-heading text-lg mb-2">Export Transcripts</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
                 Download a detailed call history and turn-by-turn conversation transcripts for a specific date range.
             </p>
-            <button id="airOpenExportModalBtn" class="w-full bg-transparent border-2 border-teal-600 text-teal-600 dark:border-teal-400 dark:text-teal-400 font-semibold py-2 px-4 rounded-lg hover:bg-teal-600 hover:text-white dark:hover:bg-teal-500 dark:hover:text-white transition-colors">
+            <button id="airOpenExportModalBtn" class="btn-secondary !text-teal-600 dark:!text-teal-400 hover:!bg-teal-50 dark:hover:!bg-teal-900/20 border-teal-200 dark:border-teal-800 w-full">
                 Configure Export
             </button>
         </div>
 
     </div>
 
-    <div id="airVisualizeWorkspace" class="hidden card mt-8">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold text-gray-800 dark:text-white">AIR Call Flow Visualizer</h3>
-            <button id="closeAirVisualizeBtn" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold">&times;</button>
+    <div id="airVisualizeWorkspace" class="hidden card mt-8 !p-6 border-amber-200 dark:border-amber-800/50 shadow-lg">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-heading">AIR Call Flow Visualizer</h3>
+            <button id="closeAirVisualizeBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl font-bold transition-colors">&times;</button>
         </div>
-        <div class="flex gap-4 mb-4">
+        <div class="flex flex-col sm:flex-row gap-4 mb-6">
             <select id="airSelect" class="input-field flex-1">
                 <option value="">Loading AI Receptionists...</option>
             </select>
-            <button id="renderAirBtn" class="btn-primary">
+            <button id="renderAirBtn" class="btn-primary !bg-amber-500 hover:!bg-amber-600 border-transparent shadow-sm">
                 Render Graph
             </button>
         </div>
         
-        <div class="relative border border-gray-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 rounded-lg h-[600px] w-full overflow-hidden">
-            <div id="airGraphContainer" class="absolute inset-0 w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
+        <div class="relative border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl h-[600px] w-full overflow-hidden shadow-inner">
+            <div id="airGraphContainer" class="absolute inset-0 w-full h-full flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium italic">
                 Select an AIR and click Render Graph.
             </div>
             
-            <div id="airZoomControls" class="absolute bottom-4 right-4 z-10 bg-white/90 dark:bg-slate-800/90 p-1.5 rounded-lg shadow-md border border-gray-200 dark:border-slate-600 flex gap-1 hidden backdrop-blur-sm">
-                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 font-bold transition-colors" id="air-btn-zoom-in" title="Zoom In">+</button>
-                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 font-bold transition-colors" id="air-btn-zoom-out" title="Zoom Out">−</button>
-                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 font-bold transition-colors" id="air-btn-reset" title="Fit to screen">⟲</button>
-                <div class="w-px h-6 bg-gray-300 dark:bg-slate-600 my-auto mx-1"></div>
-                <button class="px-3 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 text-xs font-bold transition-colors" id="air-btn-save-png" title="Download PNG">💾 PNG</button>
+            <div id="airZoomControls" class="absolute bottom-4 right-4 z-10 bg-white/90 dark:bg-slate-800/90 p-2 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex gap-1.5 hidden backdrop-blur-md">
+                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors shadow-sm" id="air-btn-zoom-in" title="Zoom In">+</button>
+                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors shadow-sm" id="air-btn-zoom-out" title="Zoom Out">−</button>
+                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors shadow-sm" id="air-btn-reset" title="Fit to screen">⟲</button>
+                <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 my-auto mx-1"></div>
+                <button class="px-3 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 text-xs font-bold transition-colors shadow-sm" id="air-btn-save-png" title="Download PNG">💾 PNG</button>
             </div>
         </div>
     </div>
 
-    <div class="card !p-0 overflow-hidden mt-8 bg-slate-900 dark:bg-slate-950 border-slate-700">
-        <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
-            <span class="font-mono font-bold text-sm text-white">PROVISIONING LOGS</span>
-            <button onclick="document.getElementById('airLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white transition-colors">Clear</button>
+    <div class="card !p-0 overflow-hidden mt-8 bg-slate-900 dark:bg-slate-950 border-slate-800 shadow-xl">
+        <div class="bg-slate-800 dark:bg-slate-900 px-6 py-3 border-b border-slate-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-xs text-slate-300 tracking-widest">PROVISIONING LOGS</span>
+            <button onclick="document.getElementById('airLogs').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
         </div>
-        <div id="airLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+        <div id="airLogs" class="p-6 font-mono text-xs h-64 overflow-y-auto whitespace-pre-line text-slate-300 outline-none">
             Ready for action...
         </div>
     </div>
 
-    <div id="airExportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md mx-4 border border-slate-200 dark:border-slate-700">
-            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700">
-                <h3 class="font-bold text-slate-800 dark:text-slate-100">Export AIR Transcripts</h3>
+    <div id="airExportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm p-4">
+        <div class="card w-full max-w-md transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl">
+                <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">Export AIR Transcripts</h3>
                 <button id="closeAirExportModalBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition text-2xl leading-none">&times;</button>
             </div>
-            <div class="px-5 py-4 space-y-3">
-                <div>
+            <div class="px-6 py-5 space-y-5">
+                <div class="input-wrapper">
                     <label class="input-label">AI Receptionist (Optional)</label>
                     <select id="airExportSelect" class="input-field">
                         <option value="">All Receptionists</option>
                     </select>
                 </div>
-                <div>
+                <div class="input-wrapper">
                     <label class="input-label">Start Date/Time</label>
                     <input type="datetime-local" id="airExportDateFrom" class="input-field">
                 </div>
-                <div>
+                <div class="input-wrapper">
                     <label class="input-label">End Date/Time</label>
                     <input type="datetime-local" id="airExportDateTo" class="input-field">
                 </div>
             </div>
-            <div class="flex gap-3 px-5 py-4 border-t border-slate-100 dark:border-slate-700">
-                <button id="airStartExportBtn" class="btn-success w-full">
+            <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-b-2xl">
+                <button id="airStartExportBtn" class="btn-primary !bg-teal-600 hover:!bg-teal-700 w-full shadow-sm">
                     Start Export
                 </button>
             </div>
         </div>
     </div>
 
-    <div id="airExportProgressModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-sm mx-4 p-6 text-center border border-slate-200 dark:border-slate-700">
-            <h3 class="font-bold text-slate-800 dark:text-white mb-2">Exporting Transcripts...</h3>
-            <p id="airExportProgressText" class="text-sm text-slate-500 dark:text-slate-400 mb-4">Initializing...</p>
-            <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mb-2">
-                <div id="airExportProgressBar" class="bg-teal-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+    <div id="airExportProgressModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm p-4">
+        <div class="card w-full max-w-sm text-center transform scale-95 transition-transform duration-300 shadow-2xl">
+            <h3 class="text-heading mb-2">Exporting Transcripts...</h3>
+            <p id="airExportProgressText" class="text-subheading mb-6">Initializing...</p>
+            
+            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden shadow-inner">
+                <div id="airExportProgressBar" class="bg-teal-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
             </div>
-            <p id="airExportProgressCount" class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right">0/0</p>
-            <button id="airExportCloseProgressBtn" class="hidden mt-4 w-full btn-secondary">Close</button>
+            <p id="airExportProgressCount" class="text-xs font-bold text-slate-500 text-right">0/0</p>
+            
+            <button id="airExportCloseProgressBtn" class="hidden mt-6 w-full btn-secondary">Close</button>
         </div>
     </div>
 
@@ -181,8 +183,8 @@
         const box = document.getElementById('airLogs');
         if (!box) return;
         const entry = document.createElement('div');
-        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
-        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        entry.className = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-slate-400');
+        entry.innerHTML = `<span class="text-slate-600 font-medium mr-2 select-none">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
         box.appendChild(entry);
         box.scrollTop = box.scrollHeight;
     }
@@ -190,7 +192,7 @@
     async function auditAir() {
         const btn = document.getElementById('airAuditBtn');
         btn.disabled = true;
-        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+        btn.innerHTML = `<div class="spinner w-4 h-4 border-blue-600 dark:border-blue-400 mr-2"></div> Generating...`;
         
         logAir("Starting Audit... fetching data and nested Skills from RingCentral.");
 
@@ -296,7 +298,7 @@
 
         renderAirBtn.disabled = true;
         airZoomControls.classList.add('hidden');
-        airGraphContainer.innerHTML = `<svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>`;
+        airGraphContainer.innerHTML = `<div class="spinner w-8 h-8 border-amber-500"></div>`;
         removeAirHoverPreview();
 
         try {
@@ -305,10 +307,10 @@
             if (data.success && data.graph_data) {
                 drawAirGraph(data.graph_data);
             } else {
-                airGraphContainer.innerHTML = `<span class="text-red-500">Failed to render graph: ${data.error || 'Unknown error'}</span>`;
+                airGraphContainer.innerHTML = `<span class="text-rose-500 font-bold">Failed to render graph: ${data.error || 'Unknown error'}</span>`;
             }
         } catch (e) {
-            airGraphContainer.innerHTML = `<span class="text-red-500">Network error fetching graph data.</span>`;
+            airGraphContainer.innerHTML = `<span class="text-rose-500 font-bold">Network error fetching graph data.</span>`;
         } finally {
             renderAirBtn.disabled = false;
         }
@@ -319,7 +321,7 @@
         if (!nodeData.tooltip) return;
 
         airHoverPreview = document.createElement('div');
-        airHoverPreview.className = 'absolute bg-gray-900 border border-gray-700 rounded shadow-2xl z-50 p-3 text-xs text-white max-w-sm max-h-80 overflow-y-auto pointer-events-none opacity-95 whitespace-pre-wrap';
+        airHoverPreview.className = 'absolute bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-2xl z-50 p-4 text-xs text-white max-w-sm max-h-80 overflow-y-auto pointer-events-none whitespace-pre-wrap font-medium leading-relaxed';
         airHoverPreview.textContent = nodeData.tooltip;
         document.body.appendChild(airHoverPreview);
         
@@ -331,8 +333,8 @@
         const H = el.offsetHeight;
         let x = clientX + 16;
         let y = clientY + 16;
-        if (x + W > window.innerWidth) x = clientX - W - 8;
-        if (y + H > window.innerHeight) y = clientY - H - 8;
+        if (x + W > window.innerWidth) x = clientX - W - 16;
+        if (y + H > window.innerHeight) y = clientY - H - 16;
         el.style.left = Math.max(0, x) + 'px';
         el.style.top = Math.max(0, y) + 'px';
     }
@@ -346,11 +348,11 @@
         airGraphContainer.innerHTML = '';
 
         const COLOURS = {
-            autoreceptionist: { bg: '#7c3aed', border: '#5b21b6' },
-            queue:            { bg: '#d97706', border: '#92400e' },
-            user:             { bg: '#059669', border: '#065f46' },
-            external:         { bg: '#dc2626', border: '#991b1b' },
-            unknown:          { bg: '#e5e7eb', border: '#9ca3af' },
+            autoreceptionist: { bg: '#8b5cf6', border: '#6d28d9' },
+            queue:            { bg: '#f59e0b', border: '#b45309' },
+            user:             { bg: '#10b981', border: '#047857' },
+            external:         { bg: '#f43f5e', border: '#be123c' },
+            unknown:          { bg: '#94a3b8', border: '#475569' },
         };
 
         const typeStyles = Object.entries(COLOURS).map(([type, c]) => ({
@@ -384,24 +386,29 @@
             return { data: { ...e.data, cpd: offset } };
         });
 
+        const isDark = document.documentElement.classList.contains('dark');
+        const edgeColor = isDark ? '#94a3b8' : '#475569';
+        const edgeBgColor = isDark ? '#1e293b' : '#ffffff';
+        const edgeBorderColor = isDark ? '#334155' : '#cbd5e1';
+
         const stylesheet = [
             {
                 selector: 'node',
                 style: {
                     'shape':              'round-rectangle',
-                    'corner-radius':      6,
-                    'width':              200,
+                    'corner-radius':      8,
+                    'width':              220,
                     'height':             'label',
-                    'padding':            '12px',
+                    'padding':            '14px',
                     'label':              'data(displayLabel)',
                     'text-valign':        'center',
                     'text-halign':        'center',
                     'text-wrap':          'wrap',
-                    'text-max-width':     '176px',
-                    'font-size':          '12px',
-                    'font-weight':        '400',
+                    'text-max-width':     '190px',
+                    'font-size':          '11px',
+                    'font-weight':        '700',
                     'font-family':        'Inter, system-ui, sans-serif',
-                    'color':              'rgba(255,255,255,0.95)',
+                    'color':              '#ffffff',
                     'border-width':       '2px',
                     'cursor':             'pointer',
                     'text-justification': 'center',
@@ -412,8 +419,8 @@
                 selector: 'edge',
                 style: {
                     'width':                         2,
-                    'line-color':                    '#94a3b8',
-                    'target-arrow-color':            '#94a3b8',
+                    'line-color':                    isDark ? '#334155' : '#cbd5e1',
+                    'target-arrow-color':            isDark ? '#334155' : '#cbd5e1',
                     'target-arrow-shape':            'triangle',
                     'curve-style':                   'unbundled-bezier',
                     'control-point-distances':       'data(cpd)',
@@ -421,17 +428,17 @@
                     'label':                         'data(label)',
                     'font-size':                     '10px',
                     'font-family':                   'Inter, system-ui, sans-serif',
-                    'font-weight':                   '500',
-                    'color':                         '#1e293b',
+                    'font-weight':                   '600',
+                    'color':                         edgeColor,
                     'text-rotation':                 'none',
-                    'text-background-color':         '#ffffff',
+                    'text-background-color':         edgeBgColor,
                     'text-background-opacity':       1,
-                    'text-background-padding':       '4px 6px',
+                    'text-background-padding':       '4px 8px',
                     'text-background-shape':         'round-rectangle',
-                    'text-border-color':             '#cbd5e1',
+                    'text-border-color':             edgeBorderColor,
                     'text-border-width':             1,
                     'text-wrap':                     'wrap',
-                    'text-max-width':                '140px'
+                    'text-max-width':                '160px'
                 },
             },
         ];
@@ -443,10 +450,10 @@
             layout: {
                 name: 'dagre',
                 rankDir: 'LR',
-                nodeSep: 40,
-                rankSep: 180,
-                edgeSep: 20,
-                padding: 40,
+                nodeSep: 50,
+                rankSep: 200,
+                edgeSep: 30,
+                padding: 50,
                 animate: false
             },
             wheelSensitivity: 0.25,
@@ -475,7 +482,7 @@
         
         document.getElementById('air-btn-save-png').onclick = () => {
             if(!airCy) return;
-            const png = airCy.png({ scale: 2, bg: '#f8fafc', full: true });
+            const png = airCy.png({ scale: 2, bg: isDark ? '#0b1120' : '#f8fafc', full: true });
             const a = document.createElement('a');
             a.href = png;
             const airName = airSelect.options[airSelect.selectedIndex].text.replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -576,8 +583,8 @@
     function startExportPolling(taskId) {
         airExportProgressModal.classList.remove('hidden');
         airExportCloseProgressBtn.classList.add('hidden');
-        airExportProgressBar.classList.remove('bg-red-500', 'bg-green-500');
-        airExportProgressBar.classList.add('bg-teal-600');
+        airExportProgressBar.classList.remove('bg-rose-500', 'bg-emerald-500');
+        airExportProgressBar.classList.add('bg-teal-500');
         airExportProgressBar.style.width = '0%';
         airExportProgressText.textContent = 'Initializing...';
         airExportProgressCount.textContent = '0/0';
@@ -597,8 +604,7 @@
 
                     if (data.status === 'completed') {
                         clearInterval(exportPollInterval);
-                        airExportProgressBar.classList.remove('bg-teal-600');
-                        airExportProgressBar.classList.add('bg-green-500');
+                        airExportProgressBar.classList.replace('bg-teal-500', 'bg-emerald-500');
                         airExportProgressText.textContent = 'Download starting...';
                         airExportCloseProgressBtn.classList.remove('hidden');
                         
@@ -606,8 +612,7 @@
                         window.location.href = `/api/air/transcripts/download?task_id=${taskId}`;
                     } else if (data.status === 'error') {
                         clearInterval(exportPollInterval);
-                        airExportProgressBar.classList.remove('bg-teal-600');
-                        airExportProgressBar.classList.add('bg-red-500');
+                        airExportProgressBar.classList.replace('bg-teal-500', 'bg-rose-500');
                         airExportProgressText.textContent = `Error: ${data.error}`;
                         airExportCloseProgressBtn.classList.remove('hidden');
                     }
