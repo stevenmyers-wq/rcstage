@@ -6,7 +6,7 @@
         bottom: 0;
         left: 20px;
         width: 2px;
-        @apply bg-slate-200 dark:bg-slate-700;
+        @apply bg-slate-200 dark:bg-slate-700/50;
     }
 </style>
 
@@ -52,7 +52,7 @@
             </form>
         </div>
 
-        <div class="w-full xl:w-3/4 card !p-0 overflow-hidden min-w-0 border-0 shadow-lg">
+        <div class="w-full xl:w-3/4 card !p-0 overflow-hidden min-w-0 border-0 shadow-sm">
             <div class="p-5 md:p-6 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h3 class="text-heading text-lg">End-to-End Call Journeys</h3>
                 <button onclick="exportToCSV()" class="btn-success hidden !py-2 !px-4 text-sm" id="exportBtn">
@@ -118,12 +118,12 @@
         const exportBtn = document.getElementById('exportBtn');
         
         submitBtn.disabled = true;
-        submitBtn.innerHTML = `<div class="spinner w-5 h-5 border-white"></div> Fetching...`;
+        submitBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Fetching...`;
         errorMsg.classList.add('hidden');
         exportBtn.classList.add('hidden');
         
         tableBody.innerHTML = `<tr><td colspan="7" class="py-20 text-center">
-            <div class="spinner w-8 h-8 border-blue-600 mx-auto mb-4"></div>
+            <svg class="animate-spin mx-auto h-8 w-8 text-blue-600 dark:text-blue-400 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
             <span class="font-bold text-slate-600 dark:text-slate-400">Querying RingCentral API...</span>
         </td></tr>`;
 
@@ -174,18 +174,18 @@
     function getStatusConfig(result) {
         const r = (result || '').toLowerCase();
         if (['completed', 'accepted', 'answered', 'pickedup', 'connected'].includes(r)) {
-            return { text: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', dot: 'bg-emerald-500', border: 'border-emerald-200 dark:border-emerald-800' };
+            return { text: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', dot: 'bg-emerald-500', border: 'border-emerald-200 dark:border-emerald-800/50' };
         }
         if (['missed', 'abandoned', 'notanswered', 'stopped'].includes(r)) {
-            return { text: 'text-rose-700 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', dot: 'bg-rose-500', border: 'border-rose-200 dark:border-rose-800' };
+            return { text: 'text-rose-700 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', dot: 'bg-rose-500', border: 'border-rose-200 dark:border-rose-800/50' };
         }
         if (['voicemail', 'callback'].includes(r)) {
-            return { text: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/30', dot: 'bg-amber-500', border: 'border-amber-200 dark:border-amber-800' };
+            return { text: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/30', dot: 'bg-amber-500', border: 'border-amber-200 dark:border-amber-800/50' };
         }
         if (['transferred', 'forwarded', 'transfer'].includes(r)) {
-            return { text: 'text-purple-700 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/30', dot: 'bg-purple-500', border: 'border-purple-200 dark:border-purple-800' };
+            return { text: 'text-purple-700 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/30', dot: 'bg-purple-500', border: 'border-purple-200 dark:border-purple-800/50' };
         }
-        return { text: 'text-slate-700 dark:text-slate-300', bg: 'bg-slate-100 dark:bg-slate-800', dot: 'bg-slate-400 dark:bg-slate-500', border: 'border-slate-200 dark:border-slate-700' };
+        return { text: 'text-slate-700 dark:text-slate-300', bg: 'bg-slate-100 dark:bg-slate-800/50', dot: 'bg-slate-400 dark:bg-slate-500', border: 'border-slate-200 dark:border-slate-700/50' };
     }
 
     function getPartyDetails(party) {
@@ -237,22 +237,22 @@
             const resultConfig = getStatusConfig(finalResult);
 
             const trMain = document.createElement('tr');
-            trMain.className = `cursor-pointer summary-row transition-all duration-200`;
+            trMain.className = `cursor-pointer summary-row transition-all duration-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800/80`;
             trMain.setAttribute('onclick', `toggleDetails(${index})`);
             trMain.innerHTML = `
                 <td class="w-8 text-center text-slate-400">
                     <svg id="chevron-${index}" class="w-5 h-5 mx-auto transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </td>
-                <td class="font-bold text-slate-800 dark:text-slate-100">${startTime}</td>
+                <td class="font-bold text-slate-800 dark:text-slate-200">${startTime}</td>
                 <td class="text-slate-400 dark:text-slate-500 font-mono text-xs" title="${record.callId}">${shortCallId}</td>
-                <td class="font-bold text-slate-700 dark:text-slate-200">${originator}</td>
+                <td class="font-bold text-slate-700 dark:text-slate-300">${originator}</td>
                 <td class="text-center">
-                    <span class="badge badge-info text-[11px] px-2.5 py-1">${hops.length}</span>
+                    <span class="badge badge-info">${hops.length}</span>
                 </td>
                 <td class="text-center">
-                    <span class="badge ${resultConfig.bg} ${resultConfig.text} border-${resultConfig.border} text-[11px] px-2.5 py-1">${finalResult}</span>
+                    <span class="badge ${resultConfig.bg} ${resultConfig.text} ${resultConfig.border}">${finalResult}</span>
                 </td>
-                <td class="text-center font-bold text-slate-600 dark:text-slate-300">${totalDurationFmt}</td>
+                <td class="text-center font-bold text-slate-600 dark:text-slate-400">${totalDurationFmt}</td>
             `;
             tableBody.appendChild(trMain);
 
@@ -325,7 +325,7 @@
                     chronologicalOrder.forEach(s => {
                         if (segs[s.key] && segs[s.key] > 0) {
                             segmentsToDisplay.push(`
-                                <div class="flex items-center space-x-1.5 bg-slate-100/50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300">
+                                <div class="flex items-center space-x-1.5 bg-slate-100/50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/50 px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300">
                                     <svg class="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${s.icon}"></path></svg>
                                     <span class="text-[11px] font-bold tracking-wide">${s.label}: ${formatSeconds(segs[s.key]/1000)}</span>
                                 </div>
@@ -345,10 +345,10 @@
                     <div class="relative pl-12 pb-8 last:pb-0">
                         <div class="absolute left-[13px] top-2 w-4 h-4 rounded-full ${hopConfig.dot} border-4 border-white dark:border-slate-900 shadow-sm z-10"></div>
                         
-                        <div class="bg-white dark:bg-slate-800 border ${hopConfig.border} rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                        <div class="card !p-5 !shadow-sm hover:!shadow-md hover:-translate-y-0.5">
                             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div class="flex items-center flex-wrap gap-2 text-sm">
-                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md">Hop ${hIndex + 1}</span>
+                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg">Hop ${hIndex + 1}</span>
                                     <span class="font-bold text-slate-800 dark:text-slate-100 ml-1">${hFrom}</span>
                                     <svg class="w-4 h-4 text-slate-300 dark:text-slate-500 mx-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                                     <span class="font-bold text-slate-800 dark:text-slate-100">${hTo}</span>
@@ -359,7 +359,7 @@
                                         <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">${hType} <span class="text-blue-500 dark:text-blue-400 ml-1">${hAction}</span></span>
                                         <span class="text-sm font-black ${hopConfig.text}">${hResult} <span class="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-1">${hReason}</span></span>
                                     </div>
-                                    <div class="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 px-3 py-1.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 shadow-inner">
+                                    <div class="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 shadow-inner">
                                         ⏱ ${hDur}
                                     </div>
                                 </div>
