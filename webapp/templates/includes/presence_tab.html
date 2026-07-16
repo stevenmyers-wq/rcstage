@@ -1,91 +1,111 @@
-<div class="space-y-6 animate-fade-in w-full">
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 dark:border-slate-800 pb-4 w-full">
         <div>
-            <h2 class="text-heading mb-1">BLF Presence Management</h2>
-            <p class="text-subheading">Audit and bulk update Busy Lamp Field (BLF) configurations.</p>
+            <h2 class="text-display mb-2">BLF Presence Management</h2>
+            <p class="text-subheading">Audit and bulk update Busy Lamp Field (BLF) monitoring configurations.</p>
         </div>
-        <button id="toggle-sandbox" class="btn-secondary whitespace-nowrap !py-2 !px-4 text-sm w-full md:w-auto">Toggle Diagnostics Sandbox</button>
+        <button id="toggle-sandbox" class="btn-secondary whitespace-nowrap !py-2.5 !px-5 text-sm w-full md:w-auto">Toggle Diagnostics Sandbox</button>
     </div>
 
-    <div id="main-ui" class="w-full">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-            <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
-                <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+    <div id="main-ui" class="space-y-6 w-full">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
+            <div class="card flex flex-col items-center text-center group hover:-translate-y-0.5 transition-transform duration-200 !p-6">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                 </div>
-                <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Audit BLF</h3>
-                <button id="generate-audit-btn" class="w-full bg-transparent border-2 border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 transition-colors shadow-sm mt-auto">Generate Report</button>
+                <h3 class="text-heading text-lg mb-3">Audit BLF</h3>
+                <button id="generate-audit-btn" class="w-full btn-secondary !text-blue-600 dark:!text-blue-400 hover:!bg-blue-50 dark:hover:!bg-blue-900/20 border-blue-200 dark:border-blue-800 mt-auto">Generate Report</button>
             </div>
 
-            <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
-                <div class="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors shadow-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            <div class="card flex flex-col items-center text-center group hover:-translate-y-0.5 transition-transform duration-200 !p-6">
+                <div class="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                 </div>
-                <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Get Template</h3>
-                <a href="/api/presence/template" class="w-full bg-transparent border-2 border-green-600 dark:border-green-500 text-green-600 dark:text-green-500 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white dark:hover:bg-green-500 transition-colors block text-center shadow-sm mt-auto">Download Template</a>
+                <h3 class="text-heading text-lg mb-3">Get Template</h3>
+                <a href="/api/presence/template" class="w-full btn-secondary !text-emerald-600 dark:!text-emerald-400 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 block text-center mt-auto">Download Template</a>
             </div>
 
-            <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
-                <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            <div class="card flex flex-col items-center text-center group hover:-translate-y-0.5 transition-transform duration-200 !p-6">
+                <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/xl" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                 </div>
-                <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Update Lines</h3>
-                <label id="upload-btn-label" class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-500 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer text-center shadow-sm mt-auto block">
+                <h3 class="text-heading text-lg mb-3">Update Lines</h3>
+                <label id="upload-btn-label" class="w-full btn-secondary !text-purple-600 dark:!text-purple-400 hover:!bg-purple-50 dark:hover:!bg-purple-900/20 border-purple-200 dark:border-purple-800 cursor-pointer text-center mt-auto block">
                     Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">
                 </label>
             </div>
         </div>
 
-        <div id="upload-status" class="hidden mt-6 card !py-4 text-center"></div>
+        <div id="upload-status" class="hidden card !py-4 text-center text-sm font-medium"></div>
 
-        <div class="card !p-0 overflow-hidden mt-8 w-full">
-            <div class="bg-slate-50 dark:bg-slate-800/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-                    <select id="site-select" class="input-field !py-2 sm:w-auto w-full"><option value="">All Sites</option></select>
-                    <input type="text" id="global-search" class="input-field !py-2 sm:w-64 w-full" placeholder="Search...">
-                    <button id="refresh-users-btn" class="btn-primary !bg-slate-800 hover:!bg-slate-700 dark:!bg-slate-700 dark:hover:!bg-slate-600 border-transparent text-sm px-4 py-2 w-full sm:w-auto whitespace-nowrap">Refresh</button>
+        <div class="card !p-4 flex flex-wrap gap-4 items-end w-full">
+            <div class="input-wrapper flex-grow min-w-[200px]">
+                <label class="input-label">Search Users</label>
+                <input type="text" id="global-search" class="input-field" placeholder="Search by name, department...">
+            </div>
+            
+            <div class="input-wrapper w-full sm:w-64" id="filter-site">
+                <label class="input-label">Site Filters</label>
+                <div class="relative">
+                    <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
+                        <span class="ms-label truncate">All Sites</span>
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
+                        <div class="p-3 border-b border-slate-100 dark:border-slate-700">
+                            <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search sites...">
+                        </div>
+                        <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
+                    </div>
                 </div>
             </div>
-            <div class="overflow-x-auto max-h-[600px] w-full">
+
+            <div class="w-full sm:w-auto">
+                <button id="refresh-users-btn" class="btn-secondary w-full h-[46px] text-sm px-6">Refresh List</button>
+            </div>
+        </div>
+
+        <div class="card !p-0 overflow-hidden w-full border-0 shadow-lg">
+            <div class="table-container border-0 rounded-none shadow-none max-h-[500px]">
                 <table class="data-table">
-                    <thead class="sticky top-0 z-10 shadow-sm">
+                    <thead class="sticky top-0 z-10 shadow-sm border-b border-slate-200 dark:border-slate-700">
                         <tr>
-                            <th class="w-12 text-center border-b border-slate-200 dark:border-slate-700"><input type="checkbox" id="select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"></th>
-                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">NAME</th>
-                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">EXTENSION</th>
-                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">EXTENSION ID</th>
-                            <th class="font-bold border-b border-slate-200 dark:border-slate-700">SITE</th>
+                            <th class="w-12 text-center"><input type="checkbox" id="select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"></th>
+                            <th>NAME</th>
+                            <th>EXTENSION</th>
+                            <th>EXTENSION ID</th>
+                            <th>SITE</th>
                         </tr>
                         <tr class="bg-white dark:bg-slate-800">
                             <th></th>
-                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="1" placeholder="Filter Name..."></th>
-                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="2" placeholder="Filter Ext..."></th>
-                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="3" placeholder="Filter ID..."></th>
-                            <th class="py-2"><input type="text" class="input-field !py-1 !px-2 !text-xs inline-filter font-normal" data-col="4" placeholder="Filter Site..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1.5 !px-3 !text-xs inline-filter font-normal" data-col="1" placeholder="Filter Name..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1.5 !px-3 !text-xs inline-filter font-normal" data-col="2" placeholder="Filter Ext..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1.5 !px-3 !text-xs inline-filter font-normal" data-col="3" placeholder="Filter ID..."></th>
+                            <th class="py-2"><input type="text" class="input-field !py-1.5 !px-3 !text-xs inline-filter font-normal" data-col="4" placeholder="Filter Site..."></th>
                         </tr>
                     </thead>
-                    <tbody id="users-table-body" class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
+                    <tbody id="users-table-body"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <div id="sandbox-ui" class="hidden mt-8 card bg-slate-50 dark:bg-slate-900/50 border-slate-300 dark:border-slate-700 shadow-inner w-full">
-        <h3 class="text-2xl font-bold mb-4 text-red-600 dark:text-red-400 border-b border-slate-200 dark:border-slate-700 pb-2">API Sandbox (Raw PUT Test)</h3>
-        <div class="flex items-center gap-3 mb-5 w-full">
-            <label class="text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">Target User ID:</label>
+    <div id="sandbox-ui" class="hidden card bg-slate-50/50 dark:bg-slate-900/30 border-slate-300 dark:border-slate-700 shadow-inner w-full !p-6">
+        <h3 class="text-heading text-xl mb-4 border-b border-slate-200 dark:border-slate-700 pb-3">API Diagnostics Sandbox (Raw PUT Test)</h3>
+        <div class="flex items-center gap-4 mb-6 w-full">
+            <label class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">Target User ID</label>
             <input type="text" id="sb-ext-id" class="input-field font-mono !w-64" placeholder="e.g. 610867124" value="610867124">
         </div>
         
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
-            <div>
-                <label class="input-label">Raw JSON Payload:</label>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+            <div class="input-wrapper">
+                <label class="input-label">Raw JSON Payload</label>
                 <textarea id="sb-payload" class="w-full h-64 input-field font-mono text-xs resize-y" placeholder="Enter JSON here..."></textarea>
-                <button id="sb-send" class="btn-danger w-full mt-4">FIRE API REQUEST</button>
+                <button id="sb-send" class="btn-danger w-full mt-4 !py-3">FIRE API REQUEST</button>
             </div>
-            <div>
-                <label class="input-label">API Response:</label>
-                <div id="sb-response" class="w-full h-64 bg-black text-green-400 p-4 rounded-lg font-mono text-xs overflow-auto border border-slate-700 shadow-inner">Awaiting execution...</div>
+            <div class="input-wrapper">
+                <label class="input-label">API Response Output</label>
+                <div id="sb-response" class="w-full h-[264px] bg-slate-900 dark:bg-slate-950 text-emerald-400 p-4 rounded-2xl font-mono text-xs overflow-auto border border-slate-800 shadow-inner">Awaiting execution...</div>
             </div>
         </div>
     </div>
@@ -93,13 +113,11 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // Sandbox Toggle
     document.getElementById('toggle-sandbox').onclick = () => {
         document.getElementById('main-ui').classList.toggle('hidden');
         document.getElementById('sandbox-ui').classList.toggle('hidden');
     };
 
-    // Sandbox Execution
     document.getElementById('sb-send').onclick = async () => {
         const extId = document.getElementById('sb-ext-id').value;
         const payloadStr = document.getElementById('sb-payload').value;
@@ -120,37 +138,107 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Existing UI Logic Below ---
     const usersTableBody = document.getElementById('users-table-body');
     const siteSelect = document.getElementById('site-select');
     const globalSearch = document.getElementById('global-search');
     const inlineFilters = document.querySelectorAll('.inline-filter');
     const selectAllCheckbox = document.getElementById('select-all');
     let allUsersData = [];
+    let selectedSites = new Set();
+
+    function renderMultiSelectList(containerId, items, selectedSet, defaultLabel, onChange) {
+        const container = document.getElementById(containerId);
+        const list = container.querySelector('.ms-list');
+        const search = container.querySelector('.ms-search');
+        const label = container.querySelector('.ms-label');
+        
+        const draw = (filterText = '') => {
+            list.innerHTML = '';
+            items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-3 rounded-lg transition-colors font-medium text-sm';
+                const checked = selectedSet.has(item.val) ? 'checked' : '';
+                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
+                
+                li.onclick = (e) => {
+                    e.stopPropagation();
+                    if(selectedSet.has(item.val)) selectedSet.delete(item.val);
+                    else selectedSet.add(item.val);
+                    
+                    li.querySelector('input').checked = selectedSet.has(item.val);
+                    updateLabel();
+                    onChange();
+                };
+                list.appendChild(li);
+            });
+        };
+
+        const updateLabel = () => {
+            if(selectedSet.size === 0) label.textContent = defaultLabel;
+            else if(selectedSet.size === 1) {
+                const selectedItem = items.find(i => i.val === Array.from(selectedSet)[0]);
+                label.textContent = selectedItem ? selectedItem.label : '1 Selected';
+            }
+            else label.textContent = `${selectedSet.size} Selected`;
+        };
+
+        if (!container.dataset.initialized) {
+            const btn = container.querySelector('.ms-btn');
+            const dropdown = container.querySelector('.ms-dropdown');
+            
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const isHidden = dropdown.classList.contains('hidden');
+                document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+                if (isHidden) {
+                    dropdown.classList.remove('hidden');
+                    search.focus();
+                }
+            };
+
+            search.oninput = (e) => draw(e.target.value);
+            search.onclick = (e) => e.stopPropagation();
+            dropdown.onclick = (e) => e.stopPropagation();
+            
+            container.dataset.initialized = 'true';
+        }
+
+        draw(search.value);
+        updateLabel();
+    }
 
     async function loadSites() {
         const resp = await fetch('/api/presence/sites');
         const data = await resp.json();
-        if (data.status === 'success') data.sites.forEach(s => siteSelect.add(new Option(s.name, s.id)));
+        if (data.status === 'success') {
+            const siteOptions = data.sites.map(s => ({val: s.id, label: s.name}));
+            renderMultiSelectList('filter-site', siteOptions, selectedSites, 'All Sites', renderTable);
+        }
     }
 
     async function fetchUsers() {
-        usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-slate-400 dark:text-slate-500 italic"><div class="spinner w-5 h-5 mx-auto mb-3"></div>Loading users...</td></tr>`;
+        usersTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-20 text-slate-400 dark:text-slate-500 font-medium italic"><div class="spinner w-6 h-6 mx-auto mb-4"></div>Loading users...</td></tr>`;
         const resp = await fetch('/api/presence/users');
         const data = await resp.json();
-        if (data.status === 'success') { allUsersData = data.users; renderTable(); }
+        if (data.status === 'success') { 
+            allUsersData = data.users; 
+            const sites = new Set();
+            allUsersData.forEach(u => { sites.add(u.site?.name || 'Main site'); });
+            const siteOptions = Array.from(sites).sort().map(s => ({val: s, label: s}));
+            renderMultiSelectList('filter-site', siteOptions, selectedSites, 'All Sites', renderTable);
+            renderTable(); 
+        }
     }
 
     function renderTable() {
         usersTableBody.innerHTML = '';
         const globalTerm = globalSearch.value.toLowerCase();
-        const selectedSite = siteSelect.value ? siteSelect.options[siteSelect.selectedIndex].text.toLowerCase() : '';
         
         allUsersData.forEach(u => {
             const site = (u.site && u.site.name) ? u.site.name : 'Main site';
             const rowData = [u.name || '', u.extensionNumber || '', String(u.id), site];
             
-            if (selectedSite && site.toLowerCase() !== selectedSite) return;
+            if (selectedSites.size > 0 && !selectedSites.has(site)) return;
             if (globalTerm && !rowData[0].toLowerCase().includes(globalTerm) && !rowData[1].toLowerCase().includes(globalTerm)) return;
             
             let match = true;
@@ -161,19 +249,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!match) return;
 
             const tr = document.createElement('tr');
-            tr.className = "hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors";
-            tr.innerHTML = `<td class="px-4 py-3 text-center"><input type="checkbox" class="user-checkbox h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
-                            <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">${rowData[0]}</td>
-                            <td class="px-4 py-3 text-slate-700 dark:text-slate-300">${rowData[1]}</td>
-                            <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 font-mono">${rowData[2]}</td>
-                            <td class="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">${rowData[3]}</td>`;
+            tr.innerHTML = `<td class="text-center py-3"><input type="checkbox" class="user-checkbox h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" value='${JSON.stringify({id: u.id, name: u.name, extensionNumber: u.extensionNumber})}'></td>
+                            <td class="font-bold text-slate-800 dark:text-slate-200">${rowData[0]}</td>
+                            <td class="text-slate-600 dark:text-slate-300 font-mono text-sm">${rowData[1]}</td>
+                            <td class="text-xs text-slate-400 dark:text-slate-500 font-mono">${rowData[2]}</td>
+                            <td class="text-slate-500 font-semibold text-xs">${rowData[3]}</td>`;
             usersTableBody.appendChild(tr);
         });
     }
 
     loadSites(); fetchUsers();
     globalSearch.oninput = renderTable;
-    siteSelect.onchange = renderTable;
     inlineFilters.forEach(f => f.oninput = renderTable);
     selectAllCheckbox.onchange = (e) => document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
     document.getElementById('refresh-users-btn').onclick = fetchUsers;
@@ -182,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sel = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => JSON.parse(cb.value));
         if (!sel.length) return alert("Select users first.");
         const resp = await fetch('/api/presence/audit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({users: sel})});
-        if (resp.ok) { const b = await resp.blob(); const url = URL.createObjectURL(b); const a = document.createElement('a'); a.href = url; a.download = 'Audit.xlsx'; a.click(); }
+        if (resp.ok) { const b = await resp.blob(); const url = URL.createObjectURL(b); const a = document.createElement('a'); a.href = url; a.download = 'Presence_Audit.xlsx'; a.click(); }
     };
 
     document.getElementById('excel-file').onchange = async (e) => {
@@ -190,12 +276,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = document.getElementById('upload-status');
         const label = document.getElementById('upload-btn-label');
         label.innerText = "Updating...";
-        status.className = "mt-6 card !py-4 text-center bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 block";
-        status.innerText = "Processing...";
+        status.className = "card !py-4 text-center bg-blue-50/60 dark:bg-blue-900/10 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm block";
+        status.innerText = "Processing batch templates...";
         const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
         const data = await resp.json();
         label.innerHTML = 'Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">';
-        status.className = `mt-6 card !py-4 text-center block ${data.status === 'completed' ? 'bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800'}`;
+        status.className = `card !py-4 text-center block ${data.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60' : 'bg-rose-50 dark:bg-rose-900/10 text-rose-800 dark:text-rose-400 border-rose-200 dark:border-rose-800'}`;
         status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2 text-left inline-block"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
     };
 });
