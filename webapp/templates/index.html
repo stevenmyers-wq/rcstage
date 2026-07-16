@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RingCentral RCAU API Tools</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     
     <script>
@@ -17,37 +18,100 @@
       }
     </script>
     
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
-    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
-    <style>
-      .message-box { padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
-      /* Removed the static #app-container max-width to allow fluid stretching */
-    </style>
-  </head>
-  <body class="transition-colors duration-200">
-    <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 message-box w-96 hidden z-50"></div>
+    <style type="text/tailwindcss">
+      @layer base {
+        body {
+          @apply bg-slate-50 text-slate-700 dark:bg-[#0b1120] dark:text-slate-300 font-sans antialiased transition-colors duration-300;
+        }
+        ::-webkit-scrollbar { @apply w-2 h-2; }
+        ::-webkit-scrollbar-track { @apply bg-transparent; }
+        ::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-slate-700 rounded-full; }
+      }
 
-    <div id="app-container" class="w-full h-full space-y-8">
-      <div class="flex flex-col md:flex-row justify-between items-center mb-8">
+      @layer components {
+        /* Soft, modern cards */
+        .card {
+          @apply bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/50 shadow-sm p-6 md:p-8 transition-all duration-300;
+        }
+
+        /* Typography */
+        .text-heading { @apply text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100; }
+        .text-subheading { @apply text-sm text-slate-500 dark:text-slate-400 leading-relaxed; }
+
+        /* Tactile Buttons */
+        .btn {
+          @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed;
+        }
+        .btn-primary {
+          @apply btn bg-blue-600 text-white shadow-sm hover:bg-blue-700 focus:ring-4 focus:ring-blue-500/30;
+        }
+        .btn-secondary {
+          @apply btn bg-slate-100 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600;
+        }
+        .btn-success {
+          @apply btn bg-emerald-600 text-white shadow-sm hover:bg-emerald-700;
+        }
+        .btn-danger {
+          @apply btn bg-rose-600 text-white shadow-sm hover:bg-rose-700;
+        }
+
+        /* Form Elements */
+        .input-label {
+          @apply block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 ml-1;
+        }
+        .input-field {
+          @apply w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none;
+        }
+        .file-input {
+          @apply block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/30 dark:file:text-blue-400 hover:file:bg-blue-100 cursor-pointer;
+        }
+
+        /* Tables */
+        .data-table {
+          @apply w-full text-left border-collapse text-sm whitespace-nowrap;
+        }
+        .data-table th {
+          @apply px-4 py-3 font-semibold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700;
+        }
+        .data-table td {
+          @apply px-4 py-3 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/50;
+        }
+        .data-table tr {
+          @apply hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors;
+        }
+      }
+    </style>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  </head>
+  <body>
+    <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 w-96 hidden z-50 p-4 rounded-xl shadow-xl text-sm font-medium text-center transition-all"></div>
+
+    <div id="app-container" class="max-w-[1800px] w-full mx-auto space-y-8">
+      
+      <div class="flex flex-col md:flex-row justify-between items-center mb-8 px-4 sm:px-0">
         <div class="text-center md:text-left">
-          <h1 class="text-4xl font-bold text-gray-800 dark:text-white">RingCentral RCAU API Tools</h1>
-          <p class="text-gray-500 dark:text-gray-400 mt-1">
+          <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">RingCentral RCAU API Tools</h1>
+          <p class="text-slate-500 dark:text-slate-400 mt-1 text-sm">
             Cloud Run Service URL: {{ RC_REDIRECT_URI | default("http://localhost:8080/auth/callback") | replace("/auth/callback", "") }}
           </p>
         </div>
         
-        <button id="theme-toggle" class="mt-4 md:mt-0 p-2 rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-slate-600 transition outline-none focus:ring-2 focus:ring-blue-500">
+        <button id="theme-toggle" class="mt-4 md:mt-0 p-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition outline-none border border-slate-200 dark:border-slate-700 shadow-sm">
           <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
           <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
         </button>
       </div>
 
       {% if not AUTHENTICATED %}
-      <div id="login-screen" class="card max-w-2xl mx-auto">
-        <h2 class="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">Login to RCAU Tools</h2>
-        <p class="text-gray-600 dark:text-gray-400 mb-6">Sign in with your RingCentral Google account to unlock the dashboard.</p>
-        <div class="flex flex-col items-center justify-center space-y-4 mt-6">
+      <div id="login-screen" class="card max-w-lg mx-auto text-center mt-20">
+        <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <h2 class="text-2xl font-bold mb-2 text-slate-800 dark:text-white">Login to RCAU Tools</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-8">Sign in with your RingCentral Google account to unlock the dashboard.</p>
+        <div class="flex flex-col items-center justify-center">
           <script src="https://accounts.google.com/gsi/client" async defer></script>
           <script>
             function handleCredentialResponse(response) {
@@ -63,74 +127,71 @@
             }
           </script>
           <div id="g_id_onload" data-client_id="{{ GOOGLE_CLIENT_ID }}" data-context="signin" data-ux_mode="popup" data-callback="handleCredentialResponse" data-auto_prompt="false"></div>
-          <div class="g_id_signin" data-type="standard" data-shape="rectangular" data-theme="outline" data-text="sign_in_with" data-size="large" data-logo_alignment="left"></div>
-          <p class="text-xs text-gray-400 mt-4">Authorized RingCentral personnel only.</p>
+          <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="outline" data-text="sign_in_with" data-size="large" data-logo_alignment="left"></div>
+          <p class="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 mt-6">Authorized RingCentral personnel only.</p>
         </div>
       </div>
 
       {% else %}
       <div id="app-dashboard" class="space-y-6 w-full">
-        <div class="space-y-4">
-          <div class="flex justify-between items-center p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg shadow-sm border border-indigo-200 dark:border-indigo-800">
-            <div class="text-lg font-medium text-gray-700 dark:text-gray-300">Welcome! Role: <span class="font-bold text-indigo-700 dark:text-indigo-400">{{ USER_ROLE }}</span></div>
-            <a href="{{ url_for('core.logout') }}" class="btn-secondary !bg-red-500 hover:!bg-red-600 !text-white !border-transparent text-sm">Logout</a>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div id="rc-connection-card" class="card rc-disconnected p-4 shadow-sm">
-              <div class="flex justify-between items-center">
-                <div class="space-y-1">
-                  <h2 class="text-lg font-bold">RingEX Connection</h2>
-                  <div id="rc-status-display" class="font-semibold text-sm">Status: Disconnected</div>
-                </div>
-                <div class="text-right">
-                  <div id="current-rc-email" class="text-xs font-medium opacity-80" style="display: none"></div>
-                </div>
-              </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="card !p-5 flex flex-col justify-center bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 border-indigo-100 dark:border-indigo-800/30">
+                <p class="text-xs font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 mb-1">Authenticated</p>
+                <div class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Role: {{ USER_ROLE }}</div>
+                <a href="{{ url_for('core.logout') }}" class="btn-secondary !text-xs !py-1.5 w-max">Sign Out</a>
             </div>
 
-            <div id="cxone-connection-card-status" class="card rc-disconnected p-4 shadow-sm">
-              <div class="flex justify-between items-center">
-                <div class="space-y-1">
-                  <h2 class="text-lg font-bold">RCCC (CXone) Connection</h2>
-                  <div id="cxone-status-display" class="font-semibold text-sm">Status: Disconnected</div>
+            <div id="rc-connection-card" class="card !p-5 flex flex-col justify-center">
+                <div class="flex justify-between items-start mb-2">
+                    <h2 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">RingEX Connection</h2>
+                    <span id="rc-status-indicator" class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
                 </div>
-                <div class="text-right">
-                  <div id="current-cxone-region" class="text-xs font-medium opacity-80" style="display: none"></div>
-                </div>
-              </div>
+                <div id="rc-status-display" class="font-bold text-slate-800 dark:text-slate-100 text-lg">Disconnected</div>
+                <div id="current-rc-email" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-2 truncate hidden"></div>
             </div>
-          </div>
+
+            <div id="cxone-connection-card-status" class="card !p-5 flex flex-col justify-center">
+                <div class="flex justify-between items-start mb-2">
+                    <h2 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">RCCC Connection</h2>
+                    <span id="cxone-status-indicator" class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                </div>
+                <div id="cxone-status-display" class="font-bold text-slate-800 dark:text-slate-100 text-lg">Disconnected</div>
+                <div id="current-cxone-region" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-2 truncate hidden"></div>
+            </div>
         </div>
 
-        <div class="flex flex-col lg:flex-row gap-6 items-start w-full">
+        <div class="flex flex-col lg:flex-row gap-8 items-start w-full">
           <div class="w-full lg:w-72 flex-shrink-0">
-            <nav class="flex flex-col space-y-1 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 py-4" aria-label="Tabs">
-              <div class="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mt-2 mb-2 pl-6">Authentication</div>
+            <nav class="flex flex-col space-y-1 card !p-3" aria-label="Tabs">
               
-              <a href="{{ url_for('core.index', tab='auth_rex') }}" class="group flex items-center px-6 py-3 text-sm font-medium border-l-4 transition-all duration-200 {% if current_tab == 'auth_rex' %} bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 {% else %} border-transparent text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 hover:text-gray-900 dark:hover:text-white {% endif %}">REX Authentication</a>
+              <div class="px-4 py-2 mt-1">
+                  <div class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Authentication</div>
+              </div>
               
-              <a href="{{ url_for('core.index', tab='auth_cxone') }}" class="group flex items-center px-6 py-3 text-sm font-medium border-l-4 transition-all duration-200 {% if current_tab == 'auth_cxone' %} bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 {% else %} border-transparent text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 hover:text-gray-900 dark:hover:text-white {% endif %}">RCCC (CXOne) Authentication</a>
+              <a href="{{ url_for('core.index', tab='auth_rex') }}" class="group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 {% if current_tab == 'auth_rex' %} bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 {% else %} text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200 {% endif %}">REX Authentication</a>
               
-              <hr class="my-4 border-gray-100 dark:border-slate-700">
+              <a href="{{ url_for('core.index', tab='auth_cxone') }}" class="group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 {% if current_tab == 'auth_cxone' %} bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 {% else %} text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200 {% endif %}">RCCC Authentication</a>
+              
+              <div class="my-2 border-b border-slate-100 dark:border-slate-700/50 mx-4"></div>
 
               {% set nav_groups = [
-                { 'id': 'cc_tools', 'title': 'CC Tools', 'tabs': [ ('cxone_audio_converter', 'CXone Audio Converter', 'Convert audio files to 8kHz, mono, u-law'), ('cxone_script_analyzer', 'CXone Script Analyzer', 'Generate Changelogs & As-Builts') ] },
-                { 'id': 'pm_tools', 'title': 'PM Tools', 'tabs': [ ('port_mapping', 'Port Mapping', 'Upload LOA and BRD to extract and map phone numbers') ] },
-                { 'id': 'se_tools', 'title': 'SE Tools', 'tabs': [ ('account_discovery', 'Account Discovery', 'Pre-engagement account analysis and heatmap'), ('agent_form', 'Agent Form', 'AI-assisted personal injury triage form'), ('ai_demo_calls', 'AI Demo Calls', 'Generate and play demo calls on EX and CX'), ('click_to_call', 'Click to Call', 'RingCX Outbound Dialer Demo'), ('d365_ringcx', 'D365 RingCX Demo', 'D365 + RingCX outbound lead flow demo'), ('audio_streaming', 'RingCX Streaming', 'Live call audio streaming and transcription') ] },
-                { 'id': 'uc_tools', 'title': 'UC Tools', 'tabs': [ ('air_management', 'AIR Management', 'Audit, Create, and Update AI Receptionists'), ('presence', 'BLF & Presence', 'Audit and update BLF monitored lines and presence permissions'), ('bulk_opening', 'Bulk Opening Hours', 'Mass configuration changes for Sites/Queues'), ('analytics', 'Business Analytics', 'Generate holistic call aggregation and performance reports'), ('call_flow', 'Call Flow Visualiser', 'Displays visual routing path for numbers'), ('cost_centres', 'Cost Centres', 'Audit and update Cost Centre allocations for Extensions, Numbers, and Devices'), ('custom_rules', 'Custom Rules', 'Bulk update answering rules via CSV'), ('device_audit', 'Device Audit', 'Audit all devices for online/offline status'), ('device_ringing_audit', 'Device Ringing Audit', 'Audit users to check which devices and apps are enabled to ring'), ('device_swap', 'Device Swap', 'Swaps DLs/Extensions between two devices'), ('extension_number_changer', 'Extension Number Changer', 'Bulk change extension numbers'), ('renamer', 'Extension Renamer', 'Bulk edit extension names'), ('live_events', 'Live Events', 'Real-time subscription listener'), ('message_management', 'Message Management', 'Download and upload custom audio greetings for Users, Call Queues, and IVRs'), ('personal_address_book', 'Multi User Address Book', 'Multi-User Personal Address Book Tool'), ('notifications', 'Notifications', 'Audit, Configure, or Bulk Update User Notification Preferences'), ('phone_number_assignment', 'Phone Number Assignment', 'Assign inventory phone numbers to extensions'), ('ringex_uat', 'RingEX UAT', 'Generate UAT scripts from routing rules'), ('sip_fetcher', 'SIP Credentials', 'Fetches credentials for devices'), ('account_migration', 'Account Migration', 'Export and Import full account configurations and audio'), ('cq_hours', 'Call Queue Manager', 'Bulk update Call Queue settings and business hours'), ('user_templates', 'User Templates', 'Bulk apply templates to users') ] }
+                { 'id': 'cc_tools', 'title': 'CC Tools', 'tabs': [ ('cxone_audio_converter', 'CXone Audio Converter'), ('cxone_script_analyzer', 'CXone Script Analyzer') ] },
+                { 'id': 'pm_tools', 'title': 'PM Tools', 'tabs': [ ('port_mapping', 'Port Mapping') ] },
+                { 'id': 'se_tools', 'title': 'SE Tools', 'tabs': [ ('account_discovery', 'Account Discovery'), ('agent_form', 'Agent Form'), ('ai_demo_calls', 'AI Demo Calls'), ('click_to_call', 'Click to Call'), ('d365_ringcx', 'D365 RingCX Demo'), ('audio_streaming', 'RingCX Streaming') ] },
+                { 'id': 'uc_tools', 'title': 'UC Tools', 'tabs': [ ('air_management', 'AIR Management'), ('presence', 'BLF & Presence'), ('bulk_opening', 'Bulk Opening Hours'), ('analytics', 'Business Analytics'), ('call_flow', 'Call Flow Visualiser'), ('cost_centres', 'Cost Centres'), ('custom_rules', 'Custom Rules'), ('device_audit', 'Device Audit'), ('device_ringing_audit', 'Device Ringing Audit'), ('device_swap', 'Device Swap'), ('extension_number_changer', 'Ext Number Changer'), ('renamer', 'Extension Renamer'), ('live_events', 'Live Events'), ('message_management', 'Message Management'), ('personal_address_book', 'Multi User Address Book'), ('notifications', 'Notifications'), ('phone_number_assignment', 'Phone Number Assignment'), ('ringex_uat', 'RingEX UAT'), ('sip_fetcher', 'SIP Credentials'), ('account_migration', 'Account Migration'), ('cq_hours', 'Call Queue Manager'), ('user_templates', 'User Templates') ] }
               ] %}
 
               {% for group in nav_groups %}
                 {% set is_active_group = group.tabs | selectattr(0, 'equalto', current_tab) | list | length > 0 %}
-                <div class="nav-group mt-2">
-                  <button class="nav-toggle flex items-center justify-between w-full px-6 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 text-gray-700 dark:text-slate-300 font-bold transition-colors focus:outline-none" onclick="toggleNavGroup('{{ group.id }}-menu', this)">
-                      <div class="flex items-center text-xs uppercase tracking-wider">{{ group.title }}</div>
-                      <svg class="nav-chevron w-4 h-4 text-gray-500 transform transition-transform duration-200 {% if is_active_group %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                <div class="nav-group mt-1">
+                  <button class="nav-toggle flex items-center justify-between w-full px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-800 dark:text-slate-200 font-bold transition-colors focus:outline-none rounded-xl" onclick="toggleNavGroup('{{ group.id }}-menu', this)">
+                      <div class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{{ group.title }}</div>
+                      <svg class="nav-chevron w-4 h-4 text-slate-400 transform transition-transform duration-200 {% if is_active_group %}rotate-180{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                   </button>
-                  <div id="{{ group.id }}-menu" class="{% if not is_active_group %}hidden{% endif %} flex-col space-y-1 pb-2">
-                      {% for tab_id, tab_name, tab_desc in group.tabs %}
-                      <a href="{{ url_for('core.index', tab=tab_id) }}" title="{{ tab_desc }}" class="group flex items-center pl-10 pr-4 py-2.5 text-sm font-medium border-l-4 transition-all duration-200 {% if current_tab == tab_id %} bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 {% else %} border-transparent text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/30 hover:text-gray-900 dark:hover:text-slate-200 {% endif %}">
+                  <div id="{{ group.id }}-menu" class="{% if not is_active_group %}hidden{% endif %} flex-col space-y-0.5 mt-1 pb-2">
+                      {% for tab_id, tab_name in group.tabs %}
+                      <a href="{{ url_for('core.index', tab=tab_id) }}" class="group flex items-center px-4 ml-2 py-2 text-sm font-semibold rounded-xl transition-all duration-200 {% if current_tab == tab_id %} bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 {% else %} text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200 {% endif %}">
                           {{ tab_name }}
                       </a>
                       {% endfor %}
@@ -139,17 +200,10 @@
               {% endfor %} 
 
               {% if USER_ROLE == 'Admin' %}
-              <hr class="my-4 border-gray-100 dark:border-slate-700">
-              <a href="{{ url_for('core.index', tab='admin_dashboard') }}" class="group flex items-center px-6 py-3 text-sm font-medium border-l-4 transition-all duration-200 mt-4 {% if current_tab == 'admin_dashboard' %}bg-red-50 dark:bg-red-900/20 border-red-600 text-red-700 dark:text-red-400{% else %}border-transparent text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10{% endif %}" title="Admin Analytics Dashboard">Admin Dashboard</a>
+              <div class="my-2 border-b border-slate-100 dark:border-slate-700/50 mx-4"></div>
+              <a href="{{ url_for('core.index', tab='admin_dashboard') }}" class="group flex items-center px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 mt-2 {% if current_tab == 'admin_dashboard' %}bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400{% else %}text-rose-600 dark:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10{% endif %}">Admin Dashboard</a>
               {% endif %}
             </nav>
-
-            {% if USER_ROLE == 'Admin' %}
-            <div class="mt-8 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded-r-lg">
-              <h3 class="text-sm font-bold text-red-800 dark:text-red-400 mb-1">Admin Mode</h3>
-              <p class="text-xs text-red-700 dark:text-red-300">Manage admins in settings.</p>
-            </div>
-            {% endif %}
           </div>
 
           <div class="flex-1 w-full min-w-0">
@@ -158,37 +212,34 @@
             
             {% if current_tab in sm_auth_tabs %}
                 {% if not session.get('sm_employee_token') %}
-                    <div class="mb-4 border-b border-gray-200 dark:border-slate-700 pb-4">
-                        <h2 class="text-3xl font-bold text-slate-800 dark:text-white mb-1">Tool Locked</h2>
-                        <p class="text-slate-500 dark:text-slate-400 text-sm">Please authenticate to access this tool.</p>
-                    </div>
-                    <div class="w-full max-w-2xl card mt-6 mx-auto">
-                        <h3 class="font-bold text-slate-800 dark:text-white mb-2">Partner Authentication Required</h3>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">You must securely authenticate with your RingCentral employee account to access the internal partner bridge for UC tools.</p>
-                        <a href="/api/sm_auth/login?tab={{ current_tab }}" class="btn-primary w-full text-center uppercase tracking-wide">
+                    <div class="w-full max-w-xl card mx-auto text-center py-12 mt-12">
+                        <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        </div>
+                        <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">Partner Authentication Required</h3>
+                        <p class="text-slate-500 dark:text-slate-400 mb-8">You must securely authenticate with your RingCentral employee account to access the internal partner bridge for UC tools.</p>
+                        <a href="/api/sm_auth/login?tab={{ current_tab }}" class="btn-primary px-8">
                             Sign In To Partner Bridge
                         </a>
                     </div>
                 {% elif not session.get('sm_isolated_token') %}
-                    <div class="mb-4 border-b border-gray-200 dark:border-slate-700 pb-4">
-                        <h2 class="text-3xl font-bold text-slate-800 dark:text-white mb-1">Target Account Required</h2>
-                        <p class="text-slate-500 dark:text-slate-400 text-sm">Please provide a target account ID.</p>
-                    </div>
-                    <div class="w-full max-w-2xl card mt-6 mx-auto">
-                        <div class="flex justify-between items-start mb-2">
-                            <h3 class="font-bold text-slate-800 dark:text-white">Impersonation Required</h3>
-                            <span class="text-[10px] bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-bold px-2 py-1 rounded">Authenticated ✓</span>
+                    <div class="w-full max-w-xl card mx-auto mt-12">
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800 dark:text-white">Target Account Required</h3>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Enter the Customer Account ID to bridge to.</p>
+                            </div>
+                            <span class="badge badge-success">Authenticated ✓</span>
                         </div>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">Enter the <strong>Target Customer Account ID</strong> to grant this tool access to the customer's account.</p>
                         <div class="space-y-4">
-                            <input type="text" id="globalTargetAccountId" class="input-field font-mono" placeholder="Target Account ID (e.g. 777100124)">
-                            <button onclick="startGlobalBridge('{{ current_tab }}')" id="globalBridgeBtn" class="btn-primary w-full uppercase">
-                                BRIDGE CONNECTION
+                            <input type="text" id="globalTargetAccountId" class="input-field font-mono" placeholder="Account ID (e.g. 777100124)">
+                            <button onclick="startGlobalBridge('{{ current_tab }}')" id="globalBridgeBtn" class="btn-primary w-full">
+                                Bridge Connection
                             </button>
-                            <div id="globalBridgeError" class="text-red-500 text-xs font-bold hidden text-center mt-2"></div>
+                            <div id="globalBridgeError" class="text-rose-500 text-xs font-bold hidden text-center mt-2"></div>
                         </div>
-                        <div class="mt-6 border-t border-slate-100 dark:border-slate-700 pt-4 text-center">
-                            <a href="/api/sm_auth/full_logout?tab={{ current_tab }}" class="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 hover:underline">Log Out of Partner Bridge</a>
+                        <div class="mt-8 text-center">
+                            <a href="/api/sm_auth/full_logout?tab={{ current_tab }}" class="text-xs font-bold text-slate-400 hover:text-rose-500 transition">Log Out of Partner Bridge</a>
                         </div>
                     </div>
                     <script>
@@ -197,27 +248,27 @@
                             const btn = document.getElementById('globalBridgeBtn');
                             const errDiv = document.getElementById('globalBridgeError');
                             if (!id) return alert('Please enter a Target Account ID');
-                            btn.disabled = true; btn.innerText = "BRIDGING..."; errDiv.classList.add('hidden');
+                            btn.disabled = true; btn.innerText = "Bridging..."; errDiv.classList.add('hidden');
                             try {
                                 const res = await fetch('/api/sm_auth/bridge', {
                                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({targetAccountId: id})
                                 });
                                 const data = await res.json();
                                 if (data.success) { window.location.href = '/?tab=' + tab; } 
-                                else { errDiv.innerText = data.error || "Bridge failed"; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "BRIDGE CONNECTION"; }
-                            } catch (e) { errDiv.innerText = "Network Error: " + e.message; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "BRIDGE CONNECTION"; }
+                                else { errDiv.innerText = data.error || "Bridge failed"; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "Bridge Connection"; }
+                            } catch (e) { errDiv.innerText = "Network Error: " + e.message; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "Bridge Connection"; }
                         }
                     </script>
                 {% else %}
-                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex justify-between items-center mb-6 shadow-sm">
+                    <div class="bg-blue-50/80 dark:bg-blue-900/20 px-5 py-3 rounded-2xl border border-blue-200/60 dark:border-blue-800/50 flex justify-between items-center mb-6 shadow-sm">
                         <div>
-                            <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase block tracking-wider">Active Impersonation Context</span>
-                            <span class="font-bold text-slate-800 dark:text-slate-200 text-sm">{{ session.get('sm_target_name') }} <span class="text-xs text-slate-500 dark:text-slate-400 font-mono font-normal ml-1">({{ session.get('sm_target_id') }})</span></span>
+                            <span class="text-[10px] font-black text-blue-600/70 dark:text-blue-400/70 uppercase tracking-widest block mb-0.5">Active Context</span>
+                            <span class="font-bold text-blue-900 dark:text-blue-100">{{ session.get('sm_target_name') }} <span class="text-xs font-mono font-medium opacity-60 ml-2">({{ session.get('sm_target_id') }})</span></span>
                         </div>
-                        <a href="/api/sm_auth/logout?tab={{ current_tab }}" class="text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 px-3 py-1.5 rounded font-bold text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-500 transition shadow-sm">EXIT / LOGOUT</a>
+                        <a href="/api/sm_auth/logout?tab={{ current_tab }}" class="btn-secondary !py-1.5 !px-3 text-xs bg-white dark:bg-slate-800">Exit Bridge</a>
                     </div>
                     
-                    <div class="bg-transparent w-full">
+                    <div class="w-full">
                         {% if current_tab == 'air_management' %} {% include 'includes/air_management_tab.html' %} 
                         {% elif current_tab == 'presence' %} {% include 'includes/presence_tab.html' %} 
                         {% elif current_tab == 'bulk_opening' %} {% include 'includes/bulk_opening_tab.html' %}
@@ -245,7 +296,7 @@
                 {% endif %}
                 
             {% else %}
-                <div class="bg-transparent w-full">
+                <div class="w-full">
                     {% if current_tab == 'auth_rex' %} {% include 'includes/auth_rex_tab.html' %} 
                     {% elif current_tab == 'auth_cxone' %} {% include 'includes/auth_cxone_tab.html' %} 
                     {% elif current_tab == 'analytics' %} {% include 'includes/analytics_tab.html' %} 
@@ -259,9 +310,12 @@
                     {% elif current_tab == 'ai_demo_calls' %} {% include 'includes/ai_demo_calls_tab.html' %} 
                     {% elif current_tab == 'click_to_call' %} {% include 'includes/click_to_call_tab.html' %} 
                     {% else %}
-                    <div class="card text-center py-16 flex flex-col items-center">
-                        <svg class="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                        <p class="text-gray-500 dark:text-gray-400 text-lg font-medium">Select a tool from the sidebar to begin.</p>
+                    <div class="card text-center py-20 flex flex-col items-center">
+                        <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Select a Tool</h3>
+                        <p class="text-slate-500 dark:text-slate-400">Choose an application from the sidebar menu to get started.</p>
                     </div>
                     {% endif %}
                 </div>
@@ -289,6 +343,35 @@
               chevron.classList.remove('rotate-180');
           }
       }
+      
+      // Override status display logic to update the new indicator dot instead of full card background
+      document.addEventListener("DOMContentLoaded", () => {
+          // Wrap the original updateRcStatusDisplay if it exists to also update the indicator dot
+          if (typeof window.updateRcStatusDisplay === 'function') {
+              const origUpdateRc = window.updateRcStatusDisplay;
+              window.updateRcStatusDisplay = function(status, rcEmail, clientId) {
+                  origUpdateRc(status, rcEmail, clientId);
+                  const ind = document.getElementById('rc-status-indicator');
+                  if (ind) {
+                      if (status === 'connected') ind.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
+                      else ind.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+                  }
+              };
+          }
+          
+          if (typeof window.updateCxoneStatusDisplay === 'function') {
+              const origUpdateCx = window.updateCxoneStatusDisplay;
+              window.updateCxoneStatusDisplay = function(status, region, buName) {
+                  origUpdateCx(status, region, buName);
+                  const ind = document.getElementById('cxone-status-indicator');
+                  if (ind) {
+                      if (status === 'connected') ind.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
+                      else if (status === 'expired') ind.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]';
+                      else ind.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+                  }
+              };
+          }
+      });
     </script>
   </body>
 </html>
