@@ -1,91 +1,91 @@
-<div class="space-y-6 animate-fade-in p-4 w-full">
-    <div class="mb-4 border-b border-gray-200 pb-4">
-        <h2 class="text-3xl font-bold text-slate-800 mb-1">Account Migration Tool</h2>
-        <p class="text-slate-500 text-sm">Export all programming data, user settings, announcements, queues, IVR maps, and all audio files from the currently connected account into a ZIP archive, and restore them to a new tenant.</p>
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Account Migration Tool</h2>
+        <p class="text-subheading">Export all programming data, user settings, announcements, queues, IVR maps, and all audio files from the currently connected account into a ZIP archive, and restore them to a new tenant.</p>
     </div>
 
-    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm">
+    <div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-600 p-4 rounded-r-lg shadow-sm">
         <div class="flex items-center">
             <div class="flex-shrink-0">
-                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                <svg class="h-5 w-5 text-yellow-400 dark:text-yellow-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
             </div>
             <div class="ml-3">
-                <p class="text-sm text-yellow-700"><strong>Warning:</strong> You can only be connected to one account at a time. Ensure you are connected to the <strong>Source Account</strong> when exporting, and the <strong>Destination Account</strong> when importing.</p>
+                <p class="text-sm text-yellow-700 dark:text-yellow-300"><strong>Warning:</strong> You can only be connected to one account at a time. Ensure you are connected to the <strong>Source Account</strong> when exporting, and the <strong>Destination Account</strong> when importing.</p>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
         
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full">
+        <div class="card flex flex-col h-full hover:shadow-lg transition-all duration-200 group !p-6">
             <div class="flex items-center gap-3 mb-4">
-                <div class="bg-blue-100 text-blue-600 p-3 rounded-lg">
+                <div class="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 p-3 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                 </div>
                 <div>
-                    <h3 class="font-bold text-lg text-gray-800">1. Export Source Account</h3>
-                    <p class="text-xs text-gray-500">Extract deep configurations and audio settings.</p>
+                    <h3 class="font-bold text-lg text-slate-800 dark:text-slate-100">1. Export Source Account</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Extract deep configurations and audio settings.</p>
                 </div>
             </div>
             
-            <div class="flex-grow space-y-4 text-sm text-gray-600">
+            <div class="flex-grow space-y-4 text-sm text-slate-600 dark:text-slate-400">
                 <p>Scans the tenant to generate a ZIP containing machine-readable JSON, Excel audit, Cost Centers, Routing Rules, User Business Hours, Announce/Message settings, and all Custom Audio files.</p>
                 
-                <label class="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg cursor-pointer hover:bg-red-100 transition">
-                    <input type="checkbox" id="unbind-devices-cb" class="mt-1 h-4 w-4 rounded border-red-300 text-red-600 focus:ring-red-500 cursor-pointer">
+                <label class="flex items-start gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition shadow-sm">
+                    <input type="checkbox" id="unbind-devices-cb" class="mt-1 h-4 w-4 rounded border-red-300 dark:border-red-700 text-red-600 focus:ring-red-500 cursor-pointer bg-white dark:bg-slate-900">
                     <div>
-                        <span class="font-bold text-red-800 block">Unbind Devices (Destructive)</span>
-                        <span class="text-xs text-red-600">Removes the digital lines from physical phones on the source account so their MAC addresses can be provisioned on the new account.</span>
+                        <span class="font-bold text-red-800 dark:text-red-300 block">Unbind Devices (Destructive)</span>
+                        <span class="text-xs text-red-600 dark:text-red-400 leading-snug block mt-0.5">Removes the digital lines from physical phones on the source account so their MAC addresses can be provisioned on the new account.</span>
                     </div>
                 </label>
             </div>
 
-            <button id="btn-start-export" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition disabled:opacity-50">
+            <button id="btn-start-export" class="mt-6 w-full btn-primary !py-3 disabled:opacity-50">
                 Start Full Account Export
             </button>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full">
+        <div class="card flex flex-col h-full hover:shadow-lg transition-all duration-200 group !p-6">
             <div class="flex items-center gap-3 mb-4">
-                <div class="bg-emerald-100 text-emerald-600 p-3 rounded-lg">
+                <div class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 p-3 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                 </div>
                 <div>
-                    <h3 class="font-bold text-lg text-gray-800">2. Import to Destination</h3>
-                    <p class="text-xs text-gray-500">Restore configurations from a ZIP archive.</p>
+                    <h3 class="font-bold text-lg text-slate-800 dark:text-slate-100">2. Import to Destination</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Restore configurations from a ZIP archive.</p>
                 </div>
             </div>
             
-            <div class="flex-grow space-y-4 text-sm text-gray-600">
+            <div class="flex-grow space-y-4 text-sm text-slate-600 dark:text-slate-400">
                 <p>Upload the ZIP file. The system will map Cost Centers, create Sites, IVRs, Queues, Announcements, Message-Only extensions, Park Locations, Paging Groups, and map audio files.</p>
                 
-                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+                <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-900/50 shadow-inner">
                     <input type="file" id="import-zip-file" accept=".zip" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                    <svg class="mx-auto h-8 w-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                    <p class="text-sm font-bold text-emerald-600" id="import-filename">Select ZIP Archive</p>
-                    <p class="text-xs text-gray-500 mt-1">Drag and drop or click to browse</p>
+                    <svg class="mx-auto h-8 w-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="text-sm font-bold text-emerald-600 dark:text-emerald-500" id="import-filename">Select ZIP Archive</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Drag and drop or click to browse</p>
                 </div>
             </div>
 
-            <button id="btn-start-import" class="mt-6 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg shadow-sm transition disabled:opacity-50" disabled>
+            <button id="btn-start-import" class="mt-6 w-full btn-success !py-3 disabled:opacity-50" disabled>
                 Start Account Import
             </button>
         </div>
     </div>
 </div>
 
-<div id="migration-modal-progress" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center">
-        <h3 class="font-bold text-gray-800 text-lg mb-2" id="mig-progress-title">Processing...</h3>
-        <p class="text-sm text-gray-500 mb-6" id="mig-progress-desc">Please do not close this window or navigate away.</p>
+<div id="migration-modal-progress" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 text-center border border-slate-200 dark:border-slate-700 transform scale-95 transition-transform duration-200">
+        <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg mb-2" id="mig-progress-title">Processing...</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6" id="mig-progress-desc">Please do not close this window or navigate away.</p>
         
-        <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
+        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
             <div id="mig-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
-        <div class="text-xs font-bold text-gray-700 text-right" id="mig-progress-pct">0%</div>
-        <div class="text-xs font-mono text-blue-600 text-left mt-2 truncate" id="mig-progress-msg">Initializing...</div>
+        <div class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right" id="mig-progress-pct">0%</div>
+        <div class="text-xs font-mono text-blue-600 dark:text-blue-400 text-left mt-3 bg-blue-50 dark:bg-blue-900/30 p-2 rounded border border-blue-100 dark:border-blue-800 truncate" id="mig-progress-msg">Initializing...</div>
         
-        <button id="mig-progress-close-btn" class="mt-6 hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-lg transition">
+        <button id="mig-progress-close-btn" class="mt-6 hidden w-full btn-secondary">
             Close
         </button>
     </div>
