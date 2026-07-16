@@ -9,6 +9,7 @@
 
     <div class="flex flex-col lg:flex-row gap-6 w-full">
         
+        <!-- Controls Column -->
         <div class="w-full lg:w-1/3 flex flex-col gap-6">
             
             <div class="card !p-0 overflow-hidden">
@@ -133,6 +134,7 @@
             </div>
         </div>
         
+        <!-- Right Script/Visualizer Column -->
         <div class="w-full lg:w-2/3 flex flex-col min-w-0">
 
             <div id="loading-indicator" class="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 rounded-lg hidden mb-4 shadow-sm">
@@ -145,6 +147,7 @@
                 </div>
             </div>
 
+            <!-- Sticky Playback Control Bar -->
             <div id="playback-control-bar" class="hidden bg-slate-800 dark:bg-slate-900 text-white rounded-xl p-4 mb-4 flex flex-wrap items-center justify-between gap-4 shadow-lg sticky top-2 z-10 border border-slate-700">
                 <div class="flex items-center gap-2">
                     <button id="playback-start-stop-btn" onclick="toggleAutoDemo()" class="btn-primary !py-2 !px-4">
