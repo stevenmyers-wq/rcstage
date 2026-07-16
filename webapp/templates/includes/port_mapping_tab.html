@@ -1,57 +1,57 @@
-<h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Configuration Files</h3>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+<h3 class="text-heading mb-4 border-b border-slate-200 dark:border-slate-700 pb-2 w-full">Configuration Files</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 w-full">
     
-    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-        <div class="text-blue-500 mb-2 text-3xl">📄</div>
-        <h4 class="font-bold text-gray-700 mb-3">LOA (PDF)</h4>
+    <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-800 shadow-sm">
+        <div class="text-blue-500 mb-3 text-4xl drop-shadow-sm">📄</div>
+        <h4 class="font-bold text-slate-700 dark:text-slate-200 mb-4 text-lg">LOA (PDF)</h4>
         
-        <label class="cursor-pointer block mb-3">
-            <span class="text-blue-600 font-bold hover:underline bg-blue-50 px-4 py-2 rounded-full border border-blue-200 inline-block">Upload LOA File</span>
+        <label class="cursor-pointer block mb-4">
+            <span class="text-blue-600 dark:text-blue-400 font-bold hover:underline bg-blue-50 dark:bg-blue-900/30 px-5 py-2.5 rounded-full border border-blue-200 dark:border-blue-800 inline-block transition-colors">Upload LOA File</span>
             <input type="file" id="loa-file" class="hidden" accept="application/pdf">
         </label>
-        <p id="loa-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
+        <p id="loa-filename" class="text-xs text-slate-500 dark:text-slate-400 font-mono mb-5 truncate px-4">No file selected</p>
         
-        <div class="flex items-center justify-center gap-2 mb-4">
-            <hr class="w-1/4 border-gray-300">
-            <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
-            <hr class="w-1/4 border-gray-300">
+        <div class="flex items-center justify-center gap-3 mb-5">
+            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
+            <span class="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">OR</span>
+            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
         </div>
 
         <label class="block text-left">
-            <span class="text-blue-600 font-bold text-sm">Paste Google Drive Link</span>
-            <input type="url" id="loa-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://drive.google.com/file/d/...">
+            <span class="input-label !text-blue-600 dark:!text-blue-400">Paste Google Drive Link</span>
+            <input type="url" id="loa-url" class="input-field mt-1" placeholder="https://drive.google.com/file/d/...">
         </label>
     </div>
 
-    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-        <div class="text-green-500 mb-2 text-3xl">📊</div>
-        <h4 class="font-bold text-gray-700 mb-3">BRD (Excel)</h4>
+    <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition relative bg-white dark:bg-slate-800 shadow-sm">
+        <div class="text-green-500 mb-3 text-4xl drop-shadow-sm">📊</div>
+        <h4 class="font-bold text-slate-700 dark:text-slate-200 mb-4 text-lg">BRD (Excel)</h4>
         
-        <label class="cursor-pointer block mb-3">
-            <span class="text-green-600 font-bold hover:underline bg-green-50 px-4 py-2 rounded-full border border-green-200 inline-block">Upload BRD File</span>
+        <label class="cursor-pointer block mb-4">
+            <span class="text-green-600 dark:text-green-400 font-bold hover:underline bg-green-50 dark:bg-green-900/30 px-5 py-2.5 rounded-full border border-green-200 dark:border-green-800 inline-block transition-colors">Upload BRD File</span>
             <input type="file" id="brd-file" class="hidden" accept=".xlsx, .xls">
         </label>
-        <p id="brd-filename" class="text-xs text-gray-500 font-mono mb-4">No file selected</p>
+        <p id="brd-filename" class="text-xs text-slate-500 dark:text-slate-400 font-mono mb-5 truncate px-4">No file selected</p>
 
-        <div class="flex items-center justify-center gap-2 mb-4">
-            <hr class="w-1/4 border-gray-300">
-            <span class="text-xs text-gray-400 font-bold uppercase">OR</span>
-            <hr class="w-1/4 border-gray-300">
+        <div class="flex items-center justify-center gap-3 mb-5">
+            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
+            <span class="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">OR</span>
+            <hr class="w-1/4 border-slate-200 dark:border-slate-700">
         </div>
 
         <label class="block text-left">
-            <span class="text-green-600 font-bold text-sm">Paste Google Drive Link</span>
-            <input type="url" id="brd-url" class="w-full mt-1 p-2 border border-gray-300 rounded text-sm text-gray-700" placeholder="https://docs.google.com/spreadsheets/d/...">
+            <span class="input-label !text-green-600 dark:!text-green-400">Paste Google Drive Link</span>
+            <input type="url" id="brd-url" class="input-field mt-1" placeholder="https://docs.google.com/spreadsheets/d/...">
         </label>
     </div>
     
 </div>
 
-<button id="pm-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-md" disabled>
+<button id="pm-submit-btn" class="btn-primary w-full !py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md" disabled>
     Submit & Process Files
 </button>
 
-<div id="pm-status" class="hidden mt-4 p-4 rounded-lg text-sm border shadow-sm text-center"></div>
+<div id="pm-status" class="hidden mt-6 card !py-4 text-center"></div>
 
 <script>
     if (document.getElementById('pm-submit-btn')) {
@@ -106,7 +106,7 @@
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="animate-pulse">Processing AI & Mapping... (This may take 30s+)</span>';
             
-            statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-blue-50 text-blue-800 border-blue-200 block";
+            statusDiv.className = "mt-6 card !py-4 text-center bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 block";
             statusDiv.innerHTML = "Processing files, extracting numbers with Gemini, and querying live RingCentral API...";
 
             try {
@@ -126,7 +126,7 @@
                     a.click();
                     window.URL.revokeObjectURL(url);
                     
-                    statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-green-50 text-green-800 border-green-200 block";
+                    statusDiv.className = "mt-6 card !py-4 text-center bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800 block";
                     statusDiv.innerHTML = "<strong>✅ Mapping Complete!</strong> File downloaded successfully.";
                 } else {
                     const data = await response.json();
@@ -137,7 +137,7 @@
                     throw new Error(data.error || "An unknown error occurred.");
                 }
             } catch (err) {
-                statusDiv.className = "mt-4 p-4 rounded-lg text-sm border shadow-sm text-center bg-red-50 text-red-800 border-red-200 block";
+                statusDiv.className = "mt-6 card !py-4 text-center bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800 block";
                 statusDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
             } finally {
                 submitBtn.innerHTML = 'Submit & Process Files';
