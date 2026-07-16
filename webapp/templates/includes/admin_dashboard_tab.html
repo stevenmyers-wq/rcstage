@@ -11,6 +11,7 @@
 
     <div id="analytics-content" class="hidden space-y-6 w-full">
 
+        <!-- KPI STAT CARDS -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="card !p-5 flex flex-col gap-1">
                 <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Actions (Last 1000)</span>
@@ -31,7 +32,9 @@
             </div>
         </div>
 
+        <!-- CHARTS ROW 1 -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+            <!-- Tool Popularity (Bar Chart) -->
             <div class="card !p-5">
                 <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Tool Usage Popularity</h3>
                 <div class="relative h-64 w-full">
@@ -39,6 +42,7 @@
                 </div>
             </div>
 
+            <!-- API Success vs Error (Doughnut) -->
             <div class="card !p-5">
                 <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">API Actions Health</h3>
                 <div class="relative h-64 w-full">
@@ -47,6 +51,7 @@
             </div>
         </div>
 
+        <!-- Activity Over Time (Line Chart) -->
         <div class="card !p-5 w-full">
             <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Activity Over Time (Last 1000 Actions)</h3>
             <div class="relative h-72 w-full">
@@ -54,8 +59,10 @@
             </div>
         </div>
 
+        <!-- CHARTS ROW 2 -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
 
+            <!-- Top Users Leaderboard -->
             <div class="card !p-5">
                 <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Top Users</h3>
                 <div id="leaderboard-table" class="overflow-x-auto w-full">
@@ -72,6 +79,7 @@
                 </div>
             </div>
 
+            <!-- Per-Tool Error Breakdown -->
             <div class="card !p-5">
                 <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Error Rate by Tool</h3>
                 <div class="relative h-64 w-full">
