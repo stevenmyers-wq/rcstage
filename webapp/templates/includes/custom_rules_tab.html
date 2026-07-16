@@ -1,59 +1,59 @@
-<div class="space-y-6 animate-fade-in">
+<div class="space-y-6 animate-fade-in w-full">
     
     <div class="text-center mb-8">
-        <h2 class="text-3xl font-bold text-gray-800">Custom Rules Manager</h2>
-        <p class="text-gray-600 mt-2">Audit, Create, or Modify User Answering Rules in Bulk. The tool will attempt to use V1 Custom Rule APIs, and if this fails it will use V2 APIs.</p>
+        <h2 class="text-3xl font-bold text-slate-800 dark:text-white">Custom Rules Manager</h2>
+        <p class="text-slate-600 dark:text-slate-400 mt-2">Audit, Create, or Modify User Answering Rules in Bulk. The tool will attempt to use V1 Custom Rule APIs, and if this fails it will use V2 APIs.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
+            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                 </svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Audit Rules</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Audit Rules</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
                 Generate a comprehensive Excel report of ALL custom rules on the account. Useful for backups or auditing logic.
             </p>
-            <button onclick="auditRules()" id="auditBtn" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">
+            <button onclick="auditRules()" id="auditBtn" class="w-full bg-transparent border-2 border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 dark:hover:text-white transition-colors">
                 Generate Report
             </button>
         </div>
 
-        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-            <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
+        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
+            <div class="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                 </svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Create Rules</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Create Rules</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
                 Download a blank template to define new routing logic. Upload to create rules in bulk.
             </p>
             <div class="w-full space-y-2">
-                <a href="/api/custom_rules/template" class="block w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg text-sm transition">
+                <a href="/api/custom_rules/template" class="block w-full bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-medium py-2 px-4 rounded-lg text-sm transition">
                     1. Download Blank Template
                 </a>
-                <label class="block w-full bg-white border-2 border-green-600 text-green-600 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white transition-colors cursor-pointer">
+                <label class="block w-full bg-transparent border-2 border-green-600 text-green-600 dark:border-green-400 dark:text-green-400 font-semibold py-2 px-4 rounded-lg hover:bg-green-600 hover:text-white dark:hover:bg-green-500 dark:hover:text-white transition-colors cursor-pointer">
                     2. Upload & Create
                     <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadRules(this)">
                 </label>
             </div>
         </div>
 
-        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col items-center text-center group">
-            <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
+            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Edit Rules</h3>
-            <p class="text-gray-500 text-sm mb-6 flex-grow">
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Edit Rules</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
                 Use the "Audit" report to get Rule IDs. Modify the Excel file and upload here to update existing rules.
             </p>
-            <label class="w-full bg-white border-2 border-purple-600 text-purple-600 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">
+            <label class="w-full bg-transparent border-2 border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 dark:hover:text-white transition-colors cursor-pointer">
                 Upload to Update
                 <input type="file" class="hidden" accept=".xlsx,.csv" onchange="uploadRules(this)">
             </label>
@@ -61,12 +61,12 @@
 
     </div>
 
-    <div class="card bg-gray-900 text-white rounded-lg shadow-lg mt-8 p-0 overflow-hidden">
-        <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+    <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg mt-8 !p-0 overflow-hidden border-slate-700">
+        <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
             <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
-            <button onclick="document.getElementById('rulesLogs').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Clear</button>
+            <button onclick="document.getElementById('rulesLogs').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
         </div>
-        <div id="rulesLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-gray-300">
+        <div id="rulesLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-slate-300">
             Ready for action...
         </div>
     </div>
@@ -145,5 +145,3 @@
         input.value = '';
     }
 </script>
-
-
