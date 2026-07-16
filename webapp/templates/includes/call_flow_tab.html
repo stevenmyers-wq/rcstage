@@ -1,77 +1,80 @@
-<!-- Cytoscape + dagre -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/visualiser.css') }}">
 
-<div class="space-y-6">
-    <h3 class="text-xl font-bold text-blue-700">Call Flow Visualiser</h3>
+<div class="space-y-6 w-full animate-fade-in">
+    <div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
+        <h2 class="text-heading mb-1">Call Flow Visualiser</h2>
+        <p class="text-subheading">Enter a phone number to trace and visualize its complete routing path.</p>
+    </div>
 
-    <!-- Step 1 -->
-    <div class="card space-y-4">
-        <h4 class="text-lg font-semibold text-gray-800">1. Select Entry Point</h4>
-        <div class="flex gap-4 items-center">
-            <div class="relative w-full">
+    <div class="card space-y-4 w-full">
+        <h4 class="text-lg font-semibold text-slate-800 dark:text-slate-100">1. Select Entry Point</h4>
+        <div class="flex flex-col md:flex-row gap-4 items-center">
+            <div class="relative w-full flex-1">
                 <input type="text" id="visualiser-search-input"
-                    class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    class="input-field w-full"
                     placeholder="Loading account data…" autocomplete="off" disabled />
                 <div id="search-results-container"
-                    class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
+                    class="hidden absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
                 </div>
             </div>
-            <button type="button" id="visualize-button" disabled
-                class="bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 transition whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="button" id="visualize-button" disabled class="btn-primary w-full md:w-auto px-8 h-[46px]">
                 Visualize
             </button>
         </div>
-        <p id="loading-indicator" class="text-xs text-gray-500">Loading account data…</p>
+        <p id="loading-indicator" class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+            <span class="spinner w-3 h-3 border-2"></span> Loading account data…
+        </p>
     </div>
 
-    <!-- Step 2: Diagram -->
-    <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-6 space-y-3">
-        <div class="flex items-center justify-between">
-            <h4 class="text-lg font-semibold text-gray-800">2. Call Flow Diagram</h4>
-            <button id="btn-print" class="hidden text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded border border-gray-300 transition print:hidden">
+    <div class="card !p-0 overflow-hidden w-full flex flex-col">
+        <div class="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h4 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Call Flow Diagram</h4>
+            <button id="btn-print" class="hidden btn-secondary !py-1.5 !px-3 text-xs print:hidden">
                 🖨 Print / Save PDF
             </button>
         </div>
 
-        <div class="flow-legend print:hidden">
-            <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div>Phone Number</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#7c3aed;"></div>Auto Receptionist</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#0891b2;"></div>IVR Menu</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#d97706;"></div>Call Queue</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#059669;"></div>User / Agent</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#6b7280;"></div>Voicemail</div>
-            <div class="legend-item"><div class="legend-dot" style="background:#dc2626;"></div>External Transfer</div>
-            <div class="legend-item text-gray-400 text-xs ml-2">Hover node to preview · Click to pin · Drag pinned panel</div>
+        <div class="flex flex-wrap gap-x-4 gap-y-2 p-4 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 print:hidden items-center">
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-blue-500"></div>Phone Number</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-purple-600"></div>Auto Receptionist</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-cyan-600"></div>IVR Menu</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-amber-500"></div>Call Queue</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-emerald-600"></div>User / Agent</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-gray-500"></div>Voicemail</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-red-600"></div>External Transfer</div>
+            <div class="text-slate-400 dark:text-slate-500 ml-auto italic">Hover node to preview · Click to pin · Drag pinned panel</div>
         </div>
 
-        <div id="diagram-wrapper" style="position:relative;">
-            <div id="call-flow-diagram" class="flex items-center justify-center text-gray-400">
+        <div id="diagram-wrapper" class="relative w-full" style="min-height: 600px;">
+            <div id="call-flow-diagram" class="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900/50">
                 <span>Select an entry point above and click Visualize.</span>
             </div>
 
-            <!-- Pinned detail panels are injected here by JS -->
-
-            <div id="zoom-controls" class="controls-overlay print:hidden" style="display:none;">
-                <button class="ctrl-btn" id="btn-zoom-in"  title="Zoom In">+</button>
-                <button class="ctrl-btn" id="btn-zoom-out" title="Zoom Out">−</button>
-                <button class="ctrl-btn" id="btn-reset"    title="Fit to screen">⟲</button>
-                <button class="ctrl-btn" id="btn-save-png" title="Download PNG">💾</button>
+            <div id="zoom-controls" class="absolute bottom-4 right-4 z-10 bg-white/90 dark:bg-slate-800/90 p-1.5 rounded-lg shadow-md border border-slate-200 dark:border-slate-600 flex gap-1 hidden backdrop-blur-sm print:hidden">
+                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors" id="btn-zoom-in" title="Zoom In">+</button>
+                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors" id="btn-zoom-out" title="Zoom Out">−</button>
+                <button class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 font-bold transition-colors" id="btn-reset" title="Fit to screen">⟲</button>
+                <div class="w-px h-6 bg-slate-300 dark:bg-slate-600 my-auto mx-1"></div>
+                <button class="px-3 h-8 flex items-center justify-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 text-xs font-bold transition-colors" id="btn-save-png" title="Download PNG">💾 PNG</button>
             </div>
         </div>
 
-        <p class="text-sm text-gray-500 bg-blue-50 p-3 rounded-lg print:hidden">
+        <div class="p-4 bg-blue-50 dark:bg-blue-900/20 text-sm text-slate-600 dark:text-slate-400 border-t border-blue-100 dark:border-blue-800 print:hidden">
             💡 <strong>Hover</strong> a node to preview details · <strong>Click</strong> to pin a detail panel · <strong>Drag</strong> pinned panels to reposition · Pinned panels appear in print
-        </p>
+        </div>
     </div>
 
-    <!-- Step 3: API Log -->
-    <div class="card space-y-3 print:hidden">
-        <h4 class="text-lg font-semibold text-gray-800">3. Live API Debug Log</h4>
-        <div id="api-log-container" class="mt-4 p-4 border border-gray-200 bg-gray-900 text-white rounded-lg max-h-72 overflow-y-auto font-mono text-xs"></div>
+    <div class="card !p-0 overflow-hidden w-full print:hidden">
+        <div class="p-4 bg-slate-900 dark:bg-slate-950 border-b border-slate-700 flex justify-between items-center">
+            <h4 class="font-mono font-bold text-sm text-white">3. Live API Debug Log</h4>
+        </div>
+        <div id="api-log-container" class="p-4 bg-slate-800 dark:bg-slate-900 text-green-400 font-mono text-xs h-64 overflow-y-auto leading-relaxed shadow-inner">
+            <div class="text-slate-500 italic">Awaiting execution...</div>
+        </div>
     </div>
 </div>
 
@@ -97,8 +100,8 @@
     let searchTimer  = null;
     let cy           = null;
     let allResults   = [];
-    let hoverPreview = null; // single floating preview on hover
-    let pinnedPanels = [];   // array of pinned panel elements
+    let hoverPreview = null; 
+    let pinnedPanels = [];   
 
     const searchInput   = document.getElementById('visualiser-search-input');
     const resultsList   = document.getElementById('search-results-container');
@@ -147,13 +150,13 @@
     function renderDropdown(results) {
         resultsList.innerHTML = '';
         if (!results.length) {
-            resultsList.innerHTML = '<div class="p-3 text-sm text-gray-500">No results.</div>';
+            resultsList.innerHTML = '<div class="p-3 text-sm text-slate-500 dark:text-slate-400">No results.</div>';
             resultsList.classList.remove('hidden');
             return;
         }
         results.forEach(item => {
             const div = document.createElement('div');
-            div.className = 'px-4 py-2 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-0 text-sm text-gray-800';
+            div.className = 'px-4 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm text-slate-800 dark:text-slate-200 transition-colors';
             div.textContent = item.text;
             div.addEventListener('click', () => {
                 searchInput.value = item.text;
@@ -205,7 +208,7 @@
         if (!nodeData.tooltip) return;
 
         hoverPreview = document.createElement('div');
-        hoverPreview.className = 'detail-panel hover-preview';
+        hoverPreview.className = 'detail-panel hover-preview bg-slate-900 border border-slate-700 shadow-2xl z-[999] text-white opacity-95';
         hoverPreview.appendChild(buildPanelContent(nodeData));
         wrapper.appendChild(hoverPreview);
         positionNearCursor(hoverPreview, clientX, clientY);
@@ -234,19 +237,19 @@
     // ── Pinned panels (persistent, draggable, multiple allowed) ──────
     function createPinnedPanel(nodeData, clientX, clientY) {
         const panel = document.createElement('div');
-        panel.className = 'detail-panel pinned-panel';
+        panel.className = 'detail-panel pinned-panel bg-slate-900 border border-slate-700 shadow-2xl z-50 text-white';
 
         // Header
         const header = document.createElement('div');
-        header.className = 'detail-panel-header';
+        header.className = 'detail-panel-header bg-slate-950 border-b border-slate-800 text-slate-100 flex justify-between items-center px-3 py-2 cursor-grab select-none rounded-t-lg';
 
         const title = document.createElement('span');
-        title.className = 'detail-panel-title';
+        title.className = 'detail-panel-title font-bold text-xs truncate max-w-[200px]';
         title.textContent = (nodeData.label || '').split('\n')[0].replace('─────────────', '').trim();
         header.appendChild(title);
 
         const closeBtn = document.createElement('button');
-        closeBtn.className = 'detail-panel-close';
+        closeBtn.className = 'detail-panel-close text-slate-400 hover:text-white transition';
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', () => {
             panel.remove();
@@ -257,7 +260,7 @@
 
         // Body
         const body = document.createElement('div');
-        body.className = 'detail-panel-body';
+        body.className = 'detail-panel-body p-3 overflow-y-auto max-h-[40vh]';
         body.appendChild(buildPanelContent(nodeData));
         panel.appendChild(body);
 
@@ -266,7 +269,7 @@
 
         // Position near where the node was clicked, offset slightly
         const parentRect = wrapper.getBoundingClientRect();
-        const offset = pinnedPanels.length * 20; // cascade each new panel
+        const offset = pinnedPanels.length * 20; 
         let x = clientX - parentRect.left + 16 + offset;
         let y = clientY - parentRect.top  + 16 + offset;
         const W = 260;
@@ -313,14 +316,14 @@
         removeHoverPreview();
 
         diagramDiv.innerHTML = `
-            <div class="flex flex-col items-center gap-3 text-gray-500">
-                <svg class="animate-spin h-10 w-10 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <div class="flex flex-col items-center gap-3 text-slate-500 dark:text-slate-400">
+                <svg class="animate-spin h-10 w-10 text-purple-600 dark:text-purple-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                 </svg>
                 <p>Tracing call flow — may take 15–30s for large accounts…</p>
             </div>`;
-        logDiv.innerHTML = '<div class="text-gray-400">Running API calls…</div>';
+        logDiv.innerHTML = '<div class="text-slate-400">Running API calls…</div>';
 
         try {
             const res  = await fetch(`/api/rc/trace-flow/${selectedId}`);
@@ -332,7 +335,7 @@
                 throw new Error(data.message || 'Failed to generate flow.');
             }
         } catch (err) {
-            diagramDiv.innerHTML = `<div class="p-8 text-red-500 font-semibold">${err.message}</div>`;
+            diagramDiv.innerHTML = `<div class="p-8 text-red-500 dark:text-red-400 font-semibold">${err.message}</div>`;
         } finally {
             vizBtn.disabled = false;
         }
@@ -348,6 +351,11 @@
             selector: `node[type="${type}"]`,
             style: { 'background-color': c.bg, 'border-color': c.border },
         }));
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const edgeColor = isDark ? '#94a3b8' : '#475569';
+        const edgeBgColor = isDark ? '#1e293b' : '#ffffff';
+        const edgeBorderColor = isDark ? '#334155' : '#cbd5e1';
 
         const stylesheet = [
             {
@@ -377,11 +385,9 @@
                 selector: 'edge',
                 style: {
                     'width':                         2,
-                    'line-color':                    '#94a3b8',
-                    'target-arrow-color':            '#94a3b8',
+                    'line-color':                    isDark ? '#475569' : '#94a3b8',
+                    'target-arrow-color':            isDark ? '#475569' : '#94a3b8',
                     'target-arrow-shape':            'triangle',
-                    // unbundled-bezier lets us set per-edge control-point-distances
-                    // so parallel edges between the same two nodes fan out visually
                     'curve-style':                   'unbundled-bezier',
                     'control-point-distances':       'data(cpd)',
                     'control-point-weights':         0.5,
@@ -389,13 +395,13 @@
                     'font-size':                     '11px',
                     'font-family':                   'Inter, system-ui, sans-serif',
                     'font-weight':                   '500',
-                    'color':                         '#1e293b',
+                    'color':                         edgeColor,
                     'text-rotation':                 'none',
-                    'text-background-color':         '#ffffff',
+                    'text-background-color':         edgeBgColor,
                     'text-background-opacity':       1,
                     'text-background-padding':       '3px 6px',
                     'text-background-shape':         'round-rectangle',
-                    'text-border-color':             '#cbd5e1',
+                    'text-border-color':             edgeBorderColor,
                     'text-border-width':             1,
                     'text-border-opacity':           1,
                 },
@@ -419,8 +425,6 @@
             return { data: { ...d, displayLabel: parts.join('\n') } };
         });
 
-        // Assign control-point-distances to fan out parallel edges.
-        // Group edges by "source->target" pair, then spread them symmetrically.
         const pairCount = {};
         graphData.edges.forEach(e => {
             const key = `${e.data.source}__${e.data.target}`;
@@ -433,8 +437,6 @@
             const idx   = pairIndex[key] = (pairIndex[key] || 0);
             pairIndex[key]++;
 
-            // Spread: centre at 0, fan out by 60px per edge
-            // e.g. 1 edge → [0], 2 edges → [-40, 40], 3 → [-60, 0, 60]
             const spread = 60;
             const offset = total === 1 ? 0 : (idx - (total - 1) / 2) * spread;
 
@@ -499,7 +501,7 @@
         document.getElementById('btn-reset').onclick    = () => cy.fit(undefined, 50);
 
         document.getElementById('btn-save-png').onclick = () => {
-            const png = cy.png({ scale: 2, bg: '#f8fafc', full: true });
+            const png = cy.png({ scale: 2, bg: isDark ? '#0f172a' : '#f8fafc', full: true });
             const a = document.createElement('a');
             a.href = png;
             a.download = 'call-flow-' + searchInput.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.png';
@@ -517,7 +519,7 @@
             const cls = ok ? 'text-green-400' : 'text-red-400';
             let detail = `<span class="text-blue-300">${l.endpoint}</span>`;
             if (!ok) detail += `<div class="pl-4 text-yellow-400">↳ ${l.status}${l.detail ? ': ' + l.detail : ''}</div>`;
-            return `<div class="mb-1 pb-1 border-b border-gray-700">
+            return `<div class="mb-1 pb-1 border-b border-slate-700">
                 <span class="${cls}">${ok ? '✅' : '❌'} ${l.code} ${l.method}</span>
                 (${l.duration}) ${detail}
             </div>`;
