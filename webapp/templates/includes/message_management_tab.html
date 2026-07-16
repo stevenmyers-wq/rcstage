@@ -1,79 +1,81 @@
 <audio id="global-audio-player" class="hidden"></audio>
 
-<div class="space-y-6 animate-fade-in w-full">
+<div class="space-y-8 animate-fade-in w-full">
     
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
-        <div>
-            <h2 class="text-heading mb-1">Greeting Studio</h2>
-            <p class="text-subheading">Audit, apply, and export custom audio across your organization.</p>
-        </div>
-        <div class="flex flex-wrap gap-3 w-full md:w-auto">
-            <button id="btn-open-upload" class="btn-primary w-full md:w-auto flex-1 md:flex-none disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                📁 Upload File
-            </button>
-            <button id="btn-open-tts" class="btn-primary !bg-purple-600 hover:!bg-purple-700 w-full md:w-auto flex-1 md:flex-none disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                ✨ AI Studio
-            </button>
-            <button id="btn-open-export" class="btn-success w-full md:w-auto flex-1 md:flex-none disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                📥 Export Archive
-            </button>
-        </div>
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Greeting Studio</h2>
+        <p class="text-subheading">Audit, apply, and export custom audio across your organization.</p>
     </div>
 
-    <div class="card !p-4 flex flex-wrap gap-4 items-end w-full">
-        <div class="flex-grow min-w-[200px]">
+    <!-- Controls -->
+    <div class="flex flex-col md:flex-row gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
+        <button id="btn-open-upload" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            📁 Upload File
+        </button>
+        <button id="btn-open-tts" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            ✨ AI Studio
+        </button>
+        <button id="btn-open-export" class="btn-success flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            📥 Export Archive
+        </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="card !p-6 flex flex-wrap gap-6 items-end w-full">
+        <div class="input-wrapper flex-grow min-w-[200px]">
             <label class="input-label">Search Endpoints</label>
-            <input type="text" id="msg-search-input" placeholder="Name or Ext Number..." class="input-field !py-2.5">
+            <input type="text" id="msg-search-input" placeholder="Name or Ext Number..." class="input-field">
         </div>
         
-        <div class="w-full sm:w-56" id="filter-type">
+        <div class="input-wrapper w-full sm:w-64" id="filter-type">
             <label class="input-label">Type</label>
             <div class="relative">
-                <button class="ms-btn w-full text-left p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow outline-none">
+                <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
                     <span class="ms-label truncate">All Types</span>
-                    <svg class="w-4 h-4 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
-                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl">
-                    <div class="p-2 border-b border-slate-100 dark:border-slate-700">
-                        <input type="text" class="ms-search input-field !py-1.5 !px-2 !text-xs" placeholder="Search types...">
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
+                    <div class="p-3 border-b border-slate-100 dark:border-slate-700">
+                        <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search types...">
                     </div>
-                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-slate-700 dark:text-slate-300"></ul>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
                 </div>
             </div>
         </div>
 
-        <div class="w-full sm:w-56" id="filter-site">
+        <div class="input-wrapper w-full sm:w-64" id="filter-site">
             <label class="input-label">Site</label>
             <div class="relative">
-                <button class="ms-btn w-full text-left p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 flex justify-between items-center h-[42px] transition-shadow outline-none">
+                <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
                     <span class="ms-label truncate">All Sites</span>
-                    <svg class="w-4 h-4 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </button>
-                <div class="ms-dropdown hidden absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl">
-                    <div class="p-2 border-b border-slate-100 dark:border-slate-700">
-                        <input type="text" class="ms-search input-field !py-1.5 !px-2 !text-xs" placeholder="Search sites...">
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
+                    <div class="p-3 border-b border-slate-100 dark:border-slate-700">
+                        <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search sites...">
                     </div>
-                    <ul class="ms-list max-h-48 overflow-y-auto p-1 text-sm text-slate-700 dark:text-slate-300"></ul>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
                 </div>
             </div>
         </div>
 
-        <div class="flex items-center h-[42px] px-2 w-full sm:w-auto">
-            <label class="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" id="msg-ignore-defaults" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer bg-white dark:bg-slate-900">
-                <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title="Hide system default audio slots from previews and exports.">Custom Only</span>
+        <div class="flex items-center h-[52px] px-2 w-full sm:w-auto">
+            <label class="flex items-center gap-3 cursor-pointer group">
+                <input type="checkbox" id="msg-ignore-defaults" class="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer bg-white dark:bg-slate-900">
+                <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title="Hide system default audio slots from previews and exports.">Custom Only</span>
             </label>
         </div>
 
         <div class="w-full sm:w-auto">
-            <button id="msg-refresh-endpoints" class="btn-secondary w-full h-[42px] text-sm px-4">
+            <button id="msg-refresh-endpoints" class="btn-secondary w-full h-[52px] text-sm px-6">
                 Refresh List
             </button>
         </div>
     </div>
 
-    <div class="card !p-0 overflow-hidden relative w-full">
-        <div class="overflow-x-auto max-h-[600px] w-full">
+    <!-- Data Table -->
+    <div class="card !p-0 overflow-hidden w-full border-0 shadow-lg">
+        <div class="table-container border-0 rounded-none shadow-none max-h-[700px]">
             <table class="data-table">
                 <thead class="sticky top-0 z-10">
                     <tr>
@@ -81,23 +83,23 @@
                             <input type="checkbox" id="msg-select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                         </th>
                         <th class="w-1/4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="name">
-                            Endpoint Name <span id="sort-icon-name" class="ml-0.5 text-blue-600 dark:text-blue-400 font-bold">▲</span>
+                            Endpoint Name <span id="sort-icon-name" class="ml-1 text-blue-600 dark:text-blue-400">▲</span>
                         </th>
                         <th class="w-24 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="ext">
-                            Ext <span id="sort-icon-ext" class="ml-0.5 text-slate-400 dark:text-slate-500"></span>
+                            Ext <span id="sort-icon-ext" class="ml-1 text-slate-400"></span>
                         </th>
                         <th class="w-32 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="type">
-                            Type <span id="sort-icon-type" class="ml-0.5 text-slate-400 dark:text-slate-500"></span>
+                            Type <span id="sort-icon-type" class="ml-1 text-slate-400"></span>
                         </th>
                         <th class="w-32 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="site">
-                            Site <span id="sort-icon-site" class="ml-0.5 text-slate-400 dark:text-slate-500"></span>
+                            Site <span id="sort-icon-site" class="ml-1 text-slate-400"></span>
                         </th>
-                        <th class="text-right pr-6">View Greetings</th>
+                        <th class="text-right pr-8">Configured Audio</th>
                     </tr>
                 </thead>
                 <tbody id="msg-tbody">
-                    <tr><td colspan="6" class="px-4 py-12 text-center text-slate-400 dark:text-slate-500">
-                        <div class="spinner border-slate-400 dark:border-slate-500 w-5 h-5 mx-auto mb-3"></div> Loading endpoints...
+                    <tr><td colspan="6" class="py-20 text-center text-slate-400 font-medium italic">
+                        <div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div> Loading endpoints...
                     </td></tr>
                 </tbody>
             </table>
@@ -105,25 +107,26 @@
     </div>
 </div>
 
-<div id="modal-upload" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
-    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
-        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
-            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">📁 Upload Audio</h3>
+<!-- Upload Modal -->
+<div id="modal-upload" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-md transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
+        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
+            <h3 class="text-heading text-lg">📁 Upload Audio</h3>
             <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
         </div>
-        <form id="form-upload" class="p-6 space-y-5">
-            <div class="text-sm text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800 font-medium selected-count-display shadow-sm">
+        <form id="form-upload" class="p-6 space-y-6">
+            <div class="text-sm text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800 font-bold selected-count-display text-center">
                 Uploading to 0 selected endpoints.
             </div>
-            <div>
+            <div class="input-wrapper">
                 <label class="input-label">Greeting Type</label>
                 <select name="greeting_type" class="input-field"></select>
             </div>
-            <div>
+            <div class="input-wrapper">
                 <label class="input-label">Audio File (.mp3, .wav)</label>
                 <input type="file" name="file" accept=".mp3,.wav" required class="file-input">
             </div>
-            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                 <button type="button" class="close-modal btn-secondary">Cancel</button>
                 <button type="submit" class="btn-primary">Start Upload</button>
             </div>
@@ -131,24 +134,25 @@
     </div>
 </div>
 
-<div id="modal-tts" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
-    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
-        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
-            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">✨ AI Studio</h3>
+<!-- TTS Modal -->
+<div id="modal-tts" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-lg transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
+        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
+            <h3 class="text-heading text-lg">✨ AI Studio</h3>
             <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
         </div>
-        <form id="form-tts" class="p-6 space-y-5">
-            <div class="text-sm text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 p-3 rounded-lg border border-purple-200 dark:border-purple-800 font-medium selected-count-display shadow-sm">
+        <form id="form-tts" class="p-6 space-y-6">
+            <div class="text-sm text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-200 dark:border-purple-800 font-bold selected-count-display text-center">
                 Generating and applying to 0 selected endpoints.
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div class="input-wrapper">
                     <label class="input-label">Greeting Type</label>
-                    <select name="greeting_type" class="input-field focus:ring-purple-500 focus:border-purple-500"></select>
+                    <select name="greeting_type" class="input-field focus:ring-purple-500"></select>
                 </div>
-                <div>
+                <div class="input-wrapper">
                     <label class="input-label">AI Voice Actor</label>
-                    <select name="voice" class="input-field focus:ring-purple-500 focus:border-purple-500">
+                    <select name="voice" class="input-field focus:ring-purple-500">
                         <option value="Kore" selected>Kore (Firm Female, AU)</option>
                         <option value="Aoede">Aoede (Warm Female, AU)</option>
                         <option value="Charon">Charon (Calm Male, AU)</option>
@@ -156,35 +160,36 @@
                     </select>
                 </div>
             </div>
-            <div>
+            <div class="input-wrapper">
                 <label class="input-label">Prompt Script</label>
-                <textarea name="text" required class="input-field focus:ring-purple-500 focus:border-purple-500 h-28 resize-y" placeholder="Type the greeting here. It will be generated once and uploaded to all selected endpoints."></textarea>
+                <textarea name="text" required class="input-field focus:ring-purple-500 h-32 resize-y" placeholder="Type the greeting here. It will be generated once and uploaded to all selected endpoints."></textarea>
             </div>
-            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                 <button type="button" class="close-modal btn-secondary">Cancel</button>
-                <button type="submit" class="btn-primary !bg-purple-600 hover:!bg-purple-700 focus:ring-purple-500 border-transparent">Generate & Apply</button>
+                <button type="submit" class="btn-primary !bg-purple-600 hover:!bg-purple-700 focus:ring-purple-500">Generate & Apply</button>
             </div>
         </form>
     </div>
 </div>
 
-<div id="modal-export" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
-    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
-        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
-            <h3 class="font-bold text-emerald-700 dark:text-emerald-500 text-lg">📥 Bulk Archive Export</h3>
+<!-- Export Modal -->
+<div id="modal-export" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-md transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
+        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
+            <h3 class="text-heading text-lg text-emerald-600 dark:text-emerald-500">📥 Bulk Archive Export</h3>
             <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
         </div>
-        <div class="p-6 space-y-5">
-            <div class="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 font-medium selected-count-display shadow-sm">
+        <div class="p-6 space-y-6">
+            <div class="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800 font-bold selected-count-display text-center">
                 Archiving 0 selected endpoints.
             </div>
-            <p class="text-sm text-slate-600 dark:text-slate-400">
-                You are about to export a complete backup of the active audio configurations for the selected endpoints. This will generate a ZIP file containing physical copies of all custom audio files alongside a comprehensive CSV mapping audit.
+            <p class="text-subheading">
+                You are about to export a complete backup of the active audio configurations for the selected endpoints. This generates a ZIP file containing physical audio files alongside a CSV mapping audit.
             </p>
-            <p class="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-700 rounded-lg shadow-inner" id="export-note-ui">
+            <div class="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner font-medium" id="export-note-ui">
                 <strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.
-            </p>
-            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+            </div>
+            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                 <button type="button" class="close-modal btn-secondary">Cancel</button>
                 <button id="btn-trigger-export" type="button" class="btn-success">Start Export</button>
             </div>
@@ -192,20 +197,21 @@
     </div>
 </div>
 
-<div id="modal-progress" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-200 p-4">
-    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 text-center transform scale-95 transition-transform duration-200 border border-slate-200 dark:border-slate-700">
-        <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg mb-2" id="progress-title">Processing...</h3>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6" id="progress-desc">Please do not close this window.</p>
+<!-- Progress Modal -->
+<div id="modal-progress" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-md text-center transform scale-95 transition-transform duration-300 shadow-2xl">
+        <h3 class="text-heading mb-2" id="progress-title">Processing...</h3>
+        <p class="text-subheading mb-8" id="progress-desc">Please do not close this window.</p>
         
-        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
+        <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-3 overflow-hidden shadow-inner">
             <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
-        <div class="text-xs font-bold text-slate-700 dark:text-slate-300 text-right mb-4" id="progress-pct">0/0</div>
+        <div class="text-xs font-bold text-slate-500 text-right mb-6" id="progress-pct">0/0</div>
 
-        <div id="progress-log" class="h-32 overflow-y-auto bg-slate-900 text-left p-3 rounded-lg font-mono text-xs text-green-400 space-y-1 shadow-inner outline-none">
+        <div id="progress-log" class="h-32 overflow-y-auto bg-slate-900 dark:bg-[#0b1120] text-left p-4 rounded-xl font-mono text-xs text-emerald-400 space-y-1 shadow-inner outline-none">
         </div>
         
-        <button id="progress-close-btn" class="mt-5 hidden w-full btn-secondary">
+        <button id="progress-close-btn" class="mt-8 hidden w-full btn-secondary">
             Close & Refresh Table
         </button>
     </div>
@@ -215,10 +221,8 @@
 document.addEventListener('DOMContentLoaded', () => {
     let allEndpoints = [];
     let selectedIds = new Set();
-    
     let currentSortCol = 'name';
     let sortDirection = 'asc';
-    
     let selectedTypes = new Set();
     let selectedSites = new Set();
     
@@ -280,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
             list.innerHTML = '';
             items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
                 const li = document.createElement('li');
-                li.className = 'px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-2 rounded transition-colors';
+                li.className = 'px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-3 rounded-lg transition-colors font-medium';
                 const checked = selectedSet.has(item.val) ? 'checked' : '';
                 li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
                 
@@ -351,16 +355,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderTable();
             }
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-500 dark:text-red-400 font-medium">Failed to load endpoints: ${e.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="py-16 text-center text-rose-500 font-bold">Failed to load endpoints: ${e.message}</td></tr>`;
         }
     }
 
     function populateSiteFilter() {
         const sites = new Set();
-        allEndpoints.forEach(ext => {
-            sites.add(ext.site?.name || 'Main Site');
-        });
-        
+        allEndpoints.forEach(ext => { sites.add(ext.site?.name || 'Main Site'); });
         const sortedSites = Array.from(sites).sort();
         const siteOptions = sortedSites.map(s => ({val: s, label: s}));
         renderMultiSelectList('filter-site', siteOptions, selectedSites, 'All Sites', renderTable);
@@ -368,14 +369,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getFilteredEndpoints() {
         const term = searchInput.value.toLowerCase();
-        
         return allEndpoints.filter(ext => {
             const matchTerm = (ext.name || '').toLowerCase().includes(term) || (ext.extensionNumber || '').includes(term);
             const extSite = ext.site?.name || 'Main Site';
-            
             const matchType = selectedTypes.size === 0 ? true : selectedTypes.has(ext.type);
             const matchSite = selectedSites.size === 0 ? true : selectedSites.has(extSite);
-            
             return matchTerm && matchType && matchSite;
         });
     }
@@ -384,60 +382,48 @@ document.addEventListener('DOMContentLoaded', () => {
         let filtered = getFilteredEndpoints();
         
         filtered.sort((a, b) => {
-            let valA = '';
-            let valB = '';
-            
-            if (currentSortCol === 'name') {
-                valA = a.name || '';
-                valB = b.name || '';
-            } else if (currentSortCol === 'ext') {
-                valA = a.extensionNumber || '';
-                valB = b.extensionNumber || '';
-            } else if (currentSortCol === 'type') {
-                valA = a.type === 'Department' ? 'Call Queue' : a.type || '';
-                valB = b.type === 'Department' ? 'Call Queue' : b.type || '';
-            } else if (currentSortCol === 'site') {
-                valA = a.site?.name || 'Main Site';
-                valB = b.site?.name || 'Main Site';
-            }
+            let valA = '', valB = '';
+            if (currentSortCol === 'name') { valA = a.name || ''; valB = b.name || ''; } 
+            else if (currentSortCol === 'ext') { valA = a.extensionNumber || ''; valB = b.extensionNumber || ''; } 
+            else if (currentSortCol === 'type') { valA = a.type === 'Department' ? 'Call Queue' : a.type || ''; valB = b.type === 'Department' ? 'Call Queue' : b.type || ''; } 
+            else if (currentSortCol === 'site') { valA = a.site?.name || 'Main Site'; valB = b.site?.name || 'Main Site'; }
             
             let cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
             return sortDirection === 'asc' ? cmp : -cmp;
         });
 
         tbody.innerHTML = '';
-        
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No endpoints found matching filters.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="py-16 text-center text-slate-400 font-medium italic">No endpoints found matching filters.</td></tr>';
             return;
         }
 
         filtered.forEach(ext => {
             const isChecked = selectedIds.has(String(ext.id));
             const tr = document.createElement('tr');
-            tr.className = isChecked ? 'modified-row' : '';
             tr.dataset.extType = ext.type;
+            if (isChecked) tr.classList.add('bg-blue-50/50', 'dark:bg-blue-900/10');
             
             const displayType = ext.type === 'Department' ? 'Call Queue' :
                                 ext.type === 'Announcement' ? 'Announcement Only' :
                                 ext.type === 'Voicemail' ? 'Message Only' : ext.type;
 
-            let badgeColor = 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
-            if (ext.type === 'IvrMenu') badgeColor = 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800';
-            else if (ext.type === 'Department') badgeColor = 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
+            let badgeColor = 'badge-secondary';
+            if (ext.type === 'IvrMenu') badgeColor = 'badge-info';
+            else if (ext.type === 'Department') badgeColor = 'badge-warning';
 
             const siteName = ext.site?.name || 'Main Site';
 
             tr.innerHTML = `
-                <td class="px-4 py-3 text-center">
+                <td class="text-center w-12">
                     <input type="checkbox" class="row-cb h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-id="${ext.id}" ${isChecked ? 'checked' : ''}>
                 </td>
-                <td class="px-4 py-3 font-semibold">${ext.name || 'Unnamed'}</td>
-                <td class="px-4 py-3 opacity-80">${ext.extensionNumber || 'N/A'}</td>
-                <td class="px-4 py-3"><span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide border shadow-sm ${badgeColor}">${displayType}</span></td>
-                <td class="px-4 py-3 opacity-80 text-xs">${siteName}</td>
-                <td class="px-4 py-3 text-right pr-6">
-                    <button class="expand-greet-btn text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-1 focus:outline-none" data-id="${ext.id}" title="View Configured Audio">
+                <td class="font-bold text-slate-800 dark:text-slate-100">${ext.name || 'Unnamed'}</td>
+                <td class="font-mono text-slate-500 text-xs">${ext.extensionNumber || 'N/A'}</td>
+                <td><span class="badge ${badgeColor}">${displayType}</span></td>
+                <td class="text-slate-500 text-xs font-semibold">${siteName}</td>
+                <td class="text-right pr-8">
+                    <button class="expand-greet-btn text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-2 focus:outline-none" data-id="${ext.id}" title="View Configured Audio">
                         <svg class="w-5 h-5 inline-block transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                         </svg>
@@ -446,7 +432,6 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             tbody.appendChild(tr);
         });
-
         updateSelectionState();
     }
 
@@ -464,12 +449,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.msg-sort-header').forEach(header => {
         header.addEventListener('click', (e) => {
             const col = e.currentTarget.dataset.sort;
-            if (currentSortCol === col) {
-                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                currentSortCol = col;
-                sortDirection = 'asc';
-            }
+            if (currentSortCol === col) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            else { currentSortCol = col; sortDirection = 'asc'; }
             updateSortIcons();
             renderTable();
         });
@@ -481,10 +462,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!icon) return;
             if (currentSortCol === col) {
                 icon.textContent = sortDirection === 'asc' ? '▲' : '▼';
-                icon.className = 'ml-0.5 text-blue-600 dark:text-blue-400 font-bold';
+                icon.className = 'ml-1 text-blue-600 font-bold';
             } else {
                 icon.textContent = '';
-                icon.className = 'ml-0.5 text-slate-400 dark:text-slate-500';
+                icon.className = 'ml-1 text-slate-400';
             }
         });
     }
@@ -494,8 +475,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = e.target.dataset.id;
             if (e.target.checked) selectedIds.add(id);
             else selectedIds.delete(id);
-            
-            e.target.closest('tr').classList.toggle('modified-row', e.target.checked);
+            e.target.closest('tr').classList.toggle('bg-blue-50/50', e.target.checked);
+            e.target.closest('tr').classList.toggle('dark:bg-blue-900/10', e.target.checked);
             updateSelectionState();
         }
     });
@@ -507,7 +488,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = cb.dataset.id;
             if (isChecked) selectedIds.add(id);
             else selectedIds.delete(id);
-            cb.closest('tr').classList.toggle('modified-row', isChecked);
+            cb.closest('tr').classList.toggle('bg-blue-50/50', isChecked);
+            cb.closest('tr').classList.toggle('dark:bg-blue-900/10', isChecked);
         });
         updateSelectionState();
     });
@@ -518,16 +500,12 @@ document.addEventListener('DOMContentLoaded', () => {
         btnOpenUpload.disabled = !hasSelection;
         btnOpenTts.disabled = !hasSelection;
         btnOpenExport.disabled = !hasSelection;
-        
-        document.querySelectorAll('.selected-count-display').forEach(el => {
-            el.textContent = `Action targets: ${count} selected endpoint(s).`;
-        });
+        document.querySelectorAll('.selected-count-display').forEach(el => { el.textContent = `Action targets: ${count} selected endpoint(s).`; });
     }
 
     function updateGreetingDropdowns(extType) {
         const selects = document.querySelectorAll('select[name="greeting_type"]');
         const options = GREETING_TYPE_MAP[extType] || [{val: 'Unknown', label: 'Unknown Type'}];
-        
         selects.forEach(sel => {
             sel.innerHTML = '';
             options.forEach(opt => {
@@ -541,7 +519,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleActionOpen(modalId) {
         if (selectedIds.size === 0) return;
-
         const selectedTypesSet = new Set();
         selectedIds.forEach(id => {
             const ext = allEndpoints.find(e => String(e.id) === String(id));
@@ -549,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (selectedTypesSet.size > 1 && modalId !== 'modal-export') {
-            alert("Cannot apply audio to multiple extension types at once. Please select only one type of endpoint (e.g., only Call Queues, or only IVRs).");
+            alert("Cannot apply audio to multiple extension types at once. Please select only one type of endpoint.");
             return;
         }
 
@@ -571,10 +548,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const exportNote = document.getElementById('export-note-ui');
         if (toggleIgnoreDefaults.checked) {
             exportNote.innerHTML = "<strong>Note:</strong> Custom Only mode is ENABLED. System presets will be entirely ignored in the ZIP output and CSV log.";
-            exportNote.className = "text-xs text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-3 border border-blue-200 dark:border-blue-800 rounded-lg shadow-inner";
+            exportNote.className = "text-xs text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800 rounded-xl shadow-inner font-medium";
         } else {
             exportNote.innerHTML = "<strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.";
-            exportNote.className = "text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-700 rounded-lg shadow-inner";
+            exportNote.className = "text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner font-medium";
         }
     });
 
@@ -588,21 +565,14 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (subRow) {
                 const isHidden = subRow.classList.contains('hidden');
-                if (isHidden) {
-                    subRow.classList.remove('hidden');
-                    icon.classList.add('rotate-180');
-                    tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50');
-                } else {
-                    subRow.classList.add('hidden');
-                    icon.classList.remove('rotate-180');
-                    tr.classList.remove('bg-slate-50', 'dark:bg-slate-800/50');
-                }
+                if (isHidden) { subRow.classList.remove('hidden'); icon.classList.add('rotate-180'); tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50'); } 
+                else { subRow.classList.add('hidden'); icon.classList.remove('rotate-180'); tr.classList.remove('bg-slate-50', 'dark:bg-slate-800/50'); }
                 return;
             }
 
             const controlCell = tr.querySelector('td:last-child');
             const origCellHTML = controlCell.innerHTML;
-            controlCell.innerHTML = '<div class="spinner w-4 h-4 text-blue-500 mr-4 ml-auto"></div>';
+            controlCell.innerHTML = '<div class="spinner w-5 h-5 text-blue-500 mr-8 ml-auto"></div>';
             
             try {
                 const res = await fetch(`/api/message_management/greetings/${extId}`);
@@ -610,93 +580,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 controlCell.innerHTML = origCellHTML;
                 const restoredBtn = controlCell.querySelector('.expand-greet-btn');
-                if (restoredBtn) {
-                    restoredBtn.querySelector('svg').classList.add('rotate-180');
-                }
+                if (restoredBtn) restoredBtn.querySelector('svg').classList.add('rotate-180');
                 tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50');
 
                 subRow = document.createElement('tr');
                 subRow.id = `subrow-${extId}`;
-                subRow.className = 'bg-slate-50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700 shadow-inner';
+                subRow.className = 'bg-slate-50/80 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800/80 shadow-inner';
                 
-                let innerHTML = `<td colspan="6" class="p-0">
-                    <div class="p-5 pl-14 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700">
-                        <h4 class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-3">Configured Audio Mappings</h4>
+                let innerHTML = `<td colspan="6" class="p-0 border-0">
+                    <div class="p-8 pl-16">
+                        <h4 class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Configured Audio Mappings</h4>
                     `;
 
                 if (res.ok && data.status === 'NotActivated') {
-                    innerHTML += `<p class="text-sm text-amber-600 dark:text-amber-500 font-semibold py-4 flex items-center gap-1">⚠️ This extension is currently not activated in RingCentral. Custom audio files and announcements cannot be loaded, played back, or mapped until activation is complete.</p>`;
+                    innerHTML += `<p class="text-sm text-amber-600 font-bold bg-amber-50 px-4 py-3 rounded-xl">⚠️ This extension is currently not activated in RingCentral. Custom audio files cannot be mapped.</p>`;
                 } else if (res.ok && data.records && data.records.length > 0) {
-                    
                     const ignoreDefaults = toggleIgnoreDefaults.checked;
                     let displayRecords = data.records;
-                    if (ignoreDefaults) {
-                        displayRecords = displayRecords.filter(g => g.is_custom);
-                    }
+                    if (ignoreDefaults) displayRecords = displayRecords.filter(g => g.is_custom);
 
                     if (displayRecords.length === 0) {
-                        innerHTML += `<p class="text-sm text-slate-500 dark:text-slate-400 italic py-2">No custom audio records returned for this endpoint.</p>`;
+                        innerHTML += `<p class="text-sm text-slate-500 italic font-medium">No custom audio records returned.</p>`;
                     } else {
-                        innerHTML += `<div class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                            <table class="min-w-full text-left text-sm">
-                                <thead class="bg-slate-100 dark:bg-slate-700/50 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        innerHTML += `<div class="table-container border-0 shadow-md">
+                            <table class="data-table">
+                                <thead class="bg-slate-100 dark:bg-slate-800">
                                     <tr>
-                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Answering Rule / Context</th>
-                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Greeting Type</th>
-                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Source</th>
-                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide">Name / Description</th>
-                                        <th class="px-4 py-2.5 font-bold uppercase tracking-wide text-right pr-4">Playback & Export</th>
+                                        <th>Answering Rule</th>
+                                        <th>Greeting Type</th>
+                                        <th>Source</th>
+                                        <th>Name / Description</th>
+                                        <th class="text-right pr-6">Playback & Export</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-slate-100 dark:divide-slate-700">`;
+                                <tbody>`;
                         
                         displayRecords.forEach(g => {
                             const isCustom = g.is_custom;
-                            const sourceBadge = isCustom 
-                                ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800 shadow-sm">Custom Audio</span>'
-                                : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 shadow-sm">Default / System</span>';
-                            
+                            const sourceBadge = isCustom ? '<span class="badge badge-warning">Custom Audio</span>' : '<span class="badge badge-secondary">Default / System</span>';
                             const isIvrPrompt = g.type === 'IvrPrompt';
                             const ruleContextName = g.rule_name || 'IVR Library';
-                            
                             let nameDisplay = g.name;
-                            if (!isCustom && isIvrPrompt) {
-                                nameDisplay = `<span class="italic text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-600 font-mono shadow-sm">💬 "${g.name}"</span>`;
-                            } else if (g.id === 'default') {
-                                nameDisplay = `<span class="text-slate-400 dark:text-slate-500 italic">System Factory Default Settings</span>`;
-                            }
+
+                            if (!isCustom && isIvrPrompt) nameDisplay = `<span class="italic text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 font-mono font-medium">💬 "${g.name}"</span>`;
+                            else if (g.id === 'default') nameDisplay = `<span class="text-slate-400 italic">System Factory Default</span>`;
 
                             let mediaUrl = `/api/message_management/media/${extId}/${g.id}?is_ivr=${isIvrPrompt}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(g.type)}&preset_uri=${encodeURIComponent(g.preset_uri || '')}&text=${encodeURIComponent(g.name)}`;
 
                             let playbackBtn = `
-                                <div class="flex items-center justify-end gap-2">
-                                    <button class="play-audio-btn text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition focus:outline-none bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 font-bold text-xs flex items-center justify-center shadow-sm w-[90px]" 
+                                <div class="flex items-center justify-end gap-3 pr-2">
+                                    <button class="play-audio-btn btn-secondary !py-1.5 !px-3 !text-blue-600 hover:!bg-blue-50 w-24 flex items-center justify-center shadow-sm border-slate-200" 
                                             data-ext="${extId}" data-greet="${g.id}" data-custom="${isCustom}" data-ivr="${isIvrPrompt}" data-type="${g.type}" data-uri="${g.preset_uri || ''}" data-text="${encodeURIComponent(g.name)}">
-                                        <svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>
+                                        <svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>
                                     </button>
-                                    <a href="${mediaUrl}&download=true" class="text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300 transition focus:outline-none bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center justify-center shadow-sm" title="Download Audio File">
+                                    <a href="${mediaUrl}&download=true" class="btn-success !py-1.5 !px-2.5 shadow-sm" title="Download Audio File">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                                     </a>
                                 </div>
                             `;
 
                             innerHTML += `
-                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                    <td class="px-4 py-3 text-slate-500 dark:text-slate-400 font-medium">${ruleContextName}</td>
-                                    <td class="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">${g.type}</td>
-                                    <td class="px-4 py-3">${sourceBadge}</td>
-                                    <td class="px-4 py-3 text-slate-600 dark:text-slate-300 max-w-md truncate" title="${g.name}">${nameDisplay}</td>
-                                    <td class="px-4 py-3">${playbackBtn}</td>
+                                <tr>
+                                    <td class="font-bold text-slate-600">${ruleContextName}</td>
+                                    <td class="font-semibold text-slate-700">${g.type}</td>
+                                    <td>${sourceBadge}</td>
+                                    <td class="font-medium text-slate-700 max-w-md truncate" title="${g.name}">${nameDisplay}</td>
+                                    <td>${playbackBtn}</td>
                                 </tr>
                             `;
                         });
-                        
                         innerHTML += `</tbody></table></div>`;
                     }
                 } else {
-                    innerHTML += `<p class="text-sm text-slate-500 dark:text-slate-400 italic py-2">No custom or default audio records returned for this endpoint.</p>`;
+                    innerHTML += `<p class="text-sm text-slate-500 italic font-medium">No custom or default audio records returned.</p>`;
                 }
-                
                 innerHTML += `</div></td>`;
                 subRow.innerHTML = innerHTML;
                 tr.after(subRow);
@@ -723,18 +680,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (currentlyPlayingBtn && currentlyPlayingBtn !== playBtn) {
-                currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
-                currentlyPlayingBtn.classList.remove('animate-pulse');
+                currentlyPlayingBtn.innerHTML = '<svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
             }
 
             currentlyPlayingBtn = playBtn;
-            playBtn.innerHTML = '<div class="spinner w-3 h-3 mr-1.5 border-blue-600 dark:border-blue-400 border-t-transparent"></div> <span class="text-[11px] font-mono">Buffering...</span>';
+            playBtn.innerHTML = '<div class="spinner w-3 h-3 mr-1.5 border-blue-600 border-t-transparent"></div> <span class="text-[11px] font-mono">Loading</span>';
             
             audioPlayer.src = `/api/message_management/media/${extId}/${greetId}?is_ivr=${isIvr}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(gType)}&preset_uri=${presetUri}&text=${encodeURIComponent(gText)}`;
             audioPlayer.play().catch(e => {
                 playBtn.innerHTML = '⚠ Error';
                 currentlyPlayingBtn = null;
-                console.error("Audio play failed", e);
             });
         }
     });
@@ -743,23 +698,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentlyPlayingBtn && audioPlayer.duration) {
             const pct = Math.round((audioPlayer.currentTime / audioPlayer.duration) * 100);
             currentlyPlayingBtn.innerHTML = `
-                <svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg> 
-                <span class="font-mono text-[10px]">Pause (${pct}%)</span>
+                <svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg> 
+                <span class="font-mono text-[10px]">${pct}%</span>
             `;
         }
     });
 
     audioPlayer.addEventListener('pause', () => {
-        if (currentlyPlayingBtn) {
-            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
-            currentlyPlayingBtn.classList.remove('animate-pulse');
-        }
+        if (currentlyPlayingBtn) currentlyPlayingBtn.innerHTML = '<svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
     });
 
     audioPlayer.addEventListener('ended', () => {
         if (currentlyPlayingBtn) {
-            currentlyPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
-            currentlyPlayingBtn.classList.remove('animate-pulse');
+            currentlyPlayingBtn.innerHTML = '<svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
             currentlyPlayingBtn = null;
         }
     });
@@ -767,23 +718,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function openModal(id) {
         const m = document.getElementById(id);
         m.classList.remove('hidden');
-        setTimeout(() => {
-            m.classList.remove('opacity-0');
-            m.querySelector('div').classList.remove('scale-95');
-        }, 10);
+        setTimeout(() => { m.classList.remove('opacity-0'); m.querySelector('.card').classList.remove('scale-95'); }, 10);
     }
 
     function closeModal(id) {
         const m = document.getElementById(id);
         m.classList.add('opacity-0');
-        m.querySelector('div').classList.add('scale-95');
-        setTimeout(() => m.classList.add('hidden'), 200);
+        m.querySelector('.card').classList.add('scale-95');
+        setTimeout(() => m.classList.add('hidden'), 300);
     }
 
     document.querySelectorAll('.close-modal').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            closeModal(e.target.closest('.fixed').id);
-        });
+        btn.addEventListener('click', (e) => { closeModal(e.target.closest('.fixed').id); });
     });
 
     btnOpenUpload.addEventListener('click', () => handleActionOpen('modal-upload'));
@@ -798,7 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function logProgress(msg, type='info') {
         const entry = document.createElement('div');
-        entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+        entry.className = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-slate-400');
         entry.innerText = `> ${msg}`;
         progressLog.appendChild(entry);
         progressLog.scrollTop = progressLog.scrollHeight;
@@ -818,7 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ignoreDefaults = toggleIgnoreDefaults.checked;
         
         progressBar.style.width = `0%`;
-        progressBar.classList.remove('animate-pulse');
+        progressBar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300';
         progressPct.textContent = `0/${total}`;
         
         logProgress(`Initiating export for ${total} endpoints...`, 'info');
@@ -836,9 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         progressPct.textContent = `${data.current}/${data.total}`;
                     }
                 }
-            } catch (e) {
-                // Fail silently on polling timeout
-            }
+            } catch (e) {}
         }, 1000);
 
         try {
@@ -849,7 +793,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             clearInterval(pollInterval);
-
             if (!res.ok) throw new Error("Server failed to compile the archive.");
             
             const blob = await res.blob();
@@ -872,9 +815,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             clearInterval(pollInterval);
             logProgress(`Error: ${err.message}`, 'error');
-            progressBar.classList.remove('animate-pulse');
             progressBar.style.width = `100%`;
-            progressBar.classList.add('bg-red-500');
+            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
             progressPct.textContent = `Failed`;
             progressTitle.textContent = "Export Failed";
             progressCloseBtn.classList.remove('hidden');
@@ -905,16 +847,12 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (res.ok && data.success) {
-                    logProgress(`Success: Ext ${extId} updated.`, 'success');
-                } else {
-                    logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
-                }
+                if (res.ok && data.success) logProgress(`Success: Ext ${extId} updated.`, 'success');
+                else logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
             } catch (err) {
                 logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
             }
         }
-        
         finishProgress(total);
     }
 
@@ -955,7 +893,6 @@ document.addEventListener('DOMContentLoaded', () => {
             progressBar.style.width = `${((i) / total) * 100}%`;
             progressPct.textContent = `${i}/${total}`;
             
-            // Generate meaningful filename based on endpoint
             const endpointObj = allEndpoints.find(e => String(e.id) === String(extId));
             let endpointName = endpointObj && endpointObj.name ? endpointObj.name : extId;
             endpointName = endpointName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
@@ -971,16 +908,12 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (res.ok && data.success) {
-                    logProgress(`Success: Ext ${extId} mapped.`, 'success');
-                } else {
-                    logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
-                }
+                if (res.ok && data.success) logProgress(`Success: Ext ${extId} mapped.`, 'success');
+                else logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
             } catch (err) {
                 logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
             }
         }
-        
         finishProgress(total);
     }
 
@@ -993,14 +926,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     progressCloseBtn.addEventListener('click', () => {
         closeModal('modal-progress');
-        progressBar.classList.remove('bg-red-500'); 
+        progressBar.classList.remove('bg-rose-500'); 
+        progressBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
         
         selectedIds.forEach(id => {
             const subRow = document.getElementById(`subrow-${id}`);
             if (subRow && !subRow.classList.contains('hidden')) {
                 subRow.remove();
-                const btn = document.querySelector(`.expand-greet-btn[data-id="${id}"]`);
-                if (btn) btn.click();
+                const btn = document.querySelector(`.expand-greet-btn[data-id="${id}"] svg`);
+                if (btn) btn.classList.remove('rotate-180');
             }
         });
         
@@ -1019,6 +953,5 @@ document.addEventListener('DOMContentLoaded', () => {
         const fd = new FormData(e.target);
         processBulkTts(fd.get('text'), fd.get('voice'), fd.get('greeting_type'));
     });
-
 });
 </script>
