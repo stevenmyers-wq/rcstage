@@ -1,75 +1,70 @@
-<div class="card space-y-6">
-    <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Admin Analytics Dashboard</h2>
-    <p class="text-gray-600 text-sm">Real-time usage metrics and API health monitoring.</p>
+<div class="card space-y-6 w-full">
+    <div class="border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Admin Analytics Dashboard</h2>
+        <p class="text-subheading">Real-time usage metrics and API health monitoring.</p>
+    </div>
     
     <div id="analytics-loading" class="text-center py-8">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-        <p class="mt-4 text-gray-500">Loading analytics data...</p>
+        <div class="spinner mx-auto"></div>
+        <p class="mt-4 text-gray-500 dark:text-gray-400">Loading analytics data...</p>
     </div>
 
-    <div id="analytics-content" class="hidden space-y-6">
+    <div id="analytics-content" class="hidden space-y-6 w-full">
 
-        <!-- KPI STAT CARDS -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Actions (Last 1000)</span>
-                <span id="stat-total" class="text-3xl font-bold text-gray-800">—</span>
+            <div class="card !p-5 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Actions (Last 1000)</span>
+                <span id="stat-total" class="text-3xl font-bold text-gray-800 dark:text-white">—</span>
             </div>
-            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unique Users</span>
-                <span id="stat-unique-users" class="text-3xl font-bold text-blue-600">—</span>
+            <div class="card !p-5 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Unique Users</span>
+                <span id="stat-unique-users" class="text-3xl font-bold text-blue-600 dark:text-blue-400">—</span>
             </div>
-            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">This Week vs Last Week</span>
-                <span id="stat-wow" class="text-3xl font-bold text-gray-800">—</span>
-                <span id="stat-wow-sub" class="text-xs text-gray-500"></span>
+            <div class="card !p-5 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">This Week vs Last Week</span>
+                <span id="stat-wow" class="text-3xl font-bold text-gray-800 dark:text-white">—</span>
+                <span id="stat-wow-sub" class="text-xs text-gray-500 dark:text-gray-400"></span>
             </div>
-            <div class="bg-white rounded-lg border shadow-sm p-4 flex flex-col gap-1">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">New Users This Week</span>
-                <span id="stat-new-users" class="text-3xl font-bold text-green-600">—</span>
+            <div class="card !p-5 flex flex-col gap-1">
+                <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">New Users This Week</span>
+                <span id="stat-new-users" class="text-3xl font-bold text-green-600 dark:text-green-400">—</span>
             </div>
         </div>
 
-        <!-- CHARTS ROW 1 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Tool Popularity (Bar Chart) -->
-            <div class="bg-white p-4 rounded-lg border shadow-sm">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700">Tool Usage Popularity</h3>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+            <div class="card !p-5">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Tool Usage Popularity</h3>
                 <div class="relative h-64 w-full">
                     <canvas id="toolPopularityChart"></canvas>
                 </div>
             </div>
 
-            <!-- API Success vs Error (Doughnut) -->
-            <div class="bg-white p-4 rounded-lg border shadow-sm">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700">API Actions Health</h3>
+            <div class="card !p-5">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">API Actions Health</h3>
                 <div class="relative h-64 w-full">
                     <canvas id="statusRatioChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <!-- Activity Over Time (Line Chart) -->
-        <div class="bg-white p-4 rounded-lg border shadow-sm">
-            <h3 class="text-lg font-semibold mb-4 text-gray-700">Activity Over Time (Last 1000 Actions)</h3>
+        <div class="card !p-5 w-full">
+            <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Activity Over Time (Last 1000 Actions)</h3>
             <div class="relative h-72 w-full">
                 <canvas id="activityChart"></canvas>
             </div>
         </div>
 
-        <!-- CHARTS ROW 2 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
 
-            <!-- Top Users Leaderboard -->
-            <div class="bg-white p-4 rounded-lg border shadow-sm">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700">Top Users</h3>
-                <div id="leaderboard-table" class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
+            <div class="card !p-5">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Top Users</h3>
+                <div id="leaderboard-table" class="overflow-x-auto w-full">
+                    <table class="data-table">
                         <thead>
-                            <tr class="border-b">
-                                <th class="text-left py-2 px-2 text-gray-500 font-medium">#</th>
-                                <th class="text-left py-2 px-2 text-gray-500 font-medium">User</th>
-                                <th class="text-right py-2 px-2 text-gray-500 font-medium">Actions</th>
+                            <tr>
+                                <th>#</th>
+                                <th>User</th>
+                                <th class="text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="leaderboard-body"></tbody>
@@ -77,9 +72,8 @@
                 </div>
             </div>
 
-            <!-- Per-Tool Error Breakdown -->
-            <div class="bg-white p-4 rounded-lg border shadow-sm">
-                <h3 class="text-lg font-semibold mb-4 text-gray-700">Error Rate by Tool</h3>
+            <div class="card !p-5">
+                <h3 class="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Error Rate by Tool</h3>
                 <div class="relative h-64 w-full">
                     <canvas id="toolErrorChart"></canvas>
                 </div>
@@ -101,30 +95,31 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             document.getElementById('analytics-content').classList.remove('hidden');
 
-            // --- KPI STAT CARDS ---
+            const isDark = document.documentElement.classList.contains('dark');
+            const textColor = isDark ? '#94a3b8' : '#64748b';
+            const gridColor = isDark ? '#334155' : '#e2e8f0';
+
             const total = Object.values(data.tool_popularity).reduce((a, b) => a + b, 0);
             document.getElementById('stat-total').textContent = total.toLocaleString();
             document.getElementById('stat-unique-users').textContent = data.unique_users ?? '—';
             document.getElementById('stat-new-users').textContent = data.new_users_this_week ?? '—';
 
-            // Week-on-week
             const wowEl = document.getElementById('stat-wow');
             const wowSub = document.getElementById('stat-wow-sub');
             const wow = data.wow_change ?? 0;
             const wowPct = data.wow_pct ?? 0;
             wowEl.textContent = `${data.this_week_count ?? 0}`;
             if (wow > 0) {
-                wowEl.className = 'text-3xl font-bold text-green-600';
+                wowEl.className = 'text-3xl font-bold text-green-600 dark:text-green-400';
                 wowSub.textContent = `▲ ${wow} (${wowPct}%) vs last week`;
             } else if (wow < 0) {
-                wowEl.className = 'text-3xl font-bold text-red-500';
+                wowEl.className = 'text-3xl font-bold text-red-500 dark:text-red-400';
                 wowSub.textContent = `▼ ${Math.abs(wow)} (${Math.abs(wowPct)}%) vs last week`;
             } else {
-                wowEl.className = 'text-3xl font-bold text-gray-800';
+                wowEl.className = 'text-3xl font-bold text-gray-800 dark:text-white';
                 wowSub.textContent = 'No change vs last week';
             }
 
-            // --- 1. Tool Popularity Bar Chart ---
             const tools = Object.keys(data.tool_popularity);
             const toolCounts = Object.values(data.tool_popularity);
             new Chart(document.getElementById('toolPopularityChart'), {
@@ -133,20 +128,31 @@ document.addEventListener('DOMContentLoaded', function() {
                     labels: tools,
                     datasets: [{ label: 'Times Used', data: toolCounts, backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: 'rgb(59, 130, 246)', borderWidth: 1 }]
                 },
-                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+                        y: { ticks: { color: textColor }, grid: { display: false } }
+                    },
+                    plugins: { legend: { labels: { color: textColor } } }
+                }
             });
 
-            // --- 2. Status Ratio Doughnut Chart ---
             new Chart(document.getElementById('statusRatioChart'), {
                 type: 'doughnut',
                 data: {
                     labels: ['Success', 'Error'],
-                    datasets: [{ data: [data.status_ratio.success || 0, data.status_ratio.error || 0], backgroundColor: ['#10B981', '#EF4444'] }]
+                    datasets: [{ data: [data.status_ratio.success || 0, data.status_ratio.error || 0], backgroundColor: ['#10B981', '#EF4444'], borderColor: isDark ? '#1e293b' : '#fff' }]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: textColor } } }
+                }
             });
 
-            // --- 3. Activity Line Chart ---
             const dates = Object.keys(data.activity_over_time);
             const dateCounts = Object.values(data.activity_over_time);
             new Chart(document.getElementById('activityChart'), {
@@ -155,30 +161,33 @@ document.addEventListener('DOMContentLoaded', function() {
                     labels: dates,
                     datasets: [{ label: 'Daily Actions', data: dateCounts, fill: true, backgroundColor: 'rgba(99, 102, 241, 0.2)', borderColor: 'rgb(99, 102, 241)', tension: 0.1 }]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+                        y: { ticks: { color: textColor }, grid: { color: gridColor } }
+                    },
+                    plugins: { legend: { labels: { color: textColor } } }
+                }
             });
 
-            // --- 4. Top Users Leaderboard ---
             const leaderboard = data.leaderboard || [];
             const tbody = document.getElementById('leaderboard-body');
             const medals = ['🥇', '🥈', '🥉'];
             leaderboard.forEach((user, i) => {
                 const rank = medals[i] || `${i + 1}.`;
                 const row = document.createElement('tr');
-                row.className = 'border-b last:border-0 hover:bg-gray-50';
-                // Show first part of email only for readability
                 const displayEmail = user.email.replace('@ringcentral.com', '');
                 row.innerHTML = `
-                    <td class="py-2 px-2 text-gray-500">${rank}</td>
-                    <td class="py-2 px-2 font-medium text-gray-800">${displayEmail}</td>
-                    <td class="py-2 px-2 text-right font-bold text-blue-600">${user.count}</td>
+                    <td class="opacity-70">${rank}</td>
+                    <td class="font-medium">${displayEmail}</td>
+                    <td class="text-right font-bold text-blue-600 dark:text-blue-400">${user.count}</td>
                 `;
                 tbody.appendChild(row);
             });
 
-            // --- 5. Per-Tool Error Rate Bar Chart ---
             const errorRates = data.tool_error_rates || {};
-            // Only show tools that have at least 1 error, sorted by error count
             const errorTools = Object.entries(errorRates)
                 .filter(([, v]) => v.errors > 0)
                 .sort((a, b) => b[1].errors - a[1].errors);
@@ -203,9 +212,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { max: 100, ticks: { callback: v => v + '%' } }
+                            x: { max: 100, ticks: { callback: v => v + '%', color: textColor }, grid: { color: gridColor } },
+                            y: { ticks: { color: textColor }, grid: { display: false } }
                         },
                         plugins: {
+                            legend: { labels: { color: textColor } },
                             tooltip: {
                                 callbacks: {
                                     label: ctx => {
@@ -219,11 +230,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             } else {
                 document.getElementById('toolErrorChart').parentElement.innerHTML =
-                    '<p class="text-sm text-green-600 font-medium flex items-center gap-2"><span>✅</span> No errors recorded in the last 1000 actions.</p>';
+                    '<p class="text-sm text-green-600 dark:text-green-400 font-medium flex items-center gap-2"><span>✅</span> No errors recorded in the last 1000 actions.</p>';
             }
 
         }).catch(err => {
-            document.getElementById('analytics-loading').innerHTML = '<p class="text-red-500">Failed to load data.</p>';
+            document.getElementById('analytics-loading').innerHTML = '<p class="text-red-500 dark:text-red-400">Failed to load data.</p>';
         });
 });
 </script>
