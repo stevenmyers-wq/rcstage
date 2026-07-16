@@ -1,29 +1,29 @@
-<div class="space-y-6 animate-fade-in w-full">
-    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
-        <h2 class="text-heading mb-1">Phone Number Assignment</h2>
+<div class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Phone Number Assignment</h2>
         <p class="text-subheading">Bulk assign available phone numbers from inventory to extensions using Excel.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
-            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
             </div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">1. Download Template & Inventory</h3>
-            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
+            <h3 class="text-heading text-lg mb-2">1. Download Template & Inventory</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
                 Generates an Excel file with an assignment template tab, plus reference tabs listing all available numbers in inventory and all extension numbers.
             </p>
-            <button onclick="downloadPnaTemplate()" id="pnaDownloadBtn" class="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="downloadPnaTemplate()" id="pnaDownloadBtn" class="btn-primary w-full disabled:opacity-50">
                 Download Template
             </button>
         </div>
 
-        <div class="card flex flex-col items-center text-center hover:shadow-lg transition-all duration-200 group !p-6">
-            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+            <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
             </div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">2. Upload & Apply</h3>
-            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
+            <h3 class="text-heading text-lg mb-2">2. Upload & Apply</h3>
+            <p class="text-subheading text-xs mb-6 flex-grow">
                 Upload your completed template. Ensure the "Phone Number" and "Extension Number" columns are filled out on the first tab.
             </p>
             <label class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-500 text-purple-600 dark:text-purple-500 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer block text-center shadow-sm">
@@ -33,41 +33,48 @@
         </div>
     </div>
     
-    <div class="card !p-6 bg-slate-50 dark:bg-slate-900/50 border-slate-300 dark:border-slate-700 mt-8 w-full shadow-inner">
-        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">3. V2 Business Mobile API Sandbox</h3>
-        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Enter a target phone number and extension below. This tests if the newly discovered V2 Business Mobile endpoints can successfully process the assignment.</p>
+    <div class="card bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 mt-8 w-full shadow-inner !p-6">
+        <h3 class="text-heading text-lg mb-2 border-b border-slate-200 dark:border-slate-700 pb-3">3. V2 Business Mobile API Sandbox</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Enter a target phone number and extension below. This tests if the newly discovered V2 Business Mobile endpoints can successfully process the assignment.</p>
         
-        <div class="flex flex-col sm:flex-row gap-4 mb-4 w-full">
-            <input type="text" id="debug-phone" placeholder="Phone (e.g. +61468209402)" class="input-field font-mono w-full sm:w-64">
-            <input type="text" id="debug-ext" placeholder="Target Ext (e.g. 1105)" class="input-field font-mono w-full sm:w-48">
-            <button id="btn-run-debug" class="btn-danger w-full sm:w-auto px-6 whitespace-nowrap disabled:opacity-50">
+        <div class="flex flex-col sm:flex-row gap-4 mb-6 w-full items-end">
+            <div class="input-wrapper flex-1">
+                <label class="input-label">Phone Number</label>
+                <input type="text" id="debug-phone" placeholder="e.g. +61468209402" class="input-field font-mono">
+            </div>
+            <div class="input-wrapper flex-1">
+                <label class="input-label">Target Extension</label>
+                <input type="text" id="debug-ext" placeholder="e.g. 1105" class="input-field font-mono">
+            </div>
+            <button id="btn-run-debug" class="btn-danger w-full sm:w-auto px-6 h-[46px] whitespace-nowrap">
                 Run V2 API Test
             </button>
         </div>
         
-        <label class="input-label">Exhaustive Test Logs</label>
-        <div id="debugLogs" class="w-full h-96 bg-slate-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-auto border border-slate-700 whitespace-pre-line shadow-inner outline-none">Awaiting execution...</div>
+        <div class="input-wrapper">
+            <label class="input-label">Exhaustive Test Logs</label>
+            <div id="debugLogs" class="w-full h-96 bg-slate-900 dark:bg-slate-950 text-emerald-400 p-4 rounded-xl font-mono text-xs overflow-auto border border-slate-800 whitespace-pre-line shadow-inner outline-none">Awaiting execution...</div>
+        </div>
     </div>
 </div>
 
 <script>
 function logPna(msg, type='info') {
-    const box = document.getElementById('pnaLogs');
+    const box = document.getElementById('debugLogs');
     if (!box) return;
-    if (box.children.length === 1 && box.children[0].classList.contains('text-slate-300')) {
+    if (box.innerText.includes("Awaiting execution")) {
         box.innerHTML = '';
     }
-    const entry = document.createElement('div');
-    entry.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
-    entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    box.appendChild(entry);
+    const timestamp = new Date().toLocaleTimeString();
+    let cls = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-blue-300');
+    box.innerHTML += `<div class="${cls}"><span class="text-slate-500 select-none mr-2">[${timestamp}]</span>${msg}</div>`;
     box.scrollTop = box.scrollHeight;
 }
 
 async function downloadPnaTemplate() {
     const btn = document.getElementById('pnaDownloadBtn');
     btn.disabled = true;
-    btn.innerHTML = `<div class="spinner border-white dark:border-white w-4 h-4 mr-2"></div> Generating...`;
+    btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Generating...`;
     
     logPna("Generating template and fetching inventory data...", "info");
 
@@ -103,7 +110,6 @@ async function uploadPnaFile(input) {
     input.value = ''; 
 }
 
-// Sandbox Execution Logic
 document.getElementById('btn-run-debug').addEventListener('click', async () => {
     const phone = document.getElementById('debug-phone').value.trim();
     const ext = document.getElementById('debug-ext').value.trim();
@@ -113,8 +119,8 @@ document.getElementById('btn-run-debug').addEventListener('click', async () => {
     if (!phone || !ext) return alert("Please enter both a Phone Number and an Extension Number.");
     
     btn.disabled = true;
-    btn.innerHTML = `<div class="spinner border-white dark:border-white w-4 h-4 mr-2"></div> Running Test...`;
-    logBox.innerHTML = "Initializing test on V2 Business Mobile endpoints...\n";
+    btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Running Test...`;
+    logBox.innerHTML = '<div class="text-blue-300">Initializing test on V2 Business Mobile endpoints...</div>';
     
     try {
         const res = await fetch('/api/phone_number_assignment/debug', {
@@ -125,12 +131,15 @@ document.getElementById('btn-run-debug').addEventListener('click', async () => {
         const data = await res.json();
         
         if (data.logs) {
-            logBox.innerHTML = data.logs.join('\n');
+            logBox.innerHTML = data.logs.map(l => {
+                let cls = l.includes('❌') ? 'text-rose-400 font-bold' : (l.includes('✅') ? 'text-emerald-400 font-bold' : 'text-slate-300');
+                return `<div class="${cls} mb-0.5 border-b border-slate-800/40 pb-0.5">${l}</div>`;
+            }).join('');
         } else if (data.error) {
-            logBox.innerHTML = "Error: " + data.error;
+            logBox.innerHTML = `<div class="text-rose-400 font-bold">Error: ${data.error}</div>`;
         }
     } catch (e) {
-        logBox.innerHTML = "Network Error: " + e.message;
+        logBox.innerHTML = `<div class="text-rose-400 font-bold">Network Error: ${e.message}</div>`;
     } finally {
         btn.disabled = false;
         btn.innerHTML = "Run V2 API Test";
