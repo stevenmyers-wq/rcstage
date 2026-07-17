@@ -46,7 +46,17 @@
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-emerald-500"></div>User / Agent</div>
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-slate-500"></div>Voicemail</div>
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-rose-500"></div>External Transfer</div>
-            <div class="text-slate-400 dark:text-slate-500 ml-auto normal-case font-medium tracking-normal italic">Hover node to preview · Click to pin · Drag pinned panel</div>
+            
+            <div class="ml-auto flex items-center gap-4">
+                <div class="text-slate-400 dark:text-slate-500 normal-case font-medium tracking-normal italic" id="interaction-hint">Hover node to preview · Click to pin</div>
+                
+                <!-- NEW TOGGLE -->
+                <label class="relative inline-flex items-center cursor-pointer print:hidden">
+                    <input type="checkbox" id="toggle-descriptors" class="sr-only peer">
+                    <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
+                    <span class="ml-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Show Descriptors</span>
+                </label>
+            </div>
         </div>
 
         <div id="diagram-wrapper" class="relative w-full bg-slate-50/50 dark:bg-slate-900/30" style="min-height: 700px;">
@@ -102,6 +112,7 @@
     let allResults   = [];
     let hoverPreview = null; 
     let pinnedPanels = [];   
+    let currentGraphData = null; // NEW: Store data for instant re-rendering
 
     const searchInput   = document.getElementById('visualiser-search-input');
     const resultsList   = document.getElementById('search-results-container');
@@ -112,6 +123,7 @@
     const logDiv        = document.getElementById('api-log-container');
     const loadingEl     = document.getElementById('loading-indicator');
     const printBtn      = document.getElementById('btn-print');
+    const toggleDesc    = document.getElementById('toggle-descriptors'); // NEW
 
     // ── Load extensions ──────────────────────────────────────────────
     fetch('/api/rc/visualiser/search')
@@ -304,6 +316,17 @@
     // ── Print ─────────────────────────────────────────────────────────
     printBtn.addEventListener('click', () => window.print());
 
+    // ── Toggle Descriptors Event ──────────────────────────────────────
+    toggleDesc.addEventListener('change', () => {
+        if (currentGraphData) {
+            // Clear any active HTML panels before redrawing
+            pinnedPanels.forEach(p => p.remove());
+            pinnedPanels = [];
+            removeHoverPreview();
+            renderGraph(currentGraphData);
+        }
+    });
+
     // ── Visualize ────────────────────────────────────────────────────
     vizBtn.addEventListener('click', async () => {
         if (!selectedId) return;
@@ -327,6 +350,7 @@
             const data = await res.json();
             renderLog(data.api_log || []);
             if (data.status === 'success' && data.graph_data) {
+                currentGraphData = data.graph_data; // Store for the toggle
                 renderGraph(data.graph_data);
             } else {
                 throw new Error(data.message || 'Failed to generate flow.');
@@ -343,6 +367,11 @@
         if (cy) { cy.destroy(); cy = null; }
         diagramDiv.innerHTML = '';
         diagramDiv.style.minHeight = '700px';
+
+        const showDescriptors = toggleDesc.checked;
+
+        const hintEl = document.getElementById('interaction-hint');
+        if (hintEl) hintEl.style.display = showDescriptors ? 'none' : 'block';
 
         const typeStyles = Object.entries(COLOURS).map(([type, c]) => ({
             selector: `node[type="${type}"]`,
@@ -378,8 +407,42 @@
                 },
             },
             ...typeStyles,
+            // --- NEW: Styles for descriptor nodes and edges ---
             {
-                selector: 'edge',
+                selector: 'node[type="descriptor"]',
+                style: {
+                    'background-color':   '#1e293b', 
+                    'border-color':       '#f59e0b', 
+                    'border-width':       '1px',
+                    'color':              '#e2e8f0',
+                    'font-size':          '10px',
+                    'font-weight':        '500',
+                    'text-wrap':          'wrap',
+                    'text-max-width':     '240px',
+                    'text-justification': 'left',
+                    'text-halign':        'center',
+                    'text-valign':        'center',
+                    'width':              260,
+                    'padding':            '12px',
+                    'shape':              'round-rectangle',
+                    'cursor':             'default'
+                }
+            },
+            {
+                selector: 'edge[type="descriptor-edge"]',
+                style: {
+                    'width':              2,
+                    'line-color':         '#f59e0b', 
+                    'target-arrow-color': '#f59e0b',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style':        'unbundled-bezier',
+                    'line-style':         'dashed',
+                    'arrow-scale':        1
+                }
+            },
+            // --- END NEW STYLES ---
+            {
+                selector: 'edge:not([type="descriptor-edge"])',
                 style: {
                     'width':                         2,
                     'line-color':                    isDark ? '#334155' : '#cbd5e1',
@@ -406,8 +469,11 @@
             },
         ];
 
+        const nodeElements = [];
+        const edgeElements = [];
+
         // Build node elements
-        const nodeElements = graphData.nodes.map(n => {
+        graphData.nodes.forEach(n => {
             const d = n.data;
             const nameLine  = d.label.split('\n')[0];
             const bodyLines = d.label.split('\n').slice(1);
@@ -420,7 +486,41 @@
                 parts.push('─────────────');
                 parts.push(d.sublabel);
             }
-            return { data: { ...d, displayLabel: parts.join('\n') } };
+            
+            nodeElements.push({ data: { ...d, displayLabel: parts.join('\n') } });
+
+            // Generate descriptor nodes if toggle is enabled
+            if (showDescriptors && d.tooltip) {
+                let descText = "";
+                d.tooltip.split('\n\n').forEach(section => {
+                    const lines = section.split('\n').filter(l => l.trim());
+                    if (!lines.length) return;
+                    descText += lines[0].toUpperCase() + '\n'; 
+                    lines.slice(1).forEach(l => {
+                        descText += '· ' + l.trim() + '\n';
+                    });
+                    descText += '\n'; 
+                });
+
+                const descId = d.id + '_desc';
+                
+                nodeElements.push({
+                    data: {
+                        id: descId,
+                        type: 'descriptor',
+                        displayLabel: descText.trim()
+                    }
+                });
+
+                edgeElements.push({
+                    data: {
+                        id: 'edge_' + d.id + '_desc',
+                        source: d.id,
+                        target: descId,
+                        type: 'descriptor-edge'
+                    }
+                });
+            }
         });
 
         const pairCount = {};
@@ -428,8 +528,9 @@
             const key = `${e.data.source}__${e.data.target}`;
             pairCount[key] = (pairCount[key] || 0) + 1;
         });
+        
         const pairIndex = {};
-        const edgeElements = graphData.edges.map(e => {
+        graphData.edges.forEach(e => {
             const key = `${e.data.source}__${e.data.target}`;
             const total = pairCount[key];
             const idx   = pairIndex[key] = (pairIndex[key] || 0);
@@ -438,7 +539,7 @@
             const spread = 60;
             const offset = total === 1 ? 0 : (idx - (total - 1) / 2) * spread;
 
-            return { data: { ...e.data, cpd: offset } };
+            edgeElements.push({ data: { ...e.data, cpd: offset } });
         });
 
         const elements = [...nodeElements, ...edgeElements];
@@ -463,8 +564,9 @@
 
         // ── Hover = ephemeral preview near cursor ────────────────────
         cy.on('mouseover', 'node', evt => {
+            if (toggleDesc.checked) return; 
             const nd = evt.target.data();
-            if (nd.tooltip) {
+            if (nd.tooltip && nd.type !== 'descriptor') {
                 showHoverPreview(nd,
                     evt.originalEvent.clientX,
                     evt.originalEvent.clientY);
@@ -472,6 +574,7 @@
         });
 
         cy.on('mousemove', 'node', evt => {
+            if (toggleDesc.checked) return;
             moveHoverPreview(evt.originalEvent.clientX, evt.originalEvent.clientY);
         });
 
@@ -481,8 +584,9 @@
 
         // ── Click = spawn a new pinned panel ────────────────────────
         cy.on('tap', 'node', evt => {
+            if (toggleDesc.checked) return;
             const nd = evt.target.data();
-            if (!nd.tooltip) return;
+            if (!nd.tooltip || nd.type === 'descriptor') return;
             removeHoverPreview();
             createPinnedPanel(nd,
                 evt.originalEvent.clientX,
