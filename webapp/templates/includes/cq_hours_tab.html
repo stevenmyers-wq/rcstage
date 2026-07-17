@@ -1,7 +1,14 @@
 <div class="space-y-8 animate-fade-in w-full">
-    <div class="mb-4">
-        <h2 class="text-display mb-2">Call Queue Manager</h2>
-        <p class="text-subheading">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
+    <!-- Header with Restored Template Download Button -->
+    <div class="mb-4 flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div>
+            <h2 class="text-display mb-2">Call Queue Manager</h2>
+            <p class="text-subheading">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
+        </div>
+        <a href="/api/cq_hours/template" class="btn-secondary whitespace-nowrap flex items-center gap-2" download>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
+            Download Template
+        </a>
     </div>
 
     <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm">
@@ -440,7 +447,7 @@
                                             } else {
                                                 statusUi = `<span class="badge badge-success">Applied</span>`;
                                             }
-                                                
+                                            
                                             const tr = document.createElement('tr');
                                             tr.innerHTML = `
                                                 <td class="font-bold">${r.ext}</td>
