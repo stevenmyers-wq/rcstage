@@ -1,4 +1,3 @@
-# webapp/bulk_hours/utils.py
 from webapp.rc_api import rc_api_call
 import json
 
@@ -90,11 +89,11 @@ def _build_hours_api_body(schedule):
 
 
 # ===============================================================
-# CUSTOM ANSWERING RULES FUNCTIONS
+# RULES FUNCTIONS (Base & Custom)
 # ===============================================================
 
-def fetch_custom_rules(entity_type):
-    """Fetches all custom answering rules for a given entity type."""
+def fetch_all_rules(entity_type):
+    """Fetches base rules (business/after hours) and all custom answering rules."""
     try:
         list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
         entities_response = rc_api_call(list_endpoint)
@@ -109,6 +108,20 @@ def fetch_custom_rules(entity_type):
             rules_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
             if entity_id == "main-site": rules_endpoint = "/restapi/v1.0/account/~/answering-rule"
 
+            # 1. Fetch Base Rules (In-Hours and Out-of-Hours routing)
+            for base_rule_id in ['business-hours', 'after-hours']:
+                base_rule = rc_api_call(f"{rules_endpoint}/{base_rule_id}")
+                if base_rule:
+                    parsed = _parse_rule_details(base_rule)
+                    all_rules_data.append({
+                        "Action": "MODIFY", "EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name,
+                        "RuleID": base_rule_id, "RuleName": base_rule.get('name', base_rule_id.replace('-', ' ').title()), 
+                        "Enabled": base_rule.get('enabled', 'N/A'),
+                        "ScheduleType": parsed['schedule_type'], "ScheduleDetails": parsed['schedule_details'],
+                        "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target']
+                    })
+
+            # 2. Fetch Custom Rules
             rules_summary_response = rc_api_call(rules_endpoint)
             if not rules_summary_response or 'records' not in rules_summary_response: continue
 
@@ -136,18 +149,19 @@ def fetch_custom_rules(entity_type):
                     })
         return all_rules_data
     except Exception as e:
-        print(f"FATAL ERROR in fetch_custom_rules: {e}")
+        print(f"FATAL ERROR in fetch_all_rules: {e}")
         raise e
 
 
 def update_rules_from_records(records):
-    """Updates or creates custom rules from a list of records."""
+    """Updates base routing rules or creates/updates custom rules from records."""
     results = []
     for rule in records:
         action = rule.get("Action", "").upper()
         entity_id = rule.get("EntityID")
         entity_name = rule.get("EntityName")
         rule_name = rule.get("RuleName")
+        rule_id = rule.get("RuleID")
 
         if action not in ["NEW", "MODIFY"] or not entity_id:
             continue
@@ -157,11 +171,18 @@ def update_rules_from_records(records):
             if not api_body:
                 raise ValueError("Could not construct valid API body from rule data.")
 
-            if action == "MODIFY":
-                rule_id = rule.get("RuleID")
+            # Base rules (In/Out of Hours) cannot have 'type' or 'name' modified via this endpoint
+            if rule_id in ['business-hours', 'after-hours']:
+                endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule/{rule_id}"
+                api_body.pop("type", None)
+                api_body.pop("name", None)
+                response = rc_api_call(endpoint, method="PUT", body=api_body)
+                
+            elif action == "MODIFY":
                 if not rule_id or rule_id == 'N/A': raise ValueError("RuleID is required for MODIFY action.")
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule/{rule_id}"
                 response = rc_api_call(endpoint, method="PUT", body=api_body)
+                
             elif action == "NEW":
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
                 response = rc_api_call(endpoint, method="POST", body=api_body)
@@ -181,7 +202,9 @@ def _parse_rule_details(rule):
     parsed = {"schedule_type": "Unknown", "schedule_details": "N/A", "call_action": "N/A", "action_target": "N/A"}
     
     schedule = rule.get('schedule', {})
-    if 'weeklyRanges' in schedule:
+    if not schedule:
+        parsed['schedule_type'] = "Always"
+    elif 'weeklyRanges' in schedule:
         parsed['schedule_type'] = "Weekly"
         parsed['schedule_details'] = "Custom weekly schedule defined"
     elif 'ranges' in schedule and schedule.get('ranges'):
