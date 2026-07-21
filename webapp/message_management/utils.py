@@ -311,22 +311,58 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     if not rule_id:
         rule_id = 'business-hours-rule'
 
-    metadata = {"type": greeting_type, "answeringRule": {"id": rule_id}}
-    
-    files = {
-        'json': ('request.json', json.dumps(metadata), 'application/json'),
-        'attachment': (filename, file_data, content_type)
-    }
+    # UPDATED LOGIC: Fork handling for HoldMusic vs other greetings
+    if greeting_type == 'HoldMusic':
+        # 1. Upload the custom audio independently (no rule context)
+        metadata = {"type": greeting_type}
+        files = {
+            'json': ('request.json', json.dumps(metadata), 'application/json'),
+            'attachment': (filename, file_data, content_type)
+        }
+        
+        greeting_result = rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
+            method='POST',
+            files=files,
+            raise_error=True
+        )
+        
+        # 2. Manually bind it to the answering rule's holdMusic property via PUT
+        if greeting_result and 'id' in greeting_result:
+            update_payload = {
+                "holdMusic": {
+                    "audio": {
+                        "id": greeting_result['id']
+                    }
+                }
+            }
+            rc_api_call(
+                f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
+                method='PUT',
+                json=update_payload,
+                raise_error=True
+            )
+            
+        return greeting_result
+        
+    else:
+        # Standard greetings (Voicemail, Introductory, Announcement, etc.)
+        metadata = {"type": greeting_type, "answeringRule": {"id": rule_id}}
+        
+        files = {
+            'json': ('request.json', json.dumps(metadata), 'application/json'),
+            'attachment': (filename, file_data, content_type)
+        }
 
-    # We enforce ?apply=true in the URL so RC automatically binds the audio to the answering rule natively
-    greeting_result = rc_api_call(
-        f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
-        method='POST',
-        files=files,
-        raise_error=True
-    )
+        # We enforce ?apply=true in the URL so RC automatically binds the audio to the answering rule natively
+        greeting_result = rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
+            method='POST',
+            files=files,
+            raise_error=True
+        )
 
-    return greeting_result
+        return greeting_result
 
 def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and clear"):
     """Uses Gemini to generate TTS and returns an in-memory WAV buffer."""
