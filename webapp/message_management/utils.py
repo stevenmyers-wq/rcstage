@@ -312,11 +312,10 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
 
     if not rule_id:
         rule_id = 'business-hours-rule'
-    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
 
-    # 2. UPLOAD AUDIO RAW TO GET AN ID
+    # 2. UPLOAD AUDIO RAW TO GET AN ID (Ensures audio is always added to the library)
     metadata = {"type": greeting_type}
-    files = {
+    files_raw = {
         'json': ('request.json', json.dumps(metadata), 'application/json'),
         'attachment': (filename, file_data, content_type)
     }
@@ -324,7 +323,7 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     greeting_result = rc_api_call(
         f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
         method='POST',
-        files=files,
+        files=files_raw,
         raise_error=True
     )
     
@@ -334,7 +333,6 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
 
     # 3. ATTEMPT LEGACY V1 BIND
     try:
-        # For a V1 PUT, ALL greetings must go inside the greetings array (including HoldMusic)
         v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
         rc_api_call(
             f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
@@ -350,38 +348,26 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
             raise e
             
     # 4. FALLBACK TO V2 CHaF BINDING
-    # If we arrive here, V1 was strictly blocked by CMN-468, so we navigate V2 rules.
+    # V1 was blocked by CMN-468. We will leverage RingCentral's V2 stateId shortcut via POST.
+    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
     
-    if greeting_type in ['HoldMusic', 'InterruptPrompt']:
-        # HoldMusic and InterruptPrompt are managed via the extension's Voice Settings in V2
-        v2_prop = "holdAudio" if greeting_type == 'HoldMusic' else "interruptAudio"
-        v2_payload = { v2_prop: { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } } }
-        
-        try:
-            # Try applying to global voice settings first
-            rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/settings', method='PATCH', json=v2_payload, raise_error=True)
-        except Exception as patch_e:
-            # Fallback specifically for Department Queues if /settings is rejected
-            if ext_type == 'Department':
-                rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/queues', method='PATCH', json=v2_payload, raise_error=True)
-            else:
-                raise patch_e
-    else:
-        # For standard greetings (Voicemail, Introductory, etc.), we bypass brittle V2 PATCH arrays 
-        # and leverage RingCentral's V2 support on the POST endpoint by passing stateId.
-        metadata_chaf = {"type": greeting_type, "stateId": state_id}
-        files_chaf = {
-            'json': ('request.json', json.dumps(metadata_chaf), 'application/json'),
+    try:
+        metadata_v2 = {"type": greeting_type, "stateId": state_id}
+        files_v2 = {
+            'json': ('request.json', json.dumps(metadata_v2), 'application/json'),
             'attachment': (filename, file_data, content_type)
         }
-        rc_api_call(
+        return rc_api_call(
             f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
             method='POST',
-            files=files_chaf,
+            files=files_v2,
             raise_error=True
         )
-        
-    return greeting_result
+    except Exception as v2_err:
+        # If V2 rejects the apply=true binding for HoldMusic, it means RC has no automated binding path yet.
+        if greeting_type in ['HoldMusic', 'InterruptPrompt'] and 'CMN-101' in str(v2_err):
+            raise Exception("Audio successfully uploaded to your Library, but RingCentral V2 lacks an API to auto-assign Hold Music. Please assign it manually in the portal.")
+        raise Exception(f"Audio uploaded to Library, but V2 binding failed: {str(v2_err)}")
 
 
 def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and clear"):
