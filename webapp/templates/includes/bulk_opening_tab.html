@@ -1,63 +1,75 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 
 <div class="space-y-8 animate-fade-in w-full">
-    <div class="mb-4">
-        <h2 class="text-display mb-2">Bulk Hours & Rules Management</h2>
-        <p class="text-subheading">Mass configuration changes for Sites and Queues business hours and custom rules.</p>
-    </div>
-
-    <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm !p-6 space-y-5">
-        <div>
-            <p class="text-heading text-lg text-blue-900 dark:text-blue-100 mb-2">Part 1: Managing Business Hours (In-App Editor)</p>
-            <ol class="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-300 text-sm font-medium">
-                <li>Click <strong>Fetch Site Hours</strong> or <strong>Fetch Queue Hours</strong> to load data.</li>
-                <li>Use the checkboxes to select rows, then use the "Bulk Edit" panel to apply changes.</li>
-                <li>The table will update instantly. When finished, click <strong>Apply In-App Changes to RingCentral</strong> to save.</li>
-            </ol>
-        </div>
-        <div class="border-t border-blue-200/50 dark:border-blue-800/50 pt-5">
-            <p class="text-heading text-lg text-blue-900 dark:text-blue-100 mb-2">Part 2: Managing Custom Rules & Backups (CSV Method)</p>
-            <ol class="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-300 text-sm font-medium">
-                <li>Fetch either Hours or Rules data.</li>
-                <li>Click <strong>Download as CSV</strong>. This is your worksheet for rules or your backup file for hours.</li>
-                <li>Edit the CSV (e.g., set Action to `NEW` for a new rule), then save it.</li>
-                <li>Upload your modified CSV and click <strong>Apply From Uploaded File</strong>.</li>
-            </ol>
-        </div>
-    </div>
-
-    <div class="card w-full">
-        <div>
-            <h4 class="text-heading text-lg mb-4">1. Fetch Data from RingCentral</h4>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30">
-                    <p class="font-bold text-slate-800 dark:text-slate-200 mb-4">Business Hours</p>
-                    <div class="flex flex-wrap gap-3">
-                        <button id="fetch-sites-hours-btn" class="btn-primary flex-1 !py-3">Fetch Site Hours</button>
-                        <button id="fetch-queues-hours-btn" class="btn-primary flex-1 !py-3">Fetch Queue Hours</button>
-                    </div>
-                </div>
-                <div class="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30">
-                     <p class="font-bold text-slate-800 dark:text-slate-200 mb-4">Custom Answering Rules</p>
-                    <div class="flex flex-wrap gap-3">
-                         <button id="fetch-sites-rules-btn" class="btn-primary flex-1 !py-3 !bg-purple-600 hover:!bg-purple-700">Fetch Site Rules</button>
-                         <button id="fetch-queues-rules-btn" class="btn-primary flex-1 !py-3 !bg-purple-600 hover:!bg-purple-700">Fetch Queue Rules</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="flex flex-wrap items-center gap-4 pt-6 mt-6 border-t border-slate-100 dark:border-slate-800">
-            <button id="download-csv-btn" class="btn-secondary !py-3" disabled>Download as CSV</button>
-            <input type="file" id="csv-file-input" class="file-input !mb-0 flex-1 min-w-[200px]" accept=".csv">
-            <button id="apply-from-file-btn" class="btn-success !py-3" disabled>Apply From Uploaded File</button>
-        </div>
-    </div>
     
-    <div id="bulk-edit-container" class="card hidden w-full bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/60 dark:border-indigo-800/50 shadow-sm">
-        <h4 class="text-heading text-lg text-indigo-900 dark:text-indigo-100 mb-5">2. Bulk Edit Selected Hours (In-App)</h4>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-5 items-end">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Bulk Hours & Routing Management</h2>
+        <p class="text-subheading">Mass configuration changes for Sites and Queues business hours, standard routing (In/Out of Hours), and custom rules.</p>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex flex-col xl:flex-row gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
+        <button id="fetch-sites-hours-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+            🏢 Fetch Site Hours
+        </button>
+        <button id="fetch-queues-hours-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+            👥 Fetch Queue Hours
+        </button>
+        <button id="fetch-sites-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+            🔀 Fetch Site Rules
+        </button>
+        <button id="fetch-queues-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+            🔀 Fetch Queue Rules
+        </button>
+    </div>
+
+    <!-- Instructions / Context -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <div class="card !p-5 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm">
+            <h4 class="text-heading text-base text-blue-900 dark:text-blue-100 mb-2">Part 1: Business Hours (In-App)</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
+                <li>Fetch Site or Queue Hours.</li>
+                <li>Select rows using checkboxes.</li>
+                <li>Use the Bulk Edit panel below to change schedules.</li>
+                <li>Click <strong>Apply Changes</strong> to push to RingCentral.</li>
+            </ol>
+        </div>
+        <div class="card !p-5 bg-purple-50/50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-800/50 shadow-sm">
+            <h4 class="text-heading text-base text-purple-900 dark:text-purple-100 mb-2">Part 2: Routing Rules (CSV Method)</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
+                <li>Fetch Site or Queue Rules.</li>
+                <li>Download as CSV and map your forwarding/voicemail targets.</li>
+                <li>Upload the modified file to apply changes in bulk.</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Filters & Actions -->
+    <div class="card !p-6 flex flex-wrap gap-6 items-end w-full">
+        <div class="input-wrapper flex-grow min-w-[200px]">
+            <label class="input-label">Filter Results</label>
+            <input type="text" id="filter-input" placeholder="Type to filter..." class="input-field">
+        </div>
+        
+        <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <button id="download-csv-btn" class="btn-secondary h-[52px] px-6 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📥 Download CSV
+            </button>
+            <div class="relative flex items-center h-[52px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden px-2 min-w-[220px]">
+                <input type="file" id="csv-file-input" class="text-sm file:mr-3 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 dark:file:bg-slate-800 dark:file:text-slate-300 cursor-pointer w-full" accept=".csv">
+            </div>
+            <button id="apply-from-file-btn" class="btn-success h-[52px] px-6 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📤 Apply CSV
+            </button>
+        </div>
+    </div>
+
+    <!-- Bulk Edit Panel (For Hours Only) -->
+    <div id="bulk-edit-container" class="card hidden w-full bg-indigo-50/40 dark:bg-indigo-900/10 border-indigo-200/60 dark:border-indigo-800/50 shadow-sm !p-6">
+        <h4 class="text-heading text-lg text-indigo-900 dark:text-indigo-100 mb-5">Bulk Edit Selected Hours</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 items-end">
             <div class="input-wrapper">
-                <label for="days-select" class="input-label !text-indigo-600 dark:!text-indigo-400">Days to Change</label>
+                <label for="days-select" class="input-label !text-indigo-700 dark:!text-indigo-400">Days to Change</label>
                 <select id="days-select" class="input-field">
                     <option value="weekdays">All Weekdays (Mon-Fri)</option>
                     <option value="weekends">Weekends (Sat-Sun)</option>
@@ -71,34 +83,427 @@
                 </select>
             </div>
             <div class="input-wrapper">
-                <label for="hours-input" class="input-label !text-indigo-600 dark:!text-indigo-400">New Hours</label>
-                <input type="text" id="hours-input" placeholder="09:00-17:00 or Closed" class="input-field">
+                <label for="hours-input" class="input-label !text-indigo-700 dark:!text-indigo-400">New Hours (e.g. 09:00-17:00 or Closed)</label>
+                <input type="text" id="hours-input" placeholder="09:00-17:00" class="input-field">
             </div>
-            <button id="apply-bulk-edit-btn" class="btn-primary !bg-indigo-600 hover:!bg-indigo-700 !py-3.5">Apply to Selected</button>
+            <button id="apply-bulk-edit-btn" class="btn-primary !bg-indigo-600 hover:!bg-indigo-700 h-[52px]">Apply to Selected Rows</button>
         </div>
-        <div class="mt-6 pt-5 border-t border-indigo-200/50 dark:border-indigo-800/50">
-             <button id="apply-in-app-changes-btn" class="btn-success w-full !py-3.5 text-base" disabled>Apply In-App Changes to RingCentral</button>
+        <div class="mt-6 pt-5 border-t border-indigo-200/50 dark:border-indigo-800/50 flex justify-end">
+             <button id="apply-in-app-changes-btn" class="btn-success h-[52px] px-8 text-base shadow-md disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                ✅ Push Changes to RingCentral
+             </button>
         </div>
     </div>
 
-    <div id="filter-container" class="hidden card w-full">
-        <div class="input-wrapper">
-            <label for="filter-input" class="input-label">Filter Results (Case-Insensitive)</label>
-            <input type="text" id="filter-input" placeholder="Type here to filter any column, e.g., 'nsw'..." class="input-field">
-        </div>
-    </div>
-    
-    <div id="status-container" class="hidden card !p-5 w-full">
-        <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
-            <h4 class="font-bold text-lg text-slate-800 dark:text-slate-100" id="status-title">Status</h4>
-            <div id="spinner" class="spinner w-5 h-5 hidden"></div>
-        </div>
-        <pre id="status-box" class="w-full p-4 bg-slate-900 text-emerald-400 rounded-xl text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto shadow-inner"></pre>
-    </div>
-
+    <!-- Data Table -->
     <div class="card !p-0 overflow-hidden w-full border-0 shadow-lg">
-        <div id="data-table-container" class="overflow-x-auto w-full max-h-[70vh]"></div>
+        <div class="table-container border-0 rounded-none shadow-none max-h-[700px]">
+            <table class="data-table">
+                <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                    <tr id="table-header-row">
+                        <!-- Headers injected via JS -->
+                    </tr>
+                </thead>
+                <tbody id="data-table-body">
+                    <tr><td class="py-20 text-center text-slate-400 font-medium italic">Please fetch data to begin.</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/bulk_hours.js') }}" defer></script>
+<!-- Progress Modal -->
+<div id="modal-progress" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-md text-center transform scale-95 transition-transform duration-300 shadow-2xl">
+        <h3 class="text-heading mb-2" id="progress-title">Processing...</h3>
+        <p class="text-subheading mb-8" id="progress-desc">Applying configuration to RingCentral. Please stand by.</p>
+        
+        <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-6 overflow-hidden shadow-inner">
+            <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <div id="progress-log" class="h-40 overflow-y-auto bg-slate-900 dark:bg-[#0b1120] text-left p-4 rounded-xl font-mono text-xs text-emerald-400 space-y-1 shadow-inner outline-none">
+        </div>
+        
+        <button id="progress-close-btn" class="mt-8 hidden w-full btn-secondary">
+            Close Window
+        </button>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Element References ---
+    const fetchBtns = {
+        sitesHours: document.getElementById('fetch-sites-hours-btn'),
+        queuesHours: document.getElementById('fetch-queues-hours-btn'),
+        sitesRules: document.getElementById('fetch-sites-rules-btn'),
+        queuesRules: document.getElementById('fetch-queues-rules-btn'),
+    };
+    
+    const downloadCsvBtn = document.getElementById('download-csv-btn');
+    const csvFileInput = document.getElementById('csv-file-input');
+    const applyFromFileBtn = document.getElementById('apply-from-file-btn');
+    const applyInAppChangesBtn = document.getElementById('apply-in-app-changes-btn');
+    
+    const tableHeaderRow = document.getElementById('table-header-row');
+    const tbody = document.getElementById('data-table-body');
+    const filterInput = document.getElementById('filter-input');
+    
+    const bulkEditContainer = document.getElementById('bulk-edit-container');
+    const daysSelect = document.getElementById('days-select');
+    const hoursInput = document.getElementById('hours-input');
+    const applyBulkEditBtn = document.getElementById('apply-bulk-edit-btn');
+    
+    // Modal References
+    const modalProgress = document.getElementById('modal-progress');
+    const progressLog = document.getElementById('progress-log');
+    const progressBar = document.getElementById('progress-bar');
+    const progressTitle = document.getElementById('progress-title');
+    const progressCloseBtn = document.getElementById('progress-close-btn');
+
+    let currentData = [];
+    let currentDataType = ''; // 'Hours' or 'Rules'
+    let headers = [];
+    let currentSortCol = '';
+    let sortDirection = 'asc';
+
+    // --- Modal Functions ---
+    const openModal = (id) => {
+        const m = document.getElementById(id);
+        m.classList.remove('hidden');
+        setTimeout(() => { 
+            m.classList.remove('opacity-0'); 
+            m.querySelector('.card').classList.remove('scale-95'); 
+        }, 10);
+    };
+
+    const closeModal = (id) => {
+        const m = document.getElementById(id);
+        m.classList.add('opacity-0');
+        m.querySelector('.card').classList.add('scale-95');
+        setTimeout(() => m.classList.add('hidden'), 300);
+    };
+
+    const logProgress = (msg, type='info') => {
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-slate-400');
+        entry.innerText = `> ${msg}`;
+        progressLog.appendChild(entry);
+        progressLog.scrollTop = progressLog.scrollHeight;
+    };
+
+    const toggleLoading = (isLoading) => {
+        Object.values(fetchBtns).forEach(btn => btn.disabled = isLoading);
+        [downloadCsvBtn, applyFromFileBtn, applyInAppChangesBtn, applyBulkEditBtn].forEach(btn => btn.disabled = isLoading);
+        if (isLoading) {
+            tbody.innerHTML = `<tr><td colspan="12" class="py-20 text-center text-slate-400 font-medium italic"><div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div>Fetching Data...</td></tr>`;
+        }
+    };
+
+    // --- Render Table ---
+    const renderTable = (data, dataType) => {
+        tableHeaderRow.innerHTML = '';
+        tbody.innerHTML = '';
+        bulkEditContainer.classList.toggle('hidden', dataType !== 'Hours');
+        filterInput.value = '';
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td class="py-20 text-center text-slate-400 font-medium italic">No records returned.</td></tr>`;
+            return;
+        }
+
+        if (dataType === 'Hours') {
+            headers = ['EntityType', 'EntityID', 'EntityName', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        } else if (dataType === 'Rules') {
+            headers = ['EntityType', 'EntityName', 'RuleName', 'Enabled', 'Action', 'RuleID', 'EntityID', 'ScheduleType', 'ScheduleDetails', 'CallAction', 'ActionTarget'];
+        } else {
+            headers = Object.keys(data[0]);
+        }
+
+        // Build Headers
+        if (dataType === 'Hours') {
+            const thCheck = document.createElement('th');
+            thCheck.className = 'w-12 text-center';
+            thCheck.innerHTML = `<input type="checkbox" id="bulk-select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">`;
+            tableHeaderRow.appendChild(thCheck);
+        }
+
+        headers.forEach((key, index) => {
+            const th = document.createElement('th');
+            th.className = 'cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors select-none py-4 px-4 font-semibold tracking-wider text-xs uppercase whitespace-nowrap';
+            th.dataset.columnIndex = dataType === 'Hours' ? index + 1 : index;
+            th.innerHTML = `${key} <span class="sort-icon ml-1 text-slate-400"></span>`;
+            th.addEventListener('click', () => sortTable(th));
+            tableHeaderRow.appendChild(th);
+        });
+
+        // Event for Select All
+        if (dataType === 'Hours') {
+            setTimeout(() => {
+                const selectAll = document.getElementById('bulk-select-all');
+                if (selectAll) {
+                    selectAll.addEventListener('change', (e) => {
+                        const isChecked = e.target.checked;
+                        document.querySelectorAll('.row-cb').forEach(cb => {
+                            cb.checked = isChecked;
+                            cb.closest('tr').classList.toggle('bg-blue-50/50', isChecked);
+                            cb.closest('tr').classList.toggle('dark:bg-blue-900/10', isChecked);
+                        });
+                    });
+                }
+            }, 50);
+        }
+
+        // Build Rows
+        data.forEach((rowData, index) => {
+            const tr = document.createElement('tr');
+            tr.dataset.index = index;
+            tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors duration-150 border-b border-slate-100 dark:border-slate-800/50';
+
+            if (dataType === 'Hours') {
+                const tdCheck = document.createElement('td');
+                tdCheck.className = 'text-center w-12';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'row-cb h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer bg-white dark:bg-slate-900';
+                checkbox.addEventListener('change', (e) => {
+                    tr.classList.toggle('bg-blue-50/50', e.target.checked);
+                    tr.classList.toggle('dark:bg-blue-900/10', e.target.checked);
+                });
+                tdCheck.appendChild(checkbox);
+                tr.appendChild(tdCheck);
+            }
+            
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                td.className = 'px-4 py-3 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300';
+                td.dataset.header = header;
+                
+                let content = rowData[header] || '';
+                if (content.toLowerCase() === 'closed') {
+                    td.innerHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">${content}</span>`;
+                } else if (content.includes('-') && !content.includes('N/A') && dataType === 'Hours') {
+                    td.innerHTML = `<span class="text-emerald-700 dark:text-emerald-400 font-semibold font-mono">${content}</span>`;
+                } else if (header === 'Action' || header === 'Enabled') {
+                    td.innerHTML = `<span class="font-semibold text-slate-500 dark:text-slate-400">${content}</span>`;
+                } else {
+                    td.textContent = content;
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    };
+
+    // --- Filter & Sort ---
+    filterInput.addEventListener('keyup', () => {
+        const searchTerm = filterInput.value.toLowerCase();
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach(row => {
+            const rowText = row.textContent.toLowerCase();
+            row.style.display = rowText.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    const sortTable = (th) => {
+        const columnIndex = parseInt(th.dataset.columnIndex);
+        const isAsc = sortDirection === 'asc';
+        const direction = isAsc ? 1 : -1;
+
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((rowA, rowB) => {
+            const cellA = rowA.cells[columnIndex].textContent.trim();
+            const cellB = rowB.cells[columnIndex].textContent.trim();
+            return cellA.localeCompare(cellB, undefined, {numeric: true}) * direction;
+        });
+
+        tbody.innerHTML = '';
+        rows.forEach(row => tbody.appendChild(row));
+        
+        // Update Icons
+        document.querySelectorAll('.sort-icon').forEach(icon => {
+            icon.textContent = '';
+            icon.className = 'sort-icon ml-1 text-slate-400';
+        });
+        const currentIcon = th.querySelector('.sort-icon');
+        currentIcon.textContent = isAsc ? '▲' : '▼';
+        currentIcon.className = 'sort-icon ml-1 text-blue-600 dark:text-blue-400 font-bold';
+
+        sortDirection = isAsc ? 'desc' : 'asc';
+    };
+
+    // --- Core Operations ---
+    const handleFetch = async (dataType, entityType) => {
+        toggleLoading(true);
+        currentDataType = dataType;
+        try {
+            const endpoint = `/api/bulk_hours/${dataType.toLowerCase()}/${entityType}`;
+            const response = await fetch(endpoint);
+            if (!response.ok) {
+                let errorMsg = `HTTP error! Status: ${response.status}`;
+                try { const errorJson = await response.json(); errorMsg = errorJson.error || errorMsg; } catch (e) {}
+                throw new Error(errorMsg);
+            }
+            
+            const data = await response.json();
+            currentData = data;
+            renderTable(data, dataType);
+            
+            downloadCsvBtn.disabled = data.length === 0;
+            applyInAppChangesBtn.disabled = data.length === 0;
+        } catch (error) {
+            tbody.innerHTML = `<tr><td colspan="12" class="py-20 text-center text-rose-500 font-bold">Failed to load: ${error.message}</td></tr>`;
+        } finally {
+            toggleLoading(false);
+        }
+    };
+
+    const handleApply = async (records) => {
+        if (!records || records.length === 0) {
+            alert('No records were selected to apply.');
+            return;
+        }
+
+        openModal('modal-progress');
+        progressLog.innerHTML = '';
+        progressCloseBtn.classList.add('hidden');
+        progressBar.style.width = '10%';
+        progressBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
+        progressTitle.textContent = "Updating RingCentral...";
+        logProgress(`Packaging ${records.length} records for ${currentDataType.toLowerCase()} update...`, 'info');
+        
+        try {
+            progressBar.style.width = '50%';
+            logProgress(`Sending request to RingCentral API...`, 'info');
+
+            const response = await fetch('/api/bulk_hours/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dataType: currentDataType, records: records })
+            });
+            const results = await response.json();
+            if (!response.ok) throw new Error(results.error || 'Unknown upload error.');
+            
+            progressBar.style.width = '100%';
+            const success = results.filter(r => r.status === 'success').length;
+            const errors = results.length - success;
+            
+            results.forEach(r => logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, r.status));
+            
+            if (errors === 0) {
+                progressTitle.textContent = "Update Successful";
+                progressBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-300';
+                tbody.innerHTML = `<tr><td colspan="12" class="py-20 text-center text-emerald-600 font-medium">Updates applied successfully. Please fetch data again to verify.</td></tr>`;
+                bulkEditContainer.classList.add('hidden');
+            } else {
+                progressTitle.textContent = `Completed with ${errors} Errors`;
+                progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
+            }
+
+        } catch (error) {
+            progressBar.style.width = '100%';
+            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
+            progressTitle.textContent = "Update Failed";
+            logProgress(error.message, 'error');
+        } finally {
+            progressCloseBtn.classList.remove('hidden');
+        }
+    };
+
+    // --- Listeners ---
+    fetchBtns.sitesHours.addEventListener('click', () => handleFetch('Hours', 'sites'));
+    fetchBtns.queuesHours.addEventListener('click', () => handleFetch('Hours', 'queues'));
+    fetchBtns.sitesRules.addEventListener('click', () => handleFetch('Rules', 'sites'));
+    fetchBtns.queuesRules.addEventListener('click', () => handleFetch('Rules', 'queues'));
+    
+    applyInAppChangesBtn.addEventListener('click', () => {
+        const selectedRows = document.querySelectorAll('.row-cb:checked');
+        if (selectedRows.length === 0) {
+            alert("Please select at least one row using the checkboxes.");
+            return;
+        }
+        const recordsToApply = Array.from(selectedRows).map(checkbox => {
+            return currentData[checkbox.closest('tr').dataset.index];
+        });
+        handleApply(recordsToApply);
+    });
+
+    applyBulkEditBtn.addEventListener('click', () => {
+        const daysToChange = {
+            weekdays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+            weekends: ['Saturday', 'Sunday']
+        }[daysSelect.value] || [daysSelect.value];
+
+        const selectedRows = document.querySelectorAll('.row-cb:checked');
+        if (selectedRows.length === 0) {
+            alert("Please select at least one row to edit.");
+            return;
+        }
+
+        selectedRows.forEach(checkbox => {
+            const tr = checkbox.closest('tr');
+            const rowIndex = tr.dataset.index;
+            
+            daysToChange.forEach(day => {
+                currentData[rowIndex][day] = hoursInput.value.trim();
+                const cell = tr.querySelector(`td[data-header="${day}"]`);
+                if (cell) {
+                    let content = hoursInput.value.trim();
+                    if (content.toLowerCase() === 'closed') {
+                        cell.innerHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">Closed</span>`;
+                    } else {
+                        cell.innerHTML = `<span class="text-emerald-700 dark:text-emerald-400 font-semibold font-mono">${content}</span>`;
+                    }
+                }
+            });
+            tr.classList.add('bg-indigo-50/60', 'dark:bg-indigo-900/20');
+            checkbox.checked = false;
+        });
+        
+        // Reset header checkbox
+        const selectAll = document.getElementById('bulk-select-all');
+        if (selectAll) selectAll.checked = false;
+    });
+
+    downloadCsvBtn.addEventListener('click', () => {
+        if (currentData.length === 0) return;
+        const csvContent = [
+            headers.join(','),
+            ...currentData.map(row => headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `RC_${currentDataType}_${new Date().toISOString().slice(0,10)}.csv`;
+        link.click();
+    });
+
+    csvFileInput.addEventListener('change', () => {
+        applyFromFileBtn.disabled = !csvFileInput.files.length;
+    });
+
+    applyFromFileBtn.addEventListener('click', () => {
+        const file = csvFileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const lines = event.target.result.trim().split('\n');
+            const fileHeaders = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const records = lines.slice(1).map(line => {
+                const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+                return fileHeaders.reduce((obj, h, i) => {
+                    obj[h] = (values[i] || '').replace(/^"|"$/g, '').trim();
+                    return obj;
+                }, {});
+            });
+            handleApply(records);
+        };
+        reader.readAsText(file);
+        csvFileInput.value = '';
+        applyFromFileBtn.disabled = true;
+    });
+
+    progressCloseBtn.addEventListener('click', () => closeModal('modal-progress'));
+});
+</script>
