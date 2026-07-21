@@ -274,8 +274,9 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
         
     raise Exception(f"RC Media Fetch Failed. Status: {response.status_code}")
 
+
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
-    """Uploads a custom greeting and BINDS it, navigating the V1/V2 CHaF migration gap."""
+    """Uploads a custom greeting and BINDS it, navigating the V1/V2 CHaF migration gap safely."""
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     ext_type = ext_info.get('type') if ext_info else None
     
@@ -311,8 +312,9 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
 
     if not rule_id:
         rule_id = 'business-hours-rule'
+    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
 
-    # 2. UPLOAD AUDIO RAW (apply=false)
+    # 2. UPLOAD AUDIO RAW TO GET AN ID
     metadata = {"type": greeting_type}
     files = {
         'json': ('request.json', json.dumps(metadata), 'application/json'),
@@ -330,11 +332,10 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     if not audio_id:
         return greeting_result
 
-    # 3. ATTEMPT LEGACY V1 BIND (Fails if CHaF is enabled)
+    # 3. ATTEMPT LEGACY V1 BIND
     try:
-        # ALL V1 greetings, including HoldMusic, must go inside the greetings array for a PUT.
+        # For a V1 PUT, ALL greetings must go inside the greetings array (including HoldMusic)
         v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
-            
         rc_api_call(
             f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
             method='PUT',
@@ -344,93 +345,44 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
         return greeting_result
         
     except Exception as e:
-        # If the error is NOT the CHaF block, surface it normally.
+        # If the error is NOT related to CHaF blocking V1, throw it immediately.
         if 'CMN-468' not in str(e):
             raise e
             
-    # 4. FALLBACK TO V2 CHaF PATCH
-    # Map the V1 rule ID to the V2 state ID
-    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
-    v2_payload = {}
+    # 4. FALLBACK TO V2 CHaF BINDING
+    # If we arrive here, V1 was strictly blocked by CMN-468, so we navigate V2 rules.
     
-    if greeting_type == 'HoldMusic':
-        # Bridging the undocumented V2 gap for Hold Music
-        v2_payload = {
-            "holdMusic": {
-                "effectiveGreetingType": "Custom",
-                "custom": { "id": audio_id }
-            }
+    if greeting_type in ['HoldMusic', 'InterruptPrompt']:
+        # HoldMusic and InterruptPrompt are managed via the extension's Voice Settings in V2
+        v2_prop = "holdAudio" if greeting_type == 'HoldMusic' else "interruptAudio"
+        v2_payload = { v2_prop: { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } } }
+        
+        try:
+            # Try applying to global voice settings first
+            rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/settings', method='PATCH', json=v2_payload, raise_error=True)
+        except Exception as patch_e:
+            # Fallback specifically for Department Queues if /settings is rejected
+            if ext_type == 'Department':
+                rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/queues', method='PATCH', json=v2_payload, raise_error=True)
+            else:
+                raise patch_e
+    else:
+        # For standard greetings (Voicemail, Introductory, etc.), we bypass brittle V2 PATCH arrays 
+        # and leverage RingCentral's V2 support on the POST endpoint by passing stateId.
+        metadata_chaf = {"type": greeting_type, "stateId": state_id}
+        files_chaf = {
+            'json': ('request.json', json.dumps(metadata_chaf), 'application/json'),
+            'attachment': (filename, file_data, content_type)
         }
-    elif greeting_type == 'Introductory':
-        v2_payload = {
-            "dispatching": {
-                "actions": [
-                    {
-                        "type": "PlayWelcomePromptAction",
-                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } },
-                        "enabled": True
-                    }
-                ]
-            }
-        }
-    elif greeting_type == 'ConnectingMessage':
-        v2_payload = {
-            "dispatching": {
-                "actions": [
-                    {
-                        "type": "PlayConnectingMessageAction",
-                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } },
-                        "enabled": True
-                    }
-                ]
-            }
-        }
-    elif greeting_type == 'ConnectingAudio':
-        v2_payload = {
-            "dispatching": {
-                "actions": [
-                    {
-                        "type": "PlayConnectingPromptAction",
-                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } },
-                        "enabled": True
-                    }
-                ]
-            }
-        }
-    elif greeting_type == 'Voicemail':
-        v2_payload = {
-            "actions": [
-                {
-                    "type": "TerminatingAction",
-                    "effectiveTargetType": "VoiceMailTerminatingTarget",
-                    "voiceMail": {
-                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } }
-                    }
-                }
-            ]
-        }
-    elif greeting_type == 'Announcement':
-        v2_payload = {
-            "actions": [
-                {
-                    "type": "TerminatingAction",
-                    "effectiveTargetType": "PlayAnnouncementTerminatingTarget",
-                    "announcement": {
-                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } }
-                    }
-                }
-            ]
-        }
-
-    # Fire the V2 PATCH
-    rc_api_call(
-        f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/{state_id}',
-        method='PATCH',
-        json=v2_payload,
-        raise_error=True
-    )
-    
+        rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
+            method='POST',
+            files=files_chaf,
+            raise_error=True
+        )
+        
     return greeting_result
+
 
 def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and clear"):
     """Uses Gemini to generate TTS and returns an in-memory WAV buffer."""
