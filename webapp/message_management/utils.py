@@ -332,10 +332,8 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
 
     # 3. ATTEMPT LEGACY V1 BIND (Fails if CHaF is enabled)
     try:
-        if greeting_type == 'HoldMusic':
-            v1_payload = { "holdMusic": { "audio": { "id": audio_id } } }
-        else:
-            v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
+        # ALL V1 greetings, including HoldMusic, must go inside the greetings array for a PUT.
+        v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
             
         rc_api_call(
             f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
