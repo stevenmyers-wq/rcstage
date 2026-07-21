@@ -1,4 +1,3 @@
-# webapp/bulk_hours/routes.py
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
@@ -28,14 +27,15 @@ def get_hours_list(entity_type):
 @bulk_hours_bp.route('/rules/<entity_type>', methods=['GET'])
 @require_rc_token
 def get_rules_list(entity_type):
-    """Fetches the custom answering rules for 'sites' or 'queues'."""
+    """Fetches base and custom answering rules for 'sites' or 'queues'."""
     if entity_type.lower() not in ['sites', 'queues']:
         return jsonify({"error": "Invalid entity type for rules."}), 400
         
     formatted_entity_type = "Site" if entity_type.lower() == 'sites' else "Queue"
 
     try:
-        rules_data = utils.fetch_custom_rules(formatted_entity_type)
+        # Changed to fetch_all_rules to include in/out of hours base routing
+        rules_data = utils.fetch_all_rules(formatted_entity_type) 
         return jsonify(rules_data)
     except Exception as e:
         print(f"Error fetching rules: {e}")
