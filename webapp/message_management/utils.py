@@ -327,14 +327,17 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
             raise_error=True
         )
         
-        # 2. Manually bind it to the answering rule's holdMusic property via PUT
+        # 2. Manually bind it to the answering rule's greetings array via PUT
         if greeting_result and 'id' in greeting_result:
             update_payload = {
-                "holdMusic": {
-                    "audio": {
-                        "id": greeting_result['id']
+                "greetings": [
+                    {
+                        "type": "HoldMusic",
+                        "custom": {
+                            "id": greeting_result['id']
+                        }
                     }
-                }
+                ]
             }
             rc_api_call(
                 f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
