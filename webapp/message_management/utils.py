@@ -275,7 +275,7 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
     raise Exception(f"RC Media Fetch Failed. Status: {response.status_code}")
 
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
-    """Uploads a custom greeting and BINDS it to the specified answering rule or IVR Menu."""
+    """Uploads a custom greeting and BINDS it, navigating the V1/V2 CHaF migration gap."""
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     ext_type = ext_info.get('type') if ext_info else None
     
@@ -288,6 +288,7 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     if ":" in greeting_type_str:
         rule_id, greeting_type = greeting_type_str.split(":", 1)
     
+    # 1. IVR MENU HANDLING (Unaffected by CHaF)
     if ext_type == 'IvrMenu':
         prompt_name = greeting_name or filename.split('.')[0]
         data_payload = {'name': prompt_name}
@@ -311,61 +312,127 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     if not rule_id:
         rule_id = 'business-hours-rule'
 
-    # UPDATED LOGIC: Fork handling for HoldMusic vs other greetings
-    if greeting_type == 'HoldMusic':
-        # 1. Upload the custom audio independently (no rule context)
-        metadata = {"type": greeting_type}
-        files = {
-            'json': ('request.json', json.dumps(metadata), 'application/json'),
-            'attachment': (filename, file_data, content_type)
-        }
-        
-        greeting_result = rc_api_call(
-            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
-            method='POST',
-            files=files,
+    # 2. UPLOAD AUDIO RAW (apply=false)
+    metadata = {"type": greeting_type}
+    files = {
+        'json': ('request.json', json.dumps(metadata), 'application/json'),
+        'attachment': (filename, file_data, content_type)
+    }
+    
+    greeting_result = rc_api_call(
+        f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
+        method='POST',
+        files=files,
+        raise_error=True
+    )
+    
+    audio_id = greeting_result.get('id')
+    if not audio_id:
+        return greeting_result
+
+    # 3. ATTEMPT LEGACY V1 BIND (Fails if CHaF is enabled)
+    try:
+        if greeting_type == 'HoldMusic':
+            v1_payload = { "holdMusic": { "audio": { "id": audio_id } } }
+        else:
+            v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
+            
+        rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
+            method='PUT',
+            json=v1_payload,
             raise_error=True
         )
+        return greeting_result
         
-        # 2. Manually bind it to the answering rule's greetings array via PUT
-        if greeting_result and 'id' in greeting_result:
-            update_payload = {
-                "greetings": [
+    except Exception as e:
+        # If the error is NOT the CHaF block, surface it normally.
+        if 'CMN-468' not in str(e):
+            raise e
+            
+    # 4. FALLBACK TO V2 CHaF PATCH
+    # Map the V1 rule ID to the V2 state ID
+    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
+    v2_payload = {}
+    
+    if greeting_type == 'HoldMusic':
+        # Bridging the undocumented V2 gap for Hold Music
+        v2_payload = {
+            "holdMusic": {
+                "effectiveGreetingType": "Custom",
+                "custom": { "id": audio_id }
+            }
+        }
+    elif greeting_type == 'Introductory':
+        v2_payload = {
+            "dispatching": {
+                "actions": [
                     {
-                        "type": "HoldMusic",
-                        "custom": {
-                            "id": greeting_result['id']
-                        }
+                        "type": "PlayWelcomePromptAction",
+                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } },
+                        "enabled": True
                     }
                 ]
             }
-            rc_api_call(
-                f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
-                method='PUT',
-                json=update_payload,
-                raise_error=True
-            )
-            
-        return greeting_result
-        
-    else:
-        # Standard greetings (Voicemail, Introductory, Announcement, etc.)
-        metadata = {"type": greeting_type, "answeringRule": {"id": rule_id}}
-        
-        files = {
-            'json': ('request.json', json.dumps(metadata), 'application/json'),
-            'attachment': (filename, file_data, content_type)
+        }
+    elif greeting_type == 'ConnectingMessage':
+        v2_payload = {
+            "dispatching": {
+                "actions": [
+                    {
+                        "type": "PlayConnectingMessageAction",
+                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } },
+                        "enabled": True
+                    }
+                ]
+            }
+        }
+    elif greeting_type == 'ConnectingAudio':
+        v2_payload = {
+            "dispatching": {
+                "actions": [
+                    {
+                        "type": "PlayConnectingPromptAction",
+                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } },
+                        "enabled": True
+                    }
+                ]
+            }
+        }
+    elif greeting_type == 'Voicemail':
+        v2_payload = {
+            "actions": [
+                {
+                    "type": "TerminatingAction",
+                    "effectiveTargetType": "VoiceMailTerminatingTarget",
+                    "voiceMail": {
+                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } }
+                    }
+                }
+            ]
+        }
+    elif greeting_type == 'Announcement':
+        v2_payload = {
+            "actions": [
+                {
+                    "type": "TerminatingAction",
+                    "effectiveTargetType": "PlayAnnouncementTerminatingTarget",
+                    "announcement": {
+                        "greeting": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } }
+                    }
+                }
+            ]
         }
 
-        # We enforce ?apply=true in the URL so RC automatically binds the audio to the answering rule natively
-        greeting_result = rc_api_call(
-            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
-            method='POST',
-            files=files,
-            raise_error=True
-        )
-
-        return greeting_result
+    # Fire the V2 PATCH
+    rc_api_call(
+        f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/{state_id}',
+        method='PATCH',
+        json=v2_payload,
+        raise_error=True
+    )
+    
+    return greeting_result
 
 def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and clear"):
     """Uses Gemini to generate TTS and returns an in-memory WAV buffer."""
