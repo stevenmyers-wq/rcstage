@@ -243,6 +243,7 @@ def _parse_rule_details(rule):
         
     parsed['call_action'] = call_action
     
+    # Map Action Targets correctly depending on routing method
     if call_action == 'ForwardCalls' and 'forwarding' in rule:
         fwd_nums = rule['forwarding'].get('rules', [{}])[0].get('forwardingNumbers', [])
         if fwd_nums:
@@ -296,6 +297,7 @@ def _build_rule_api_body(rule_data):
 
     if call_action == "TransferToExtension":
         target_id = action_target_id
+        # Dynamic ID Lookup if user provides an Extension Number but no ID
         if action_target and action_target != "N/A" and (not target_id or target_id == "N/A"):
             res = rc_api_call(f"/restapi/v1.0/account/~/extension?extensionNumber={action_target}")
             if res and res.get('records'):
@@ -308,6 +310,7 @@ def _build_rule_api_body(rule_data):
         if action_target_id and action_target_id != "N/A":
             body["forwarding"] = {"rules": [{"forwardingNumbers": [{"id": action_target_id}]}]}
         elif action_target and action_target != "N/A":
+            # Fallback to Unconditional Forwarding if an external number is provided
             body["callHandlingAction"] = "UnconditionalForwarding"
             body["unconditionalForwarding"] = {"phoneNumber": action_target}
             
