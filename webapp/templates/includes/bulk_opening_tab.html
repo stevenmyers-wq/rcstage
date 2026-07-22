@@ -197,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.values(fetchBtns).forEach(btn => btn.disabled = isLoading);
         [downloadCsvBtn, applyFromFileBtn, applyInAppChangesBtn, applyBulkEditBtn].forEach(btn => btn.disabled = isLoading);
         if (isLoading) {
-            tbody.innerHTML = `<tr><td colspan="12" class="py-20 text-center text-slate-400 font-medium italic"><div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div>Fetching Data...</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="15" class="py-20 text-center text-slate-400 font-medium italic"><div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div>Fetching Data...</td></tr>`;
         }
     };
 
@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dataType === 'Hours') {
             headers = ['EntityType', 'EntityID', 'EntityName', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         } else if (dataType === 'Rules') {
-            headers = ['EntityType', 'EntityName', 'RuleName', 'Enabled', 'Action', 'RuleID', 'EntityID', 'ScheduleType', 'ScheduleDetails', 'CallAction', 'ActionTarget'];
+            headers = ['RuleCategory', 'EntityType', 'EntityName', 'RuleName', 'Enabled', 'Action', 'RuleID', 'EntityID', 'ScheduleType', 'ScheduleDetails', 'CallAction', 'ActionTarget', 'ActionTargetID'];
         } else {
             headers = Object.keys(data[0]);
         }
@@ -238,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tableHeaderRow.appendChild(th);
         });
 
-        // Event for Select All
+        // Event for Select All (Hours only)
         if (dataType === 'Hours') {
             setTimeout(() => {
                 const selectAll = document.getElementById('bulk-select-all');
@@ -255,8 +255,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 50);
         }
 
-        // Build Rows
-        data.forEach((rowData, index) => {
+        // Helper to append a single row
+        const appendRow = (rowData, index) => {
             const tr = document.createElement('tr');
             tr.dataset.index = index;
             tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors duration-150 border-b border-slate-100 dark:border-slate-800/50';
@@ -285,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     td.innerHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">${content}</span>`;
                 } else if (content.includes('-') && !content.includes('N/A') && dataType === 'Hours') {
                     td.innerHTML = `<span class="text-emerald-700 dark:text-emerald-400 font-semibold font-mono">${content}</span>`;
-                } else if (header === 'Action' || header === 'Enabled') {
+                } else if (header === 'Action' || header === 'Enabled' || header === 'RuleCategory') {
                     td.innerHTML = `<span class="font-semibold text-slate-500 dark:text-slate-400">${content}</span>`;
                 } else {
                     td.textContent = content;
@@ -293,7 +293,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 tr.appendChild(td);
             });
             tbody.appendChild(tr);
-        });
+        };
+
+        // Group rows if it's Rules Data
+        if (dataType === 'Rules') {
+            const defaultRules = data.filter(r => r.RuleCategory === 'Default');
+            const customRules = data.filter(r => r.RuleCategory === 'Custom');
+
+            if (defaultRules.length > 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="${headers.length}" class="bg-slate-200 dark:bg-slate-700/80 font-bold text-slate-800 dark:text-slate-200 px-4 py-3 uppercase text-xs tracking-wider shadow-inner">Base Configuration (Business & After Hours)</td>`;
+                tbody.appendChild(tr);
+                defaultRules.forEach((rowData, index) => appendRow(rowData, currentData.indexOf(rowData)));
+            }
+
+            if (customRules.length > 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="${headers.length}" class="bg-purple-100 dark:bg-purple-900/30 font-bold text-purple-900 dark:text-purple-300 px-4 py-3 uppercase text-xs tracking-wider shadow-inner border-t border-purple-200 dark:border-purple-800">Custom Overrides</td>`;
+                tbody.appendChild(tr);
+                customRules.forEach((rowData, index) => appendRow(rowData, currentData.indexOf(rowData)));
+            }
+        } else {
+            data.forEach((rowData, index) => appendRow(rowData, index));
+        }
     };
 
     // --- Filter & Sort ---
@@ -353,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadCsvBtn.disabled = data.length === 0;
             applyInAppChangesBtn.disabled = data.length === 0;
         } catch (error) {
-            tbody.innerHTML = `<tr><td colspan="12" class="py-20 text-center text-rose-500 font-bold">Failed to load: ${error.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="15" class="py-20 text-center text-rose-500 font-bold">Failed to load: ${error.message}</td></tr>`;
         } finally {
             toggleLoading(false);
         }
@@ -394,7 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (errors === 0) {
                 progressTitle.textContent = "Update Successful";
                 progressBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-300';
-                tbody.innerHTML = `<tr><td colspan="12" class="py-20 text-center text-emerald-600 font-medium">Updates applied successfully. Please fetch data again to verify.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="15" class="py-20 text-center text-emerald-600 font-medium">Updates applied successfully. Please fetch data again to verify.</td></tr>`;
                 bulkEditContainer.classList.add('hidden');
             } else {
                 progressTitle.textContent = `Completed with ${errors} Errors`;
