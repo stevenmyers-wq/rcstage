@@ -114,11 +114,13 @@ def fetch_all_rules(entity_type):
                 if base_rule:
                     parsed = _parse_rule_details(base_rule)
                     all_rules_data.append({
+                        "RuleCategory": "Default",
                         "Action": "MODIFY", "EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name,
                         "RuleID": base_rule_id, "RuleName": base_rule.get('name', base_rule_id.replace('-', ' ').title()), 
                         "Enabled": base_rule.get('enabled', 'N/A'),
                         "ScheduleType": parsed['schedule_type'], "ScheduleDetails": parsed['schedule_details'],
-                        "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target']
+                        "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target'],
+                        "ActionTargetID": parsed['action_target_id']
                     })
 
             # 2. Fetch Custom Rules
@@ -129,10 +131,11 @@ def fetch_all_rules(entity_type):
             
             if not custom_rules:
                 all_rules_data.append({
+                    "RuleCategory": "Custom",
                     "Action": "INFO", "EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name,
                     "RuleID": "N/A", "RuleName": "No Custom Rules Active", "Enabled": "N/A",
                     "ScheduleType": "N/A", "ScheduleDetails": "Following standard business hours",
-                    "CallAction": "N/A", "ActionTarget": "N/A"
+                    "CallAction": "N/A", "ActionTarget": "N/A", "ActionTargetID": "N/A"
                 })
             else:
                 for rule_summary in custom_rules:
@@ -142,10 +145,12 @@ def fetch_all_rules(entity_type):
                     
                     parsed = _parse_rule_details(detailed_rule)
                     all_rules_data.append({
+                        "RuleCategory": "Custom",
                         "Action": "MODIFY", "EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name,
                         "RuleID": rule_id, "RuleName": detailed_rule.get('name'), "Enabled": detailed_rule.get('enabled'),
                         "ScheduleType": parsed['schedule_type'], "ScheduleDetails": parsed['schedule_details'],
-                        "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target']
+                        "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target'],
+                        "ActionTargetID": parsed['action_target_id']
                     })
         return all_rules_data
     except Exception as e:
@@ -198,8 +203,8 @@ def update_rules_from_records(records):
     return results
 
 def _parse_rule_details(rule):
-    """Parses a detailed rule object into simple, readable strings."""
-    parsed = {"schedule_type": "Unknown", "schedule_details": "N/A", "call_action": "N/A", "action_target": "N/A"}
+    """Parses a detailed rule object into simple, readable strings including extensions/numbers."""
+    parsed = {"schedule_type": "Unknown", "schedule_details": "N/A", "call_action": "N/A", "action_target": "N/A", "action_target_id": "N/A"}
     
     schedule = rule.get('schedule', {})
     if not schedule:
@@ -213,23 +218,31 @@ def _parse_rule_details(rule):
         parsed['schedule_details'] = f"{r.get('from')} to {r.get('to')}"
     
     parsed['call_action'] = rule.get('callHandlingAction', 'N/A')
+    
+    # Handle different RingCentral routing methods
     if parsed['call_action'] == 'ForwardCalls' and 'forwarding' in rule:
         fwd_nums = rule['forwarding'].get('rules', [{}])[0].get('forwardingNumbers', [])
         if fwd_nums:
             target = fwd_nums[0]
-            if 'phoneNumber' in target:
-                parsed['call_action'] = "ForwardExternal"
-                parsed['action_target'] = target['phoneNumber']
-            elif 'extension' in target:
-                parsed['call_action'] = "ForwardExtension"
-                parsed['action_target'] = target['extension'].get('id')
+            parsed['action_target'] = target.get('phoneNumber', target.get('label', 'Unknown'))
+            parsed['action_target_id'] = target.get('id', 'N/A')
+            
+    elif parsed['call_action'] == 'TransferToExtension':
+        ext_info = rule.get('transfer', {}).get('extension', {})
+        parsed['action_target'] = ext_info.get('extensionNumber', 'Unknown')
+        parsed['action_target_id'] = ext_info.get('id', 'N/A')
+        
+    elif parsed['call_action'] == 'UnconditionalForwarding':
+        parsed['action_target'] = rule.get('unconditionalForwarding', {}).get('phoneNumber', 'Unknown')
+        parsed['action_target_id'] = 'N/A'
+        
     elif parsed['call_action'] == 'TakeMessagesOnly':
         parsed['call_action'] = 'Voicemail'
     
     return parsed
 
 def _build_rule_api_body(rule_data):
-    """Constructs the complex API request body for creating/updating a custom rule."""
+    """Constructs the complex API request body, handling extension ID lookups if users type new numbers."""
     body = {
         "enabled": str(rule_data.get("Enabled", "true")).lower() == 'true',
         "type": "Custom",
@@ -244,14 +257,32 @@ def _build_rule_api_body(rule_data):
 
     call_action = rule_data.get("CallAction")
     action_target = rule_data.get("ActionTarget")
+    action_target_id = rule_data.get("ActionTargetID")
+    
     body["callHandlingAction"] = call_action
 
-    if call_action == "ForwardExternal":
-        body["callHandlingAction"] = "ForwardCalls"
-        body["forwarding"] = {"rules": [{"forwardingNumbers": [{"phoneNumber": action_target}]}]}
-    elif call_action == "ForwardExtension":
-        body["callHandlingAction"] = "ForwardCalls"
-        body["forwarding"] = {"rules": [{"forwardingNumbers": [{"extension": {"id": action_target}}]}]}
+    if call_action == "TransferToExtension":
+        target_id = action_target_id
+        # If the user typed an extension number in the CSV but didn't provide a matching ID, look it up dynamically
+        if action_target and action_target != "N/A":
+            res = rc_api_call(f"/restapi/v1.0/account/~/extension?extensionNumber={action_target}")
+            if res and res.get('records'):
+                target_id = str(res['records'][0]['id'])
+
+        if target_id and target_id != "N/A":
+            body["transfer"] = {"extension": {"id": target_id}}
+
+    elif call_action == "ForwardCalls":
+        if action_target_id and action_target_id != "N/A":
+            body["forwarding"] = {"rules": [{"forwardingNumbers": [{"id": action_target_id}]}]}
+        else:
+            # Fallback to Unconditional Forwarding if an external number is provided without a pre-existing RC forwarding ID
+            body["callHandlingAction"] = "UnconditionalForwarding"
+            body["unconditionalForwarding"] = {"phoneNumber": action_target}
+            
+    elif call_action == "UnconditionalForwarding":
+        body["unconditionalForwarding"] = {"phoneNumber": action_target}
+        
     elif call_action == "Voicemail":
         body["callHandlingAction"] = "TakeMessagesOnly"
     
