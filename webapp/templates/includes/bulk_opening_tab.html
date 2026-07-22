@@ -52,7 +52,7 @@
             <h4 class="text-heading text-base text-purple-900 dark:text-purple-100 mb-2">Part 2: Routing Rules (CSV Method)</h4>
             <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
                 <li>Fetch Default (BH/AH) or Custom Rules.</li>
-                <li>Download as CSV. Note: destinations are listed under `CallAction` and `ActionTarget` on the far right.</li>
+                <li>Download as CSV. Type the new Extension Number in the <code>ActionTarget</code> column.</li>
                 <li>Upload the modified file to apply changes in bulk.</li>
             </ol>
         </div>
@@ -232,7 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dataType === 'Hours') {
             headers = ['EntityType', 'EntityID', 'EntityName', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         } else if (dataType === 'Rules') {
-            headers = ['RuleCategory', 'EntityType', 'EntityName', 'RuleName', 'Enabled', 'Action', 'RuleID', 'EntityID', 'ScheduleType', 'ScheduleDetails', 'CallAction', 'ActionTarget', 'ActionTargetID'];
+            // Notice ActionTargetID is completely removed, ActionTargetName is added.
+            headers = ['RuleCategory', 'EntityType', 'EntityName', 'RuleName', 'Enabled', 'Action', 'RuleID', 'EntityID', 'ScheduleType', 'ScheduleDetails', 'CallAction', 'ActionTarget', 'ActionTargetName'];
         } else {
             headers = Object.keys(data[0]);
         }
@@ -296,7 +297,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 td.className = 'px-4 py-3 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300';
                 td.dataset.header = header;
                 
-                // Force content to string to avoid toLowerCase errors on numbers/booleans
                 let content = String(rowData[header] ?? ''); 
                 
                 if (content.toLowerCase() === 'closed') {
