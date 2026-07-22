@@ -47,6 +47,7 @@ def get_rules_list(entity_type):
 def upload_data():
     """
     Receives either Hours or Rules data and processes the updates.
+    The frontend specifies the data type in the payload.
     """
     data = request.get_json()
 
