@@ -8,19 +8,33 @@
     </div>
 
     <!-- Controls -->
-    <div class="flex flex-col xl:flex-row gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
-        <button id="fetch-sites-hours-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
-            🏢 Fetch Site Hours
-        </button>
-        <button id="fetch-queues-hours-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
-            👥 Fetch Queue Hours
-        </button>
-        <button id="fetch-sites-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
-            🔀 Fetch Site Rules
-        </button>
-        <button id="fetch-queues-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
-            🔀 Fetch Queue Rules
-        </button>
+    <div class="flex flex-col gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
+        
+        <!-- Hours Controls -->
+        <div class="flex flex-col sm:flex-row gap-4 w-full">
+            <button id="fetch-sites-hours-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+                🏢 Fetch Site Hours
+            </button>
+            <button id="fetch-queues-hours-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+                👥 Fetch Queue Hours
+            </button>
+        </div>
+
+        <!-- Rules Controls -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full mt-2">
+            <button id="fetch-sites-default-rules-btn" class="btn-primary !bg-emerald-600 hover:!bg-emerald-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                🔀 Fetch Site Default Rules
+            </button>
+            <button id="fetch-sites-custom-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                🔀 Fetch Site Custom Rules
+            </button>
+            <button id="fetch-queues-default-rules-btn" class="btn-primary !bg-emerald-600 hover:!bg-emerald-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                🔀 Fetch Queue Default Rules
+            </button>
+            <button id="fetch-queues-custom-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                🔀 Fetch Queue Custom Rules
+            </button>
+        </div>
     </div>
 
     <!-- Instructions / Context -->
@@ -37,8 +51,8 @@
         <div class="card !p-5 bg-purple-50/50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-800/50 shadow-sm">
             <h4 class="text-heading text-base text-purple-900 dark:text-purple-100 mb-2">Part 2: Routing Rules (CSV Method)</h4>
             <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
-                <li>Fetch Site or Queue Rules.</li>
-                <li>Download as CSV and map your forwarding/voicemail targets.</li>
+                <li>Fetch Default (BH/AH) or Custom Rules.</li>
+                <li>Download as CSV. Note: destinations are listed under `CallAction` and `ActionTarget` on the far right.</li>
                 <li>Upload the modified file to apply changes in bulk.</li>
             </ol>
         </div>
@@ -137,8 +151,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const fetchBtns = {
         sitesHours: document.getElementById('fetch-sites-hours-btn'),
         queuesHours: document.getElementById('fetch-queues-hours-btn'),
-        sitesRules: document.getElementById('fetch-sites-rules-btn'),
-        queuesRules: document.getElementById('fetch-queues-rules-btn'),
+        sitesDefaultRules: document.getElementById('fetch-sites-default-rules-btn'),
+        sitesCustomRules: document.getElementById('fetch-sites-custom-rules-btn'),
+        queuesDefaultRules: document.getElementById('fetch-queues-default-rules-btn'),
+        queuesCustomRules: document.getElementById('fetch-queues-custom-rules-btn')
     };
     
     const downloadCsvBtn = document.getElementById('download-csv-btn');
@@ -295,27 +311,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.appendChild(tr);
         };
 
-        // Group rows if it's Rules Data
-        if (dataType === 'Rules') {
-            const defaultRules = data.filter(r => r.RuleCategory === 'Default');
-            const customRules = data.filter(r => r.RuleCategory === 'Custom');
-
-            if (defaultRules.length > 0) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td colspan="${headers.length}" class="bg-slate-200 dark:bg-slate-700/80 font-bold text-slate-800 dark:text-slate-200 px-4 py-3 uppercase text-xs tracking-wider shadow-inner">Base Configuration (Business & After Hours)</td>`;
-                tbody.appendChild(tr);
-                defaultRules.forEach((rowData, index) => appendRow(rowData, currentData.indexOf(rowData)));
-            }
-
-            if (customRules.length > 0) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td colspan="${headers.length}" class="bg-purple-100 dark:bg-purple-900/30 font-bold text-purple-900 dark:text-purple-300 px-4 py-3 uppercase text-xs tracking-wider shadow-inner border-t border-purple-200 dark:border-purple-800">Custom Overrides</td>`;
-                tbody.appendChild(tr);
-                customRules.forEach((rowData, index) => appendRow(rowData, currentData.indexOf(rowData)));
-            }
-        } else {
-            data.forEach((rowData, index) => appendRow(rowData, index));
-        }
+        // Render straight out for Rules (category already filtered backend)
+        data.forEach((rowData, index) => appendRow(rowData, index));
     };
 
     // --- Filter & Sort ---
@@ -356,11 +353,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Core Operations ---
-    const handleFetch = async (dataType, entityType) => {
+    const handleFetch = async (dataType, entityType, category = 'all') => {
         toggleLoading(true);
         currentDataType = dataType;
         try {
-            const endpoint = `/api/bulk_hours/${dataType.toLowerCase()}/${entityType}`;
+            // Append category parameter for rules endpoint
+            let endpoint = `/api/bulk_hours/${dataType.toLowerCase()}/${entityType}`;
+            if (dataType === 'Rules') {
+                endpoint += `?category=${category}`;
+            }
+
             const response = await fetch(endpoint);
             if (!response.ok) {
                 let errorMsg = `HTTP error! Status: ${response.status}`;
@@ -436,8 +438,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Listeners ---
     fetchBtns.sitesHours.addEventListener('click', () => handleFetch('Hours', 'sites'));
     fetchBtns.queuesHours.addEventListener('click', () => handleFetch('Hours', 'queues'));
-    fetchBtns.sitesRules.addEventListener('click', () => handleFetch('Rules', 'sites'));
-    fetchBtns.queuesRules.addEventListener('click', () => handleFetch('Rules', 'queues'));
+    
+    // Explicit Rule fetch buttons
+    fetchBtns.sitesDefaultRules.addEventListener('click', () => handleFetch('Rules', 'sites', 'default'));
+    fetchBtns.sitesCustomRules.addEventListener('click', () => handleFetch('Rules', 'sites', 'custom'));
+    fetchBtns.queuesDefaultRules.addEventListener('click', () => handleFetch('Rules', 'queues', 'default'));
+    fetchBtns.queuesCustomRules.addEventListener('click', () => handleFetch('Rules', 'queues', 'custom'));
     
     applyInAppChangesBtn.addEventListener('click', () => {
         const selectedRows = document.querySelectorAll('.row-cb:checked');
