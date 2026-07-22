@@ -296,7 +296,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 td.className = 'px-4 py-3 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300';
                 td.dataset.header = header;
                 
-                let content = rowData[header] || '';
+                // Force content to string to avoid toLowerCase errors on numbers/booleans
+                let content = String(rowData[header] ?? ''); 
+                
                 if (content.toLowerCase() === 'closed') {
                     td.innerHTML = `<span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">${content}</span>`;
                 } else if (content.includes('-') && !content.includes('N/A') && dataType === 'Hours') {
