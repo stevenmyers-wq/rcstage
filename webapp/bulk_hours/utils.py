@@ -6,6 +6,35 @@ import json
 EXT_CACHE = {}
 UPLOAD_ID_CACHE = {}
 
+def _get_all_records(base_endpoint):
+    """Helper to handle RingCentral pagination and fetch all records across all pages."""
+    all_records = []
+    page = 1
+    per_page = 500 # Maximize perPage to reduce the number of API calls
+    
+    while True:
+        separator = '&' if '?' in base_endpoint else '?'
+        endpoint = f"{base_endpoint}{separator}page={page}&perPage={per_page}"
+        
+        response = rc_api_call(endpoint)
+        if not response or 'records' not in response:
+            break
+            
+        all_records.extend(response['records'])
+        
+        # Check if there is a next page using RC's navigation or paging objects
+        navigation = response.get('navigation', {})
+        if 'nextPage' in navigation:
+            page += 1
+        else:
+            paging = response.get('paging', {})
+            if page < paging.get('totalPages', 1):
+                page += 1
+            else:
+                break
+                
+    return all_records
+
 def _get_extension_display(ext_id):
     """Fetches the extension number and name from RingCentral."""
     if not ext_id or str(ext_id).strip() == '' or ext_id == 'N/A':
@@ -58,14 +87,16 @@ def fetch_operating_hours(entity_type):
     """Fetches and processes operating hours for a given entity type ('Site' or 'Queue')."""
     try:
         list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
-        entities_response = rc_api_call(list_endpoint)
-        if not entities_response or 'records' not in entities_response:
+        
+        # Use pagination helper instead of single API call
+        entities_records = _get_all_records(list_endpoint)
+        if not entities_records:
             return []
 
         all_data = []
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-        for entity in entities_response['records']:
+        for entity in entities_records:
             entity_id = entity.get('id')
             entity_name = entity.get('name', f'Unknown {entity_type}')
             
@@ -144,23 +175,24 @@ def fetch_rules(entity_type, category='all'):
     """Fetches base rules and/or custom rules depending on the category parameter."""
     try:
         list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
-        entities_response = rc_api_call(list_endpoint)
-        if not entities_response or 'records' not in entities_response:
+        
+        # Use pagination helper instead of single API call
+        entities_records = _get_all_records(list_endpoint)
+        if not entities_records:
             return []
 
         all_rules_data = []
-        for entity in entities_response['records']:
+        for entity in entities_records:
             entity_id = entity.get('id')
             entity_name = entity.get('name')
             
             rules_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
             if entity_id == "main-site": rules_endpoint = "/restapi/v1.0/account/~/answering-rule"
 
-            rules_summary_response = rc_api_call(rules_endpoint)
-            if not rules_summary_response or 'records' not in rules_summary_response:
+            # Use pagination helper for rules as well
+            all_ext_rules = _get_all_records(rules_endpoint)
+            if not all_ext_rules:
                 continue
-                
-            all_ext_rules = rules_summary_response['records']
 
             # 1. Process Default Rules
             if category in ['all', 'default']:
