@@ -48,6 +48,7 @@ def fetch_operating_hours(entity_type):
         print(f"FATAL ERROR in fetch_operating_hours: {e}")
         raise e
 
+
 def update_hours_from_records(records):
     """Processes a list of records and updates RC business hours."""
     results = []
@@ -72,6 +73,7 @@ def update_hours_from_records(records):
             print(f"ERROR processing update for {entity_name}: {e}")
             results.append({"name": entity_name, "status": "error", "message": str(e)})
     return results
+
 
 def _build_hours_api_body(schedule):
     """Helper to construct the business hours API body."""
@@ -202,6 +204,7 @@ def update_rules_from_records(records):
 
     return results
 
+
 def _parse_rule_details(rule):
     """Parses a detailed rule object into simple, readable strings including extensions/numbers."""
     parsed = {"schedule_type": "Unknown", "schedule_details": "N/A", "call_action": "N/A", "action_target": "N/A", "action_target_id": "N/A"}
@@ -240,6 +243,7 @@ def _parse_rule_details(rule):
         parsed['call_action'] = 'Voicemail'
     
     return parsed
+
 
 def _build_rule_api_body(rule_data):
     """Constructs the complex API request body, handling extension ID lookups if users type new numbers."""
