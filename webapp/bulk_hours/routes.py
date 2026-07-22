@@ -27,15 +27,15 @@ def get_hours_list(entity_type):
 @bulk_hours_bp.route('/rules/<entity_type>', methods=['GET'])
 @require_rc_token
 def get_rules_list(entity_type):
-    """Fetches base and custom answering rules for 'sites' or 'queues'."""
+    """Fetches answering rules for 'sites' or 'queues', optionally filtered by category."""
     if entity_type.lower() not in ['sites', 'queues']:
         return jsonify({"error": "Invalid entity type for rules."}), 400
         
     formatted_entity_type = "Site" if entity_type.lower() == 'sites' else "Queue"
+    category = request.args.get('category', 'all').lower() # 'default', 'custom', or 'all'
 
     try:
-        # Changed to fetch_all_rules to include in/out of hours base routing
-        rules_data = utils.fetch_all_rules(formatted_entity_type) 
+        rules_data = utils.fetch_rules(formatted_entity_type, category) 
         return jsonify(rules_data)
     except Exception as e:
         print(f"Error fetching rules: {e}")
@@ -47,7 +47,6 @@ def get_rules_list(entity_type):
 def upload_data():
     """
     Receives either Hours or Rules data and processes the updates.
-    The frontend specifies the data type in the payload.
     """
     data = request.get_json()
 
