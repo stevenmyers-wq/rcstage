@@ -1,6 +1,35 @@
 from webapp.rc_api import rc_api_call
 import json
 
+# Cache for extension lookups to prevent rate-limiting during bulk fetches
+EXT_CACHE = {}
+
+def _get_extension_display(ext_id):
+    """Fetches the extension number or name if the rule payload omits it."""
+    if not ext_id or str(ext_id).strip() == '' or ext_id == 'N/A':
+        return 'Unknown'
+    
+    ext_id_str = str(ext_id)
+    if ext_id_str in EXT_CACHE:
+        return EXT_CACHE[ext_id_str]
+        
+    try:
+        res = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id_str}")
+        if res:
+            # Prefer extension number; if blank (like some IVRs), use the name.
+            val = res.get('extensionNumber')
+            if not val:
+                val = res.get('name')
+            if val:
+                EXT_CACHE[ext_id_str] = val
+                return val
+    except Exception as e:
+        print(f"WARN: Failed to lookup extension {ext_id_str}: {e}")
+        pass
+        
+    EXT_CACHE[ext_id_str] = 'Unknown'
+    return 'Unknown'
+
 # ===============================================================
 # BUSINESS HOURS FUNCTIONS
 # ===============================================================
@@ -253,8 +282,15 @@ def _parse_rule_details(rule):
             
     elif call_action == 'TransferToExtension':
         ext_info = rule.get('transfer', {}).get('extension', {})
-        parsed['action_target'] = ext_info.get('extensionNumber', 'Unknown')
-        parsed['action_target_id'] = ext_info.get('id', 'N/A')
+        target_id = ext_info.get('id', 'N/A')
+        parsed['action_target_id'] = target_id
+        
+        target_num = ext_info.get('extensionNumber')
+        # If API omits the extension number/name, fetch it dynamically
+        if not target_num and target_id != 'N/A':
+            target_num = _get_extension_display(target_id)
+            
+        parsed['action_target'] = target_num or 'Unknown'
         
     elif call_action == 'UnconditionalForwarding':
         parsed['action_target'] = rule.get('unconditionalForwarding', {}).get('phoneNumber', 'Unknown')
@@ -263,8 +299,14 @@ def _parse_rule_details(rule):
         parsed['call_action'] = 'Voicemail'
         voicemail_ext = rule.get('voicemail', {}).get('recipient', {})
         if voicemail_ext:
-            parsed['action_target'] = voicemail_ext.get('extensionNumber', 'Self')
-            parsed['action_target_id'] = voicemail_ext.get('id', 'N/A')
+            target_id = voicemail_ext.get('id', 'N/A')
+            parsed['action_target_id'] = target_id
+            
+            target_num = voicemail_ext.get('extensionNumber')
+            if not target_num and target_id != 'N/A':
+                target_num = _get_extension_display(target_id)
+                
+            parsed['action_target'] = target_num or 'Self'
 
     elif call_action == 'AgentQueue':
         parsed['action_target'] = 'Queue Members'
