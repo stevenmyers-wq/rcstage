@@ -112,7 +112,7 @@ def update_hours_from_records(records):
             endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/business-hours"
             if entity_id == "main-site": endpoint = "/restapi/v1.0/account/~/business-hours"
 
-            response = rc_api_call(endpoint, method="PUT", body=api_body)
+            response = rc_api_call(endpoint, method="PUT", json=api_body)
             if response:
                 results.append({"name": entity_name, "status": "success", "message": "Updated successfully."})
             else:
@@ -164,7 +164,7 @@ def fetch_rules(entity_type, category='all'):
 
             # 1. Process Default Rules
             if category in ['all', 'default']:
-                default_rules = [r for r in all_ext_rules if r.get('type') in ['BusinessHours', 'AfterHours'] or r.get('id') in ['business-hours', 'after-hours']]
+                default_rules = [r for r in all_ext_rules if r.get('type') in ['BusinessHours', 'AfterHours'] or r.get('id') in ['business-hours', 'after-hours', 'business-hours-rule', 'after-hours-rule']]
                 for rule_summary in default_rules:
                     rule_id = rule_summary.get('id')
                     detailed_rule = rc_api_call(f"{rules_endpoint}/{rule_id}")
@@ -231,20 +231,22 @@ def update_rules_from_records(records):
             if not api_body:
                 raise ValueError("Could not construct valid API body from rule data.")
 
-            if rule_id in ['business-hours', 'after-hours']:
+            is_default = rule_id in ['business-hours', 'after-hours', 'business-hours-rule', 'after-hours-rule'] or rule.get("RuleCategory", "").lower() == "default"
+
+            if is_default:
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule/{rule_id}"
                 api_body.pop("type", None)
                 api_body.pop("name", None)
-                response = rc_api_call(endpoint, method="PUT", body=api_body)
+                response = rc_api_call(endpoint, method="PUT", json=api_body)
                 
             elif action == "MODIFY":
                 if not rule_id or rule_id == 'N/A': raise ValueError("RuleID is required for MODIFY action.")
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule/{rule_id}"
-                response = rc_api_call(endpoint, method="PUT", body=api_body)
+                response = rc_api_call(endpoint, method="PUT", json=api_body)
                 
             elif action == "NEW":
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
-                response = rc_api_call(endpoint, method="POST", body=api_body)
+                response = rc_api_call(endpoint, method="POST", json=api_body)
             
             if response:
                 results.append({"name": f"{entity_name} - {rule_name}", "status": "success", "message": f"Action '{action}' successful."})
