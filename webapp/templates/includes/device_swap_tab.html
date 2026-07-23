@@ -35,7 +35,6 @@
                 <input type="file" id="deviceSwapFile" accept=".xlsx" class="file-input" required/>
                 
                 <button type="submit" class="btn-primary w-full" id="deviceSwapBtn" disabled>
-                    <!-- Tailwind SVG Spinner -->
                     <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white hidden" id="deviceSwapSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -77,14 +76,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const processFileBtn = document.getElementById('deviceSwapBtn');
     const swapForm = document.getElementById('deviceSwapForm');
     
-    // Enable button only when file is selected
     if(fileUpload && processFileBtn) {
         fileUpload.addEventListener('change', () => { 
             processFileBtn.disabled = !fileUpload.files.length > 0; 
         });
     }
     
-    // Submit payload to the Python Backend
     if (swapForm) {
         swapForm.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -135,7 +132,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <td><span class="font-mono text-xs font-bold text-slate-600 dark:text-slate-400">${result.extension}</span></td>
                             <td><span class="font-mono text-xs text-slate-500">${result.mac}</span></td>
                             <td><span class="badge ${result.status === 'Success' ? 'badge-success' : 'badge-danger'}">${result.status}</span></td>
-                            <td class="text-xs">${result.reason}</td>
+                            <td class="text-xs font-medium">${result.reason}</td>
                         `;
                         resultsTableBody.appendChild(tr);
                     });
