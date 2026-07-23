@@ -181,6 +181,7 @@ def fetch_custom_greetings(ext_id):
                         'is_custom': False
                     })
 
+            # Check for top-level Hold Music object in V1 rules
             hold_music_obj = rule_detail.get('holdMusic')
             if hold_music_obj and (rule_id, 'HoldMusic') not in found_combinations:
                 custom_info = hold_music_obj.get('custom')
@@ -212,9 +213,10 @@ def fetch_custom_greetings(ext_id):
         except Exception:
             pass
 
-    # 3. V2 CHaF State Rules Lookup (Crucial for V2 HoldMusic visibility)
+    # 3. V2 CHaF State Rules Lookup
     try:
         v2_state = rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours', method='GET')
+        
         if v2_state and 'holdMusic' in v2_state:
             hm = v2_state['holdMusic']
             if hm.get('effectiveGreetingType') == 'Custom' and hm.get('custom', {}).get('id'):
@@ -232,7 +234,43 @@ def fetch_custom_greetings(ext_id):
     except Exception:
         pass
 
-    # 4. Backfill missing base slots
+    # 4. Custom Media Pool Workaround
+    try:
+        custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
+        
+        if custom_pool_resp and 'records' in custom_pool_resp:
+            hm_candidates = [cg for cg in custom_pool_resp['records'] if cg.get('type') == 'HoldMusic']
+            
+            if hm_candidates:
+                hm_already_custom = any(
+                    g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic' and g['is_custom']
+                    for g in greetings_list
+                )
+                
+                if not hm_already_custom:
+                    safe_candidates = [cg for cg in hm_candidates if 'voicemail' not in cg.get('name', '').lower()]
+                    if not safe_candidates:
+                        safe_candidates = hm_candidates
+                    
+                    safe_candidates.sort(key=lambda x: int(x['id']) if str(x['id']).isdigit() else 0)
+                    latest_hm = safe_candidates[-1]
+                    
+                    greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
+                    found_combinations.add(('business-hours-rule', 'HoldMusic'))
+                    
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': 'business-hours-rule',
+                        'rule_name': 'Business Hours',
+                        'id': latest_hm['id'],
+                        'name': latest_hm.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': latest_hm.get('contentUri', '')
+                    })
+    except Exception:
+        pass
+
+    # 5. Backfill missing base slots
     expected_matrix = baseline_types.get(ext_type, {})
     for r_id, slots in expected_matrix.items():
         r_name = 'Business Hours' if r_id == 'business-hours-rule' else 'After Hours'
@@ -283,6 +321,7 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
             if greeting_id != 'default':
                 rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
                 
+                # CRITICAL FIX: Reject mismatched Voicemail IDs passed into Hold Music slots
                 if rec and rec.get('type') != greeting_type:
                     rec = None
             
@@ -381,6 +420,7 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     if not rule_id:
         rule_id = 'business-hours-rule'
 
+    # The Custom Pool Upload is unchanged
     if greeting_type in ['HoldMusic', 'InterruptPrompt']:
         metadata = {"type": greeting_type}
         files = {
@@ -396,27 +436,27 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
         
         audio_id = greeting_result.get('id')
         if audio_id:
-            # Always attempt V1 Bind (Often silent failure on V2 accounts)
             try:
-                v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
+                # CRITICAL FIX: HoldMusic must be a top-level object in the V1 schema, NOT in the greetings array
+                if greeting_type == 'HoldMusic':
+                    v1_payload = {
+                        "holdMusic": {
+                            "effectiveGreetingType": "Custom",
+                            "custom": { "id": audio_id }
+                        }
+                    }
+                else:
+                    v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
+                
                 rc_api_call(
                     f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
                     method='PUT',
                     json=v1_payload,
                     raise_error=True
                 )
-            except Exception:
-                pass 
+            except Exception as e:
+                print(f"[DEBUG V1 Bind Error] {str(e)}")
                 
-            # Always attempt V2 State Rules PATCH
-            if greeting_type == 'HoldMusic':
-                try:
-                    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
-                    v2_payload = { "holdMusic": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } } }
-                    rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/{state_id}', method='PATCH', json=v2_payload, raise_error=True)
-                except Exception as e2:
-                    print(f"[DEBUG V2 Bind Error] {str(e2)}")
-                    
         return greeting_result
 
     metadata = {"type": greeting_type, "answeringRule": {"id": rule_id}}
