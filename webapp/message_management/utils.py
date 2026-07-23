@@ -188,19 +188,18 @@ def fetch_custom_greetings(ext_id):
     # 3. THE WORKAROUND: Query Custom Media Pool for orphaned V2 Hold Music
     try:
         custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
+        print(f"[DEBUG Custom Pool] ext={ext_id}: {json.dumps(custom_pool_resp)}")
+        
         if custom_pool_resp and 'records' in custom_pool_resp:
             hm_candidates = [cg for cg in custom_pool_resp['records'] if cg.get('type') == 'HoldMusic']
             
             if hm_candidates:
-                # Check if we already have a strictly CUSTOM hold music bound from Step 2
                 hm_already_custom = any(
                     g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic' and g['is_custom']
                     for g in greetings_list
                 )
                 
-                # If it's merely a preset or completely missing, override it with the custom file
                 if not hm_already_custom:
-                    # Filter out miscategorized voicemails
                     safe_candidates = [cg for cg in hm_candidates if 'voicemail' not in cg.get('name', '').lower()]
                     if not safe_candidates:
                         safe_candidates = hm_candidates
@@ -208,7 +207,6 @@ def fetch_custom_greetings(ext_id):
                     safe_candidates.sort(key=lambda x: int(x['id']) if str(x['id']).isdigit() else 0)
                     latest_hm = safe_candidates[-1]
                     
-                    # Purge the stale preset from the list if it exists
                     greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
                     found_combinations.add(('business-hours-rule', 'HoldMusic'))
                     
@@ -222,8 +220,7 @@ def fetch_custom_greetings(ext_id):
                         'preset_uri': latest_hm.get('contentUri', '')
                     })
     except Exception as e:
-        # Prevent silent failures from hiding API/Auth blocks
-        print(f"Warning: Failed to query custom media pool for ext {ext_id}: {str(e)}")
+        print(f"[DEBUG Custom Pool Error] ext={ext_id}: {str(e)}")
 
     # 4. Backfill missing base slots
     expected_matrix = baseline_types.get(ext_type, {})
@@ -244,7 +241,7 @@ def fetch_custom_greetings(ext_id):
     return {'status': 'Success', 'records': greetings_list}
 
 def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
-    """Fetch raw audio. Resolves direct URIs, custom greeting IDs, or real RingCentral system presets with usage mapping."""
+    """Fetch raw audio. Resolves direct URIs, custom greeting IDs, or real RingCentral system presets with strict usage mapping."""
     content_uri = None
     token = session.get('sm_isolated_token') or session.get('rc_access_token')
     headers = {'Authorization': f'Bearer {token}'}
@@ -260,7 +257,7 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
         meta = rc_api_call(f'/restapi/v1.0/account/~/ivr-prompts/{greeting_id}')
         content_uri = meta.get('contentUri') if meta else None
 
-    # 3. Custom Audio API Lookup (If we don't have the URI yet)
+    # 3. Custom Audio API Lookup
     elif is_custom and greeting_id != 'default' and not content_uri:
         try:
             meta = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting/{greeting_id}')
@@ -276,13 +273,13 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
         
         if resp.status_code == 200:
             data = resp.json()
+            print(f"[DEBUG Dictionary] type={greeting_type}: {json.dumps(data)}")
             records = data.get('records', [])
             
             rec = None
             if greeting_id != 'default':
                 rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
             
-            # If default or exact ID not found, target standard tracks mapped to the specific extension type
             if not rec and records:
                 try:
                     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
@@ -300,7 +297,12 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
                     valid_records = [r for r in records if r.get('type') == greeting_type]
 
                 target_names = ["Default", "Acoustic", "Ring tones", "Beautiful", "Corporate", "Classic"]
-                rec = next((r for r in valid_records if r.get('name') in target_names), valid_records[0] if valid_records else records[0])
+                
+                # STRICT FIX: Do not fall back to records[0] if valid_records is empty
+                if valid_records:
+                    rec = next((r for r in valid_records if r.get('name') in target_names), valid_records[0])
+                else:
+                    rec = None
 
             if rec:
                 content_uri = rec.get('contentUri')
@@ -479,11 +481,9 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
             greetings = fetch_custom_greetings(ext_id)
             if greetings.get('status') == 'Success' and 'records' in greetings:
                 for g in greetings['records']:
-                    # FORCE SKIP IF "CUSTOM ONLY" TOGGLED
                     if ignore_defaults and not g['is_custom']:
                         continue
                     
-                    # SKIP UNCONFIGURED SLOTS ALWAYS
                     if g['id'] == 'default' or g.get('name') == 'None':
                         continue
 
@@ -507,7 +507,6 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
 
                     if g_id not in ['tts']:
                         try:
-                            # skip_fallback=True guarantees no AI generation fires during export
                             audio_bytes, mime = download_greeting_audio(
                                 ext_id, g_id, is_ivr=is_ivr, is_custom=is_custom, 
                                 greeting_type=g_type, preset_uri=g.get('preset_uri'),
