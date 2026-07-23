@@ -235,17 +235,24 @@ def fetch_custom_greetings(ext_id):
     return {'status': 'Success', 'records': greetings_list}
 
 def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
-    """Fetch raw audio utilizing safe_requests_get to prevent Rate Limit crashes."""
+    """Fetch raw audio. Resolves direct URIs, custom greeting IDs, or real RingCentral system presets."""
     content_uri = None
     token = session.get('sm_isolated_token') or session.get('rc_access_token')
     headers = {'Authorization': f'Bearer {token}'}
 
-    if is_ivr:
+    # 1. Direct Media Link (Passed from Custom Media Pool cache)
+    if preset_uri and ('media' in preset_uri.lower() or 'content' in preset_uri.lower()):
+        content_uri = preset_uri
+
+    # 2. IVR Prompt Audio
+    elif is_ivr:
         if not is_custom and greeting_id != 'default':
             raise Exception("Cannot stream Text-to-Speech IVR prompts directly as files.")
         meta = rc_api_call(f'/restapi/v1.0/account/~/ivr-prompts/{greeting_id}')
         content_uri = meta.get('contentUri') if meta else None
-    elif is_custom and greeting_id != 'default':
+
+    # 3. Custom Audio API Lookup (If we don't have the URI yet)
+    elif is_custom and greeting_id != 'default' and not content_uri:
         try:
             meta = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting/{greeting_id}')
             if meta and isinstance(meta, dict):
@@ -253,73 +260,61 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
         except Exception:
             content_uri = None
 
-    if not content_uri and greeting_id != 'default':
-        if preset_uri:
-            p_resp = safe_requests_get(preset_uri, headers=headers)
-            if p_resp.status_code == 200:
-                p_data = p_resp.json()
-                content_uri = p_data.get('contentUri')
-
-        if not content_uri:
-            ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
-            ext_type = ext_info.get('type') if ext_info else 'User'
-            expected_usage = 'DepartmentExtensionAnsweringRule' if ext_type == 'Department' else 'UserExtensionAnsweringRule'
-
-            dict_url = "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting"
-            resp = safe_requests_get(dict_url, params={'greetingType': greeting_type}, headers=headers)
+    # 4. System Default / RingCentral Dictionary Lookup
+    if not content_uri and not is_custom:
+        dict_url = "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting"
+        resp = safe_requests_get(dict_url, params={'greetingType': greeting_type}, headers=headers)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get('records', [])
             
-            if resp.status_code == 200:
-                data = resp.json()
-                records = data.get('records', [])
+            rec = None
+            if greeting_id != 'default':
                 rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
-                
-                if not rec and records:
-                    valid_records = [
-                        r for r in records 
-                        if r.get('type') == greeting_type 
-                        and r.get('usageType') in [expected_usage, 'ExtensionAnsweringRule']
-                    ]
-                    if not valid_records:
-                        valid_records = [r for r in records if r.get('type') == greeting_type]
-                    if valid_records:
-                        rec = valid_records[0]
-
-                if rec:
-                    content_uri = rec.get('contentUri')
-                    if not content_uri and 'uri' in rec:
-                        m_resp = safe_requests_get(rec['uri'], headers=headers)
-                        if m_resp.status_code == 200:
-                            content_uri = m_resp.json().get('contentUri')
-
-                    if content_uri and 'mailboxId=' in content_uri:
-                        content_uri = re.sub(r'mailboxId=\d+', f'mailboxId={ext_id}', content_uri)
             
-    if not content_uri:
-        if skip_fallback:
-            raise Exception("No physical audio file explicitly mapped in RingCentral for export.")
+            # If default or exact ID not found, target standard tracks
+            if not rec and records:
+                target_names = ["Default", "Acoustic", "Ring tones", "Beautiful", "Corporate", "Classic"]
+                rec = next((r for r in records if r.get('name') in target_names), records[0])
+
+            if rec:
+                content_uri = rec.get('contentUri')
+                if not content_uri and 'uri' in rec:
+                    m_resp = safe_requests_get(rec['uri'], headers=headers)
+                    if m_resp.status_code == 200:
+                        content_uri = m_resp.json().get('contentUri')
+
+                if content_uri and 'mailboxId=' in content_uri:
+                    content_uri = re.sub(r'mailboxId=\d+', f'mailboxId={ext_id}', content_uri)
             
-        default_text = "This is the factory default system audio."
-        if greeting_type == 'Voicemail':
-            default_text = "Please leave your message after the tone."
-        elif greeting_type in ('HoldMusic', 'ConnectingAudio'):
-            default_text = "System Default Hold Music."
-        elif greeting_type == 'ConnectingMessage':
-            default_text = "Please hold while I try to connect you."
-        elif greeting_type == 'InterruptPrompt':
-            default_text = "Thank you for your patience. Please continue to hold."
-        elif greeting_type == 'Introductory':
-            default_text = "Thank you for calling."
-        elif greeting_type == 'Announcement':
-            default_text = "Thank you for calling. Goodbye."
+    # 5. Stream Raw Audio Binary
+    if content_uri:
+        response = safe_requests_get(content_uri, headers=headers)
+        if response.status_code == 200:
+            return response.content, response.headers.get('Content-Type', 'audio/mpeg')
+            
+    if skip_fallback:
+        raise Exception("No physical audio file explicitly mapped in RingCentral for export.")
         
-        wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
-        return wav_buf.read(), "audio/wav"
-        
-    response = safe_requests_get(content_uri, headers=headers)
-    if response.status_code == 200:
-        return response.content, response.headers.get('Content-Type', 'audio/mpeg')
-        
-    raise Exception(f"RC Media Fetch Failed. Status: {response.status_code}")
+    # 6. Gemini TTS Fallback (STRICTLY FOR SPOKEN MESSAGES)
+    if greeting_type == 'HoldMusic':
+        raise Exception("RingCentral's physical hold music track could not be resolved.")
+
+    default_text = "This is the factory default system audio."
+    if greeting_type == 'Voicemail':
+        default_text = "Please leave your message after the tone."
+    elif greeting_type == 'ConnectingMessage':
+        default_text = "Please hold while I try to connect you."
+    elif greeting_type == 'InterruptPrompt':
+        default_text = "Thank you for your patience. Please continue to hold."
+    elif greeting_type == 'Introductory':
+        default_text = "Thank you for calling."
+    elif greeting_type == 'Announcement':
+        default_text = "Thank you for calling. Goodbye."
+    
+    wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
+    return wav_buf.read(), "audio/wav"
 
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
     """Uploads a custom greeting and BINDS it to the specified answering rule or IVR Menu."""
