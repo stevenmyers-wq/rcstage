@@ -1,6 +1,3 @@
-<!-- Required for the template generation exactly as it was in your old code -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
 <div class="space-y-8 animate-fade-in w-full">
     
     <div class="mb-4">
@@ -19,9 +16,9 @@
             <p class="text-subheading text-xs mb-6 flex-grow">
                 Generates a blank XLSX file containing a dynamic dropdown list of all supported RingCentral device models.
             </p>
-            <button id="download-template-btn" class="w-full btn-secondary !text-emerald-600 dark:!text-emerald-400 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
+            <a href="/api/device_swap/template" id="download-template-btn" class="w-full btn-secondary !text-emerald-600 dark:!text-emerald-400 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
                 Download XLSX Template
-            </button>
+            </a>
         </div>
 
         <!-- Step 2: Upload & Process Card -->
@@ -76,48 +73,18 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // 1. Replicating your Exact JS array for template generation
-    const deviceNameList = ["SPA-1001", "SPA-3000", "PAP2-NA", "SPA-921", "Other phone", "Softphone", "PAP2T", "SPIP300", "SPIP301", "SPIP320", "SPIP330", "SPIP331", "SPIP430", "SPIP500", "SPIP501", "SPIP550", "SPIP560", "SPIP600", "SPIP601", "SSIP4000", "SSIP6000", "SSIP7000", "VVX1500", "SPA-2102", "SPA-3102", "SPA501G", "SPA502G", "SPA504G", "SPA508G", "SPA-2000", "SPA-942", "SSIP5000", "SPA525G2", "SPA303", "SPA122", "VVX500", "VVX150", "VVX450", "J139", "J179", "B199", "CP-6821-3PCC", "W52P", "CP-8861-3PCC", "CP-7841-3PCC", "T48S", "W60P", "OBI302", "J169", "VVX501", "VVX411", "VVX311", "VVX601", "VVX301", "VVX310", "VVX410", "SPA514G", "T21P", "TRIO8500", "J159", "J189", "VVX400", "VVX300", "VVX600", "VVX101", "VVX201", "W56P", "TRIO8800", "T42S", "T46S", "CCX700", "TRIOC60", "ALEM3", "ALEM5", "ALEM7", "ALE8078S", "T43U", "T46U", "T48U", "VVXD230", "T31P", "CP700X", "T58WPRO", "W76P", "W79P", "CP205", "CP400", "CP600", "CP200", "SPIP335", "CP925", "CP965", "6920", "6930", "6940", "6905", "6910", "6970", "6863I", "6865I", "6867I", "6869I", "6873I", "SNOM715", "SNOMD717", "SNOM725", "SNOMD735", "SNOMD765", "SNOMD785", "IP480", "IP480G", "CP110", "CP210", "CP-8841-3PCC", "EDGEE100", "EDGEE300", "CP935WB", "EDGEE500", "CP410", "ROVE20", "J129", "T34W", "VP59", "ROVE30", "ROVE40", "POLYEDGEB10", "POLYEDGEB30", "VVX250", "SPIP450", "SPIP650", "VVX350", "CP-6861-3PCC", "ATA191-MPP", "ATA192-MPP", "EDGEE220", "EDGEE320", "EDGEE350", "EDGEE450", "EDGEE550", "6920W", "6930W", "6940W", "IP485G", "SPA525G", "J189A", "CP710", "T57W", "CP100", "ALE8008", "ALE8008G", "ALE8018", "ALE8058S", "ALE8068S", "ALE8028S", "T40P", "CP700", "SPA-922", "SPA-962", "SPA301", "CP-8851-3PCC", "VVX401", "CP-7821-3PCC", "CP-8811-3PCC", "TRIO8300", "T33G", "CP930WB", "SPIP321", "SPIP670", "SPA-941", "CP920", "T49G", "T19P_E2", "T23G", "T23P", "T27G", "T27P", "T29G", "T40G", "T41P", "T41S", "T42G", "T46G", "T48G", "T52S", "T53", "T53W", "T54S", "T54W", "T56A", "T58", "CP960", "W69P", "CCX400", "CCX500", "CCX600"].sort((a, b) => a.localeCompare(b));
-
-    const downloadTemplateBtn = document.getElementById('download-template-btn');
     const fileUpload = document.getElementById('deviceSwapFile');
     const processFileBtn = document.getElementById('deviceSwapBtn');
-    
-    // Enable button only when file is selected
-    fileUpload.addEventListener('change', () => { 
-        processFileBtn.disabled = !fileUpload.files.length > 0; 
-    });
-    
-    // Generate Template Logic
-    downloadTemplateBtn.addEventListener('click', () => {
-        const wb = XLSX.utils.book_new();
-        const ws_data = [ ["Extension", "Device Type", "MAC Address", "Device Name"] ];
-        const ws = XLSX.utils.aoa_to_sheet(ws_data);
-        const deviceListSheetData = deviceNameList.map(name => [name]);
-        const ws_device_list = XLSX.utils.aoa_to_sheet(deviceListSheetData);
-        
-        XLSX.utils.book_append_sheet(wb, ws, "Device Swap Template");
-        XLSX.utils.book_append_sheet(wb, ws_device_list, "DeviceList");
-        wb.Sheets["DeviceList"].Hidden = 1;
-        
-        ws['!dataValidation'] = [{ 
-            sqref: XLSX.utils.encode_range({s: {c: 1, r: 1}, e: {c: 1, r: 1000}}),
-            opts: {
-                type: 'list',
-                allowBlank: true,
-                formula1: 'DeviceList!$A$1:$A$' + deviceNameList.length,
-                showDropDown: true,
-                errorStyle: 'stop',
-                errorTitle: 'Invalid Device',
-                error: 'Please select a device from the list.'
-            }
-        }];
-        XLSX.writeFile(wb, "DeviceSwapTemplate.xlsx");
-    });
-
-    // 2. Submit to Flask API
     const swapForm = document.getElementById('deviceSwapForm');
     
+    // Enable button only when file is selected
+    if(fileUpload && processFileBtn) {
+        fileUpload.addEventListener('change', () => { 
+            processFileBtn.disabled = !fileUpload.files.length > 0; 
+        });
+    }
+    
+    // Submit payload to the Python Backend
     if (swapForm) {
         swapForm.addEventListener('submit', function(e) {
             e.preventDefault();
