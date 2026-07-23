@@ -1,958 +1,612 @@
-<audio id="global-audio-player" class="hidden"></audio>
+import io
+import wave
+import json
+import os
+import re
+import csv
+import zipfile
+import time
+import requests
+from flask import session
+# NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. If Gemini TTS breaks,
+# contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before changing SDK usage here.
+from google import genai
+from google.genai import types
+from webapp.rc_api import rc_api_call
 
-<div class="space-y-8 animate-fade-in w-full">
-    
-    <div class="mb-4">
-        <h2 class="text-display mb-2">Greeting Studio</h2>
-        <p class="text-subheading">Audit, apply, and export custom audio across your organization.</p>
-        <p class="text-subheading">Known Limitations: USER Hold Music cannot be queried via API, you may upuload via API.</p>
-    </div>
+export_progress_store = {}
 
-    <!-- Controls -->
-    <div class="flex flex-col md:flex-row gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
-        <button id="btn-open-upload" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-            📁 Upload File
-        </button>
-        <button id="btn-open-tts" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-            ✨ AI Studio
-        </button>
-        <button id="btn-open-export" class="btn-success flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-            📥 Export Archive
-        </button>
-    </div>
-
-    <!-- Filters -->
-    <div class="card !p-6 flex flex-wrap gap-6 items-end w-full">
-        <div class="input-wrapper flex-grow min-w-[200px]">
-            <label class="input-label">Search Endpoints</label>
-            <input type="text" id="msg-search-input" placeholder="Name or Ext Number..." class="input-field">
-        </div>
+def safe_requests_get(url, headers=None, params=None, max_retries=6):
+    """Wrapper for requests.get that safely handles RingCentral 429 Rate Limits."""
+    for attempt in range(max_retries):
+        resp = requests.get(url, headers=headers, params=params)
         
-        <div class="input-wrapper w-full sm:w-64" id="filter-type">
-            <label class="input-label">Type</label>
-            <div class="relative">
-                <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
-                    <span class="ms-label truncate">All Types</span>
-                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                </button>
-                <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
-                    <div class="p-3 border-b border-slate-100 dark:border-slate-700">
-                        <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search types...">
-                    </div>
-                    <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
-                </div>
-            </div>
-        </div>
+        if resp.status_code == 429:
+            retry_after = resp.headers.get('Retry-After')
+            limit_window = resp.headers.get('X-Rate-Limit-Window')
+            
+            if retry_after and retry_after.isdigit() and int(retry_after) > 0:
+                wait_time = int(retry_after)
+            elif limit_window and limit_window.isdigit() and int(limit_window) > 0:
+                wait_time = int(limit_window)
+            else:
+                wait_time = min(5 * (2 ** attempt), 60)
+            
+            time.sleep(wait_time + 1)
+            continue
+            
+        return resp
+    return resp
 
-        <div class="input-wrapper w-full sm:w-64" id="filter-site">
-            <label class="input-label">Site</label>
-            <div class="relative">
-                <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
-                    <span class="ms-label truncate">All Sites</span>
-                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                </button>
-                <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
-                    <div class="p-3 border-b border-slate-100 dark:border-slate-700">
-                        <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search sites...">
-                    </div>
-                    <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex items-center h-[52px] px-2 w-full sm:w-auto">
-            <label class="flex items-center gap-3 cursor-pointer group">
-                <input type="checkbox" id="msg-ignore-defaults" class="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer bg-white dark:bg-slate-900">
-                <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title="Hide system default audio slots from previews and exports.">Custom Only</span>
-            </label>
-        </div>
-
-        <div class="w-full sm:w-auto">
-            <button id="msg-refresh-endpoints" class="btn-secondary w-full h-[52px] text-sm px-6">
-                Refresh List
-            </button>
-        </div>
-    </div>
-
-    <!-- Data Table -->
-    <div class="card !p-0 overflow-hidden w-full border-0 shadow-lg">
-        <div class="table-container border-0 rounded-none shadow-none max-h-[700px]">
-            <table class="data-table">
-                <thead class="sticky top-0 z-10">
-                    <tr>
-                        <th class="w-12 text-center">
-                            <input type="checkbox" id="msg-select-all" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                        </th>
-                        <th class="w-1/4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="name">
-                            Endpoint Name <span id="sort-icon-name" class="ml-1 text-blue-600 dark:text-blue-400">▲</span>
-                        </th>
-                        <th class="w-24 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="ext">
-                            Ext <span id="sort-icon-ext" class="ml-1 text-slate-400"></span>
-                        </th>
-                        <th class="w-32 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="type">
-                            Type <span id="sort-icon-type" class="ml-1 text-slate-400"></span>
-                        </th>
-                        <th class="w-32 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors msg-sort-header" data-sort="site">
-                            Site <span id="sort-icon-site" class="ml-1 text-slate-400"></span>
-                        </th>
-                        <th class="text-right pr-8">Configured Audio</th>
-                    </tr>
-                </thead>
-                <tbody id="msg-tbody">
-                    <tr><td colspan="6" class="py-20 text-center text-slate-400 font-medium italic">
-                        <div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div> Loading endpoints...
-                    </td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- Upload Modal -->
-<div id="modal-upload" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
-    <div class="card w-full max-w-md transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
-        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
-            <h3 class="text-heading text-lg">📁 Upload Audio</h3>
-            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
-        </div>
-        <form id="form-upload" class="p-6 space-y-6">
-            <div class="text-sm text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800 font-bold selected-count-display text-center">
-                Uploading to 0 selected endpoints.
-            </div>
-            <div class="input-wrapper">
-                <label class="input-label">Greeting Type</label>
-                <select name="greeting_type" class="input-field"></select>
-            </div>
-            <div class="input-wrapper">
-                <label class="input-label">Audio File (.mp3, .wav)</label>
-                <input type="file" name="file" accept=".mp3,.wav" required class="file-input">
-            </div>
-            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" class="close-modal btn-secondary">Cancel</button>
-                <button type="submit" class="btn-primary">Start Upload</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- TTS Modal -->
-<div id="modal-tts" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
-    <div class="card w-full max-w-lg transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
-        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
-            <h3 class="text-heading text-lg">✨ AI Studio</h3>
-            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
-        </div>
-        <form id="form-tts" class="p-6 space-y-6">
-            <div class="text-sm text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-200 dark:border-purple-800 font-bold selected-count-display text-center">
-                Generating and applying to 0 selected endpoints.
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div class="input-wrapper">
-                    <label class="input-label">Greeting Type</label>
-                    <select name="greeting_type" class="input-field focus:ring-purple-500"></select>
-                </div>
-                <div class="input-wrapper">
-                    <label class="input-label">AI Voice Actor</label>
-                    <select name="voice" class="input-field focus:ring-purple-500">
-                        <option value="Kore" selected>Kore (Firm Female, AU)</option>
-                        <option value="Aoede">Aoede (Warm Female, AU)</option>
-                        <option value="Charon">Charon (Calm Male, AU)</option>
-                        <option value="Puck">Puck (Upbeat Male, AU)</option>
-                    </select>
-                </div>
-            </div>
-            <div class="input-wrapper">
-                <label class="input-label">Prompt Script</label>
-                <textarea name="text" required class="input-field focus:ring-purple-500 h-32 resize-y" placeholder="Type the greeting here. It will be generated once and uploaded to all selected endpoints."></textarea>
-            </div>
-            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" class="close-modal btn-secondary">Cancel</button>
-                <button type="submit" class="btn-primary !bg-purple-600 hover:!bg-purple-700 focus:ring-purple-500">Generate & Apply</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Export Modal -->
-<div id="modal-export" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
-    <div class="card w-full max-w-md transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
-        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
-            <h3 class="text-heading text-lg text-emerald-600 dark:text-emerald-500">📥 Bulk Archive Export</h3>
-            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
-        </div>
-        <div class="p-6 space-y-6">
-            <div class="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800 font-bold selected-count-display text-center">
-                Archiving 0 selected endpoints.
-            </div>
-            <p class="text-subheading">
-                You are about to export a complete backup of the active audio configurations for the selected endpoints. This generates a ZIP file containing physical audio files alongside a CSV mapping audit.
-            </p>
-            <div class="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner font-medium" id="export-note-ui">
-                <strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.
-            </div>
-            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" class="close-modal btn-secondary">Cancel</button>
-                <button id="btn-trigger-export" type="button" class="btn-success">Start Export</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Progress Modal -->
-<div id="modal-progress" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
-    <div class="card w-full max-w-md text-center transform scale-95 transition-transform duration-300 shadow-2xl">
-        <h3 class="text-heading mb-2" id="progress-title">Processing...</h3>
-        <p class="text-subheading mb-8" id="progress-desc">Please do not close this window.</p>
-        
-        <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-3 overflow-hidden shadow-inner">
-            <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-        </div>
-        <div class="text-xs font-bold text-slate-500 text-right mb-6" id="progress-pct">0/0</div>
-
-        <div id="progress-log" class="h-32 overflow-y-auto bg-slate-900 dark:bg-[#0b1120] text-left p-4 rounded-xl font-mono text-xs text-emerald-400 space-y-1 shadow-inner outline-none">
-        </div>
-        
-        <button id="progress-close-btn" class="mt-8 hidden w-full btn-secondary">
-            Close & Refresh Table
-        </button>
-    </div>
-</div>
-
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-    let allEndpoints = [];
-    let selectedIds = new Set();
-    let currentSortCol = 'name';
-    let sortDirection = 'asc';
-    let selectedTypes = new Set();
-    let selectedSites = new Set();
+def fetch_target_endpoints():
+    """Fetch all extensions and filter locally to avoid API query string rejections"""
+    response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
     
-    const searchInput = document.getElementById('msg-search-input');
-    const tbody = document.getElementById('msg-tbody');
-    const selectAllCb = document.getElementById('msg-select-all');
-    const toggleIgnoreDefaults = document.getElementById('msg-ignore-defaults');
-    
-    const btnOpenUpload = document.getElementById('btn-open-upload');
-    const btnOpenTts = document.getElementById('btn-open-tts');
-    const btnOpenExport = document.getElementById('btn-open-export');
-    const audioPlayer = document.getElementById('global-audio-player');
-    let currentlyPlayingBtn = null;
-
-    const GREETING_TYPE_MAP = {
-        'User': [
-            {val: 'business-hours-rule:Voicemail', label: 'Business Hours — Voicemail'},
-            {val: 'after-hours-rule:Voicemail', label: 'After Hours — Voicemail'},
-            {val: 'business-hours-rule:ConnectingMessage', label: 'Business Hours — Connecting Message'},
-            {val: 'business-hours-rule:ConnectingAudio', label: 'Business Hours — Connecting Audio'},
-            {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'},
-            {val: 'after-hours-rule:Announcement', label: 'After Hours — Announcement'}
-        ],
-        'Department': [
-            {val: 'business-hours-rule:Voicemail', label: 'Business Hours — Voicemail'},
-            {val: 'after-hours-rule:Voicemail', label: 'After Hours — Voicemail'},
-            {val: 'business-hours-rule:Introductory', label: 'Business Hours — Introductory Greeting'},
-            {val: 'business-hours-rule:ConnectingAudio', label: 'Business Hours — Connecting Audio'},
-            {val: 'business-hours-rule:HoldMusic', label: 'Business Hours — Hold Music'},
-            {val: 'business-hours-rule:InterruptPrompt', label: 'Business Hours — Interrupt Prompt'},
-            {val: 'after-hours-rule:Announcement', label: 'After Hours — Announcement'}
-        ],
-        'IvrMenu': [
-            {val: 'ivr:IvrPrompt', label: 'IVR Audio Prompt'}
-        ],
-        'Voicemail': [
-            {val: 'business-hours-rule:Voicemail', label: 'Voicemail Greeting'}
-        ],
-        'Announcement': [
-            {val: 'business-hours-rule:Announcement', label: 'Announcement Greeting'}
+    valid_types = ['User', 'Department', 'IvrMenu', 'Voicemail', 'Announcement']
+    if response and 'records' in response:
+        filtered_records = [
+            ext for ext in response['records'] 
+            if ext.get('type') in valid_types
         ]
-    };
+        return {'records': filtered_records}
+    return {'records': []}
 
-    const typeOptions = [
-        {val: 'Department', label: 'Call Queue'},
-        {val: 'IvrMenu', label: 'IVR Menu'},
-        {val: 'User', label: 'User'},
-        {val: 'Announcement', label: 'Announcement Only'},
-        {val: 'Voicemail', label: 'Message Only'}
-    ];
-
-    function renderMultiSelectList(containerId, items, selectedSet, defaultLabel, onChange) {
-        const container = document.getElementById(containerId);
-        const list = container.querySelector('.ms-list');
-        const search = container.querySelector('.ms-search');
-        const label = container.querySelector('.ms-label');
+def fetch_custom_greetings(ext_id):
+    """
+    Fetch ALL active greetings. Maintains all 3 detection layers (V1 Answering Rules, 
+    V2 CHaF State Rules, and Custom Media Pool) with deep logging.
+    """
+    try:
+        ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+    except Exception:
+        ext_info = None
         
-        const draw = (filterText = '') => {
-            list.innerHTML = '';
-            items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
-                const li = document.createElement('li');
-                li.className = 'px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-3 rounded-lg transition-colors font-medium';
-                const checked = selectedSet.has(item.val) ? 'checked' : '';
-                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
+    if not ext_info:
+        return {'status': 'Error', 'records': []}
+        
+    if ext_info.get('status') == 'NotActivated':
+        return {'status': 'NotActivated', 'records': []}
+        
+    ext_type = ext_info.get('type', 'User')
+    greetings_list = []
+    found_combinations = set()
+
+    baseline_types = {
+        'User': {
+            'business-hours-rule': ['Voicemail', 'ConnectingMessage', 'ConnectingAudio', 'HoldMusic'],
+            'after-hours-rule': ['Voicemail', 'Announcement']
+        },
+        'Department': {
+            'business-hours-rule': ['Voicemail', 'Introductory', 'ConnectingAudio', 'HoldMusic', 'InterruptPrompt'],
+            'after-hours-rule': ['Voicemail', 'Announcement']
+        },
+        'IvrMenu': {
+            'ivr': ['IvrPrompt']
+        },
+        'Voicemail': {
+            'business-hours-rule': ['Voicemail']
+        },
+        'Announcement': {
+            'business-hours-rule': ['Announcement']
+        }
+    }
+
+    # 1. Handle IVR Menus
+    if ext_type == 'IvrMenu':
+        try:
+            ivr_detail = rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{ext_id}', method='GET', raise_error=True)
+            prompt = ivr_detail.get('prompt') if ivr_detail else None
+            if prompt:
+                if prompt.get('mode') == 'Audio' and prompt.get('audio'):
+                    audio_info = prompt.get('audio')
+                    greetings_list.append({
+                        'type': 'IvrPrompt',
+                        'rule_id': 'ivr',
+                        'rule_name': 'IVR Menu',
+                        'id': audio_info.get('id'),
+                        'name': audio_info.get('name', 'IVR Audio Prompt'),
+                        'is_custom': True,
+                        'preset_uri': ''
+                    })
+                elif prompt.get('mode') == 'TextToSpeech':
+                    greetings_list.append({
+                        'type': 'IvrPrompt',
+                        'rule_id': 'ivr',
+                        'rule_name': 'IVR Menu',
+                        'id': 'tts',
+                        'name': prompt.get('text', 'No TTS text entered.'),
+                        'is_custom': False,
+                        'preset_uri': ''
+                    })
+        except Exception:
+            pass
+            
+        if not greetings_list:
+            greetings_list.append({
+                'type': 'IvrPrompt',
+                'rule_id': 'ivr',
+                'rule_name': 'IVR Menu',
+                'id': 'default',
+                'name': 'System Factory Default Settings',
+                'is_custom': False,
+                'preset_uri': ''
+            })
+        return {'status': 'Success', 'records': greetings_list}
+
+    # 2. Hardcode UI Bypass for User HoldMusic (API Limitation)
+    if ext_type == 'User':
+        greetings_list.append({
+            'type': 'HoldMusic',
+            'rule_id': 'business-hours-rule',
+            'rule_name': 'Business Hours',
+            'id': 'na',
+            'name': 'N/A via API (Check Web Portal)',
+            'is_custom': False,
+            'preset_uri': ''
+        })
+        found_combinations.add(('business-hours-rule', 'HoldMusic'))
+
+    # 3. LAYER 1: Standard Extensions / Queues (Answering Rules)
+    try:
+        rules_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', method='GET')
+        records = rules_resp.get('records', []) if rules_resp else []
+    except Exception:
+        records = []
+
+    for rule in records:
+        rule_id = rule.get('id')
+        if not rule_id:
+            continue
+        rule_name = 'Business Hours' if rule_id == 'business-hours-rule' else 'After Hours' if rule_id == 'after-hours-rule' else rule.get('name', rule_id)
+        
+        try:
+            rule_detail = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}', method='GET')
+            if not rule_detail:
+                continue
+
+            # Check standard greetings array
+            greetings_array = rule_detail.get('greetings', [])
+            if isinstance(greetings_array, dict):
+                greetings_array = [greetings_array]
                 
-                li.onclick = (e) => {
-                    e.stopPropagation();
-                    if(selectedSet.has(item.val)) selectedSet.delete(item.val);
-                    else selectedSet.add(item.val);
+            for greeting in greetings_array:
+                g_type = greeting.get('type')
+                if not g_type:
+                    continue
                     
-                    li.querySelector('input').checked = selectedSet.has(item.val);
-                    updateLabel();
-                    onChange();
-                };
-                list.appendChild(li);
-            });
-        };
+                if 'custom' in greeting and greeting['custom'].get('id'):
+                    found_combinations.add((rule_id, g_type))
+                    greetings_list.append({
+                        'type': g_type,
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': greeting['custom']['id'],
+                        'name': greeting['custom'].get('name', "Custom Audio"),
+                        'is_custom': True,
+                        'preset_uri': ''
+                    })
+                elif 'preset' in greeting and greeting['preset'].get('id'):
+                    found_combinations.add((rule_id, g_type))
+                    greetings_list.append({
+                        'type': g_type,
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': greeting['preset']['id'],
+                        'preset_uri': greeting['preset'].get('uri', ''),
+                        'name': greeting['preset'].get('name', "System Default"),
+                        'is_custom': False
+                    })
 
-        const updateLabel = () => {
-            if(selectedSet.size === 0) label.textContent = defaultLabel;
-            else if(selectedSet.size === 1) {
-                const selectedItem = items.find(i => i.val === Array.from(selectedSet)[0]);
-                label.textContent = selectedItem ? selectedItem.label : '1 Selected';
-            }
-            else label.textContent = `${selectedSet.size} Selected`;
-        };
+            # Check top-level holdMusic object
+            hold_music_obj = rule_detail.get('holdMusic')
+            if hold_music_obj and (rule_id, 'HoldMusic') not in found_combinations:
+                custom_info = hold_music_obj.get('custom')
+                preset_info = hold_music_obj.get('preset')
+                
+                if custom_info and custom_info.get('id'):
+                    found_combinations.add((rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': custom_info['id'],
+                        'name': custom_info.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': custom_info.get('contentUri', '')
+                    })
+                elif preset_info and preset_info.get('id'):
+                    found_combinations.add((rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': preset_info['id'],
+                        'preset_uri': preset_info.get('uri', ''),
+                        'name': preset_info.get('name', 'System Default'),
+                        'is_custom': False
+                    })
 
-        if (!container.dataset.initialized) {
-            const btn = container.querySelector('.ms-btn');
-            const dropdown = container.querySelector('.ms-dropdown');
+        except Exception as e:
+            print(f"[DEBUG Rule Detail Error] ext={ext_id} rule={rule_id}: {str(e)}")
+
+    # 4. LAYER 2: V2 CHaF State Rules Lookup
+    try:
+        v2_state = rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours', method='GET')
+        if v2_state and 'holdMusic' in v2_state:
+            hm = v2_state['holdMusic']
+            if hm.get('effectiveGreetingType') == 'Custom' and hm.get('custom', {}).get('id'):
+                greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
+                found_combinations.add(('business-hours-rule', 'HoldMusic'))
+                greetings_list.append({
+                    'type': 'HoldMusic',
+                    'rule_id': 'business-hours-rule',
+                    'rule_name': 'Business Hours',
+                    'id': hm['custom']['id'],
+                    'name': hm['custom'].get('name', 'Custom Audio'),
+                    'is_custom': True,
+                    'preset_uri': hm['custom'].get('contentUri', '')
+                })
+    except Exception:
+        pass
+
+    # 5. LAYER 3: Custom Media Pool Workaround
+    try:
+        custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
+        if custom_pool_resp and 'records' in custom_pool_resp:
+            hm_candidates = [cg for cg in custom_pool_resp['records'] if cg.get('type') == 'HoldMusic']
             
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                const isHidden = dropdown.classList.contains('hidden');
-                document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
-                if (isHidden) {
-                    dropdown.classList.remove('hidden');
-                    search.focus();
+            if hm_candidates:
+                hm_already_custom = any(
+                    g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic' and g['is_custom']
+                    for g in greetings_list
+                )
+                
+                if not hm_already_custom:
+                    safe_candidates = [cg for cg in hm_candidates if 'voicemail' not in cg.get('name', '').lower()]
+                    if not safe_candidates:
+                        safe_candidates = hm_candidates
+                    
+                    safe_candidates.sort(key=lambda x: int(x['id']) if str(x['id']).isdigit() else 0)
+                    latest_hm = safe_candidates[-1]
+                    
+                    greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
+                    found_combinations.add(('business-hours-rule', 'HoldMusic'))
+                    
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': 'business-hours-rule',
+                        'rule_name': 'Business Hours',
+                        'id': latest_hm['id'],
+                        'name': latest_hm.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': latest_hm.get('contentUri', '')
+                    })
+    except Exception:
+        pass
+
+    # 6. Backfill missing base slots
+    expected_matrix = baseline_types.get(ext_type, {})
+    for r_id, slots in expected_matrix.items():
+        r_name = 'Business Hours' if r_id == 'business-hours-rule' else 'After Hours'
+        for slot in slots:
+            if (r_id, slot) not in found_combinations:
+                greetings_list.append({
+                    'type': slot,
+                    'rule_id': r_id,
+                    'rule_name': r_name,
+                    'id': 'default',
+                    'name': 'System Factory Default Settings',
+                    'is_custom': False,
+                    'preset_uri': ''
+                })
+                
+    return {'status': 'Success', 'records': greetings_list}
+
+def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
+    """Fetch raw audio. Enforces strict type checking to reject cross-contaminated RingCentral API IDs."""
+    
+    # Check for hardcoded UI Bypass
+    if str(greeting_id).lower() == 'na':
+        default_text = "This audio track cannot be retrieved via the API. Please manage it directly in the RingCentral Web Portal."
+        wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
+        return wav_buf.read(), "audio/wav"
+
+    content_uri = None
+    token = session.get('sm_isolated_token') or session.get('rc_access_token')
+    headers = {'Authorization': f'Bearer {token}'}
+
+    if preset_uri and ('media' in preset_uri.lower() or 'content' in preset_uri.lower()):
+        content_uri = preset_uri
+    elif is_ivr:
+        if not is_custom and greeting_id != 'default':
+            raise Exception("Cannot stream Text-to-Speech IVR prompts directly as files.")
+        meta = rc_api_call(f'/restapi/v1.0/account/~/ivr-prompts/{greeting_id}')
+        content_uri = meta.get('contentUri') if meta else None
+    elif is_custom and greeting_id != 'default' and not content_uri:
+        try:
+            meta = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting/{greeting_id}')
+            if meta and isinstance(meta, dict):
+                content_uri = meta.get('contentUri')
+        except Exception:
+            content_uri = None
+
+    if not content_uri and not is_custom:
+        dict_url = "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting"
+        resp = safe_requests_get(dict_url, params={'greetingType': greeting_type}, headers=headers)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get('records', [])
+            
+            rec = None
+            if greeting_id != 'default':
+                rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
+                if rec and rec.get('type') != greeting_type:
+                    rec = None
+            
+            if not rec and records:
+                try:
+                    ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+                    ext_type = ext_info.get('type') if ext_info else 'User'
+                except Exception:
+                    ext_type = 'User'
+                    
+                expected_usage = 'DepartmentExtensionAnsweringRule' if ext_type == 'Department' else 'UserExtensionAnsweringRule'
+
+                valid_records = [
+                    r for r in records 
+                    if r.get('type') == greeting_type and r.get('usageType') in [expected_usage, 'ExtensionAnsweringRule']
+                ]
+                if not valid_records:
+                    valid_records = [r for r in records if r.get('type') == greeting_type]
+
+                target_names = ["Default", "Acoustic", "Ring tones", "Beautiful", "Corporate", "Classic"]
+                
+                if valid_records:
+                    rec = next((r for r in valid_records if r.get('name') in target_names), valid_records[0])
+                else:
+                    rec = None
+
+            if rec:
+                content_uri = rec.get('contentUri')
+                if not content_uri and 'uri' in rec:
+                    m_resp = safe_requests_get(rec['uri'], headers=headers)
+                    if m_resp.status_code == 200:
+                        content_uri = m_resp.json().get('contentUri')
+
+                if content_uri and 'mailboxId=' in content_uri:
+                    content_uri = re.sub(r'mailboxId=\d+', f'mailboxId={ext_id}', content_uri)
+            
+    if content_uri:
+        response = safe_requests_get(content_uri, headers=headers)
+        if response.status_code == 200:
+            return response.content, response.headers.get('Content-Type', 'audio/mpeg')
+            
+    if skip_fallback:
+        raise Exception("No physical audio file explicitly mapped in RingCentral for export.")
+        
+    if greeting_type == 'HoldMusic':
+        raise Exception("RingCentral's physical hold music track could not be resolved.")
+
+    default_text = "This is the factory default system audio."
+    if greeting_type == 'Voicemail':
+        default_text = "Please leave your message after the tone."
+    elif greeting_type == 'ConnectingMessage':
+        default_text = "Please hold while I try to connect you."
+    elif greeting_type == 'InterruptPrompt':
+        default_text = "Thank you for your patience. Please continue to hold."
+    elif greeting_type == 'Introductory':
+        default_text = "Thank you for calling."
+    elif greeting_type == 'Announcement':
+        default_text = "Thank you for calling. Goodbye."
+    
+    wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
+    return wav_buf.read(), "audio/wav"
+
+def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
+    ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+    ext_type = ext_info.get('type') if ext_info else None
+    
+    file_data = file_obj.read()
+    filename = file_obj.filename
+    content_type = getattr(file_obj, 'content_type', 'audio/wav')
+    
+    rule_id = None
+    greeting_type = greeting_type_str
+    if ":" in greeting_type_str:
+        rule_id, greeting_type = greeting_type_str.split(":", 1)
+    
+    if ext_type == 'IvrMenu':
+        prompt_name = greeting_name or filename.split('.')[0]
+        data_payload = {'name': prompt_name}
+        files = { 'attachment': (filename, file_data, content_type) }
+        prompt_res = rc_api_call('/restapi/v1.0/account/~/ivr-prompts', method='POST', data=data_payload, files=files, raise_error=True)
+        
+        if prompt_res and 'id' in prompt_res:
+            update_payload = { "prompt": { "mode": "Audio", "audio": { "id": prompt_res['id'] } } }
+            rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{ext_id}', method='PUT', json=update_payload, raise_error=True)
+        return prompt_res
+
+    if not rule_id:
+        rules_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', method='GET')
+        if rules_resp and 'records' in rules_resp:
+            bh_rule = next((r for r in rules_resp['records'] if r.get('id') == 'business-hours-rule'), None)
+            if bh_rule:
+                rule_id = bh_rule['id']
+            elif len(rules_resp['records']) > 0:
+                rule_id = rules_resp['records'][0]['id']
+
+    if not rule_id:
+        rule_id = 'business-hours-rule'
+
+    # Map V1 rule_id to V2 stateId
+    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
+
+    # SEPARATE LOGIC: User HoldMusic (Bypass binding entirely to prevent CMN-101)
+    if ext_type == 'User' and greeting_type == 'HoldMusic':
+        files_standard = {
+            'json': ('request.json', json.dumps({"type": greeting_type}), 'application/json'),
+            'attachment': (filename, file_data, content_type)
+        }
+        return rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
+            method='POST',
+            files=files_standard,
+            raise_error=True
+        )
+
+    # ATTEMPT 1: Atomic Upload + Bind (V1 Architecture)
+    try:
+        metadata_v1 = {
+            "type": greeting_type,
+            "answeringRule": {"id": rule_id}
+        }
+        files_v1 = {
+            'json': ('request.json', json.dumps(metadata_v1), 'application/json'),
+            'attachment': (filename, file_data, content_type)
+        }
+        return rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/greeting?apply=true',
+            method='POST',
+            files=files_v1,
+            raise_error=True
+        )
+        
+    except Exception as e:
+        err_str = str(e)
+        print(f"[DEBUG V1 UPLOAD ERROR] {err_str}")
+        
+        # ATTEMPT 2: V2 Architecture Native Upload
+        # If API rejects answeringRule (CMN-101) or demands stateId (CMN-156)
+        if 'CMN-101' in err_str or 'CMN-156' in err_str or 'answeringRule' in err_str or 'invalid' in err_str.lower():
+            try:
+                metadata_v2 = {
+                    "type": greeting_type,
+                    "stateId": state_id
                 }
-            };
-
-            search.oninput = (e) => draw(e.target.value);
-            search.onclick = (e) => e.stopPropagation();
-            dropdown.onclick = (e) => e.stopPropagation();
-            
-            container.dataset.initialized = 'true';
-        }
-
-        draw(search.value);
-        updateLabel();
-    }
-
-    document.addEventListener('click', () => {
-        document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
-    });
-
-    loadEndpoints();
-
-    async function loadEndpoints() {
-        try {
-            const res = await fetch('/api/message_management/endpoints');
-            if (!res.ok) throw new Error("Failed to load");
-            
-            const data = await res.json();
-            if (data.records) {
-                allEndpoints = data.records.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                
-                renderMultiSelectList('filter-type', typeOptions, selectedTypes, 'All Types', renderTable);
-                populateSiteFilter();
-                renderTable();
-            }
-        } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="6" class="py-16 text-center text-rose-500 font-bold">Failed to load endpoints: ${e.message}</td></tr>`;
-        }
-    }
-
-    function populateSiteFilter() {
-        const sites = new Set();
-        allEndpoints.forEach(ext => { sites.add(ext.site?.name || 'Main Site'); });
-        const sortedSites = Array.from(sites).sort();
-        const siteOptions = sortedSites.map(s => ({val: s, label: s}));
-        renderMultiSelectList('filter-site', siteOptions, selectedSites, 'All Sites', renderTable);
-    }
-
-    function getFilteredEndpoints() {
-        const term = searchInput.value.toLowerCase();
-        return allEndpoints.filter(ext => {
-            const matchTerm = (ext.name || '').toLowerCase().includes(term) || (ext.extensionNumber || '').includes(term);
-            const extSite = ext.site?.name || 'Main Site';
-            const matchType = selectedTypes.size === 0 ? true : selectedTypes.has(ext.type);
-            const matchSite = selectedSites.size === 0 ? true : selectedSites.has(extSite);
-            return matchTerm && matchType && matchSite;
-        });
-    }
-
-    function renderTable() {
-        let filtered = getFilteredEndpoints();
-        
-        filtered.sort((a, b) => {
-            let valA = '', valB = '';
-            if (currentSortCol === 'name') { valA = a.name || ''; valB = b.name || ''; } 
-            else if (currentSortCol === 'ext') { valA = a.extensionNumber || ''; valB = b.extensionNumber || ''; } 
-            else if (currentSortCol === 'type') { valA = a.type === 'Department' ? 'Call Queue' : a.type || ''; valB = b.type === 'Department' ? 'Call Queue' : b.type || ''; } 
-            else if (currentSortCol === 'site') { valA = a.site?.name || 'Main Site'; valB = b.site?.name || 'Main Site'; }
-            
-            let cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            return sortDirection === 'asc' ? cmp : -cmp;
-        });
-
-        tbody.innerHTML = '';
-        if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="py-16 text-center text-slate-400 font-medium italic">No endpoints found matching filters.</td></tr>';
-            return;
-        }
-
-        filtered.forEach(ext => {
-            const isChecked = selectedIds.has(String(ext.id));
-            const tr = document.createElement('tr');
-            tr.dataset.extType = ext.type;
-            if (isChecked) tr.classList.add('bg-blue-50/50', 'dark:bg-blue-900/10');
-            
-            const displayType = ext.type === 'Department' ? 'Call Queue' :
-                                ext.type === 'Announcement' ? 'Announcement Only' :
-                                ext.type === 'Voicemail' ? 'Message Only' : ext.type;
-
-            let badgeColor = 'badge-secondary';
-            if (ext.type === 'IvrMenu') badgeColor = 'badge-info';
-            else if (ext.type === 'Department') badgeColor = 'badge-warning';
-
-            const siteName = ext.site?.name || 'Main Site';
-
-            tr.innerHTML = `
-                <td class="text-center w-12">
-                    <input type="checkbox" class="row-cb h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-id="${ext.id}" ${isChecked ? 'checked' : ''}>
-                </td>
-                <td class="font-bold text-slate-800 dark:text-slate-100">${ext.name || 'Unnamed'}</td>
-                <td class="font-mono text-slate-500 text-xs">${ext.extensionNumber || 'N/A'}</td>
-                <td><span class="badge ${badgeColor}">${displayType}</span></td>
-                <td class="text-slate-500 text-xs font-semibold">${siteName}</td>
-                <td class="text-right pr-8">
-                    <button class="expand-greet-btn text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-2 focus:outline-none" data-id="${ext.id}" title="View Configured Audio">
-                        <svg class="w-5 h-5 inline-block transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-        updateSelectionState();
-    }
-
-    searchInput.addEventListener('input', renderTable);
-
-    document.getElementById('msg-refresh-endpoints').addEventListener('click', () => {
-        selectedIds.clear();
-        selectedTypes.clear();
-        selectedSites.clear();
-        searchInput.value = '';
-        renderMultiSelectList('filter-type', typeOptions, selectedTypes, 'All Types', renderTable);
-        loadEndpoints();
-    });
-
-    document.querySelectorAll('.msg-sort-header').forEach(header => {
-        header.addEventListener('click', (e) => {
-            const col = e.currentTarget.dataset.sort;
-            if (currentSortCol === col) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-            else { currentSortCol = col; sortDirection = 'asc'; }
-            updateSortIcons();
-            renderTable();
-        });
-    });
-
-    function updateSortIcons() {
-        ['name', 'ext', 'type', 'site'].forEach(col => {
-            const icon = document.getElementById(`sort-icon-${col}`);
-            if (!icon) return;
-            if (currentSortCol === col) {
-                icon.textContent = sortDirection === 'asc' ? '▲' : '▼';
-                icon.className = 'ml-1 text-blue-600 font-bold';
-            } else {
-                icon.textContent = '';
-                icon.className = 'ml-1 text-slate-400';
-            }
-        });
-    }
-
-    tbody.addEventListener('change', (e) => {
-        if (e.target.classList.contains('row-cb')) {
-            const id = e.target.dataset.id;
-            if (e.target.checked) selectedIds.add(id);
-            else selectedIds.delete(id);
-            e.target.closest('tr').classList.toggle('bg-blue-50/50', e.target.checked);
-            e.target.closest('tr').classList.toggle('dark:bg-blue-900/10', e.target.checked);
-            updateSelectionState();
-        }
-    });
-
-    selectAllCb.addEventListener('change', (e) => {
-        const isChecked = e.target.checked;
-        document.querySelectorAll('.row-cb').forEach(cb => {
-            cb.checked = isChecked;
-            const id = cb.dataset.id;
-            if (isChecked) selectedIds.add(id);
-            else selectedIds.delete(id);
-            cb.closest('tr').classList.toggle('bg-blue-50/50', isChecked);
-            cb.closest('tr').classList.toggle('dark:bg-blue-900/10', isChecked);
-        });
-        updateSelectionState();
-    });
-
-    function updateSelectionState() {
-        const count = selectedIds.size;
-        const hasSelection = count > 0;
-        btnOpenUpload.disabled = !hasSelection;
-        btnOpenTts.disabled = !hasSelection;
-        btnOpenExport.disabled = !hasSelection;
-        document.querySelectorAll('.selected-count-display').forEach(el => { el.textContent = `Action targets: ${count} selected endpoint(s).`; });
-    }
-
-    function updateGreetingDropdowns(extType) {
-        const selects = document.querySelectorAll('select[name="greeting_type"]');
-        const options = GREETING_TYPE_MAP[extType] || [{val: 'Unknown', label: 'Unknown Type'}];
-        selects.forEach(sel => {
-            sel.innerHTML = '';
-            options.forEach(opt => {
-                const o = document.createElement('option');
-                o.value = opt.val;
-                o.textContent = opt.label;
-                sel.appendChild(o);
-            });
-        });
-    }
-
-    function handleActionOpen(modalId) {
-        if (selectedIds.size === 0) return;
-        const selectedTypesSet = new Set();
-        selectedIds.forEach(id => {
-            const ext = allEndpoints.find(e => String(e.id) === String(id));
-            if (ext) selectedTypesSet.add(ext.type);
-        });
-
-        if (selectedTypesSet.size > 1 && modalId !== 'modal-export') {
-            alert("Cannot apply audio to multiple extension types at once. Please select only one type of endpoint.");
-            return;
-        }
-
-        if (selectedTypesSet.size === 1 || modalId === 'modal-export') {
-            const extType = Array.from(selectedTypesSet)[0];
-            if (modalId !== 'modal-export') updateGreetingDropdowns(extType);
-            openModal(modalId);
-        }
-    }
-
-    toggleIgnoreDefaults.addEventListener('change', () => {
-        document.querySelectorAll('tr[id^="subrow-"]').forEach(row => {
-            const extId = row.id.replace('subrow-', '');
-            row.remove();
-            const btn = document.querySelector(`.expand-greet-btn[data-id="${extId}"] svg`);
-            if (btn) btn.classList.remove('rotate-180');
-        });
-        
-        const exportNote = document.getElementById('export-note-ui');
-        if (toggleIgnoreDefaults.checked) {
-            exportNote.innerHTML = "<strong>Note:</strong> Custom Only mode is ENABLED. System presets will be entirely ignored in the ZIP output and CSV log.";
-            exportNote.className = "text-xs text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800 rounded-xl shadow-inner font-medium";
-        } else {
-            exportNote.innerHTML = "<strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.";
-            exportNote.className = "text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner font-medium";
-        }
-    });
-
-    tbody.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.expand-greet-btn');
-        if (btn) {
-            const extId = btn.dataset.id;
-            const tr = btn.closest('tr');
-            const icon = btn.querySelector('svg');
-            let subRow = document.getElementById(`subrow-${extId}`);
-            
-            if (subRow) {
-                const isHidden = subRow.classList.contains('hidden');
-                if (isHidden) { subRow.classList.remove('hidden'); icon.classList.add('rotate-180'); tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50'); } 
-                else { subRow.classList.add('hidden'); icon.classList.remove('rotate-180'); tr.classList.remove('bg-slate-50', 'dark:bg-slate-800/50'); }
-                return;
-            }
-
-            const controlCell = tr.querySelector('td:last-child');
-            const origCellHTML = controlCell.innerHTML;
-            controlCell.innerHTML = '<div class="spinner w-5 h-5 text-blue-500 mr-8 ml-auto"></div>';
-            
-            try {
-                const res = await fetch(`/api/message_management/greetings/${extId}`);
-                const data = await res.json();
-                
-                controlCell.innerHTML = origCellHTML;
-                const restoredBtn = controlCell.querySelector('.expand-greet-btn');
-                if (restoredBtn) restoredBtn.querySelector('svg').classList.add('rotate-180');
-                tr.classList.add('bg-slate-50', 'dark:bg-slate-800/50');
-
-                subRow = document.createElement('tr');
-                subRow.id = `subrow-${extId}`;
-                subRow.className = 'bg-slate-50/80 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800/80 shadow-inner';
-                
-                let innerHTML = `<td colspan="6" class="p-0 border-0">
-                    <div class="p-8 pl-16">
-                        <h4 class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Configured Audio Mappings</h4>
-                    `;
-
-                if (res.ok && data.status === 'NotActivated') {
-                    innerHTML += `<p class="text-sm text-amber-600 font-bold bg-amber-50 px-4 py-3 rounded-xl">⚠️ This extension is currently not activated in RingCentral. Custom audio files cannot be mapped.</p>`;
-                } else if (res.ok && data.records && data.records.length > 0) {
-                    const ignoreDefaults = toggleIgnoreDefaults.checked;
-                    let displayRecords = data.records;
-                    if (ignoreDefaults) displayRecords = displayRecords.filter(g => g.is_custom);
-
-                    if (displayRecords.length === 0) {
-                        innerHTML += `<p class="text-sm text-slate-500 italic font-medium">No custom audio records returned.</p>`;
-                    } else {
-                        innerHTML += `<div class="table-container border-0 shadow-md">
-                            <table class="data-table">
-                                <thead class="bg-slate-100 dark:bg-slate-800">
-                                    <tr>
-                                        <th>Answering Rule</th>
-                                        <th>Greeting Type</th>
-                                        <th>Source</th>
-                                        <th>Name / Description</th>
-                                        <th class="text-right pr-6">Playback & Export</th>
-                                    </tr>
-                                </thead>
-                                <tbody>`;
-                        
-                        displayRecords.forEach(g => {
-                            const isCustom = g.is_custom;
-                            const sourceBadge = isCustom ? '<span class="badge badge-warning">Custom Audio</span>' : '<span class="badge badge-secondary">Default / System</span>';
-                            const isIvrPrompt = g.type === 'IvrPrompt';
-                            const ruleContextName = g.rule_name || 'IVR Library';
-                            let nameDisplay = g.name;
-
-                            if (!isCustom && isIvrPrompt) nameDisplay = `<span class="italic text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 font-mono font-medium">💬 "${g.name}"</span>`;
-                            else if (g.id === 'default') nameDisplay = `<span class="text-slate-400 italic">System Factory Default</span>`;
-
-                            let mediaUrl = `/api/message_management/media/${extId}/${g.id}?is_ivr=${isIvrPrompt}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(g.type)}&preset_uri=${encodeURIComponent(g.preset_uri || '')}&text=${encodeURIComponent(g.name)}`;
-
-                            let playbackBtn = `
-                                <div class="flex items-center justify-end gap-3 pr-2">
-                                    <button class="play-audio-btn btn-secondary !py-1.5 !px-3 !text-blue-600 hover:!bg-blue-50 w-24 flex items-center justify-center shadow-sm border-slate-200" 
-                                            data-ext="${extId}" data-greet="${g.id}" data-custom="${isCustom}" data-ivr="${isIvrPrompt}" data-type="${g.type}" data-uri="${g.preset_uri || ''}" data-text="${encodeURIComponent(g.name)}">
-                                        <svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>
-                                    </button>
-                                    <a href="${mediaUrl}&download=true" class="btn-success !py-1.5 !px-2.5 shadow-sm" title="Download Audio File">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
-                                    </a>
-                                </div>
-                            `;
-
-                            innerHTML += `
-                                <tr>
-                                    <td class="font-bold text-slate-600">${ruleContextName}</td>
-                                    <td class="font-semibold text-slate-700">${g.type}</td>
-                                    <td>${sourceBadge}</td>
-                                    <td class="font-medium text-slate-700 max-w-md truncate" title="${g.name}">${nameDisplay}</td>
-                                    <td>${playbackBtn}</td>
-                                </tr>
-                            `;
-                        });
-                        innerHTML += `</tbody></table></div>`;
-                    }
-                } else {
-                    innerHTML += `<p class="text-sm text-slate-500 italic font-medium">No custom or default audio records returned.</p>`;
+                files_v2 = {
+                    'json': ('request.json', json.dumps(metadata_v2), 'application/json'),
+                    'attachment': (filename, file_data, content_type)
                 }
-                innerHTML += `</div></td>`;
-                subRow.innerHTML = innerHTML;
-                tr.after(subRow);
+                return rc_api_call(
+                    f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
+                    method='POST',
+                    files=files_v2,
+                    raise_error=True
+                )
+            except Exception as e2:
+                print(f"[DEBUG V2 UPLOAD ERROR] failed for ext={ext_id} type={greeting_type}: {str(e2)}")
+                raise e2
                 
-            } catch (err) {
-                if (controlCell) controlCell.innerHTML = origCellHTML;
-                alert("Error loading greetings.");
-            }
-        }
+        # If the error wasn't related to V2 architecture migration, raise original error
+        raise e
 
-        if (e.target.closest('.play-audio-btn')) {
-            const playBtn = e.target.closest('.play-audio-btn');
-            const extId = playBtn.dataset.ext;
-            const greetId = playBtn.dataset.greet;
-            const isIvr = playBtn.dataset.ivr;
-            const isCustom = playBtn.dataset.custom;
-            const gType = playBtn.dataset.type;
-            const presetUri = encodeURIComponent(playBtn.dataset.uri || '');
-            const gText = decodeURIComponent(playBtn.dataset.text);
+def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and clear"):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in the environment.")
+        
+    client = genai.Client(api_key=api_key)
+    tts_prompt = f"Voice instruction: You MUST speak with a clear Australian English accent and a {style} style. Do NOT include any breathing sounds, sighs, gasps, or audio artefacts. Deliver the text naturally and smoothly.\nText to speak: {text}"
+    
+    response = client.models.generate_content(
+        model='gemini-3.1-flash-tts-preview',
+        contents=tts_prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=voice_name
+                    )
+                )
+            )
+        )
+    )
+    pcm_data = response.candidates[0].content.parts[0].inline_data.data
+    
+    wav_buffer = io.BytesIO()
+    with wave.open(wav_buffer, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(24000)
+        wf.writeframes(pcm_data)
+    
+    wav_buffer.seek(0)
+    return wav_buffer
 
-            if (currentlyPlayingBtn === playBtn && !audioPlayer.paused) {
-                audioPlayer.pause();
-                return;
-            }
+def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
+    zip_buffer = io.BytesIO()
+    csv_data = io.StringIO()
+    csv_writer = csv.writer(csv_data)
+    csv_writer.writerow(['Endpoint Name', 'Extension Number', 'Endpoint Type', 'Rule / Context', 'Greeting Type', 'Source', 'Exported Filename', 'Original Text / Details'])
+    
+    total = len(ext_ids)
+    if task_id:
+        export_progress_store[task_id] = {'current': 0, 'total': total}
 
-            if (currentlyPlayingBtn && currentlyPlayingBtn !== playBtn) {
-                currentlyPlayingBtn.innerHTML = '<svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
-            }
-
-            currentlyPlayingBtn = playBtn;
-            playBtn.innerHTML = '<div class="spinner w-3 h-3 mr-1.5 border-blue-600 border-t-transparent"></div> <span class="text-[11px] font-mono">Loading</span>';
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for i, ext_id in enumerate(ext_ids):
+            ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+            if not ext_info: continue
             
-            audioPlayer.src = `/api/message_management/media/${extId}/${greetId}?is_ivr=${isIvr}&is_custom=${isCustom}&greeting_type=${encodeURIComponent(gType)}&preset_uri=${presetUri}&text=${encodeURIComponent(gText)}`;
-            audioPlayer.play().catch(e => {
-                playBtn.innerHTML = '⚠ Error';
-                currentlyPlayingBtn = null;
-            });
-        }
-    });
-
-    audioPlayer.addEventListener('timeupdate', () => {
-        if (currentlyPlayingBtn && audioPlayer.duration) {
-            const pct = Math.round((audioPlayer.currentTime / audioPlayer.duration) * 100);
-            currentlyPlayingBtn.innerHTML = `
-                <svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg> 
-                <span class="font-mono text-[10px]">${pct}%</span>
-            `;
-        }
-    });
-
-    audioPlayer.addEventListener('pause', () => {
-        if (currentlyPlayingBtn) currentlyPlayingBtn.innerHTML = '<svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
-    });
-
-    audioPlayer.addEventListener('ended', () => {
-        if (currentlyPlayingBtn) {
-            currentlyPlayingBtn.innerHTML = '<svg class="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"></path></svg> <span>Play</span>';
-            currentlyPlayingBtn = null;
-        }
-    });
-
-    function openModal(id) {
-        const m = document.getElementById(id);
-        m.classList.remove('hidden');
-        setTimeout(() => { m.classList.remove('opacity-0'); m.querySelector('.card').classList.remove('scale-95'); }, 10);
-    }
-
-    function closeModal(id) {
-        const m = document.getElementById(id);
-        m.classList.add('opacity-0');
-        m.querySelector('.card').classList.add('scale-95');
-        setTimeout(() => m.classList.add('hidden'), 300);
-    }
-
-    document.querySelectorAll('.close-modal').forEach(btn => {
-        btn.addEventListener('click', (e) => { closeModal(e.target.closest('.fixed').id); });
-    });
-
-    btnOpenUpload.addEventListener('click', () => handleActionOpen('modal-upload'));
-    btnOpenTts.addEventListener('click', () => handleActionOpen('modal-tts'));
-    btnOpenExport.addEventListener('click', () => handleActionOpen('modal-export'));
-
-    const progressLog = document.getElementById('progress-log');
-    const progressBar = document.getElementById('progress-bar');
-    const progressPct = document.getElementById('progress-pct');
-    const progressTitle = document.getElementById('progress-title');
-    const progressCloseBtn = document.getElementById('progress-close-btn');
-
-    function logProgress(msg, type='info') {
-        const entry = document.createElement('div');
-        entry.className = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-slate-400');
-        entry.innerText = `> ${msg}`;
-        progressLog.appendChild(entry);
-        progressLog.scrollTop = progressLog.scrollHeight;
-    }
-
-    document.getElementById('btn-trigger-export').addEventListener('click', async () => {
-        closeModal('modal-export');
-        openModal('modal-progress');
-        
-        progressLog.innerHTML = '';
-        progressCloseBtn.classList.add('hidden');
-        progressTitle.textContent = "Compiling Export Archive...";
-        document.getElementById('progress-desc').textContent = "Extracting physical audio files and writing CSV audit. Please stand by.";
-        
-        const extIds = Array.from(selectedIds);
-        const total = extIds.length;
-        const ignoreDefaults = toggleIgnoreDefaults.checked;
-        
-        progressBar.style.width = `0%`;
-        progressBar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300';
-        progressPct.textContent = `0/${total}`;
-        
-        logProgress(`Initiating export for ${total} endpoints...`, 'info');
-
-        const taskId = 'export_' + Date.now();
-
-        const pollInterval = setInterval(async () => {
-            try {
-                const res = await fetch(`/api/message_management/export/status?task_id=${taskId}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.total > 0) {
-                        const pct = Math.round((data.current / data.total) * 100);
-                        progressBar.style.width = `${pct}%`;
-                        progressPct.textContent = `${data.current}/${data.total}`;
-                    }
-                }
-            } catch (e) {}
-        }, 1000);
-
-        try {
-            const res = await fetch('/api/message_management/export', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ext_ids: extIds, task_id: taskId, ignore_defaults: ignoreDefaults })
-            });
-
-            clearInterval(pollInterval);
-            if (!res.ok) throw new Error("Server failed to compile the archive.");
+            ext_name = ext_info.get('name', 'Unknown')
+            ext_num = ext_info.get('extensionNumber', ext_id)
+            ext_type = ext_info.get('type', 'Unknown')
             
-            const blob = await res.blob();
-            logProgress(`ZIP Archive compiled successfully! Size: ${Math.round(blob.size/1024)}kb`, 'success');
+            safe_ext_name = re.sub(r'[^a-zA-Z0-9_\- ]', '', ext_name).strip()
             
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'RingCentral_Audio_Export.zip';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+            greetings = fetch_custom_greetings(ext_id)
+            if greetings.get('status') == 'Success' and 'records' in greetings:
+                for g in greetings['records']:
+                    if ignore_defaults and not g['is_custom']:
+                        continue
+                    
+                    if g['id'] == 'default' or g.get('name') == 'None':
+                        continue
+
+                    is_custom = g['is_custom']
+                    is_ivr = g['type'] == 'IvrPrompt'
+                    g_id = g['id']
+                    g_type = g['type']
+                    rule_name = g.get('rule_name', 'IVR Menu')
+                    safe_rule = re.sub(r'[^a-zA-Z0-9_\- ]', '', rule_name).strip()
+                    g_text = g.get('name', '')
+                    
+                    export_filename = ""
+                    source = ""
+                    
+                    if is_custom:
+                        source = "Custom Audio"
+                    elif g_id == 'tts':
+                        source = "TTS String"
+                    else:
+                        source = "System Preset"
+
+                    if g_id not in ['tts']:
+                        try:
+                            audio_bytes, mime = download_greeting_audio(
+                                ext_id, g_id, is_ivr=is_ivr, is_custom=is_custom, 
+                                greeting_type=g_type, preset_uri=g.get('preset_uri'),
+                                skip_fallback=True
+                            )
+                            file_ext = 'mp3' if 'mpeg' in mime or 'mp3' in mime else 'wav'
+                            export_filename = f"[{ext_num}] {safe_ext_name} - {safe_rule} - {g_type}.{file_ext}"
+                            zip_file.writestr(export_filename, audio_bytes)
+                            
+                            time.sleep(0.5)
+                            
+                        except Exception as e:
+                            export_filename = f"ERROR: {str(e)}"
+                    else:
+                        export_filename = "N/A (Text-To-Speech String)"
+
+                    csv_writer.writerow([ext_name, ext_num, ext_type, rule_name, g_type, source, export_filename, g_text])
             
-            progressBar.style.width = `100%`;
-            progressPct.textContent = `${total}/${total}`;
-            progressTitle.textContent = "Export Finished";
-            document.getElementById('progress-desc').textContent = "Your ZIP file should begin downloading automatically.";
-            progressCloseBtn.classList.remove('hidden');
-
-        } catch (err) {
-            clearInterval(pollInterval);
-            logProgress(`Error: ${err.message}`, 'error');
-            progressBar.style.width = `100%`;
-            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
-            progressPct.textContent = `Failed`;
-            progressTitle.textContent = "Export Failed";
-            progressCloseBtn.classList.remove('hidden');
-        }
-    });
-
-    async function processBulkUpload(file, greetingType) {
-        closeModal('modal-upload');
-        openModal('modal-progress');
+            if task_id:
+                export_progress_store[task_id]['current'] = i + 1
+                    
+        zip_file.writestr("Greeting_Mapping_Audit.csv", csv_data.getvalue())
         
-        progressLog.innerHTML = '';
-        progressCloseBtn.classList.add('hidden');
-        progressTitle.textContent = "Uploading Audio File...";
-        
-        const ids = Array.from(selectedIds);
-        const total = ids.length;
-
-        for (let i = 0; i < total; i++) {
-            const extId = ids[i];
-            progressBar.style.width = `${((i) / total) * 100}%`;
-            progressPct.textContent = `${i}/${total}`;
-            
-            const formData = new FormData();
-            formData.append('ext_id', extId);
-            formData.append('greeting_type', greetingType);
-            formData.append('file', file);
-
-            try {
-                const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (res.ok && data.success) logProgress(`Success: Ext ${extId} updated.`, 'success');
-                else logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
-            } catch (err) {
-                logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
-            }
-        }
-        finishProgress(total);
-    }
-
-    async function processBulkTts(text, voice, greetingType) {
-        closeModal('modal-tts');
-        openModal('modal-progress');
-        
-        progressLog.innerHTML = '';
-        progressCloseBtn.classList.add('hidden');
-        progressTitle.textContent = "Generating AI Audio...";
-        progressBar.style.width = `5%`;
-        progressPct.textContent = `0/0`;
-        logProgress(`Synthesizing voice prompt using Gemini...`, 'info');
-
-        let audioBlob = null;
-        try {
-            const ttsRes = await fetch('/api/message_management/generate_tts_audio_only', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, voice })
-            });
-
-            if (!ttsRes.ok) throw new Error("Gemini generation failed.");
-            audioBlob = await ttsRes.blob();
-            logProgress(`AI Audio Generated Successfully! Size: ${Math.round(audioBlob.size/1024)}kb`, 'success');
-        } catch (e) {
-            logProgress(e.message, 'error');
-            finishProgress(0);
-            return;
-        }
-
-        progressTitle.textContent = "Applying to Endpoints...";
-        const ids = Array.from(selectedIds);
-        const total = ids.length;
-
-        for (let i = 0; i < total; i++) {
-            const extId = ids[i];
-            progressBar.style.width = `${((i) / total) * 100}%`;
-            progressPct.textContent = `${i}/${total}`;
-            
-            const endpointObj = allEndpoints.find(e => String(e.id) === String(extId));
-            let endpointName = endpointObj && endpointObj.name ? endpointObj.name : extId;
-            endpointName = endpointName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-            const cleanType = greetingType.split(':').pop();
-            const fileName = `${endpointName}_${cleanType}.wav`;
-            
-            const file = new File([audioBlob], fileName, { type: 'audio/wav' });
-            const formData = new FormData();
-            formData.append('ext_id', extId);
-            formData.append('greeting_type', greetingType);
-            formData.append('file', file);
-
-            try {
-                const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (res.ok && data.success) logProgress(`Success: Ext ${extId} mapped.`, 'success');
-                else logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
-            } catch (err) {
-                logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
-            }
-        }
-        finishProgress(total);
-    }
-
-    function finishProgress(total) {
-        progressBar.style.width = `100%`;
-        progressPct.textContent = `${total}/${total}`;
-        progressTitle.textContent = "Operation Complete";
-        progressCloseBtn.classList.remove('hidden');
-    }
-
-    progressCloseBtn.addEventListener('click', () => {
-        closeModal('modal-progress');
-        progressBar.classList.remove('bg-rose-500'); 
-        progressBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
-        
-        selectedIds.forEach(id => {
-            const subRow = document.getElementById(`subrow-${id}`);
-            if (subRow && !subRow.classList.contains('hidden')) {
-                subRow.remove();
-                const btn = document.querySelector(`.expand-greet-btn[data-id="${id}"] svg`);
-                if (btn) btn.classList.remove('rotate-180');
-            }
-        });
-        
-        selectAllCb.checked = false;
-        selectAllCb.dispatchEvent(new Event('change'));
-    });
-
-    document.getElementById('form-upload').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const fd = new FormData(e.target);
-        processBulkUpload(fd.get('file'), fd.get('greeting_type'));
-    });
-
-    document.getElementById('form-tts').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const fd = new FormData(e.target);
-        processBulkTts(fd.get('text'), fd.get('voice'), fd.get('greeting_type'));
-    });
-});
-</script>
+    zip_buffer.seek(0)
+    return zip_buffer
