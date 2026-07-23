@@ -1,13 +1,13 @@
 import traceback
+import json
 import pandas as pd
 from flask import Blueprint, request, jsonify
-from webapp.device_swap.utils import process_bulk_device_swap
+from webapp.device_swap.utils import process_bulk_device_update
 from webapp.auth_utils import login_required
 
-# Define the blueprint directly here
-device_swap = Blueprint('device_swap', __name__)
+device_swap_bp = Blueprint('device_swap_bp', __name__)
 
-@device_swap.route('/api/device_swap/bulk', methods=['POST'])
+@device_swap_bp.route('/api/device_swap/bulk', methods=['POST'])
 @login_required
 def bulk_device_swap():
     if 'file' not in request.files:
@@ -18,15 +18,15 @@ def bulk_device_swap():
         return jsonify({'error': 'No file selected'}), 400
         
     try:
-        # Read the Excel file focusing strictly on the Devices tab
-        df = pd.read_excel(file, sheet_name='Devices', engine='openpyxl')
+        # Read the Excel file, looking specifically for the first sheet
+        df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
         
-        # Clean the dataframe to drop empty rows based on your template's columns
-        df = df.dropna(subset=['Extension', 'MAC Address'])
+        # Clean the dataframe to drop completely empty rows
+        df = df.dropna(subset=['Extension', 'Device Type', 'MAC Address'], how='all')
         records = df.to_dict('records')
         
-        # Execute the swaps
-        results = process_bulk_device_swap(records)
+        # Execute the bulk updates securely via Python
+        results = process_bulk_device_update(records)
         
         return jsonify({'success': True, 'results': results})
     
