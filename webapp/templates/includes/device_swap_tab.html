@@ -1,35 +1,40 @@
-<div class="space-y-6 w-full animate-fade-in">
-    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4 w-full">
-        <h2 class="text-heading mb-1 text-blue-700 dark:text-blue-500">Device Swap</h2>
-        <p class="text-subheading">Swap digital lines and DLs between two existing devices safely.</p>
-    </div>
+<div class="tab-pane fade" id="device-swap" role="tabpanel" aria-labelledby="device-swap-tab">
+    <div class="container mt-4">
+        <h3>Bulk Device Swap</h3>
+        <p class="text-muted">Upload the completed <strong>device-upload.xlsx</strong> template to swap devices in bulk. The system will look up the Target MAC Address in your inventory and swap it with the extension's currently assigned HardPhone.</p>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <form id="deviceSwapForm">
+                    <div class="mb-3">
+                        <label for="deviceSwapFile" class="form-label">Upload Device Swap Template (Excel)</label>
+                        <input class="form-control" type="file" id="deviceSwapFile" accept=".xlsx, .xls" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="deviceSwapBtn">
+                        <span class="spinner-border spinner-border-sm d-none" id="deviceSwapSpinner" role="status" aria-hidden="true"></span>
+                        Process Bulk Swap
+                    </button>
+                </form>
+            </div>
+        </div>
 
-    <div class="card !p-5 bg-amber-50 dark:bg-amber-900/10 border-l-4 border-amber-500 dark:border-amber-600 text-sm text-slate-700 dark:text-slate-300 shadow-sm">
-        <p class="font-bold mb-3 text-slate-900 dark:text-slate-100">Instructions & Notes:</p>
-        <ul class="list-disc list-inside space-y-2">
-            <li><strong>Prerequisite:</strong> RC Account must be connected via Impersonation or the Main Bridge.</li>
-            <li><strong>Function:</strong> Swaps the digital line assignments (DLs) between two existing devices (Device A and Device B). This is a multi-step, destructive operation.</li>
-            <li><strong>API Endpoint:</strong> Requires sequences of <code class="bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700 text-xs">PUT /restapi/v1.0/account/~/device/&lt;deviceId&gt;</code> calls to update the line assignments.</li>
-            <li><strong>Rate Limit:</strong> Low/Moderate. Treat as complex provisioning (high chance of hitting 20+ calls/minute limits).</li>
-            <li><strong>Execution Time:</strong> Moderate (several seconds for the sequence of calls).</li>
-        </ul>
+        <div id="deviceSwapResultsContainer" class="d-none">
+            <h4>Execution Results</h4>
+            <div class="table-responsive">
+                <table class="table table-striped table-bordered" id="deviceSwapResultsTable">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Extension</th>
+                            <th>Target MAC</th>
+                            <th>Status</th>
+                            <th>Reason / Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-
-    <form class="card space-y-5 max-w-xl mx-auto w-full">
-        <h3 class="font-bold text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 pb-2">Target Devices</h3>
-        <div>
-            <label class="input-label">Source Device ID (A)</label>
-            <input type="text" placeholder="e.g. 800100222" class="input-field font-mono">
-        </div>
-        <div>
-            <label class="input-label">Target Device ID (B)</label>
-            <input type="text" placeholder="e.g. 800100333" class="input-field font-mono">
-        </div>
-        <div class="pt-2">
-            <button type="button" class="btn-danger w-full !py-3 uppercase tracking-wide">
-                <svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-                Execute Device Swap
-            </button>
-        </div>
-    </form>
 </div>
