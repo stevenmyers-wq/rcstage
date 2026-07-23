@@ -38,3 +38,81 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const swapForm = document.getElementById('deviceSwapForm');
+    
+    if (swapForm) {
+        swapForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('deviceSwapFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select an Excel file to upload.');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const btn = document.getElementById('deviceSwapBtn');
+            const spinner = document.getElementById('deviceSwapSpinner');
+            const resultsContainer = document.getElementById('deviceSwapResultsContainer');
+            const resultsTableBody = document.querySelector('#deviceSwapResultsTable tbody');
+            
+            // Lock UI while processing
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            resultsContainer.classList.add('d-none');
+            resultsTableBody.innerHTML = '';
+            
+            fetch('/api/device_swap/bulk', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(result => {
+                        const tr = document.createElement('tr');
+                        
+                        if (result.status === 'Success') {
+                            tr.classList.add('table-success');
+                        } else {
+                            tr.classList.add('table-danger');
+                        }
+                        
+                        tr.innerHTML = `
+                            <td>${result.extension}</td>
+                            <td>${result.mac}</td>
+                            <td>${result.status}</td>
+                            <td>${result.reason}</td>
+                        `;
+                        resultsTableBody.appendChild(tr);
+                    });
+                    resultsContainer.classList.remove('d-none');
+                } else {
+                    alert('No valid records were found to process.');
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                console.error('Error:', error);
+                alert('An unexpected error occurred while processing the file.');
+            });
+        });
+    }
+});
+</script>
