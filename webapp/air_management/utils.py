@@ -19,6 +19,8 @@ def get_ext_directory(token=None):
         resp = rc_api_call(f'/restapi/v1.0/account/~/extension?perPage=1000&page={page}', token=token, raise_error=False)
         if not resp or 'records' not in resp: break
         exts.extend(resp['records'])
+        
+        # Classic RC API uses navigation.nextPage
         if not resp.get('navigation', {}).get('nextPage'): break
         page += 1
         time.sleep(0.05)
@@ -65,9 +67,19 @@ def fetch_all_assistants(token=None):
         resp = rc_api_call(f'/ai/iva/v1/accounts/~/assistants?perPage=100&page={page}', token=token, raise_error=False)
         if not resp or 'records' not in resp:
             break
-        assistants.extend(resp['records'])
-        if not resp.get('paging', {}).get('nextPage'):
+            
+        records = resp['records']
+        assistants.extend(records)
+        
+        # AI APIs use paging.totalPages
+        paging = resp.get('paging', {})
+        total_pages = paging.get('totalPages')
+        
+        if total_pages is not None:
+            if page >= total_pages: break
+        elif len(records) < 100:
             break
+            
         page += 1
     return assistants
 
@@ -483,9 +495,17 @@ def run_transcript_export(task_id, date_from, date_to, air_id, token):
             resp = rc_api_call('/ai/iva/v1/accounts/~/conversations/search', method='POST', json=payload, token=token, raise_error=False)
             if not resp or 'records' not in resp:
                 break
-            conversations.extend(resp['records'])
-            if not resp.get('paging', {}).get('nextPage'):
+            
+            records = resp['records']
+            conversations.extend(records)
+            
+            paging = resp.get('paging', {})
+            total_pages = paging.get('totalPages')
+            if total_pages is not None:
+                if page >= total_pages: break
+            elif len(records) < 100:
                 break
+                
             page += 1
             time.sleep(0.1)
 
@@ -526,7 +546,8 @@ def run_transcript_export(task_id, date_from, date_to, air_id, token):
                 if not msg_resp or 'records' not in msg_resp:
                     break
                 
-                for msg in msg_resp['records']:
+                records = msg_resp['records']
+                for msg in records:
                     parsed_input = msg.get('parsedToolInput', {})
                     parsed_str = json.dumps(parsed_input) if isinstance(parsed_input, dict) and parsed_input else str(parsed_input) if parsed_input else ''
 
@@ -541,8 +562,13 @@ def run_transcript_export(task_id, date_from, date_to, air_id, token):
                         'Tool Output': msg.get('toolOutput', '')
                     })
                     
-                if not msg_resp.get('paging', {}).get('nextPage'):
+                paging = msg_resp.get('paging', {})
+                total_pages = paging.get('totalPages')
+                if total_pages is not None:
+                    if msg_page >= total_pages: break
+                elif len(records) < 100:
                     break
+                    
                 msg_page += 1
                 time.sleep(0.05)
 
