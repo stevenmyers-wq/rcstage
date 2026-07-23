@@ -3,12 +3,10 @@ import json
 import pandas as pd
 from flask import Blueprint, request, jsonify
 from webapp.device_swap.utils import process_bulk_device_update
-from webapp.auth_utils import login_required
 
 device_swap_bp = Blueprint('device_swap_bp', __name__)
 
 @device_swap_bp.route('/api/device_swap/bulk', methods=['POST'])
-@login_required
 def bulk_device_swap():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part provided'}), 400
