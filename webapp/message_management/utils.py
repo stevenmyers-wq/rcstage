@@ -52,7 +52,7 @@ def fetch_target_endpoints():
     return {'records': []}
 
 def fetch_custom_greetings(ext_id):
-    """Fetch ALL active greetings. Validates V1 rules, V2 CHaF state, and custom media pool."""
+    """Fetch ALL active greetings with aggressive debugging to expose RingCentral's raw data."""
     try:
         ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     except Exception:
@@ -95,7 +95,6 @@ def fetch_custom_greetings(ext_id):
             if prompt:
                 if prompt.get('mode') == 'Audio' and prompt.get('audio'):
                     audio_info = prompt.get('audio')
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=ivr_audio id={audio_info.get('id')} type=IvrPrompt is_custom=True")
                     greetings_list.append({
                         'type': 'IvrPrompt',
                         'rule_id': 'ivr',
@@ -106,7 +105,6 @@ def fetch_custom_greetings(ext_id):
                         'preset_uri': ''
                     })
                 elif prompt.get('mode') == 'TextToSpeech':
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=ivr_tts id=tts type=IvrPrompt is_custom=False")
                     greetings_list.append({
                         'type': 'IvrPrompt',
                         'rule_id': 'ivr',
@@ -120,7 +118,6 @@ def fetch_custom_greetings(ext_id):
             pass
             
         if not greetings_list:
-            print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=ivr_default id=default type=IvrPrompt is_custom=False")
             greetings_list.append({
                 'type': 'IvrPrompt',
                 'rule_id': 'ivr',
@@ -152,6 +149,9 @@ def fetch_custom_greetings(ext_id):
             if not rule_detail:
                 continue
 
+            # DEBUG: Print the raw answering rule to see if HoldMusic is hidden inside it
+            print(f"[DEBUG V1 Rule Detail] ext={ext_id} rule={rule_id}: {json.dumps(rule_detail)}")
+
             greetings_array = rule_detail.get('greetings', [])
             if isinstance(greetings_array, dict):
                 greetings_array = [greetings_array]
@@ -163,7 +163,6 @@ def fetch_custom_greetings(ext_id):
                     
                 if 'custom' in greeting and greeting['custom'].get('id'):
                     found_combinations.add((rule_id, g_type))
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=v1_rule_custom id={greeting['custom']['id']} type={g_type} is_custom=True")
                     greetings_list.append({
                         'type': g_type,
                         'rule_id': rule_id,
@@ -175,7 +174,6 @@ def fetch_custom_greetings(ext_id):
                     })
                 elif 'preset' in greeting and greeting['preset'].get('id'):
                     found_combinations.add((rule_id, g_type))
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=v1_rule_preset id={greeting['preset']['id']} type={g_type} is_custom=False")
                     greetings_list.append({
                         'type': g_type,
                         'rule_id': rule_id,
@@ -186,7 +184,6 @@ def fetch_custom_greetings(ext_id):
                         'is_custom': False
                     })
 
-            # RESTORED: Catch V1 Custom Hold Music directly from the answering rule
             hold_music_obj = rule_detail.get('holdMusic')
             if hold_music_obj and (rule_id, 'HoldMusic') not in found_combinations:
                 custom_info = hold_music_obj.get('custom')
@@ -194,7 +191,6 @@ def fetch_custom_greetings(ext_id):
                 
                 if custom_info and custom_info.get('id'):
                     found_combinations.add((rule_id, 'HoldMusic'))
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=v1_hm_obj_custom id={custom_info['id']} type=HoldMusic is_custom=True")
                     greetings_list.append({
                         'type': 'HoldMusic',
                         'rule_id': rule_id,
@@ -206,7 +202,6 @@ def fetch_custom_greetings(ext_id):
                     })
                 elif preset_info and preset_info.get('id'):
                     found_combinations.add((rule_id, 'HoldMusic'))
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=v1_hm_obj_preset id={preset_info['id']} type=HoldMusic is_custom=False")
                     greetings_list.append({
                         'type': 'HoldMusic',
                         'rule_id': rule_id,
@@ -220,15 +215,17 @@ def fetch_custom_greetings(ext_id):
         except Exception:
             pass
 
-    # 3. V2 CHaF State Rules Lookup (Crucial for V2 HoldMusic visibility)
+    # 3. V2 CHaF State Rules Lookup
     try:
         v2_state = rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours', method='GET')
+        # DEBUG: Print the V2 state rules to see if it's trapped here
+        print(f"[DEBUG V2 State Rule] ext={ext_id}: {json.dumps(v2_state)}")
+        
         if v2_state and 'holdMusic' in v2_state:
             hm = v2_state['holdMusic']
             if hm.get('effectiveGreetingType') == 'Custom' and hm.get('custom', {}).get('id'):
                 greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
                 found_combinations.add(('business-hours-rule', 'HoldMusic'))
-                print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=v2_chaf_custom id={hm['custom']['id']} type=HoldMusic is_custom=True")
                 greetings_list.append({
                     'type': 'HoldMusic',
                     'rule_id': 'business-hours-rule',
@@ -244,6 +241,10 @@ def fetch_custom_greetings(ext_id):
     # 4. Custom Media Pool Workaround
     try:
         custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
+        
+        # DEBUG: The missing print statement that will show us your raw files!
+        print(f"[DEBUG Custom Pool RAW] ext={ext_id}: {json.dumps(custom_pool_resp)}")
+        
         if custom_pool_resp and 'records' in custom_pool_resp:
             hm_candidates = [cg for cg in custom_pool_resp['records'] if cg.get('type') == 'HoldMusic']
             
@@ -263,7 +264,7 @@ def fetch_custom_greetings(ext_id):
                     
                     greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
                     found_combinations.add(('business-hours-rule', 'HoldMusic'))
-                    print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=v1_media_pool_fallback id={latest_hm['id']} type=HoldMusic is_custom=True")
+                    
                     greetings_list.append({
                         'type': 'HoldMusic',
                         'rule_id': 'business-hours-rule',
@@ -282,7 +283,6 @@ def fetch_custom_greetings(ext_id):
         r_name = 'Business Hours' if r_id == 'business-hours-rule' else 'After Hours'
         for slot in slots:
             if (r_id, slot) not in found_combinations:
-                print(f"[DEBUG HoldMusic Entry] ext={ext_id} source=backfill_default id=default type={slot} is_custom=False")
                 greetings_list.append({
                     'type': slot,
                     'rule_id': r_id,
@@ -312,23 +312,9 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
         try:
             meta = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting/{greeting_id}')
             if meta and isinstance(meta, dict):
-                meta_type = meta.get('type')
-                
-                # CRITICAL FIX: Reject mismatched custom greetings (e.g. ID collision between Voicemail & HoldMusic)
-                if meta_type and greeting_type and meta_type != greeting_type:
-                    print(
-                        f"[DEBUG Custom] REJECTED mismatched custom greeting {greeting_id} "
-                        f"for ext={ext_id}: expected '{greeting_type}', got '{meta_type}'"
-                    )
-                    is_custom = False  # Reset flag to force dictionary/preset lookup below
-                else:
-                    content_uri = meta.get('contentUri')
-            else:
-                is_custom = False
-        except Exception as e:
-            print(f"[DEBUG Custom] Failed to fetch metadata for custom greeting {greeting_id} (ext={ext_id}): {e}")
+                content_uri = meta.get('contentUri')
+        except Exception:
             content_uri = None
-            is_custom = False
 
     if not content_uri and not is_custom:
         dict_url = "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting"
@@ -336,12 +322,15 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
         
         if resp.status_code == 200:
             data = resp.json()
+            print(f"[DEBUG Dictionary] type={greeting_type}: {json.dumps(data)}")
             records = data.get('records', [])
             
             rec = None
             if greeting_id != 'default':
                 rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
                 
+                # CRITICAL FIX: If RingCentral provides a corrupted ID (e.g. mapping Voicemail to HoldMusic),
+                # reject it and drop down to fetch a valid, genuine Hold Music track.
                 if rec and rec.get('type') != greeting_type:
                     print(f"[DEBUG Dictionary] REJECTED Corrupted ID {greeting_id} (Expected {greeting_type}, got {rec.get('type')})")
                     rec = None
