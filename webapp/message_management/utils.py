@@ -189,32 +189,41 @@ def fetch_custom_greetings(ext_id):
     try:
         custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
         if custom_pool_resp and 'records' in custom_pool_resp:
-            
-            # Find all files tagged as HoldMusic
             hm_candidates = [cg for cg in custom_pool_resp['records'] if cg.get('type') == 'HoldMusic']
             
-            if hm_candidates and ('business-hours-rule', 'HoldMusic') not in found_combinations:
-                # Filter out miscategorized voicemails
-                safe_candidates = [cg for cg in hm_candidates if 'voicemail' not in cg.get('name', '').lower()]
-                if not safe_candidates:
-                    safe_candidates = hm_candidates # Fallback if all of them have bad names
+            if hm_candidates:
+                # Check if we already have a strictly CUSTOM hold music bound from Step 2
+                hm_already_custom = any(
+                    g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic' and g['is_custom']
+                    for g in greetings_list
+                )
                 
-                # Sort by ID numerically to guarantee we get the absolute newest upload
-                safe_candidates.sort(key=lambda x: int(x['id']) if str(x['id']).isdigit() else 0)
-                latest_hm = safe_candidates[-1]
-                
-                found_combinations.add(('business-hours-rule', 'HoldMusic'))
-                greetings_list.append({
-                    'type': 'HoldMusic',
-                    'rule_id': 'business-hours-rule',
-                    'rule_name': 'Business Hours',
-                    'id': latest_hm['id'],
-                    'name': latest_hm.get('name', 'Custom Audio'),
-                    'is_custom': True,
-                    'preset_uri': latest_hm.get('contentUri', '')
-                })
-    except Exception:
-        pass
+                # If it's merely a preset or completely missing, override it with the custom file
+                if not hm_already_custom:
+                    # Filter out miscategorized voicemails
+                    safe_candidates = [cg for cg in hm_candidates if 'voicemail' not in cg.get('name', '').lower()]
+                    if not safe_candidates:
+                        safe_candidates = hm_candidates
+                    
+                    safe_candidates.sort(key=lambda x: int(x['id']) if str(x['id']).isdigit() else 0)
+                    latest_hm = safe_candidates[-1]
+                    
+                    # Purge the stale preset from the list if it exists
+                    greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
+                    found_combinations.add(('business-hours-rule', 'HoldMusic'))
+                    
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': 'business-hours-rule',
+                        'rule_name': 'Business Hours',
+                        'id': latest_hm['id'],
+                        'name': latest_hm.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': latest_hm.get('contentUri', '')
+                    })
+    except Exception as e:
+        # Prevent silent failures from hiding API/Auth blocks
+        print(f"Warning: Failed to query custom media pool for ext {ext_id}: {str(e)}")
 
     # 4. Backfill missing base slots
     expected_matrix = baseline_types.get(ext_type, {})
