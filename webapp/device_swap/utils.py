@@ -10,21 +10,18 @@ DEVICE_TYPES = {"SPA-1001": "1", "SPA-3000": "2", "PAP2-NA": "3", "SPA-921": "4"
 def generate_device_swap_template():
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Device Swap Template"
+    ws.title = "Devices"
     
-    # Write headers and format them
     headers = ["Extension", "Device Type", "MAC Address", "Device Name"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True)
         
-    # Adjust column widths
     ws.column_dimensions['A'].width = 15
     ws.column_dimensions['B'].width = 35
     ws.column_dimensions['C'].width = 20
     ws.column_dimensions['D'].width = 25
         
-    # Create the hidden DeviceList sheet
     ws_devices = wb.create_sheet(title="DeviceList")
     device_names = sorted(list(DEVICE_TYPES.keys()))
     
@@ -33,14 +30,13 @@ def generate_device_swap_template():
     
     ws_devices.sheet_state = 'hidden'
     
-    # Create and apply the dropdown validation rule to Column B
-    formula = f"DeviceList!$A$1:$A${len(device_names)}"
+    # Formula MUST begin with '=' for Excel to render it as a dropdown menu
+    formula = f"=DeviceList!$A$1:$A${len(device_names)}"
     dv = DataValidation(type="list", formula1=formula, allow_blank=True)
     dv.error = 'Please select a valid Device Type from the dropdown list.'
     dv.errorTitle = 'Invalid Device'
     
     ws.add_data_validation(dv)
-    # Apply to the first 1000 rows to keep the file perfectly optimized
     dv.add('B2:B1000')
     
     output = io.BytesIO()
@@ -53,7 +49,7 @@ def process_bulk_device_update(records):
     devices_to_update = []
     ext_map = {}
     
-    # 1. Fetch all extensions to map extNumber -> extId
+    # 1. Map extensionNumber -> extensionId
     endpoint = '/restapi/v1.0/account/~/extension'
     params = {'perPage': 1000}
     while True:
@@ -71,14 +67,17 @@ def process_bulk_device_update(records):
 
     # 2. Build the bulk update payload
     for row in records:
-        ext_num = str(row.get('Extension')).split('.')[0]
-        raw_mac = str(row.get('MAC Address')).strip()
+        ext_num = str(row.get('Extension', '')).split('.')[0]
+        raw_mac = str(row.get('MAC Address', '')).strip()
         target_mac = raw_mac.replace(':', '').replace('-', '').lower()
-        device_type_name = str(row.get('Device Type'))
-        device_name = str(row.get('Device Name', ''))
+        device_type_name = str(row.get('Device Type', '')).strip()
+        device_name = str(row.get('Device Name', '')).strip()
         
         result_entry = {'extension': ext_num, 'mac': raw_mac, 'status': 'Failed', 'reason': ''}
         
+        if not ext_num or ext_num == 'nan' or not raw_mac or raw_mac == 'nan':
+            continue
+
         if ext_num not in ext_map:
             result_entry['reason'] = f"Extension {ext_num} not found or not an enabled user."
             results.append(result_entry)
@@ -96,7 +95,7 @@ def process_bulk_device_update(records):
             target_device = next((d for d in devices_data.get('records', []) if d.get('type') in ['HardPhone', 'OtherPhone', 'SoftPhone']), None)
             
             if not target_device:
-                result_entry['reason'] = "No target device found to update."
+                result_entry['reason'] = "No target device found to update on this extension."
                 results.append(result_entry)
                 continue
                 
@@ -110,7 +109,6 @@ def process_bulk_device_update(records):
                 
             devices_to_update.append(update_obj)
             result_entry['status'] = 'Pending'
-            result_entry['reason'] = 'Added to bulk update payload.'
             result_entry['device_id'] = str(target_device['id'])
             results.append(result_entry)
             
@@ -124,24 +122,57 @@ def process_bulk_device_update(records):
         
     try:
         bulk_payload = {"records": devices_to_update}
-        bulk_response = rc.post('/restapi/v1.0/account/~/device/bulk-update', json=bulk_payload).json()
+        response = rc.post('/restapi/v1.0/account/~/device/bulk-update', json=bulk_payload)
         
-        # 4. Map the bulk results back to our tracking list
-        for api_result in bulk_response.get('records', []):
-            dev_id = str(api_result.get('id', ''))
+        # Handle non-200 HTTP responses
+        if response.status_code >= 400:
+            error_msg = f"HTTP {response.status_code}"
+            try:
+                err_json = response.json()
+                error_msg = err_json.get('message') or err_json.get('description') or error_msg
+            except Exception:
+                pass
+                
             for r in results:
-                if r.get('device_id') == dev_id:
-                    if api_result.get('successful'):
-                        r['status'] = 'Success'
-                        r['reason'] = 'Successfully updated.'
-                    else:
-                        r['status'] = 'Failed'
-                        error_info = api_result.get('error', {})
-                        r['reason'] = f"API Error: {error_info.get('message', 'Unknown Error')} (Code: {error_info.get('errorCode', 'N/A')})"
+                if r['status'] == 'Pending':
+                    r['status'] = 'Failed'
+                    r['reason'] = f"API Error: {error_msg}"
+            return results
+
+        bulk_data = response.json()
+        returned_records = bulk_data.get('records', [])
+        pending_results = [r for r in results if r['status'] == 'Pending']
+        
+        # Map returned records back to the results queue by ID or position index
+        for idx, api_result in enumerate(returned_records):
+            dev_id = str(api_result.get('id') or api_result.get('deviceId') or '')
+            is_successful = api_result.get('successful', False)
+            
+            matched_entry = next((r for r in pending_results if r.get('device_id') == dev_id), None)
+            if not matched_entry and idx < len(pending_results):
+                matched_entry = pending_results[idx]
+                
+            if matched_entry:
+                if is_successful:
+                    matched_entry['status'] = 'Success'
+                    matched_entry['reason'] = 'Device successfully updated.'
+                else:
+                    matched_entry['status'] = 'Failed'
+                    error_info = api_result.get('error', {})
+                    err_msg = error_info.get('message') or error_info.get('description') or 'Update rejected by RingCentral'
+                    err_code = error_info.get('errorCode', 'N/A')
+                    matched_entry['reason'] = f"API Error: {err_msg} (Code: {err_code})"
+
+        # Clean up any leftover pending items
+        for r in results:
+            if r['status'] == 'Pending':
+                r['status'] = 'Failed'
+                r['reason'] = 'No response received from API for this record.'
+
     except Exception as e:
         for r in results:
             if r['status'] == 'Pending':
                 r['status'] = 'Failed'
-                r['reason'] = f"Bulk update request failed: {str(e)}"
+                r['reason'] = f"Execution error: {str(e)}"
                 
     return results
