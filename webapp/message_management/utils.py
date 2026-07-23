@@ -52,7 +52,7 @@ def fetch_target_endpoints():
     return {'records': []}
 
 def fetch_custom_greetings(ext_id):
-    """Fetch ALL active greetings. Inspects extension custom audio library first, then answering rules."""
+    """Fetch ALL active greetings. Inspects extension custom audio library, V1 rules, and V2 state rules."""
     try:
         ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     except Exception:
@@ -103,7 +103,7 @@ def fetch_custom_greetings(ext_id):
                         'id': audio_info.get('id'),
                         'name': audio_info.get('name', 'IVR Audio Prompt'),
                         'is_custom': True,
-                        'preset_uri': ''
+                        'preset_uri': audio_info.get('contentUri', '')
                     })
                 elif prompt.get('mode') == 'TextToSpeech':
                     greetings_list.append({
@@ -130,7 +130,7 @@ def fetch_custom_greetings(ext_id):
             })
         return {'status': 'Success', 'records': greetings_list}
 
-    # 2. Query extension custom audio library FIRST to cache all uploaded custom files
+    # 2. Query extension custom audio library FIRST to cache all direct custom audio URIs
     custom_pool_by_type = {}
     try:
         custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
@@ -144,14 +144,15 @@ def fetch_custom_greetings(ext_id):
     except Exception:
         pass
 
-    # 3. Handle Standard Extensions / Queues (Answering Rules)
+    # 3. Handle Standard Extensions / Queues (Answering Rules & V2 State Rules)
+    found_combinations = set()
+
+    # 3A. V1 Answering Rules Lookup
     try:
         rules_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule', method='GET')
         records = rules_resp.get('records', []) if rules_resp else []
     except Exception:
         records = []
-        
-    found_combinations = set()
 
     for rule in records:
         rule_id = rule.get('id')
@@ -164,7 +165,6 @@ def fetch_custom_greetings(ext_id):
             if not rule_detail:
                 continue
 
-            # Check 3A: Standard greetings array
             greetings_array = rule_detail.get('greetings', [])
             if isinstance(greetings_array, dict):
                 greetings_array = [greetings_array]
@@ -183,7 +183,7 @@ def fetch_custom_greetings(ext_id):
                         'id': greeting['custom']['id'],
                         'name': greeting['custom'].get('name', "Custom Audio"),
                         'is_custom': True,
-                        'preset_uri': ''
+                        'preset_uri': greeting['custom'].get('contentUri', '')
                     })
                 elif 'preset' in greeting and greeting['preset'].get('id'):
                     found_combinations.add((rule_id, g_type))
@@ -197,7 +197,7 @@ def fetch_custom_greetings(ext_id):
                         'is_custom': False
                     })
 
-            # Check 3B: Top-level holdMusic property inside rule_detail
+            # Top-level holdMusic property inside V1 rule_detail
             hold_music_obj = rule_detail.get('holdMusic')
             if hold_music_obj and (rule_id, 'HoldMusic') not in found_combinations:
                 custom_info = hold_music_obj.get('custom')
@@ -212,7 +212,7 @@ def fetch_custom_greetings(ext_id):
                         'id': custom_info['id'],
                         'name': custom_info.get('name', 'Custom Audio'),
                         'is_custom': True,
-                        'preset_uri': ''
+                        'preset_uri': custom_info.get('contentUri', '')
                     })
                 elif preset_info and preset_info.get('id'):
                     found_combinations.add((rule_id, 'HoldMusic'))
@@ -222,20 +222,49 @@ def fetch_custom_greetings(ext_id):
                         'rule_name': rule_name,
                         'id': preset_info['id'],
                         'preset_uri': preset_info.get('uri', ''),
-                        'name': preset_info.get('name', preset_info.get('type', 'System Preset')),
+                        'name': preset_info.get('name', 'System Default'),
                         'is_custom': False
                     })
-
         except Exception:
             pass
 
-    # 4. Process all expected slots and prioritize custom uploaded media over generic defaults
+    # 3B. V2 CHaF State Rules Lookup (Fallback for migrated accounts)
+    if ('business-hours-rule', 'HoldMusic') not in found_combinations:
+        try:
+            v2_state = rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours', method='GET')
+            if v2_state and 'holdMusic' in v2_state:
+                hm = v2_state['holdMusic']
+                if hm.get('effectiveGreetingType') == 'Custom' and hm.get('custom', {}).get('id'):
+                    found_combinations.add(('business-hours-rule', 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': 'business-hours-rule',
+                        'rule_name': 'Business Hours',
+                        'id': hm['custom']['id'],
+                        'name': hm['custom'].get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': hm['custom'].get('contentUri', '')
+                    })
+                elif hm.get('preset', {}).get('id'):
+                    found_combinations.add(('business-hours-rule', 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': 'business-hours-rule',
+                        'rule_name': 'Business Hours',
+                        'id': hm['preset']['id'],
+                        'preset_uri': hm['preset'].get('uri', ''),
+                        'name': hm['preset'].get('name', 'System Preset'),
+                        'is_custom': False
+                    })
+        except Exception:
+            pass
+
+    # 4. Map uploaded custom media pool files if slots are unmapped, else assign defaults
     expected_matrix = baseline_types.get(ext_type, {})
     for r_id, slots in expected_matrix.items():
         r_name = 'Business Hours' if r_id == 'business-hours-rule' else 'After Hours'
         for slot in slots:
             if (r_id, slot) not in found_combinations:
-                # If a custom audio file was uploaded for this slot type, map it directly
                 if slot in custom_pool_by_type and len(custom_pool_by_type[slot]) > 0:
                     latest_custom = custom_pool_by_type[slot][-1]
                     found_combinations.add((r_id, slot))
@@ -246,7 +275,7 @@ def fetch_custom_greetings(ext_id):
                         'id': latest_custom['id'],
                         'name': latest_custom.get('name', f'Custom {slot}'),
                         'is_custom': True,
-                        'preset_uri': ''
+                        'preset_uri': latest_custom.get('contentUri', '')
                     })
                 else:
                     greetings_list.append({
@@ -262,95 +291,79 @@ def fetch_custom_greetings(ext_id):
     return {'status': 'Success', 'records': greetings_list}
 
 def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
-    """Fetch raw audio utilizing safe_requests_get to prevent Rate Limit crashes."""
+    """Fetch raw audio binary. Resolves direct URIs, custom greeting IDs, or real RingCentral system presets."""
     content_uri = None
     token = session.get('sm_isolated_token') or session.get('rc_access_token')
     headers = {'Authorization': f'Bearer {token}'}
 
+    # 1. IVR Prompt Audio
     if is_ivr:
         if not is_custom and greeting_id != 'default':
             raise Exception("Cannot stream Text-to-Speech IVR prompts directly as files.")
         meta = rc_api_call(f'/restapi/v1.0/account/~/ivr-prompts/{greeting_id}')
         content_uri = meta.get('contentUri') if meta else None
+
+    # 2. Custom Audio (Fetch directly from extension's custom library)
     elif is_custom and greeting_id != 'default':
-        try:
-            meta = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting/{greeting_id}')
-            if meta and isinstance(meta, dict):
-                content_uri = meta.get('contentUri')
-        except Exception:
-            content_uri = None
+        if preset_uri and 'media' in preset_uri.lower():
+            content_uri = preset_uri
+        else:
+            try:
+                meta = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting/{greeting_id}')
+                if meta and isinstance(meta, dict):
+                    content_uri = meta.get('contentUri')
+            except Exception:
+                content_uri = None
 
-    # Handle Presets and Fallbacks when content_uri is not resolved
-    if not content_uri and greeting_id != 'default':
-        if preset_uri:
-            p_resp = safe_requests_get(preset_uri, headers=headers)
-            if p_resp.status_code == 200:
-                p_data = p_resp.json()
-                content_uri = p_data.get('contentUri')
-
-        if not content_uri:
-            ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
-            ext_type = ext_info.get('type') if ext_info else 'User'
-            expected_usage = 'DepartmentExtensionAnsweringRule' if ext_type == 'Department' else 'UserExtensionAnsweringRule'
-
-            dict_url = "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting"
-            resp = safe_requests_get(dict_url, params={'greetingType': greeting_type}, headers=headers)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                records = data.get('records', [])
-                
-                # Match exact preset ID in dictionary
-                rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
-                
-                if not rec and records:
-                    valid_records = [
-                        r for r in records 
-                        if r.get('type') == greeting_type 
-                        and r.get('usageType') in [expected_usage, 'ExtensionAnsweringRule']
-                    ]
-                    if not valid_records:
-                        valid_records = [r for r in records if r.get('type') == greeting_type]
-
-                    if valid_records:
-                        rec = valid_records[0]
-
-                if rec:
-                    content_uri = rec.get('contentUri')
-                    if not content_uri and 'uri' in rec:
-                        m_resp = safe_requests_get(rec['uri'], headers=headers)
-                        if m_resp.status_code == 200:
-                            content_uri = m_resp.json().get('contentUri')
-
-                    if content_uri and 'mailboxId=' in content_uri:
-                        content_uri = re.sub(r'mailboxId=\d+', f'mailboxId={ext_id}', content_uri)
-            
-    if not content_uri:
-        if skip_fallback:
-            raise Exception("No physical audio file explicitly mapped in RingCentral for export.")
-            
-        default_text = "This is the factory default system audio."
-        if greeting_type == 'Voicemail':
-            default_text = "Please leave your message after the tone."
-        elif greeting_type in ('HoldMusic', 'ConnectingAudio'):
-            default_text = "System Default Hold Music."
-        elif greeting_type == 'ConnectingMessage':
-            default_text = "Please hold while I try to connect you."
-        elif greeting_type == 'InterruptPrompt':
-            default_text = "Thank you for your patience. Please continue to hold."
-        elif greeting_type == 'Introductory':
-            default_text = "Thank you for calling."
-        elif greeting_type == 'Announcement':
-            default_text = "Thank you for calling. Goodbye."
+    # 3. System Preset or Unresolved Audio (Query RingCentral's Physical Audio Dictionary)
+    if not content_uri and greeting_type:
+        dict_url = "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting"
+        resp = safe_requests_get(dict_url, params={'greetingType': greeting_type}, headers=headers)
         
-        wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
-        return wav_buf.read(), "audio/wav"
-        
-    response = safe_requests_get(content_uri, headers=headers)
-    if response.status_code == 200:
-        return response.content, response.headers.get('Content-Type', 'audio/mpeg')
-        
-    raise Exception(f"RC Media Fetch Failed. Status: {response.status_code}")
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get('records', [])
+            
+            # Match by exact preset ID if present, else pick the primary system default track
+            rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
+            if not rec and records:
+                target_names = ["Default", "Acoustic", "Ring tones", "Beautiful", "Corporate", "Classic"]
+                rec = next((r for r in records if r.get('name') in target_names), records[0])
+
+            if rec:
+                content_uri = rec.get('contentUri')
+                if not content_uri and 'uri' in rec:
+                    m_resp = safe_requests_get(rec['uri'], headers=headers)
+                    if m_resp.status_code == 200:
+                        content_uri = m_resp.json().get('contentUri')
+
+                if content_uri and 'mailboxId=' in content_uri:
+                    content_uri = re.sub(r'mailboxId=\d+', f'mailboxId={ext_id}', content_uri)
+
+    # 4. Stream Raw Audio Binary
+    if content_uri:
+        response = safe_requests_get(content_uri, headers=headers)
+        if response.status_code == 200:
+            return response.content, response.headers.get('Content-Type', 'audio/mpeg')
+
+    if skip_fallback:
+        raise Exception("No physical audio file explicitly mapped in RingCentral for export.")
+
+    # 5. Gemini TTS Fallback (STRICTLY FOR SPOKEN MESSAGES, NEVER FOR HOLD MUSIC)
+    default_text = "This is the factory default system audio."
+    if greeting_type == 'Voicemail':
+        default_text = "Please leave your message after the tone."
+    elif greeting_type == 'ConnectingMessage':
+        default_text = "Please hold while I try to connect you."
+    elif greeting_type == 'InterruptPrompt':
+        default_text = "Thank you for your patience. Please continue to hold."
+    elif greeting_type == 'Introductory':
+        default_text = "Thank you for calling."
+    elif greeting_type == 'Announcement':
+        default_text = "Thank you for calling. Goodbye."
+
+    wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
+    return wav_buf.read(), "audio/wav"
 
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
     """Uploads a custom greeting natively handling both legacy V1 and new V2 CHaF accounts."""
@@ -393,9 +406,8 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
         
     state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
 
-    # 2. HoldMusic / InterruptPrompt (Unsupported by standard auto-bind)
+    # 2. HoldMusic / InterruptPrompt (Uploads raw file to custom media pool)
     if greeting_type in ['HoldMusic', 'InterruptPrompt']:
-        # Step A: Always securely upload to the user's media library
         metadata = {"type": greeting_type}
         files = {
             'json': ('request.json', json.dumps(metadata), 'application/json'),
@@ -412,7 +424,7 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
         if not audio_id:
             return greeting_result
 
-        # Step B: Try the legacy V1 Bind (will quietly fail on V2 accounts)
+        # Try legacy V1 bind (swallows exception on V2 accounts)
         try:
             v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
             rc_api_call(
@@ -422,13 +434,11 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
                 raise_error=True
             )
         except Exception:
-            # Swallowed exception for V2 accounts where auto-bind is restricted
             pass
             
         return greeting_result
 
     # 3. Standard Greetings (Voicemail, Introductory, ConnectingMessage, etc.)
-    
     # Attempt A: V2 (CHaF) Native Format
     try:
         metadata_v2 = {"type": greeting_type, "stateId": state_id}
