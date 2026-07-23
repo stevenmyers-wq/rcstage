@@ -180,6 +180,36 @@ def fetch_custom_greetings(ext_id):
                         'name': greeting['preset'].get('name', "System Default"),
                         'is_custom': False
                     })
+
+            # RESTORED: Catch V1 Custom Hold Music directly from the answering rule
+            hold_music_obj = rule_detail.get('holdMusic')
+            if hold_music_obj and (rule_id, 'HoldMusic') not in found_combinations:
+                custom_info = hold_music_obj.get('custom')
+                preset_info = hold_music_obj.get('preset')
+                
+                if custom_info and custom_info.get('id'):
+                    found_combinations.add((rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': custom_info['id'],
+                        'name': custom_info.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': custom_info.get('contentUri', '')
+                    })
+                elif preset_info and preset_info.get('id'):
+                    found_combinations.add((rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': preset_info['id'],
+                        'preset_uri': preset_info.get('uri', ''),
+                        'name': preset_info.get('name', 'System Default'),
+                        'is_custom': False
+                    })
+
         except Exception:
             pass
 
@@ -414,7 +444,14 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
                     raise_error=True
                 )
             except Exception:
-                pass
+                # ADDED: Explicitly attempt V2 State Rules PATCH if V1 Bind fails
+                try:
+                    state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
+                    if greeting_type == 'HoldMusic':
+                        v2_payload = { "holdMusic": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } } }
+                        rc_api_call(f'/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/{state_id}', method='PATCH', json=v2_payload, raise_error=True)
+                except Exception as e2:
+                    print(f"[DEBUG V2 Bind Error] {str(e2)}")
         return greeting_result
 
     metadata = {"type": greeting_type, "answeringRule": {"id": rule_id}}
