@@ -443,6 +443,9 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
             raise_error=True
         )
         
+        # TRACE LOG: Ground truth of where RingCentral actually put the file
+        print(f"[DEBUG UPLOAD TRACE] ext={ext_id} type={greeting_type} result: {json.dumps(greeting_result)}")
+        
         audio_id = greeting_result.get('id')
         if audio_id:
             try:
@@ -454,7 +457,7 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
                     raise_error=True
                 )
             except Exception:
-                # ADDED: Explicitly attempt V2 State Rules PATCH if V1 Bind fails
+                # Explicitly attempt V2 State Rules PATCH if V1 Bind fails
                 try:
                     state_id = 'work-hours' if rule_id == 'business-hours-rule' else 'after-hours'
                     if greeting_type == 'HoldMusic':
