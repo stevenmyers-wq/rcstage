@@ -146,4 +146,8 @@ def create_app():
         from .phone_number_assignment import routes as phone_number_assignment_routes
         app.register_blueprint(phone_number_assignment_routes.phone_number_assignment_bp)
 
+        # Device Swap routes
+        from .device_swap import routes as device_swap_routes
+        app.register_blueprint(device_swap_routes.device_swap_bp)
+
     return app
