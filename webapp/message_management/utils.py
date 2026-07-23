@@ -244,7 +244,7 @@ def fetch_custom_greetings(ext_id):
     return {'status': 'Success', 'records': greetings_list}
 
 def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, greeting_type=None, preset_uri=None, skip_fallback=False):
-    """Fetch raw audio. Resolves direct URIs, custom greeting IDs, or real RingCentral system presets."""
+    """Fetch raw audio. Resolves direct URIs, custom greeting IDs, or real RingCentral system presets with usage mapping."""
     content_uri = None
     token = session.get('sm_isolated_token') or session.get('rc_access_token')
     headers = {'Authorization': f'Bearer {token}'}
@@ -282,10 +282,25 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
             if greeting_id != 'default':
                 rec = next((r for r in records if str(r.get('id')) == str(greeting_id)), None)
             
-            # If default or exact ID not found, target standard tracks
+            # If default or exact ID not found, target standard tracks mapped to the specific extension type
             if not rec and records:
+                try:
+                    ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+                    ext_type = ext_info.get('type') if ext_info else 'User'
+                except Exception:
+                    ext_type = 'User'
+                    
+                expected_usage = 'DepartmentExtensionAnsweringRule' if ext_type == 'Department' else 'UserExtensionAnsweringRule'
+
+                valid_records = [
+                    r for r in records 
+                    if r.get('type') == greeting_type and r.get('usageType') in [expected_usage, 'ExtensionAnsweringRule']
+                ]
+                if not valid_records:
+                    valid_records = [r for r in records if r.get('type') == greeting_type]
+
                 target_names = ["Default", "Acoustic", "Ring tones", "Beautiful", "Corporate", "Classic"]
-                rec = next((r for r in records if r.get('name') in target_names), records[0])
+                rec = next((r for r in valid_records if r.get('name') in target_names), valid_records[0] if valid_records else records[0])
 
             if rec:
                 content_uri = rec.get('contentUri')
