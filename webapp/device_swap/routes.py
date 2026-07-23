@@ -1,10 +1,23 @@
 import traceback
-import json
 import pandas as pd
-from flask import Blueprint, request, jsonify
-from webapp.device_swap.utils import process_bulk_device_update
+from flask import Blueprint, request, jsonify, send_file
+from webapp.device_swap.utils import process_bulk_device_update, generate_device_swap_template
 
 device_swap_bp = Blueprint('device_swap_bp', __name__)
+
+@device_swap_bp.route('/api/device_swap/template', methods=['GET'])
+def download_template():
+    try:
+        output = generate_device_swap_template()
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name="DeviceSwapTemplate.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'error': 'Failed to generate template'}), 500
 
 @device_swap_bp.route('/api/device_swap/bulk', methods=['POST'])
 def bulk_device_swap():
@@ -16,7 +29,6 @@ def bulk_device_swap():
         return jsonify({'error': 'No file selected'}), 400
         
     try:
-        # Read the Excel file, looking specifically for the first sheet
         df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
         
         # Clean the dataframe to drop completely empty rows
