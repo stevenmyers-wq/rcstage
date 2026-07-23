@@ -52,7 +52,7 @@ def fetch_target_endpoints():
     return {'records': []}
 
 def fetch_custom_greetings(ext_id):
-    """Fetch ALL active greetings. If the extension is not activated, flags it explicitly."""
+    """Fetch ALL active greetings. Inspects rule arrays, holdMusic objects, and custom audio pools."""
     try:
         ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     except Exception:
@@ -147,40 +147,95 @@ def fetch_custom_greetings(ext_id):
         
         try:
             rule_detail = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}', method='GET')
+            
+            # Check 2A: Standard greetings array
             greetings_array = rule_detail.get('greetings', []) if rule_detail else []
             if isinstance(greetings_array, dict):
                 greetings_array = [greetings_array]
-        except Exception:
-            greetings_array = []
-            
-        for greeting in greetings_array:
-            g_type = greeting.get('type')
-            if not g_type:
-                continue
                 
-            found_combinations.add((rule_id, g_type))
-            if 'custom' in greeting and greeting['custom'].get('id'):
-                greetings_list.append({
-                    'type': g_type,
-                    'rule_id': rule_id,
-                    'rule_name': rule_name,
-                    'id': greeting['custom']['id'],
-                    'name': greeting['custom'].get('name', "Custom Audio"),
-                    'is_custom': True,
-                    'preset_uri': ''
-                })
-            elif 'preset' in greeting and greeting['preset'].get('id'):
-                greetings_list.append({
-                    'type': g_type,
-                    'rule_id': rule_id,
-                    'rule_name': rule_name,
-                    'id': greeting['preset']['id'],
-                    'preset_uri': greeting['preset'].get('uri', ''),
-                    'name': greeting['preset'].get('name', "System Default"),
-                    'is_custom': False
-                })
+            for greeting in greetings_array:
+                g_type = greeting.get('type')
+                if not g_type:
+                    continue
+                    
+                found_combinations.add((rule_id, g_type))
+                if 'custom' in greeting and greeting['custom'].get('id'):
+                    greetings_list.append({
+                        'type': g_type,
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': greeting['custom']['id'],
+                        'name': greeting['custom'].get('name', "Custom Audio"),
+                        'is_custom': True,
+                        'preset_uri': ''
+                    })
+                elif 'preset' in greeting and greeting['preset'].get('id'):
+                    greetings_list.append({
+                        'type': g_type,
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': greeting['preset']['id'],
+                        'preset_uri': greeting['preset'].get('uri', ''),
+                        'name': greeting['preset'].get('name', "System Default"),
+                        'is_custom': False
+                    })
 
-    # 3. Backfill missing base slots so the UI table is fully populated for valid extensions
+            # Check 2B: Top-level holdMusic property inside rule_detail
+            hold_music_obj = rule_detail.get('holdMusic') if rule_detail else None
+            if hold_music_obj and (rule_id, 'HoldMusic') not in found_combinations:
+                custom_info = hold_music_obj.get('custom')
+                preset_info = hold_music_obj.get('preset')
+                
+                if custom_info and custom_info.get('id'):
+                    found_combinations.add((rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': custom_info['id'],
+                        'name': custom_info.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': ''
+                    })
+                elif preset_info and preset_info.get('id'):
+                    found_combinations.add((rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': rule_id,
+                        'rule_name': rule_name,
+                        'id': preset_info['id'],
+                        'preset_uri': preset_info.get('uri', ''),
+                        'name': preset_info.get('name', 'System Default'),
+                        'is_custom': False
+                    })
+        except Exception:
+            pass
+
+    # 3. Check Extension Custom Greeting Pool for unlinked/V2 custom HoldMusic
+    try:
+        custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
+        custom_pool = custom_pool_resp.get('records', []) if custom_pool_resp else []
+        
+        for cg in custom_pool:
+            cg_type = cg.get('type')
+            cg_id = cg.get('id')
+            if cg_type == 'HoldMusic' and cg_id:
+                target_rule_id = 'business-hours-rule'
+                if (target_rule_id, 'HoldMusic') not in found_combinations:
+                    found_combinations.add((target_rule_id, 'HoldMusic'))
+                    greetings_list.append({
+                        'type': 'HoldMusic',
+                        'rule_id': target_rule_id,
+                        'rule_name': 'Business Hours',
+                        'id': cg_id,
+                        'name': cg.get('name', 'Custom Audio'),
+                        'is_custom': True,
+                        'preset_uri': ''
+                    })
+    except Exception:
+        pass
+
+    # 4. Backfill missing base slots with system default markers
     expected_matrix = baseline_types.get(ext_type, {})
     for r_id, slots in expected_matrix.items():
         r_name = 'Business Hours' if r_id == 'business-hours-rule' else 'After Hours'
