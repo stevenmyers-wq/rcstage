@@ -30,8 +30,10 @@ def generate_device_swap_template():
     
     ws_devices.sheet_state = 'hidden'
     
-    # Formula MUST begin with '=' for Excel to render it as a dropdown menu
-    formula = f"=DeviceList!$A$1:$A${len(device_names)}"
+    # openpyxl writes formula1 verbatim into <formula1>, so it must NOT begin
+    # with '='. A leading '=' produces invalid XML that makes Excel flag the
+    # file as corrupt and drops the dropdown entirely.
+    formula = f"DeviceList!$A$1:$A${len(device_names)}"
     dv = DataValidation(type="list", formula1=formula, allow_blank=True)
     dv.error = 'Please select a valid Device Type from the dropdown list.'
     dv.errorTitle = 'Invalid Device'
