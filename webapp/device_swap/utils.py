@@ -48,9 +48,10 @@ def generate_device_swap_template():
 
 def process_bulk_device_update(records):
     results = []
+    devices_to_update = []
     ext_map = {}
-    
-    # 1. Map extensionNumber -> extensionId
+
+    # 1. Map extensionNumber -> extensionId (enabled users only)
     endpoint = '/restapi/v1.0/account/~/extension'
     params = {'perPage': 1000}
     while True:
@@ -60,21 +61,22 @@ def process_bulk_device_update(records):
             if ext.get('status') == 'Enabled' and ext.get('type') == 'User':
                 ext_num = str(ext.get('extensionNumber', ''))
                 ext_map[ext_num] = str(ext.get('id'))
-        
+
         nav = data.get('navigation', {})
-        if 'nextPage' in nav:
+        if nav.get('nextPage'):
             params['page'] = params.get('page', 1) + 1
         else:
             break
 
-    # 2. Process each device row directly via PUT /restapi/v1.0/account/~/device/{deviceId}
+    # 2. Build one bulk-update record per valid row
     for row in records:
-        ext_num = str(row.get('Extension', '')).split('.')[0]
+        ext_num = str(row.get('Extension', '')).split('.')[0].strip()
         raw_mac = str(row.get('MAC Address', '')).strip()
-        target_mac = raw_mac.replace(':', '').replace('-', '').lower()
+        # Strip every non-hex character (colons, dashes, dots, spaces), then lowercase
+        target_mac = ''.join(c for c in raw_mac if c in '0123456789abcdefABCDEF').lower()
         device_type_name = str(row.get('Device Type', '')).strip()
         device_name = str(row.get('Device Name', '')).strip()
-        
+
         if not ext_num or ext_num == 'nan' or not raw_mac or raw_mac == 'nan':
             continue
 
@@ -84,7 +86,7 @@ def process_bulk_device_update(records):
             result_entry['reason'] = f"Extension {ext_num} not found or not an enabled user."
             results.append(result_entry)
             continue
-            
+
         model_id = DEVICE_TYPES.get(device_type_name)
         if not model_id:
             result_entry['reason'] = f"Invalid Device Type '{device_type_name}'."
@@ -95,51 +97,106 @@ def process_bulk_device_update(records):
             ext_id = ext_map[ext_num]
             dev_resp = rc.get(f'/restapi/v1.0/account/~/extension/{ext_id}/device')
             dev_data = dev_resp.json() if hasattr(dev_resp, 'json') else {}
-            
-            target_device = next((d for d in dev_data.get('records', []) if d.get('type') in ['HardPhone', 'OtherPhone', 'SoftPhone']), None)
-            
+            dev_records = dev_data.get('records', [])
+
+            # Prefer a physical phone: HardPhone -> OtherPhone -> SoftPhone.
+            # (Grabbing whatever came first could target a RingCentral App softphone
+            #  and fail; this ordering matches the known-good tool.)
+            target_device = (
+                next((d for d in dev_records if d.get('type') == 'HardPhone'), None)
+                or next((d for d in dev_records if d.get('type') == 'OtherPhone'), None)
+                or next((d for d in dev_records if d.get('type') == 'SoftPhone'), None)
+            )
+
             if not target_device:
-                result_entry['reason'] = "No eligible target device found on this extension."
+                result_entry['reason'] = "No eligible device (HardPhone/OtherPhone/SoftPhone) on this extension."
                 results.append(result_entry)
                 continue
-                
+
             device_id = str(target_device['id'])
-            
-            update_payload = {
+
+            # RingCentral's bulk-update identifies each device by "deviceId".
+            update_obj = {
+                "deviceId": device_id,
                 "serial": target_mac,
                 "model": {"id": str(model_id)}
             }
             if device_name and device_name.lower() != 'nan':
-                update_payload['name'] = device_name
-                
-            # Execute PUT directly to target device endpoint
-            put_resp = rc.put(f'/restapi/v1.0/account/~/device/{device_id}', json=update_payload)
-            
-            is_ok = getattr(put_resp, 'ok', False) or (hasattr(put_resp, 'status_code') and put_resp.status_code in [200, 202, 204])
-            
-            if is_ok:
-                result_entry['status'] = 'Success'
-                result_entry['reason'] = 'Device updated successfully.'
-            else:
-                err_msg = "Update failed"
-                if hasattr(put_resp, 'json'):
-                    try:
-                        err_json = put_resp.json()
-                        err_msg = err_json.get('message') or err_json.get('description') or err_msg
-                    except Exception:
-                        pass
-                elif hasattr(put_resp, 'text'):
-                    err_msg = put_resp.text or err_msg
-                    
-                result_entry['status'] = 'Failed'
-                result_entry['reason'] = f"API Error: {err_msg}"
+                update_obj['name'] = device_name
 
+            devices_to_update.append(update_obj)
+            result_entry['status'] = 'Pending'
+            result_entry['device_id'] = device_id
             results.append(result_entry)
-            time.sleep(0.2) # Rate limiting buffer
 
         except Exception as e:
-            result_entry['status'] = 'Failed'
-            result_entry['reason'] = f"Execution error: {str(e)}"
+            result_entry['reason'] = f"Failed to look up device: {str(e)}"
             results.append(result_entry)
 
+    # 3. Fire a single bulk-update request
+    #    POST /restapi/v1.0/account/~/device/bulk-update  ->  {"records": [...]}
+    if not devices_to_update:
+        return results
+
+    try:
+        bulk_resp = rc.post('/restapi/v1.0/account/~/device/bulk-update',
+                            json={"records": devices_to_update})
+        status_code = getattr(bulk_resp, 'status_code', 500)
+
+        # Whole request rejected (auth, malformed, etc.) -> fail all pending rows
+        if status_code >= 400:
+            error_msg = f"HTTP {status_code}"
+            try:
+                err_json = bulk_resp.json()
+                error_msg = err_json.get('message') or err_json.get('description') or error_msg
+            except Exception:
+                pass
+            for r in results:
+                if r.get('status') == 'Pending':
+                    r['status'] = 'Failed'
+                    r['reason'] = f"API Error: {error_msg}"
+            return _clean_results(results)
+
+        bulk_data = bulk_resp.json() if hasattr(bulk_resp, 'json') else {}
+        returned = bulk_data.get('records', [])
+        pending = [r for r in results if r.get('status') == 'Pending']
+
+        # Map each returned record back to its row by deviceId, falling back to order
+        for idx, api_rec in enumerate(returned):
+            dev_id = str(api_rec.get('deviceId') or api_rec.get('id') or '')
+            match = next((r for r in pending if r.get('device_id') == dev_id), None)
+            if not match and idx < len(pending):
+                match = pending[idx]
+            if not match:
+                continue
+
+            if api_rec.get('successful'):
+                match['status'] = 'Success'
+                match['reason'] = 'Device updated successfully.'
+            else:
+                err = api_rec.get('error') or {}
+                msg = err.get('message') or err.get('description') or 'Update rejected by RingCentral.'
+                code = err.get('errorCode', 'N/A')
+                match['status'] = 'Failed'
+                match['reason'] = f"API Error: {msg} (Code: {code})"
+
+        # Any pending row with no corresponding response record
+        for r in results:
+            if r.get('status') == 'Pending':
+                r['status'] = 'Failed'
+                r['reason'] = 'No response received from RingCentral for this device.'
+
+    except Exception as e:
+        for r in results:
+            if r.get('status') == 'Pending':
+                r['status'] = 'Failed'
+                r['reason'] = f"Execution error: {str(e)}"
+
+    return _clean_results(results)
+
+
+def _clean_results(results):
+    """Drop internal bookkeeping keys before returning to the frontend."""
+    for r in results:
+        r.pop('device_id', None)
     return results
