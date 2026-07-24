@@ -199,3 +199,233 @@ def _clean_results(results):
     for r in results:
         r.pop('device_id', None)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Bulk Device Swap  (RingCentral v2 "replace" — swap one existing device for
+# another existing device: from inventory or from another extension).
+# Different operation from the Device Update above, which re-provisions the
+# model/serial of the device already on an extension.
+# ---------------------------------------------------------------------------
+
+# RingCentral only swaps these device types via the /replace endpoint.
+SWAPPABLE_TYPES = ('HardPhone', 'OtherPhone')
+
+
+def _norm_mac(value):
+    """Normalise a MAC/serial to lowercase hex only (strip : - . spaces)."""
+    return ''.join(c for c in str(value or '') if c in '0123456789abcdefABCDEF').lower()
+
+
+def generate_swap_template():
+    """Blank template for the Bulk Swap tab (no device-type dropdown needed)."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Swaps"
+
+    headers = ["Source Extension", "Source Device", "Target Extension", "Target Device"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for col, width in {'A': 18, 'B': 30, 'C': 18, 'D': 30}.items():
+        ws.column_dimensions[col].width = width
+
+    info = wb.create_sheet(title="Instructions")
+    for line in [
+        ["Bulk Device Swap — how to fill this in"],
+        [""],
+        ["Each row replaces the device currently on the Source Extension with the Target Device."],
+        ["The phone number, digital line and emergency address stay on the line and move to the replacement."],
+        ["RingCentral can only swap HardPhone and 'Existing phone' (OtherPhone) devices."],
+        [""],
+        ["Source Extension  (required):  the extension whose current device you want to replace."],
+        ["Source Device     (optional):  MAC or device Name — only needed if that extension has more than one device."],
+        ["Target Extension  (optional):  fill in only if the replacement is currently on another extension."],
+        ["                               Leave blank to take the replacement from inventory (unassigned)."],
+        ["Target Device     (required):  MAC or device Name of the replacement device."],
+    ]:
+        info.append(line)
+    info.column_dimensions['A'].width = 110
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+def _fetch_all_records(path_base):
+    """Paginate a v1.0 list endpoint and return all records."""
+    out = []
+    page = 1
+    while True:
+        sep = '&' if '?' in path_base else '?'
+        resp = rc.get(f"{path_base}{sep}perPage=1000&page={page}")
+        data = resp.json() if hasattr(resp, 'json') else {}
+        recs = data.get('records', [])
+        out.extend(recs)
+        if not data.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+        time.sleep(0.05)
+    return out
+
+
+def process_device_swaps(records):
+    results = []
+
+    # 1. Extension number <-> id maps
+    ext_num_to_id = {}
+    for e in _fetch_all_records('/restapi/v1.0/account/~/extension'):
+        num = str(e.get('extensionNumber', '')).strip()
+        eid = str(e.get('id', '')).strip()
+        if num and eid:
+            ext_num_to_id[num] = eid
+
+    # 2. All account devices (assigned + inventory)
+    devices = _fetch_all_records('/restapi/v1.0/account/~/device')
+
+    def dev_ext_id(d):
+        ext = d.get('extension') or {}
+        return str(ext.get('id')) if ext.get('id') else None
+
+    def match_devices(identifier, ext_scope=None, inventory_only=False):
+        ident = str(identifier or '').strip()
+        mac = _norm_mac(ident)
+        found = []
+        for d in devices:
+            deid = dev_ext_id(d)
+            if inventory_only and deid is not None:
+                continue
+            if ext_scope is not None and deid != ext_scope:
+                continue
+            serial = _norm_mac(d.get('serial', ''))
+            name = str(d.get('name', '')).strip().lower()
+            if (mac and serial and mac == serial) or (ident and name == ident.lower()):
+                found.append(d)
+        return found
+
+    def describe(d):
+        model = (d.get('model') or {}).get('name') or d.get('type', 'Device')
+        ident = d.get('serial') or d.get('name') or str(d.get('id'))
+        return f"{model} · {ident}"
+
+    for row in records:
+        src_ext = str(row.get('Source Extension', '')).split('.')[0].strip()
+        src_dev = str(row.get('Source Device', '')).strip()
+        tgt_ext = str(row.get('Target Extension', '')).split('.')[0].strip()
+        tgt_dev = str(row.get('Target Device', '')).strip()
+
+        src_dev = '' if src_dev.lower() == 'nan' else src_dev
+        tgt_dev = '' if tgt_dev.lower() == 'nan' else tgt_dev
+        tgt_ext = '' if tgt_ext.lower() == 'nan' else tgt_ext
+
+        # Skip blank rows entirely
+        if (not src_ext or src_ext == 'nan') and not src_dev and not tgt_dev and not tgt_ext:
+            continue
+
+        entry = {
+            'source': f"Ext {src_ext}" + (f" / {src_dev}" if src_dev else ''),
+            'target': tgt_dev or (f"Ext {tgt_ext}" if tgt_ext else ''),
+            'status': 'Failed',
+            'reason': ''
+        }
+
+        # --- Resolve source (must be a device currently on the source extension) ---
+        if not src_ext or src_ext == 'nan':
+            entry['reason'] = "Source Extension is required."
+            results.append(entry)
+            continue
+        if src_ext not in ext_num_to_id:
+            entry['reason'] = f"Source extension {src_ext} not found."
+            results.append(entry)
+            continue
+        src_ext_id = ext_num_to_id[src_ext]
+
+        if src_dev:
+            src_matches = match_devices(src_dev, ext_scope=src_ext_id)
+        else:
+            src_matches = [d for d in devices if dev_ext_id(d) == src_ext_id]
+
+        if not src_matches:
+            entry['reason'] = (f"No source device on extension {src_ext}"
+                               + (f" matching '{src_dev}'." if src_dev else "."))
+            results.append(entry)
+            continue
+        if len(src_matches) > 1:
+            entry['reason'] = (f"Ambiguous source on extension {src_ext} "
+                               f"({len(src_matches)} devices) — put a MAC or device name in 'Source Device'.")
+            results.append(entry)
+            continue
+        source = src_matches[0]
+
+        # --- Resolve target (inventory by default, or a named extension) ---
+        if not tgt_dev:
+            entry['reason'] = "Target Device is required."
+            results.append(entry)
+            continue
+
+        if tgt_ext:
+            if tgt_ext not in ext_num_to_id:
+                entry['reason'] = f"Target extension {tgt_ext} not found."
+                results.append(entry)
+                continue
+            tgt_matches = match_devices(tgt_dev, ext_scope=ext_num_to_id[tgt_ext])
+            scope_desc = f"extension {tgt_ext}"
+        else:
+            tgt_matches = match_devices(tgt_dev, inventory_only=True)
+            scope_desc = "inventory (unassigned)"
+
+        if not tgt_matches:
+            entry['reason'] = f"No target device in {scope_desc} matching '{tgt_dev}'."
+            results.append(entry)
+            continue
+        if len(tgt_matches) > 1:
+            entry['reason'] = (f"Ambiguous target in {scope_desc} "
+                               f"({len(tgt_matches)} matches) — refine 'Target Device'.")
+            results.append(entry)
+            continue
+        target = tgt_matches[0]
+
+        source_id = str(source.get('id'))
+        target_id = str(target.get('id'))
+        entry['source'] = f"Ext {src_ext} · {describe(source)}"
+        entry['target'] = describe(target)
+
+        if source_id == target_id:
+            entry['reason'] = "Source and target are the same device."
+            results.append(entry)
+            continue
+
+        # --- Execute the swap: POST v2 .../devices/{sourceId}/replace ---
+        try:
+            endpoint = f"/restapi/v2/accounts/~/extensions/{src_ext_id}/devices/{source_id}/replace"
+            resp = rc.post(endpoint, json={"targetDeviceId": target_id})
+            code = getattr(resp, 'status_code', 500)
+
+            if code in (200, 201, 202, 204):
+                entry['status'] = 'Success'
+                entry['reason'] = 'Device swapped successfully.'
+            else:
+                msg = f"HTTP {code}"
+                try:
+                    j = resp.json()
+                    if isinstance(j, dict):
+                        errs = j.get('errors') or []
+                        if errs and isinstance(errs[0], dict):
+                            msg = errs[0].get('message') or msg
+                            if errs[0].get('errorCode'):
+                                msg = f"{msg} (Code: {errs[0]['errorCode']})"
+                        else:
+                            msg = j.get('message') or j.get('description') or msg
+                except Exception:
+                    pass
+                entry['status'] = 'Failed'
+                entry['reason'] = f"API Error: {msg}"
+        except Exception as e:
+            entry['status'] = 'Failed'
+            entry['reason'] = f"Execution error: {str(e)}"
+
+        results.append(entry)
+
+    return results

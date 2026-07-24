@@ -1,108 +1,220 @@
-<div class="space-y-8 animate-fade-in w-full">
-    
-    <div class="mb-4">
-        <h2 class="text-display mb-2">Bulk Device Swap</h2>
-        <p class="text-subheading">Replace multiple user devices by downloading a template, filling it out, and uploading it here to push a bulk update to RingCentral.</p>
+<div class="space-y-6 animate-fade-in w-full">
+
+    <div class="mb-2">
+        <h2 class="text-display mb-2">Device Swap</h2>
+        <p class="text-subheading">Bulk device tools for the active RingCentral account.</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
-        <!-- Step 1: Download Template Card -->
-        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
-            <div class="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+    <!-- Sub-tab navigation -->
+    <div class="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+        <button type="button" data-subtab="update" class="ds-subtab px-4 py-2.5 text-sm font-semibold -mb-px border-b-2 transition-colors">Device Update</button>
+        <button type="button" data-subtab="swap" class="ds-subtab px-4 py-2.5 text-sm font-semibold -mb-px border-b-2 transition-colors">Bulk Swap</button>
+    </div>
+
+    <!-- ===================== PANEL: DEVICE UPDATE ===================== -->
+    <div id="ds-panel-update" class="ds-panel space-y-8">
+
+        <p class="text-subheading">Re-provision the device on each extension with a new model, MAC and name. Download a template, fill it out, and upload it to push a bulk update to RingCentral.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- Step 1: Download Template Card -->
+            <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+                <div class="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                </div>
+                <h3 class="text-heading text-lg mb-2">1. Download Template</h3>
+                <p class="text-subheading text-xs mb-6 flex-grow">
+                    Generates a blank XLSX file containing a dynamic dropdown list of all supported RingCentral device models.
+                </p>
+                <a href="/api/device_swap/template" id="download-template-btn" class="w-full btn-secondary !text-emerald-600 dark:!text-emerald-400 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
+                    Download XLSX Template
+                </a>
             </div>
-            <h3 class="text-heading text-lg mb-2">1. Download Template</h3>
-            <p class="text-subheading text-xs mb-6 flex-grow">
-                Generates a blank XLSX file containing a dynamic dropdown list of all supported RingCentral device models.
-            </p>
-            <a href="/api/device_swap/template" id="download-template-btn" class="w-full btn-secondary !text-emerald-600 dark:!text-emerald-400 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
-                Download XLSX Template
-            </a>
+
+            <!-- Step 2: Upload & Process Card -->
+            <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+                <div class="w-14 h-14 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                </div>
+                <h3 class="text-heading text-lg mb-2">2. Upload & Process</h3>
+                <p class="text-subheading text-xs mb-6 flex-grow">
+                    Upload your completed template to map the extensions and push the bulk device update to the active account.
+                </p>
+
+                <form id="deviceSwapForm" class="w-full flex flex-col gap-4">
+                    <input type="file" id="deviceSwapFile" accept=".xlsx" class="file-input" required/>
+
+                    <button type="submit" class="btn-primary w-full" id="deviceSwapBtn" disabled>
+                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white hidden" id="deviceSwapSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="btn-text">Process Bulk Update</span>
+                    </button>
+                </form>
+            </div>
+
         </div>
 
-        <!-- Step 2: Upload & Process Card -->
-        <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
-            <div class="w-14 h-14 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+        <!-- Results Table -->
+        <div id="deviceSwapResultsContainer" class="hidden card !p-0 overflow-hidden mt-8 shadow-xl border-slate-200/60 dark:border-slate-700/50">
+            <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                <h3 class="text-heading text-lg">Execution Results</h3>
             </div>
-            <h3 class="text-heading text-lg mb-2">2. Upload & Process</h3>
-            <p class="text-subheading text-xs mb-6 flex-grow">
-                Upload your completed template to map the extensions and push the bulk device update to the active account.
-            </p>
-            
-            <form id="deviceSwapForm" class="w-full flex flex-col gap-4">
-                <input type="file" id="deviceSwapFile" accept=".xlsx" class="file-input" required/>
-                
-                <button type="submit" class="btn-primary w-full" id="deviceSwapBtn" disabled>
-                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white hidden" id="deviceSwapSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span class="btn-text">Process Bulk Swap</span>
-                </button>
-            </form>
+            <div class="table-container !rounded-none !border-0 !shadow-none">
+                <table class="data-table" id="deviceSwapResultsTable">
+                    <thead>
+                        <tr>
+                            <th>Extension</th>
+                            <th>Target MAC</th>
+                            <th>Status</th>
+                            <th>Reason / Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Injected via JS -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     </div>
 
-    <!-- Results Table -->
-    <div id="deviceSwapResultsContainer" class="hidden card !p-0 overflow-hidden mt-8 shadow-xl border-slate-200/60 dark:border-slate-700/50">
-        <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-            <h3 class="text-heading text-lg">Execution Results</h3>
+    <!-- ===================== PANEL: BULK SWAP ===================== -->
+    <div id="ds-panel-swap" class="ds-panel space-y-8 hidden">
+
+        <p class="text-subheading">Swap the device on an extension for another <em>existing</em> device &mdash; pulled from inventory or from another extension. The number, digital line and emergency address stay on the line and move to the replacement.</p>
+
+        <div class="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+            <strong>Note:</strong> RingCentral can only swap <span class="font-mono">HardPhone</span> and &ldquo;existing phone&rdquo; (<span class="font-mono">OtherPhone</span>) devices. Both source and target must already exist on the account. Identify devices by <strong>MAC</strong> or by device <strong>Name</strong> (handy for phones with no MAC).
         </div>
-        <div class="table-container !rounded-none !border-0 !shadow-none">
-            <table class="data-table" id="deviceSwapResultsTable">
-                <thead>
-                    <tr>
-                        <th>Extension</th>
-                        <th>Target MAC</th>
-                        <th>Status</th>
-                        <th>Reason / Error</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- Injected via JS -->
-                </tbody>
-            </table>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- Step 1: Download Template Card -->
+            <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+                <div class="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                </div>
+                <h3 class="text-heading text-lg mb-2">1. Download Template</h3>
+                <p class="text-subheading text-xs mb-6 flex-grow">
+                    Blank XLSX with Source/Target columns and an Instructions sheet explaining how to fill it in.
+                </p>
+                <a href="/api/device_swap/swap/template" id="swapDownloadBtn" class="w-full btn-secondary !text-emerald-600 dark:!text-emerald-400 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
+                    Download XLSX Template
+                </a>
+            </div>
+
+            <!-- Step 2: Upload & Process Card -->
+            <div class="card flex flex-col items-center text-center hover:-translate-y-1 group !p-6">
+                <div class="w-14 h-14 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-indigo-600 group-hover:text-white transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                </div>
+                <h3 class="text-heading text-lg mb-2">2. Upload & Swap</h3>
+                <p class="text-subheading text-xs mb-6 flex-grow">
+                    Upload your completed template to resolve each source/target device and push the swaps to the active account.
+                </p>
+
+                <form id="swapForm" class="w-full flex flex-col gap-4">
+                    <input type="file" id="swapFile" accept=".xlsx" class="file-input" required/>
+
+                    <button type="submit" class="btn-primary w-full" id="swapBtn" disabled>
+                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white hidden" id="swapSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="btn-text">Process Bulk Swap</span>
+                    </button>
+                </form>
+            </div>
+
         </div>
+
+        <!-- Results Table -->
+        <div id="swapResultsContainer" class="hidden card !p-0 overflow-hidden mt-8 shadow-xl border-slate-200/60 dark:border-slate-700/50">
+            <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                <h3 class="text-heading text-lg">Swap Results</h3>
+            </div>
+            <div class="table-container !rounded-none !border-0 !shadow-none">
+                <table class="data-table" id="swapResultsTable">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Target</th>
+                            <th>Status</th>
+                            <th>Reason / Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+// --- Sub-tab switcher ---
+(function () {
+    const btns = document.querySelectorAll('.ds-subtab');
+    const panels = {
+        update: document.getElementById('ds-panel-update'),
+        swap: document.getElementById('ds-panel-swap')
+    };
+    function activate(name) {
+        btns.forEach(b => {
+            const on = b.dataset.subtab === name;
+            b.classList.toggle('border-blue-600', on);
+            b.classList.toggle('text-blue-600', on);
+            b.classList.toggle('dark:text-blue-400', on);
+            b.classList.toggle('border-transparent', !on);
+            b.classList.toggle('text-slate-500', !on);
+        });
+        Object.entries(panels).forEach(([k, el]) => { if (el) el.classList.toggle('hidden', k !== name); });
+    }
+    btns.forEach(b => b.addEventListener('click', () => activate(b.dataset.subtab)));
+    activate('update');
+})();
+</script>
+
+<script>
+// --- Device Update form ---
+document.addEventListener('DOMContentLoaded', function () {
     const fileUpload = document.getElementById('deviceSwapFile');
     const processFileBtn = document.getElementById('deviceSwapBtn');
     const swapForm = document.getElementById('deviceSwapForm');
-    
-    if(fileUpload && processFileBtn) {
-        fileUpload.addEventListener('change', () => { 
-            processFileBtn.disabled = !fileUpload.files.length > 0; 
+
+    if (fileUpload && processFileBtn) {
+        fileUpload.addEventListener('change', () => {
+            processFileBtn.disabled = !fileUpload.files.length > 0;
         });
     }
-    
+
     if (swapForm) {
-        swapForm.addEventListener('submit', function(e) {
+        swapForm.addEventListener('submit', function (e) {
             e.preventDefault();
-            
+
             const file = fileUpload.files[0];
             if (!file) { alert('Please select an Excel file to upload.'); return; }
-            
+
             const formData = new FormData();
             formData.append('file', file);
-            
+
             const spinner = document.getElementById('deviceSwapSpinner');
             const btnText = document.querySelector('#deviceSwapBtn .btn-text');
             const resultsContainer = document.getElementById('deviceSwapResultsContainer');
             const resultsTableBody = document.querySelector('#deviceSwapResultsTable tbody');
-            
+
             processFileBtn.disabled = true;
             spinner.classList.remove('hidden');
             btnText.textContent = 'Processing...';
             resultsContainer.classList.add('hidden');
             resultsTableBody.innerHTML = '';
-            
+
             fetch('/api/device_swap/bulk', {
                 method: 'POST',
                 body: formData
@@ -111,23 +223,23 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 processFileBtn.disabled = false;
                 spinner.classList.add('hidden');
-                btnText.textContent = 'Process Bulk Swap';
-                
+                btnText.textContent = 'Process Bulk Update';
+
                 if (data.error) {
                     alert('Error: ' + data.error);
                     return;
                 }
-                
+
                 if (data.results && data.results.length > 0) {
                     data.results.forEach(result => {
                         const tr = document.createElement('tr');
-                        
+
                         if (result.status === 'Success') {
                             tr.classList.add('bg-emerald-50/50', 'dark:bg-emerald-900/10');
                         } else {
                             tr.classList.add('bg-rose-50/50', 'dark:bg-rose-900/10');
                         }
-                        
+
                         tr.innerHTML = `
                             <td><span class="font-mono text-xs font-bold text-slate-600 dark:text-slate-400">${result.extension}</span></td>
                             <td><span class="font-mono text-xs text-slate-500">${result.mac}</span></td>
@@ -143,6 +255,90 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 processFileBtn.disabled = false;
+                spinner.classList.add('hidden');
+                btnText.textContent = 'Process Bulk Update';
+                console.error('Error:', error);
+                alert('An unexpected error occurred while processing the file.');
+            });
+        });
+    }
+});
+</script>
+
+<script>
+// --- Bulk Swap form ---
+document.addEventListener('DOMContentLoaded', function () {
+    const fileUpload = document.getElementById('swapFile');
+    const processBtn = document.getElementById('swapBtn');
+    const form = document.getElementById('swapForm');
+
+    if (fileUpload && processBtn) {
+        fileUpload.addEventListener('change', () => {
+            processBtn.disabled = !fileUpload.files.length > 0;
+        });
+    }
+
+    if (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const file = fileUpload.files[0];
+            if (!file) { alert('Please select an Excel file to upload.'); return; }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const spinner = document.getElementById('swapSpinner');
+            const btnText = document.querySelector('#swapBtn .btn-text');
+            const resultsContainer = document.getElementById('swapResultsContainer');
+            const resultsTableBody = document.querySelector('#swapResultsTable tbody');
+
+            processBtn.disabled = true;
+            spinner.classList.remove('hidden');
+            btnText.textContent = 'Swapping...';
+            resultsContainer.classList.add('hidden');
+            resultsTableBody.innerHTML = '';
+
+            fetch('/api/device_swap/swap/bulk', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                processBtn.disabled = false;
+                spinner.classList.add('hidden');
+                btnText.textContent = 'Process Bulk Swap';
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(result => {
+                        const tr = document.createElement('tr');
+
+                        if (result.status === 'Success') {
+                            tr.classList.add('bg-emerald-50/50', 'dark:bg-emerald-900/10');
+                        } else {
+                            tr.classList.add('bg-rose-50/50', 'dark:bg-rose-900/10');
+                        }
+
+                        tr.innerHTML = `
+                            <td class="text-xs font-medium text-slate-600 dark:text-slate-400">${result.source || ''}</td>
+                            <td class="text-xs font-medium text-slate-600 dark:text-slate-400">${result.target || ''}</td>
+                            <td><span class="badge ${result.status === 'Success' ? 'badge-success' : 'badge-danger'}">${result.status}</span></td>
+                            <td class="text-xs font-medium">${result.reason || ''}</td>
+                        `;
+                        resultsTableBody.appendChild(tr);
+                    });
+                    resultsContainer.classList.remove('hidden');
+                } else {
+                    alert('No valid records were found to process.');
+                }
+            })
+            .catch(error => {
+                processBtn.disabled = false;
                 spinner.classList.add('hidden');
                 btnText.textContent = 'Process Bulk Swap';
                 console.error('Error:', error);
