@@ -1,7 +1,12 @@
 import traceback
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
-from webapp.device_swap.utils import process_bulk_device_update, generate_device_swap_template
+from webapp.device_swap.utils import (
+    process_bulk_device_update,
+    generate_device_swap_template,
+    process_device_swaps,
+    generate_swap_template,
+)
 
 device_swap_bp = Blueprint('device_swap_bp', __name__)
 
@@ -34,9 +39,47 @@ def bulk_device_swap():
         records = df.to_dict('records')
         
         results = process_bulk_device_update(records)
-        
+
         return jsonify({'success': True, 'results': results})
-    
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'error': f"Failed to process file: {str(e)}"}), 500
+
+
+@device_swap_bp.route('/api/device_swap/swap/template', methods=['GET'])
+def download_swap_template():
+    try:
+        output = generate_swap_template()
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name="BulkDeviceSwapTemplate.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'error': f"Failed to generate template: {str(e)}"}), 500
+
+
+@device_swap_bp.route('/api/device_swap/swap/bulk', methods=['POST'])
+def bulk_device_swap_replace():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    try:
+        df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
+        df = df.dropna(subset=['Source Extension', 'Source Device', 'Target Extension', 'Target Device'], how='all')
+        records = df.to_dict('records')
+
+        results = process_device_swaps(records)
+
+        return jsonify({'success': True, 'results': results})
+
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': f"Failed to process file: {str(e)}"}), 500
