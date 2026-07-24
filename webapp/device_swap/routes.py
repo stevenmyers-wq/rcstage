@@ -73,7 +73,7 @@ def bulk_device_swap_replace():
 
     try:
         df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
-        df = df.dropna(subset=['Source Extension', 'Source Device', 'Target Extension', 'Target Device'], how='all')
+        df = df.dropna(subset=['Extension', 'Replacement Device', 'Current Device'], how='all')
         records = df.to_dict('records')
 
         results = process_device_swaps(records)
