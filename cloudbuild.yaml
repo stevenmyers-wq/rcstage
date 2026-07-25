@@ -20,6 +20,13 @@ steps:
     - 'us-central1'
     - '--platform'
     - 'managed'
+    # Large bulk exports (hundreds of endpoints) build the ZIP in a single
+    # long-running request; raise the request timeout past Cloud Run's 300s
+    # default and give the in-memory archive more headroom.
+    - '--timeout'
+    - '3600'
+    - '--memory'
+    - '2Gi'
 
 images:
 - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-uid-auth:$COMMIT_SHA'
