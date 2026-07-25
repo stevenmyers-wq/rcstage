@@ -872,10 +872,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         logProgress(`Initiating export for ${total} endpoints in ${batches.length} batch(es) of up to ${EXPORT_BATCH_SIZE}...`, 'info');
 
-        let master;
+        let master, JSZipLib;
         try {
-            const JSZip = await loadJSZip();
-            master = new JSZip();
+            JSZipLib = await loadJSZip();
+            master = new JSZipLib();
         } catch (e) {
             logProgress(e.message, 'error');
             progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
@@ -916,7 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) throw new Error(`server returned HTTP ${res.status}`);
 
                 const blob = await res.blob();
-                const batchZip = await master.constructor.loadAsync(blob);
+                const batchZip = await JSZipLib.loadAsync(blob);
 
                 // Copy audio files into the master; merge the CSV audits.
                 for (const name of Object.keys(batchZip.files)) {
