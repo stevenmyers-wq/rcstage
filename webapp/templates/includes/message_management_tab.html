@@ -832,74 +832,156 @@ document.addEventListener('DOMContentLoaded', () => {
         progressLog.scrollTop = progressLog.scrollHeight;
     }
 
+    // Endpoints are exported in batches so no single request approaches the
+    // server request-timeout, then every batch is merged into one ZIP in the
+    // browser. Users never have to hand-split large selections.
+    const EXPORT_BATCH_SIZE = 50;
+
+    function loadJSZip() {
+        return new Promise((resolve, reject) => {
+            if (window.JSZip) { resolve(window.JSZip); return; }
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+            s.onload = () => window.JSZip ? resolve(window.JSZip) : reject(new Error('ZIP library failed to initialize.'));
+            s.onerror = () => reject(new Error('Could not load the ZIP library (JSZip) from CDN.'));
+            document.head.appendChild(s);
+        });
+    }
+
     document.getElementById('btn-trigger-export').addEventListener('click', async () => {
         closeModal('modal-export');
         openModal('modal-progress');
-        
+
         progressLog.innerHTML = '';
         progressCloseBtn.classList.add('hidden');
         progressTitle.textContent = "Compiling Export Archive...";
         document.getElementById('progress-desc').textContent = "Extracting physical audio files and writing CSV audit. Please stand by.";
-        
+
         const extIds = Array.from(selectedIds);
         const total = extIds.length;
         const ignoreDefaults = toggleIgnoreDefaults.checked;
-        
+
         progressBar.style.width = `0%`;
         progressBar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300';
         progressPct.textContent = `0/${total}`;
-        
-        logProgress(`Initiating export for ${total} endpoints...`, 'info');
 
-        const taskId = 'export_' + Date.now();
+        // Split the selection into batches.
+        const batches = [];
+        for (let i = 0; i < extIds.length; i += EXPORT_BATCH_SIZE) {
+            batches.push(extIds.slice(i, i + EXPORT_BATCH_SIZE));
+        }
+        logProgress(`Initiating export for ${total} endpoints in ${batches.length} batch(es) of up to ${EXPORT_BATCH_SIZE}...`, 'info');
 
-        const pollInterval = setInterval(async () => {
-            try {
-                const res = await fetch(`/api/message_management/export/status?task_id=${taskId}`);
-                if (res.ok) {
+        let master;
+        try {
+            const JSZip = await loadJSZip();
+            master = new JSZip();
+        } catch (e) {
+            logProgress(e.message, 'error');
+            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
+            progressTitle.textContent = "Export Failed";
+            progressCloseBtn.classList.remove('hidden');
+            return;
+        }
+
+        let combinedCsv = '';
+        let csvCaptured = false;
+        let doneEndpoints = 0;
+        let failedBatches = 0;
+
+        for (let b = 0; b < batches.length; b++) {
+            const batch = batches[b];
+            const taskId = `export_${Date.now()}_${b}`;
+            progressTitle.textContent = `Compiling Export Archive... (batch ${b + 1}/${batches.length})`;
+
+            const pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/message_management/export/status?task_id=${taskId}`);
+                    if (!res.ok) return;
                     const data = await res.json();
-                    if (data.total > 0) {
-                        const pct = Math.round((data.current / data.total) * 100);
-                        progressBar.style.width = `${pct}%`;
-                        progressPct.textContent = `${data.current}/${data.total}`;
+                    const batchCurrent = (data.total > 0) ? data.current : 0;
+                    const overall = doneEndpoints + batchCurrent;
+                    progressBar.style.width = `${Math.round((overall / total) * 100)}%`;
+                    progressPct.textContent = `${overall}/${total}`;
+                } catch (e) {}
+            }, 1000);
+
+            try {
+                const res = await fetch('/api/message_management/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ext_ids: batch, task_id: taskId, ignore_defaults: ignoreDefaults })
+                });
+                clearInterval(pollInterval);
+                if (!res.ok) throw new Error(`server returned HTTP ${res.status}`);
+
+                const blob = await res.blob();
+                const batchZip = await master.constructor.loadAsync(blob);
+
+                // Copy audio files into the master; merge the CSV audits.
+                for (const name of Object.keys(batchZip.files)) {
+                    const entry = batchZip.files[name];
+                    if (entry.dir) continue;
+                    if (name.toLowerCase().endsWith('.csv')) {
+                        const text = await entry.async('string');
+                        if (!csvCaptured) {
+                            combinedCsv = text;   // keep header + rows from the first batch
+                            csvCaptured = true;
+                        } else {
+                            const nl = text.indexOf('\n');  // drop the (fixed, unquoted) header line
+                            combinedCsv += (nl >= 0 ? text.slice(nl + 1) : '');
+                        }
+                    } else {
+                        master.file(name, await entry.async('uint8array'));
                     }
                 }
-            } catch (e) {}
-        }, 1000);
+                logProgress(`Batch ${b + 1}/${batches.length} done (${batch.length} endpoints).`, 'success');
+            } catch (err) {
+                clearInterval(pollInterval);
+                failedBatches++;
+                logProgress(`Batch ${b + 1} failed (${err.message}); continuing.`, 'error');
+            }
+
+            doneEndpoints += batch.length;
+            progressBar.style.width = `${Math.round((doneEndpoints / total) * 100)}%`;
+            progressPct.textContent = `${doneEndpoints}/${total}`;
+        }
+
+        const audioCount = Object.keys(master.files).filter(n => !n.toLowerCase().endsWith('.csv') && !master.files[n].dir).length;
+        if (audioCount === 0 && !csvCaptured) {
+            logProgress('Nothing was exported — all batches failed.', 'error');
+            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
+            progressPct.textContent = 'Failed';
+            progressTitle.textContent = "Export Failed";
+            progressCloseBtn.classList.remove('hidden');
+            return;
+        }
 
         try {
-            const res = await fetch('/api/message_management/export', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ext_ids: extIds, task_id: taskId, ignore_defaults: ignoreDefaults })
-            });
+            if (csvCaptured) master.file('Greeting_Mapping_Audit.csv', combinedCsv);
+            logProgress(`Merging ${audioCount} audio file(s) into a single archive...`, 'info');
+            const finalBlob = await master.generateAsync({ type: 'blob' });
 
-            clearInterval(pollInterval);
-            if (!res.ok) throw new Error("Server failed to compile the archive.");
-            
-            const blob = await res.blob();
-            logProgress(`ZIP Archive compiled successfully! Size: ${Math.round(blob.size/1024)}kb`, 'success');
-            
-            const url = window.URL.createObjectURL(blob);
+            const url = window.URL.createObjectURL(finalBlob);
             const a = document.createElement('a');
             a.href = url;
             a.download = 'RingCentral_Audio_Export.zip';
             document.body.appendChild(a);
             a.click();
             a.remove();
-            
-            progressBar.style.width = `100%`;
-            progressPct.textContent = `${total}/${total}`;
-            progressTitle.textContent = "Export Finished";
-            document.getElementById('progress-desc').textContent = "Your ZIP file should begin downloading automatically.";
-            progressCloseBtn.classList.remove('hidden');
+            window.URL.revokeObjectURL(url);
 
-        } catch (err) {
-            clearInterval(pollInterval);
-            logProgress(`Error: ${err.message}`, 'error');
             progressBar.style.width = `100%`;
+            progressBar.className = (failedBatches ? 'bg-amber-500' : 'bg-emerald-500') + ' h-full rounded-full transition-all duration-300';
+            progressPct.textContent = `${total}/${total}`;
+            progressTitle.textContent = failedBatches ? "Export Finished (with errors)" : "Export Finished";
+            document.getElementById('progress-desc').textContent = "Your ZIP file should begin downloading automatically.";
+            logProgress(`Archive ready (${Math.round(finalBlob.size / 1024)}kb).` + (failedBatches ? ` ${failedBatches} batch(es) failed.` : ''), failedBatches ? 'error' : 'success');
+            progressCloseBtn.classList.remove('hidden');
+        } catch (err) {
+            logProgress(`Failed to assemble the final archive: ${err.message}`, 'error');
             progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
-            progressPct.textContent = `Failed`;
+            progressPct.textContent = 'Failed';
             progressTitle.textContent = "Export Failed";
             progressCloseBtn.classList.remove('hidden');
         }
