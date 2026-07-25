@@ -117,7 +117,10 @@
     <div class="card !p-0 overflow-hidden mt-8 bg-slate-900 dark:bg-slate-950 border-slate-800 shadow-xl">
         <div class="bg-slate-800 dark:bg-slate-900 px-6 py-3 border-b border-slate-700 flex justify-between items-center">
             <span class="font-mono font-bold text-xs text-slate-300 tracking-widest">PROVISIONING LOGS</span>
-            <button onclick="document.getElementById('airLogs').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
+            <div class="flex items-center gap-3">
+                <button id="air-result-btn" class="hidden text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors">⬇ Download results (.xlsx)</button>
+                <button onclick="document.getElementById('airLogs').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
+            </div>
         </div>
         <div id="airLogs" class="p-6 font-mono text-xs h-64 overflow-y-auto whitespace-pre-line text-slate-300 outline-none">
             Ready for action...
@@ -179,6 +182,12 @@
         cytoscape.use(cytoscapeDagre);
     }
 
+    // Downloadable result listing from the most recent AIR upload.
+    let airResultRows = null;
+    document.addEventListener('DOMContentLoaded', () => {
+        UCResults.attachButton(document.getElementById('air-result-btn'), () => airResultRows, 'AIR_Provisioning_Results', 'Results');
+    });
+
     function logAir(msg, type='info') {
         const box = document.getElementById('airLogs');
         if (!box) return;
@@ -229,16 +238,24 @@
         formData.append('file', file);
         
         logAir(`Uploading ${file.name}... parsing rules and skills.`);
-        
+        airResultRows = null;
+        document.getElementById('air-result-btn').classList.add('hidden');
+
         try {
             const res = await fetch('/api/air/upload', { method: 'POST', body: formData });
             const data = await res.json();
-            
+
             if (data.logs) {
                 data.logs.forEach(l => {
                     const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
                     logAir(l, type);
                 });
+
+                airResultRows = data.logs.map(l => ({
+                    Status: l.includes('❌') ? 'Failed' : (l.includes('✅') ? 'Success' : 'Info'),
+                    Detail: l
+                }));
+                document.getElementById('air-result-btn').classList.toggle('hidden', airResultRows.length === 0);
             } else if (data.error) {
                 logAir(data.error, 'error');
             }

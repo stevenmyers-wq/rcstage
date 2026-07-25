@@ -54,5 +54,6 @@ def get_status():
         'total': data.get('total', 0),
         'status': data.get('status', 'running'),
         'message': data.get('message', 'Initializing...'),
-        'error': data.get('error', '')
+        'error': data.get('error', ''),
+        'results': data.get('results', [])
     })

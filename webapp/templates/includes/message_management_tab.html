@@ -256,9 +256,14 @@
         <div id="progress-log" class="h-32 overflow-y-auto bg-slate-900 dark:bg-[#0b1120] text-left p-4 rounded-xl font-mono text-xs text-emerald-400 space-y-1 shadow-inner outline-none">
         </div>
         
-        <button id="progress-close-btn" class="mt-8 hidden w-full btn-secondary">
-            Close & Refresh Table
-        </button>
+        <div class="mt-8 space-y-3">
+            <button id="progress-result-btn" class="hidden w-full btn-primary !bg-emerald-600 hover:!bg-emerald-700">
+                ⬇ Download results (.xlsx)
+            </button>
+            <button id="progress-close-btn" class="hidden w-full btn-secondary">
+                Close & Refresh Table
+            </button>
+        </div>
     </div>
 </div>
 
@@ -823,6 +828,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressPct = document.getElementById('progress-pct');
     const progressTitle = document.getElementById('progress-title');
     const progressCloseBtn = document.getElementById('progress-close-btn');
+    const progressResultBtn = document.getElementById('progress-result-btn');
 
     function logProgress(msg, type='info') {
         const entry = document.createElement('div');
@@ -831,6 +837,20 @@ document.addEventListener('DOMContentLoaded', () => {
         progressLog.appendChild(entry);
         progressLog.scrollTop = progressLog.scrollHeight;
     }
+
+    // Optional downloadable result listing for the current operation. Populated
+    // when an operation produces a per-endpoint result set; hidden otherwise so
+    // a previous run's listing never lingers on a later operation.
+    let lastResultRows = null;
+    let lastResultBase = 'Upload_Results';
+
+    function setResultData(rows, filenameBase) {
+        lastResultRows = (rows && rows.length) ? rows : null;
+        if (filenameBase) lastResultBase = filenameBase;
+        progressResultBtn.classList.toggle('hidden', !lastResultRows);
+    }
+
+    UCResults.attachButton(progressResultBtn, () => lastResultRows, () => lastResultBase, 'Results');
 
     // Endpoints are exported in batches so no single request approaches the
     // server request-timeout, then every batch is merged into one ZIP in the
@@ -854,6 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         progressLog.innerHTML = '';
         progressCloseBtn.classList.add('hidden');
+        setResultData(null);
         progressTitle.textContent = "Compiling Export Archive...";
         document.getElementById('progress-desc').textContent = "Extracting physical audio files and writing CSV audit. Please stand by.";
 
@@ -993,31 +1014,46 @@ document.addEventListener('DOMContentLoaded', () => {
         
         progressLog.innerHTML = '';
         progressCloseBtn.classList.add('hidden');
+        setResultData(null);
         progressTitle.textContent = "Uploading Audio File...";
         
         const ids = Array.from(selectedIds);
         const total = ids.length;
+        const resultRows = [];
 
         for (let i = 0; i < total; i++) {
             const extId = ids[i];
             progressBar.style.width = `${((i) / total) * 100}%`;
             progressPct.textContent = `${i}/${total}`;
-            
+
+            const endpointObj = allEndpoints.find(e => String(e.id) === String(extId));
+            const endpointName = endpointObj && endpointObj.name ? endpointObj.name : '';
+
             const formData = new FormData();
             formData.append('ext_id', extId);
             formData.append('greeting_type', greetingType);
             formData.append('file', file);
 
+            let status = 'Error', detail = 'Network Failure';
             try {
                 const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (res.ok && data.success) logProgress(`Success: Ext ${extId} updated.`, 'success');
-                else logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
+                if (res.ok && data.success) { status = 'Success'; detail = 'Updated'; logProgress(`Success: Ext ${extId} updated.`, 'success'); }
+                else { status = 'Failed'; detail = data.error || 'API Error'; logProgress(`Failed: Ext ${extId} - ${detail}`, 'error'); }
             } catch (err) {
                 logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
             }
+            resultRows.push({
+                'Extension ID': extId,
+                'Endpoint Name': endpointName,
+                'Greeting Type': greetingType,
+                'File': file.name,
+                'Status': status,
+                'Detail': detail
+            });
         }
         finishProgress(total);
+        setResultData(resultRows, 'Upload_Results');
     }
 
     async function processBulkTts(text, voice, greetingType) {
@@ -1026,6 +1062,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         progressLog.innerHTML = '';
         progressCloseBtn.classList.add('hidden');
+        setResultData(null);
         progressTitle.textContent = "Generating AI Audio...";
         progressBar.style.width = `5%`;
         progressPct.textContent = `0/0`;
@@ -1051,34 +1088,45 @@ document.addEventListener('DOMContentLoaded', () => {
         progressTitle.textContent = "Applying to Endpoints...";
         const ids = Array.from(selectedIds);
         const total = ids.length;
+        const resultRows = [];
 
         for (let i = 0; i < total; i++) {
             const extId = ids[i];
             progressBar.style.width = `${((i) / total) * 100}%`;
             progressPct.textContent = `${i}/${total}`;
-            
+
             const endpointObj = allEndpoints.find(e => String(e.id) === String(extId));
-            let endpointName = endpointObj && endpointObj.name ? endpointObj.name : extId;
-            endpointName = endpointName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+            const rawName = endpointObj && endpointObj.name ? endpointObj.name : extId;
+            let endpointName = rawName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
             const cleanType = greetingType.split(':').pop();
             const fileName = `${endpointName}_${cleanType}.wav`;
-            
+
             const file = new File([audioBlob], fileName, { type: 'audio/wav' });
             const formData = new FormData();
             formData.append('ext_id', extId);
             formData.append('greeting_type', greetingType);
             formData.append('file', file);
 
+            let status = 'Error', detail = 'Network Failure';
             try {
                 const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (res.ok && data.success) logProgress(`Success: Ext ${extId} mapped.`, 'success');
-                else logProgress(`Failed: Ext ${extId} - ${data.error || 'API Error'}`, 'error');
+                if (res.ok && data.success) { status = 'Success'; detail = 'Mapped'; logProgress(`Success: Ext ${extId} mapped.`, 'success'); }
+                else { status = 'Failed'; detail = data.error || 'API Error'; logProgress(`Failed: Ext ${extId} - ${detail}`, 'error'); }
             } catch (err) {
                 logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
             }
+            resultRows.push({
+                'Extension ID': extId,
+                'Endpoint Name': (endpointObj && endpointObj.name) ? endpointObj.name : '',
+                'Greeting Type': greetingType,
+                'File': fileName,
+                'Status': status,
+                'Detail': detail
+            });
         }
         finishProgress(total);
+        setResultData(resultRows, 'AI_Audio_Results');
     }
 
     function finishProgress(total) {
@@ -1187,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         progressLog.innerHTML = '';
         progressCloseBtn.classList.add('hidden');
+        setResultData(null);
         progressTitle.textContent = "Bulk Upload from Spreadsheet...";
         document.getElementById('progress-desc').textContent = "Reading the sheet, matching Drive files, and applying audio. Please stand by.";
         progressBar.style.width = '0%';
@@ -1236,6 +1285,14 @@ document.addEventListener('DOMContentLoaded', () => {
             progressPct.textContent = `${data.total}/${data.total}`;
             progressTitle.textContent = "Bulk Upload Complete";
             logProgress(`Finished — ${data.success_count} applied, ${data.error_count} failed.`, data.error_count ? 'error' : 'success');
+
+            if (Array.isArray(data.results) && data.results.length) {
+                const rows = data.results.map(r => ({
+                    Status: r.status === 'success' ? 'Success' : (r.status === 'error' ? 'Failed' : 'Info'),
+                    Detail: r.msg
+                }));
+                setResultData(rows, 'Bulk_XLSX_Upload_Results');
+            }
             progressCloseBtn.classList.remove('hidden');
         } catch (err) {
             clearInterval(pollInterval);

@@ -9,12 +9,28 @@ from webapp.rc_api import rc_api_call
 migration_progress_store = {}
 
 def update_progress(task_id, current, total, message, status='running'):
+    # Preserve any accumulated per-item results across progress updates, since
+    # this replaces the whole store entry on every call.
+    existing = migration_progress_store.get(task_id, {})
     migration_progress_store[task_id] = {
         'current': current,
         'total': total,
         'message': message,
-        'status': status
+        'status': status,
+        'results': existing.get('results', [])
     }
+
+def add_result(task_id, category, item, status, detail=''):
+    """Append a per-item outcome to the downloadable result listing."""
+    entry = migration_progress_store.get(task_id)
+    if entry is None:
+        return
+    entry.setdefault('results', []).append({
+        'Category': category,
+        'Item': item,
+        'Status': status,
+        'Detail': detail
+    })
 
 def safe_rc_api_call(endpoint, task_id=None, method='GET', token=None, json_payload=None, data=None, files=None, params=None, raise_error=True):
     """Wrapper around rc_api_call that explicitly handles 429 Rate Limits and 403s."""
@@ -330,8 +346,9 @@ def run_account_import(task_id, zip_bytes, token=None):
                     payload = {"name": cc['name'], "billingCode": cc.get('billingCode')}
                     new_cc = safe_rc_api_call('/restapi/v1.0/account/~/cost-center', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
                     old_to_new_cost_centers[str(cc['id'])] = str(new_cc['id'])
-                except Exception:
-                    pass
+                    add_result(task_id, 'Cost Center', cc.get('name', ''), 'Created')
+                except Exception as e:
+                    add_result(task_id, 'Cost Center', cc.get('name', ''), 'Failed', str(e))
 
             # Pass 1: Sites
             update_progress(task_id, 10, 100, "Recreating Sites...")
@@ -343,8 +360,9 @@ def run_account_import(task_id, zip_bytes, token=None):
                     payload = {"name": site['name'], "extensionNumber": site.get('extensionNumber')}
                     new_site = safe_rc_api_call('/restapi/v1.0/account/~/sites', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
                     old_to_new_sites[site['id']] = str(new_site['id'])
-                except Exception:
-                    pass
+                    add_result(task_id, 'Site', site.get('name', ''), 'Created')
+                except Exception as e:
+                    add_result(task_id, 'Site', site.get('name', ''), 'Failed', str(e))
 
             # Pass 2: Groups (Park, Paging, Queues, IVR, Announce, Message-Only)
             update_progress(task_id, 20, 100, "Recreating Extension Structures...")
@@ -372,19 +390,22 @@ def run_account_import(task_id, zip_bytes, token=None):
                     elif ext_type in ['Announcement', 'AnnouncementOnly', 'MessageOnly', 'Voicemail']:
                         new_ext = safe_rc_api_call('/restapi/v1.0/account/~/extension', task_id=task_id, method='POST', json_payload={"extensionNumber": payload.get("extensionNumber"), "type": ext_type, "contact": {"firstName": payload.get("name", ext_type)}}, token=token, raise_error=True)
                     else:
-                        continue 
-                        
+                        continue
+
                     old_to_new_exts[str(old_id)] = str(new_ext['id'])
-                except Exception:
-                    pass
+                    add_result(task_id, ext_type or 'Extension', payload.get('name', payload.get('extensionNumber', old_id)), 'Created')
+                except Exception as e:
+                    add_result(task_id, ext_type or 'Extension', payload.get('name', payload.get('extensionNumber', old_id)), 'Failed', str(e))
 
             # Pass 3: Audio Uploads
             total_audio = len(audio_map)
             for i, a_map in enumerate(audio_map):
                 update_progress(task_id, 60 + int((i/total_audio)*35), 100, f"Uploading Audio: {a_map['filename']}")
                 new_ext_id = old_to_new_exts.get(str(a_map['ext_id']))
-                if not new_ext_id: continue
-                    
+                if not new_ext_id:
+                    add_result(task_id, 'Audio', a_map.get('filename', ''), 'Skipped', 'Target extension was not recreated')
+                    continue
+
                 try:
                     audio_bytes = zip_ref.read(a_map['filename'])
                     filename_clean = a_map['filename'].split('/')[-1]
@@ -396,8 +417,9 @@ def run_account_import(task_id, zip_bytes, token=None):
                         metadata = {"type": a_map['greeting_type'], "answeringRule": {"id": a_map['rule_id']}}
                         files = {'json': ('request.json', json.dumps(metadata), 'application/json'), 'attachment': (filename_clean, audio_bytes, 'audio/mpeg')}
                         safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_ext_id}/greeting', task_id=task_id, method='POST', files=files, token=token, raise_error=True)
-                except Exception:
-                    pass
+                    add_result(task_id, 'Audio', a_map.get('filename', ''), 'Uploaded', f"{a_map.get('ext_name', '')} / {a_map.get('greeting_type', '')}")
+                except Exception as e:
+                    add_result(task_id, 'Audio', a_map.get('filename', ''), 'Failed', str(e))
 
             update_progress(task_id, 100, 100, "Migration Import Completed! Check portal for mapping details.", status='completed')
 

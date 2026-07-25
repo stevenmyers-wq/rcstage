@@ -59,8 +59,9 @@
 
         <!-- Results Table -->
         <div id="deviceSwapResultsContainer" class="hidden card !p-0 overflow-hidden mt-8 shadow-xl border-slate-200/60 dark:border-slate-700/50">
-            <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
                 <h3 class="text-heading text-lg">Execution Results</h3>
+                <button id="deviceSwapResultBtn" class="hidden btn-primary !bg-emerald-600 hover:!bg-emerald-700 !py-2 !px-4 text-sm whitespace-nowrap">⬇ Download (.xlsx)</button>
             </div>
             <div class="table-container !rounded-none !border-0 !shadow-none">
                 <table class="data-table" id="deviceSwapResultsTable">
@@ -139,8 +140,9 @@
 
         <!-- Results Table -->
         <div id="swapResultsContainer" class="hidden card !p-0 overflow-hidden mt-8 shadow-xl border-slate-200/60 dark:border-slate-700/50">
-            <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <div class="bg-slate-50 dark:bg-slate-800/80 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
                 <h3 class="text-heading text-lg">Swap Results</h3>
+                <button id="swapResultBtn" class="hidden btn-primary !bg-emerald-600 hover:!bg-emerald-700 !py-2 !px-4 text-sm whitespace-nowrap">⬇ Download (.xlsx)</button>
             </div>
             <div class="table-container !rounded-none !border-0 !shadow-none">
                 <table class="data-table" id="swapResultsTable">
@@ -194,6 +196,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const processFileBtn = document.getElementById('deviceSwapBtn');
     const swapForm = document.getElementById('deviceSwapForm');
 
+    let deviceUpdateRows = null;
+    UCResults.attachButton(document.getElementById('deviceSwapResultBtn'), () => deviceUpdateRows, 'Device_Update_Results', 'Results');
+
     if (fileUpload && processFileBtn) {
         fileUpload.addEventListener('change', () => {
             processFileBtn.disabled = !fileUpload.files.length > 0;
@@ -214,11 +219,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const btnText = document.querySelector('#deviceSwapBtn .btn-text');
             const resultsContainer = document.getElementById('deviceSwapResultsContainer');
             const resultsTableBody = document.querySelector('#deviceSwapResultsTable tbody');
+            const resultBtn = document.getElementById('deviceSwapResultBtn');
 
             processFileBtn.disabled = true;
             spinner.classList.remove('hidden');
             btnText.textContent = 'Processing...';
             resultsContainer.classList.add('hidden');
+            resultBtn.classList.add('hidden');
+            deviceUpdateRows = null;
             resultsTableBody.innerHTML = '';
 
             fetch('/api/device_swap/bulk', {
@@ -255,6 +263,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         resultsTableBody.appendChild(tr);
                     });
                     resultsContainer.classList.remove('hidden');
+
+                    deviceUpdateRows = data.results.map(r => ({
+                        'Extension': r.extension,
+                        'Target MAC': r.mac,
+                        'Status': r.status,
+                        'Reason / Error': r.reason
+                    }));
+                    resultBtn.classList.remove('hidden');
                 } else {
                     alert('No valid records were found to process.');
                 }
@@ -278,6 +294,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const processBtn = document.getElementById('swapBtn');
     const form = document.getElementById('swapForm');
 
+    let swapResultRows = null;
+    UCResults.attachButton(document.getElementById('swapResultBtn'), () => swapResultRows, 'Device_Swap_Results', 'Results');
+
     if (fileUpload && processBtn) {
         fileUpload.addEventListener('change', () => {
             processBtn.disabled = !fileUpload.files.length > 0;
@@ -298,11 +317,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const btnText = document.querySelector('#swapBtn .btn-text');
             const resultsContainer = document.getElementById('swapResultsContainer');
             const resultsTableBody = document.querySelector('#swapResultsTable tbody');
+            const resultBtn = document.getElementById('swapResultBtn');
 
             processBtn.disabled = true;
             spinner.classList.remove('hidden');
             btnText.textContent = 'Swapping...';
             resultsContainer.classList.add('hidden');
+            resultBtn.classList.add('hidden');
+            swapResultRows = null;
             resultsTableBody.innerHTML = '';
 
             fetch('/api/device_swap/swap/bulk', {
@@ -339,6 +361,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         resultsTableBody.appendChild(tr);
                     });
                     resultsContainer.classList.remove('hidden');
+
+                    swapResultRows = data.results.map(r => ({
+                        'Extension': r.extension || '',
+                        'Replacement Device': r.replacement || '',
+                        'Status': r.status,
+                        'Reason / Error': r.reason || ''
+                    }));
+                    resultBtn.classList.remove('hidden');
                 } else {
                     alert('No valid records were found to process.');
                 }

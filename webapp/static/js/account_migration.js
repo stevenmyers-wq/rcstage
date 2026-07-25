@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const progPct = document.getElementById('mig-progress-pct');
     const progMsg = document.getElementById('mig-progress-msg');
     const btnClose = document.getElementById('mig-progress-close-btn');
+    const resultBtn = document.getElementById('mig-result-btn');
+
+    let migResultRows = null;
+    UCResults.attachButton(resultBtn, () => migResultRows, 'Account_Migration_Results', 'Results');
 
     let pollInterval = null;
 
@@ -33,7 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
         progMsg.textContent = 'Starting...';
         progMsg.className = 'text-xs font-mono text-blue-600 text-left mt-2 truncate';
         btnClose.classList.add('hidden');
-        
+        migResultRows = null;
+        resultBtn.classList.add('hidden');
+
         modal.classList.remove('hidden');
         setTimeout(() => modal.classList.remove('opacity-0'), 10);
     }
@@ -45,6 +51,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnClose.addEventListener('click', closeProgressModal);
+
+    function showMigResults(results) {
+        if (Array.isArray(results) && results.length) {
+            migResultRows = results;
+            resultBtn.classList.remove('hidden');
+        }
+    }
 
     function startPolling(taskId, onSuccess) {
         pollInterval = setInterval(async () => {
@@ -67,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progTitle.textContent = 'Success!';
                     progMsg.classList.replace('text-blue-600', 'text-green-600');
                     btnClose.classList.remove('hidden');
+                    showMigResults(data.results);
                     btnExport.disabled = false;
                     btnImport.disabled = false;
                     if (onSuccess) onSuccess();
@@ -77,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progMsg.textContent = data.message;
                     progMsg.classList.replace('text-blue-600', 'text-red-600');
                     btnClose.classList.remove('hidden');
+                    showMigResults(data.results);
                     btnExport.disabled = false;
                     btnImport.disabled = false;
                 }
