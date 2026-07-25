@@ -6,6 +6,7 @@ import re
 import csv
 import zipfile
 import time
+import hashlib
 import requests
 from flask import session
 # NOTE (Jun 2026): google-genai bumped from 0.3.0 → >=1.11.0. If Gemini TTS breaks,
@@ -423,6 +424,73 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
     wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
     return wav_buf.read(), "audio/wav"
 
+def _normalize_prompt_name(value):
+    """Lower-cased, extension-stripped key for matching IVR prompt names."""
+    if not value:
+        return ''
+    base = str(value).strip()
+    if '.' in base:
+        base = base.rsplit('.', 1)[0]
+    return base.lower()
+
+def find_existing_ivr_prompts(filename, prompt_name=None):
+    """
+    Scan the account-wide IVR prompt library and return every record whose name
+    matches the file being uploaded (case-insensitive, ignoring file extension).
+
+    RingCentral exposes the stored name as 'filename' on library records, but we
+    also check 'name' defensively in case the schema differs. Returns a list so
+    the caller can compare content against all same-named candidates, since the
+    library may already contain several duplicates under one name.
+    """
+    targets = {
+        _normalize_prompt_name(filename),
+        _normalize_prompt_name(prompt_name),
+    }
+    targets.discard('')
+    if not targets:
+        return []
+
+    matches = []
+    page = 1
+    while True:
+        resp = rc_api_call(
+            '/restapi/v1.0/account/~/ivr-prompts',
+            params={'perPage': 1000, 'page': page}
+        )
+        if not resp or 'records' not in resp:
+            break
+
+        for rec in resp['records']:
+            if any(_normalize_prompt_name(rec.get(f)) in targets for f in ('filename', 'name')):
+                matches.append(rec)
+
+        if not resp.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+        time.sleep(0.05)
+
+    return matches
+
+def _ivr_prompt_content_matches(record, file_data):
+    """
+    Return True only when we can positively confirm the existing library prompt's
+    audio is byte-identical to the file being uploaded. Any failure to retrieve
+    the stored audio returns False, so an unverifiable prompt is treated as a
+    name collision rather than silently reused.
+    """
+    content_uri = record.get('contentUri')
+    if not content_uri:
+        return False
+
+    token = session.get('sm_isolated_token') or session.get('rc_access_token')
+    headers = {'Authorization': f'Bearer {token}'}
+    resp = safe_requests_get(content_uri, headers=headers)
+    if resp.status_code != 200:
+        return False
+
+    return hashlib.sha256(resp.content).digest() == hashlib.sha256(file_data).digest()
+
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     ext_type = ext_info.get('type') if ext_info else None
@@ -438,10 +506,38 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     
     if ext_type == 'IvrMenu':
         prompt_name = greeting_name or filename.split('.')[0]
-        data_payload = {'name': prompt_name}
-        files = { 'attachment': (filename, file_data, content_type) }
-        prompt_res = rc_api_call('/restapi/v1.0/account/~/ivr-prompts', method='POST', data=data_payload, files=files, raise_error=True)
-        
+
+        # The /ivr-prompts endpoint is an account-wide pool, so a blind POST
+        # creates a duplicate every time audio is applied. Look for prompts that
+        # already share this name and decide based on their content:
+        #   - identical audio  -> reuse the existing prompt (no duplicate)
+        #   - different audio   -> raise, so a name clash never silently swaps the
+        #                          wrong track in or piles up mismatched prompts
+        existing_matches = find_existing_ivr_prompts(filename, prompt_name)
+        reusable = next(
+            (rec for rec in existing_matches if _ivr_prompt_content_matches(rec, file_data)),
+            None
+        )
+
+        if reusable:
+            prompt_res = {'id': reusable['id'], 'reused': True, 'name': reusable.get('filename')}
+        elif existing_matches:
+            existing_label = (
+                existing_matches[0].get('filename')
+                or existing_matches[0].get('name')
+                or prompt_name
+            )
+            existing_ids = ', '.join(str(rec.get('id')) for rec in existing_matches if rec.get('id'))
+            raise ValueError(
+                f"An IVR prompt named '{existing_label}' already exists in the account "
+                f"prompt library (id {existing_ids}) with different audio. Rename your "
+                f"file, or delete/replace the existing prompt, before uploading."
+            )
+        else:
+            data_payload = {'name': prompt_name}
+            files = { 'attachment': (filename, file_data, content_type) }
+            prompt_res = rc_api_call('/restapi/v1.0/account/~/ivr-prompts', method='POST', data=data_payload, files=files, raise_error=True)
+
         if prompt_res and 'id' in prompt_res:
             update_payload = { "prompt": { "mode": "Audio", "audio": { "id": prompt_res['id'] } } }
             rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{ext_id}', method='PUT', json=update_payload, raise_error=True)
