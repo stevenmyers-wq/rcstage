@@ -423,6 +423,54 @@ def download_greeting_audio(ext_id, greeting_id, is_ivr=False, is_custom=True, g
     wav_buf = generate_tts_audio_bytes(default_text, voice_name="Kore")
     return wav_buf.read(), "audio/wav"
 
+def _normalize_prompt_name(value):
+    """Lower-cased, extension-stripped key for matching IVR prompt names."""
+    if not value:
+        return ''
+    base = str(value).strip()
+    if '.' in base:
+        base = base.rsplit('.', 1)[0]
+    return base.lower()
+
+def find_existing_ivr_prompt(filename, prompt_name=None):
+    """
+    Scan the account-wide IVR prompt library and return the first record whose
+    name matches the file being uploaded, or None.
+
+    Matching is by name only (case-insensitive, ignoring file extension), which
+    is what prevents the same file from being uploaded to the pool repeatedly.
+    RingCentral exposes the stored name as 'filename' on library records, but we
+    also check 'name' defensively in case the schema differs.
+    """
+    targets = {
+        _normalize_prompt_name(filename),
+        _normalize_prompt_name(prompt_name),
+    }
+    targets.discard('')
+    if not targets:
+        return None
+
+    page = 1
+    while True:
+        resp = rc_api_call(
+            '/restapi/v1.0/account/~/ivr-prompts',
+            params={'perPage': 1000, 'page': page}
+        )
+        if not resp or 'records' not in resp:
+            break
+
+        for rec in resp['records']:
+            for field in ('filename', 'name'):
+                if _normalize_prompt_name(rec.get(field)) in targets:
+                    return rec
+
+        if not resp.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+        time.sleep(0.05)
+
+    return None
+
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     ext_type = ext_info.get('type') if ext_info else None
@@ -438,10 +486,18 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
     
     if ext_type == 'IvrMenu':
         prompt_name = greeting_name or filename.split('.')[0]
-        data_payload = {'name': prompt_name}
-        files = { 'attachment': (filename, file_data, content_type) }
-        prompt_res = rc_api_call('/restapi/v1.0/account/~/ivr-prompts', method='POST', data=data_payload, files=files, raise_error=True)
-        
+
+        # Reuse an existing account-library prompt when the same file is already
+        # present. The /ivr-prompts endpoint is an account-wide pool, so a blind
+        # POST creates a duplicate every time the same audio is applied.
+        existing = find_existing_ivr_prompt(filename, prompt_name)
+        if existing:
+            prompt_res = {'id': existing['id'], 'reused': True, 'name': existing.get('filename')}
+        else:
+            data_payload = {'name': prompt_name}
+            files = { 'attachment': (filename, file_data, content_type) }
+            prompt_res = rc_api_call('/restapi/v1.0/account/~/ivr-prompts', method='POST', data=data_payload, files=files, raise_error=True)
+
         if prompt_res and 'id' in prompt_res:
             update_payload = { "prompt": { "mode": "Audio", "audio": { "id": prompt_res['id'] } } }
             rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{ext_id}', method='PUT', json=update_payload, raise_error=True)
