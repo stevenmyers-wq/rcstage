@@ -1,3 +1,4 @@
+import os
 import re
 import copy
 import time
@@ -9,6 +10,27 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.rc_api import rc_api_call
 
 audit_progress_store = {}
+
+# Set the CQ_DEBUG env var (1/true/yes/on) to have every failed queue/answering-rule
+# write dump the exact JSON payload we sent plus RingCentral's raw error into the
+# System Log. This is how the less-documented bits (action enums, fixedOrderAgents
+# shape) can be dialed in against a live account without guessing.
+CQ_DEBUG = str(os.environ.get('CQ_DEBUG', '')).lower() in ('1', 'true', 'yes', 'on')
+
+
+def _debug_dump(logs, label, payload=None, err=None):
+    """Append a payload/error snapshot to a row's log list when CQ_DEBUG is on."""
+    if not CQ_DEBUG:
+        return
+    parts = [f"[DEBUG] {label}"]
+    if payload is not None:
+        try:
+            parts.append(f"payload={json.dumps(payload, default=str)[:1800]}")
+        except Exception:
+            parts.append("payload=<unserializable>")
+    if err is not None:
+        parts.append(f"raw_error={str(err)[:1200]}")
+    logs.append(" | ".join(parts))
 
 DAY_ABBR = {
     "mon": "monday", "tue": "tuesday", "wed": "wednesday",
@@ -619,6 +641,18 @@ def update_cq_batch(records, token, is_preview=False):
         clean_num = str(num).split('.')[0].strip()
         return bool(clean_num) and clean_num not in ext_map
 
+    def _build_fixed_order_agents(queue_id, ordered_ext_ids):
+        """Build the fixedOrderAgents array required when a queue switches to Sequential
+        (FixedOrder). Order comes from the row's Members column when supplied, otherwise
+        from the queue's current membership. The exact key RingCentral expects for ordering
+        ('index') is not well documented; CQ_DEBUG surfaces the raw rejection if it's wrong."""
+        ids = list(ordered_ext_ids or [])
+        if not ids:
+            succ, resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{queue_id}/members', method='GET', token=token)
+            if succ and isinstance(resp, dict):
+                ids = [str(m.get('id', '')) for m in resp.get('records', []) if m.get('id')]
+        return [{"extension": {"id": mid}, "index": idx} for idx, mid in enumerate(ids, start=1) if mid]
+
     for i, row in enumerate(records):
         logs = []
         changes = []
@@ -795,6 +829,7 @@ def update_cq_batch(records, token, is_preview=False):
                         else:
                             has_error = True
                             logs.append(f"Basic Error: {format_api_error(err)}")
+                            _debug_dump(logs, 'Basic Info PUT failed', payload=basic_payload, err=err)
                     else:
                         logs.append("Basic Info Evaluated")
                         
@@ -933,12 +968,34 @@ def update_cq_batch(records, token, is_preview=False):
             for f in ['positionInQueue', 'callback', 'callers', 'calledNumbers']:
                 q_set.pop(f, None)
 
+            # RingCentral rejects a per-agent ring time (agentTimeout) longer than the total
+            # wait time (holdTime) on Sequential/Rotating queues, which fails the whole queue
+            # PUT. Clamp it down and tell the user rather than lose the entire update.
+            if q_set.get('transferMode') != 'Simultaneous':
+                eff_agent = to_int(q_set.get('agentTimeout'))
+                eff_hold = to_int(q_set.get('holdTime'))
+                if eff_agent is not None and eff_hold is not None and eff_agent > eff_hold:
+                    q_set['agentTimeout'] = eff_hold
+                    logs.append(f"User Ring Time ({format_sec(eff_agent)}) exceeded Total Ring Time ({format_sec(eff_hold)}); clamped to {format_sec(eff_hold)}.")
+
             # fixedOrderAgents is only valid when transferMode == 'FixedOrder'. If the queue is
             # currently Sequential and the upload switches Ring Type to Simultaneous/Rotating, a
             # stale agent list left in the payload makes RingCentral reject the whole queue update,
             # so Ring Type AND every ring timer silently fail together. Drop it unless we stay FixedOrder.
             if q_set.get('transferMode') != 'FixedOrder':
                 q_set.pop('fixedOrderAgents', None)
+            elif not q_set.get('fixedOrderAgents'):
+                # Switching TO Sequential requires an explicit agent order, which the queue
+                # didn't have before. Seed it from the row's Members column (preferred order)
+                # or the queue's current membership so the mode change isn't rejected.
+                mem_raw = get_val(row, 'Members (Ext)')
+                ordered_ids = []
+                if mem_raw:
+                    ordered_ids = [rid for rid in (_resolve_ext(e.strip()) for e in mem_raw.split(',') if e.strip()) if rid]
+                fo_agents = _build_fixed_order_agents(q_id, ordered_ids)
+                if fo_agents:
+                    q_set['fixedOrderAgents'] = fo_agents
+                    _debug_dump(logs, 'Seeded fixedOrderAgents', payload=fo_agents)
 
             rule['queue'] = q_set
             
@@ -1052,17 +1109,19 @@ def update_cq_batch(records, token, is_preview=False):
                     if rule['queue'].get('holdTimeExpirationAction') == 'TransferToExtension': rule['queue']['holdTimeExpirationAction'] = 'Voicemail'
                     
                     put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=rule, token=token)
-                    if put_succ2: 
+                    if put_succ2:
                         logs.append("Routing Updated (Invalid transfers stripped & reverted to Voicemail)")
-                    else: 
+                    else:
                         has_error = True
                         logs.append(f"Routing Error: {format_api_error(err2)}")
-                
-                elif put_succ: 
+                        _debug_dump(logs, 'Routing PUT (retry) failed', payload=rule.get('queue'), err=err2)
+
+                elif put_succ:
                     logs.append("Routing Updated")
-                else: 
+                else:
                     has_error = True
                     logs.append(f"Routing Error: {format_api_error(err)}")
+                    _debug_dump(logs, 'Routing PUT failed', payload=rule.get('queue'), err=err)
 
         # --- E. AFTER HOURS RULE ---
         ah_fields = ['After Hours Behavior', 'After Hours Destination']
@@ -1112,13 +1171,16 @@ def update_cq_batch(records, token, is_preview=False):
                         ah_rule['callHandlingAction'] = 'Voicemail'
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
                         if put_succ2: logs.append("After Hours Updated (Invalid transfer stripped & reverted to Voicemail)")
-                        else: has_error = True; logs.append(f"After Hours Error: {format_api_error(err2)}")
-                        
-                    elif put_succ: 
+                        else:
+                            has_error = True; logs.append(f"After Hours Error: {format_api_error(err2)}")
+                            _debug_dump(logs, 'After Hours PUT (retry) failed', payload=ah_rule, err=err2)
+
+                    elif put_succ:
                         logs.append("After Hours Updated")
-                    else: 
+                    else:
                         has_error = True
                         logs.append(f"After Hours Error: {format_api_error(err)}")
+                        _debug_dump(logs, 'After Hours PUT failed', payload=ah_rule, err=err)
 
         # --- F. MEMBERS ---
         val_mems = get_val(row, 'Members (Ext)')
@@ -1133,23 +1195,36 @@ def update_cq_batch(records, token, is_preview=False):
             if added_ids or not mem_str:
                 old_mems_str = "None"
                 old_mem_list = []
+                old_id_by_num = {}
                 get_succ, old_mems_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/members', method='GET', token=token)
                 if get_succ and isinstance(old_mems_resp, dict):
-                    old_mem_list = [str(m.get('extensionNumber')) for m in old_mems_resp.get('records', []) if m.get('extensionNumber')]
+                    for m in old_mems_resp.get('records', []):
+                        num = str(m.get('extensionNumber'))
+                        if num and num != 'None':
+                            old_mem_list.append(num)
+                            if m.get('id'): old_id_by_num[num] = str(m.get('id'))
                     if old_mem_list: old_mems_str = ", ".join(old_mem_list)
-                
+
                 new_mems_str = ", ".join(mem_exts) if mem_exts else "None"
-                
+
                 if set(old_mem_list) != set(mem_exts):
                     changes.append({"parameter": "Queue Members", "old": old_mems_str, "new": new_mems_str})
                     if not is_preview:
+                        # The diff above presents Members as a full replacement, so the API call
+                        # must both add the new members and remove the ones dropped from the list;
+                        # sending only addedExtensionIds would leave stale members assigned.
+                        new_set = set(mem_exts)
+                        removed_ids = [old_id_by_num[n] for n in old_mem_list if n not in new_set and n in old_id_by_num]
                         mem_payload = {"addedExtensionIds": [a['id'] for a in added_ids]}
+                        if removed_ids:
+                            mem_payload["removedExtensionIds"] = removed_ids
                         s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json_payload=mem_payload, token=token)
-                        if s_succ: 
+                        if s_succ:
                             logs.append("Members Updated")
-                        else: 
+                        else:
                             has_error = True
                             logs.append(f"Members Error: {format_api_error(err)}")
+                            _debug_dump(logs, 'Members bulk-assign failed', payload=mem_payload, err=err)
 
         # --- G. VOICEMAIL NOTIFICATIONS ---
         vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
@@ -1242,16 +1317,18 @@ def update_cq_batch(records, token, is_preview=False):
                         new_notif['voicemails'].pop('includeTranscription', None)
                         
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
-                        if put_succ2: 
+                        if put_succ2:
                             logs.append("Notifications Updated (Attachments/Transcription popped due to account limits)")
-                        else: 
+                        else:
                             has_error = True
                             logs.append(f"Notifications Error: {format_api_error(err2)}")
-                    elif put_succ: 
+                            _debug_dump(logs, 'Notifications PUT (retry) failed', payload=new_notif, err=err2)
+                    elif put_succ:
                         logs.append("Notifications Updated")
-                    else: 
+                    else:
                         has_error = True
                         logs.append(f"Notifications Error: {format_api_error(err)}")
+                        _debug_dump(logs, 'Notifications PUT failed', payload=new_notif, err=err)
 
         if not logs and not changes: 
             res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
