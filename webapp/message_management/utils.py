@@ -39,17 +39,37 @@ def safe_requests_get(url, headers=None, params=None, max_retries=6):
     return resp
 
 def fetch_target_endpoints():
-    """Fetch all extensions and filter locally to avoid API query string rejections"""
-    response = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000}, raise_error=True)
-    
+    """Fetch all extensions and filter locally to avoid API query string rejections.
+
+    Walks every page via navigation.nextPage so large accounts (>1000 extensions)
+    return the complete set instead of only the first page.
+    """
     valid_types = ['User', 'Department', 'IvrMenu', 'Voicemail', 'Announcement']
-    if response and 'records' in response:
-        filtered_records = [
-            ext for ext in response['records'] 
+    filtered_records = []
+    page = 1
+
+    while True:
+        response = rc_api_call(
+            '/restapi/v1.0/account/~/extension',
+            params={'perPage': 1000, 'page': page},
+            raise_error=True
+        )
+
+        if not response or 'records' not in response:
+            break
+
+        filtered_records.extend(
+            ext for ext in response['records']
             if ext.get('type') in valid_types
-        ]
-        return {'records': filtered_records}
-    return {'records': []}
+        )
+
+        # Classic RC API paginates via navigation.nextPage
+        if not response.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+        time.sleep(0.05)
+
+    return {'records': filtered_records}
 
 def fetch_custom_greetings(ext_id):
     """
