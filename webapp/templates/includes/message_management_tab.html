@@ -19,6 +19,9 @@
         <button id="btn-open-export" class="btn-success flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
             📥 Export Archive
         </button>
+        <button id="btn-open-xlsx" class="btn-primary !bg-indigo-600 hover:!bg-indigo-700 flex-1 !py-3.5 text-base" title="Bulk-apply greetings from a spreadsheet and a Google Drive folder. Works independently of the table selection.">
+            📄 Upload by XLSX
+        </button>
     </div>
 
     <!-- Filters -->
@@ -200,6 +203,42 @@
                 <button id="btn-trigger-export" type="button" class="btn-success">Start Export</button>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- XLSX Bulk Upload Modal -->
+<div id="modal-xlsx" class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-lg transform scale-95 transition-transform duration-300 !p-0 shadow-2xl">
+        <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl flex justify-between items-center">
+            <h3 class="text-heading text-lg text-indigo-600 dark:text-indigo-400">📄 Bulk Upload by Spreadsheet</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-2xl leading-none transition-colors">&times;</button>
+        </div>
+        <form id="form-xlsx" class="p-6 space-y-6">
+            <div class="text-sm text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 font-medium space-y-2">
+                <p class="font-bold">Apply many greetings at once from a spreadsheet.</p>
+                <p>Your sheet needs three columns: <span class="font-mono font-bold">EXT NUMBER</span>, <span class="font-mono font-bold">GREETING TYPE</span>, <span class="font-mono font-bold">GREETING NAME</span>. Each <span class="font-mono font-bold">GREETING NAME</span> must match an audio file's name inside the Drive folder below.</p>
+                <a href="/api/message_management/xlsx_template" class="inline-flex items-center gap-1.5 font-bold underline hover:text-indigo-900 dark:hover:text-indigo-200">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
+                    Download template
+                </a>
+            </div>
+
+            <div class="input-wrapper">
+                <label class="input-label">Google Drive Folder Link</label>
+                <input type="text" name="drive_url" placeholder="https://drive.google.com/drive/folders/..." required class="input-field focus:ring-indigo-500">
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">On Start, Google will ask you to <strong>authorize Drive access</strong> (read-only). The tool reads the folder <strong>as you</strong>, so any folder you can open in Drive works — no public sharing needed.</p>
+            </div>
+
+            <div class="input-wrapper">
+                <label class="input-label">Mapping Spreadsheet (.xlsx)</label>
+                <input type="file" name="file" accept=".xlsx,.xls" required class="file-input">
+            </div>
+
+            <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                <button type="button" class="close-modal btn-secondary">Cancel</button>
+                <button type="submit" class="btn-primary !bg-indigo-600 hover:!bg-indigo-700 focus:ring-indigo-500">Start Bulk Upload</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -775,6 +814,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btnOpenTts.addEventListener('click', () => handleActionOpen('modal-tts'));
     btnOpenExport.addEventListener('click', () => handleActionOpen('modal-export'));
 
+    // XLSX bulk upload works from the spreadsheet itself, so it is independent
+    // of the table selection and stays enabled at all times.
+    document.getElementById('btn-open-xlsx').addEventListener('click', () => openModal('modal-xlsx'));
+
     const progressLog = document.getElementById('progress-log');
     const progressBar = document.getElementById('progress-bar');
     const progressPct = document.getElementById('progress-pct');
@@ -992,5 +1035,135 @@ document.addEventListener('DOMContentLoaded', () => {
         const fd = new FormData(e.target);
         processBulkTts(fd.get('text'), fd.get('voice'), fd.get('greeting_type'));
     });
+
+    document.getElementById('form-xlsx').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const file = fd.get('file');
+        const driveUrl = (fd.get('drive_url') || '').trim();
+        if (!file || !file.name) { alert('Please choose a mapping spreadsheet.'); return; }
+        if (!driveUrl) { alert('Please paste the Google Drive folder link.'); return; }
+        processXlsxUpload(file, driveUrl);
+    });
+
+    // --- Per-user Google Drive authorization (OAuth access token via GIS) ---
+    let _driveTokenClient = null;
+    let _driveToken = null; // { access_token, expires_at }
+
+    function ensureDriveToken() {
+        return new Promise((resolve, reject) => {
+            // Reuse a still-valid token so we don't re-prompt every upload.
+            if (_driveToken && (_driveToken.expires_at - Date.now()) > 60000) {
+                resolve(_driveToken.access_token);
+                return;
+            }
+            const clientId = window.GOOGLE_CLIENT_ID || '';
+            if (!clientId) {
+                reject(new Error('Google client ID is not configured, so Drive access cannot be authorized.'));
+                return;
+            }
+            if (!(window.google && google.accounts && google.accounts.oauth2)) {
+                reject(new Error('Google authorization library has not loaded yet. Refresh the page and try again.'));
+                return;
+            }
+            if (!_driveTokenClient) {
+                _driveTokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: clientId,
+                    scope: 'https://www.googleapis.com/auth/drive.readonly',
+                    callback: (resp) => {
+                        if (resp && resp.access_token) {
+                            _driveToken = {
+                                access_token: resp.access_token,
+                                expires_at: Date.now() + ((resp.expires_in || 3600) * 1000)
+                            };
+                            resolve(resp.access_token);
+                        } else {
+                            reject(new Error('Google Drive authorization was cancelled.'));
+                        }
+                    },
+                    error_callback: (err) => reject(new Error('Google Drive authorization failed: ' + ((err && err.type) || 'unknown')))
+                });
+            }
+            // Must be called during the user gesture so the popup isn't blocked.
+            try { _driveTokenClient.requestAccessToken(); }
+            catch (e) { reject(new Error('Could not start Google Drive authorization: ' + e.message)); }
+        });
+    }
+
+    async function processXlsxUpload(file, driveUrl) {
+        // Acquire a per-user Drive token first, within the click gesture.
+        let driveToken;
+        try {
+            driveToken = await ensureDriveToken();
+        } catch (e) {
+            alert(e.message);
+            return;
+        }
+
+        closeModal('modal-xlsx');
+        openModal('modal-progress');
+
+        progressLog.innerHTML = '';
+        progressCloseBtn.classList.add('hidden');
+        progressTitle.textContent = "Bulk Upload from Spreadsheet...";
+        document.getElementById('progress-desc').textContent = "Reading the sheet, matching Drive files, and applying audio. Please stand by.";
+        progressBar.style.width = '0%';
+        progressBar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300';
+        progressPct.textContent = '0/0';
+        logProgress('Google Drive authorized. Parsing spreadsheet and listing the folder...', 'info');
+
+        const taskId = 'xlsx_' + Date.now();
+        let seenLogs = 0;
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/message_management/xlsx_upload/status?task_id=${taskId}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.total > 0) {
+                    const pct = Math.round((data.current / data.total) * 100);
+                    progressBar.style.width = `${pct}%`;
+                    progressPct.textContent = `${data.current}/${data.total}`;
+                }
+                if (Array.isArray(data.logs)) {
+                    for (let j = seenLogs; j < data.logs.length; j++) logProgress(data.logs[j].msg, data.logs[j].status);
+                    seenLogs = data.logs.length;
+                }
+            } catch (e) {}
+        }, 1000);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('drive_url', driveUrl);
+        formData.append('task_id', taskId);
+        formData.append('drive_token', driveToken);
+
+        try {
+            const res = await fetch('/api/message_management/xlsx_upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            clearInterval(pollInterval);
+
+            if (!res.ok || data.error) throw new Error(data.error || 'Bulk upload failed.');
+
+            if (Array.isArray(data.results)) {
+                for (let j = seenLogs; j < data.results.length; j++) logProgress(data.results[j].msg, data.results[j].status);
+            }
+
+            progressBar.style.width = '100%';
+            progressBar.className = (data.error_count ? 'bg-amber-500' : 'bg-emerald-500') + ' h-full rounded-full transition-all duration-300';
+            progressPct.textContent = `${data.total}/${data.total}`;
+            progressTitle.textContent = "Bulk Upload Complete";
+            logProgress(`Finished — ${data.success_count} applied, ${data.error_count} failed.`, data.error_count ? 'error' : 'success');
+            progressCloseBtn.classList.remove('hidden');
+        } catch (err) {
+            clearInterval(pollInterval);
+            logProgress(`Error: ${err.message}`, 'error');
+            progressBar.style.width = '100%';
+            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
+            progressPct.textContent = 'Failed';
+            progressTitle.textContent = "Bulk Upload Failed";
+            progressCloseBtn.classList.remove('hidden');
+        }
+    }
 });
 </script>

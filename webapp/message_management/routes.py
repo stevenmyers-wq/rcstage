@@ -137,6 +137,53 @@ def export_status():
     task_id = request.args.get('task_id')
     if not task_id:
         return jsonify({'current': 0, 'total': 1})
-        
+
     progress = utils.export_progress_store.get(task_id, {'current': 0, 'total': 1})
     return jsonify(progress)
+
+@message_management_bp.route('/xlsx_template', methods=['GET'])
+@require_rc_token
+def xlsx_template():
+    """Download a starter spreadsheet for the bulk XLSX upload workflow."""
+    try:
+        buffer = utils.generate_upload_template()
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='Bulk_Greeting_Upload_Template.xlsx'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@message_management_bp.route('/xlsx_upload', methods=['POST'])
+@require_rc_token
+@track_usage('Message Management - XLSX Bulk Upload')
+def xlsx_upload():
+    """Apply greetings in bulk from a spreadsheet + a public Google Drive folder."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Missing spreadsheet file'}), 400
+
+        file_obj = request.files['file']
+        drive_url = (request.form.get('drive_url') or '').strip()
+        task_id = request.form.get('task_id')
+        drive_token = (request.form.get('drive_token') or '').strip() or None
+
+        if not drive_url:
+            return jsonify({'error': 'Missing Google Drive folder link'}), 400
+
+        summary = utils.xlsx_bulk_upload(file_obj, drive_url, task_id, access_token=drive_token)
+        return jsonify({'success': True, **summary})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@message_management_bp.route('/xlsx_upload/status', methods=['GET'])
+@require_rc_token
+def xlsx_upload_status():
+    """Poll endpoint for real-time bulk-upload progress and per-row log lines."""
+    task_id = request.args.get('task_id')
+    default = {'current': 0, 'total': 1, 'logs': []}
+    if not task_id:
+        return jsonify(default)
+    return jsonify(utils.xlsx_upload_progress_store.get(task_id, default))

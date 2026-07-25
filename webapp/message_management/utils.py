@@ -16,6 +16,9 @@ from google.genai import types
 from webapp.rc_api import rc_api_call
 
 export_progress_store = {}
+xlsx_upload_progress_store = {}
+
+DRIVE_API_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 
 def safe_requests_get(url, headers=None, params=None, max_retries=6):
     """Wrapper for requests.get that safely handles RingCentral 429 Rate Limits."""
@@ -732,6 +735,365 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
                 export_progress_store[task_id]['current'] = i + 1
                     
         zip_file.writestr("Greeting_Mapping_Audit.csv", csv_data.getvalue())
-        
+
     zip_buffer.seek(0)
     return zip_buffer
+
+# ---------------------------------------------------------------------------
+# Bulk upload from a spreadsheet + a public Google Drive folder
+# ---------------------------------------------------------------------------
+# The spreadsheet maps EXT NUMBER | GREETING TYPE | GREETING NAME. Each row's
+# GREETING NAME is matched (by filename) against the audio files found in the
+# supplied Drive folder, then applied to the extension via upload_custom_greeting.
+
+class _MemoryUpload:
+    """Minimal stand-in for a Werkzeug FileStorage so downloaded Drive bytes can
+    flow through upload_custom_greeting unchanged (it only needs .read(),
+    .filename and .content_type)."""
+    def __init__(self, data, filename, content_type='audio/wav'):
+        self._buf = io.BytesIO(data)
+        self.filename = filename
+        self.content_type = content_type
+
+    def read(self):
+        return self._buf.read()
+
+def _drive_api_key():
+    return os.environ.get('GOOGLE_DRIVE_API_KEY') or os.environ.get('GEMINI_API_KEY')
+
+def _drive_auth(access_token):
+    """Resolve how to authorize a Drive API call. A per-user OAuth access token
+    (Bearer) is preferred so the request runs as the signed-in user and can reach
+    the private folders they can see; otherwise fall back to the app API key,
+    which only reaches publicly shared content."""
+    if access_token:
+        return {'Authorization': f'Bearer {access_token}'}, {}
+    api_key = _drive_api_key()
+    if not api_key:
+        raise ValueError(
+            "No Google Drive authorization available. Grant Drive access when "
+            "prompted, or configure GOOGLE_DRIVE_API_KEY for public-folder access."
+        )
+    return {}, {'key': api_key}
+
+def extract_drive_folder_id(url):
+    """Pull a Google Drive folder ID out of the various link formats users paste,
+    or accept a bare ID."""
+    if not url:
+        return None
+    raw = str(url).strip()
+
+    for pattern in (
+        r'/folders/([A-Za-z0-9_-]+)',
+        r'[?&]id=([A-Za-z0-9_-]+)',
+    ):
+        match = re.search(pattern, raw)
+        if match:
+            return match.group(1)
+
+    # Bare folder ID pasted directly.
+    if re.fullmatch(r'[A-Za-z0-9_-]{20,}', raw):
+        return raw
+
+    return None
+
+def list_drive_folder_files(folder_id, access_token=None):
+    """List non-folder files in a Drive folder via the Drive API, authorized as
+    the signed-in user (Bearer token) or, failing that, the app API key."""
+    headers, auth_params = _drive_auth(access_token)
+
+    files = []
+    page_token = None
+    while True:
+        params = {
+            'q': f"'{folder_id}' in parents and trashed=false",
+            'fields': 'nextPageToken, files(id, name, mimeType)',
+            'pageSize': 1000,
+            'supportsAllDrives': 'true',
+            'includeItemsFromAllDrives': 'true',
+        }
+        params.update(auth_params)
+        if page_token:
+            params['pageToken'] = page_token
+
+        resp = safe_requests_get(DRIVE_API_FILES_URL, params=params, headers=headers or None)
+        if resp.status_code != 200:
+            raise ValueError(
+                f"Could not list the Google Drive folder (HTTP {resp.status_code}). "
+                "Confirm the link is a folder link and that you have access to it "
+                "in Google Drive (and granted Drive permission when prompted). "
+                f"Detail: {resp.text[:200]}"
+            )
+
+        data = resp.json()
+        files.extend(data.get('files', []))
+        page_token = data.get('nextPageToken')
+        if not page_token:
+            break
+
+    return files
+
+def download_drive_file_bytes(file_id, access_token=None):
+    """Download raw bytes of a Drive file, authorized as the signed-in user
+    (Bearer token) or the app API key."""
+    headers, auth_params = _drive_auth(access_token)
+    params = {'alt': 'media', 'supportsAllDrives': 'true'}
+    params.update(auth_params)
+
+    resp = safe_requests_get(
+        f"{DRIVE_API_FILES_URL}/{file_id}",
+        params=params,
+        headers=headers or None
+    )
+    if resp.status_code == 200:
+        return resp.content
+    raise ValueError(f"Failed to download Drive file (HTTP {resp.status_code}).")
+
+def _drive_name_index(files):
+    """Map file names (full and extension-stripped, lower-cased) to Drive records
+    so a spreadsheet GREETING NAME can be matched with or without its extension."""
+    index = {}
+    for f in files:
+        if f.get('mimeType') == 'application/vnd.google-apps.folder':
+            continue
+        name = f.get('name') or ''
+        keys = {name.strip().lower(), name.rsplit('.', 1)[0].strip().lower()}
+        for key in keys:
+            if key and key not in index:
+                index[key] = f
+    return index
+
+def _match_drive_file(name_index, greeting_name):
+    raw = str(greeting_name or '').strip()
+    for key in (raw.lower(), raw.rsplit('.', 1)[0].strip().lower()):
+        if key and key in name_index:
+            return name_index[key]
+    return None
+
+def _content_type_for(filename):
+    return 'audio/mpeg' if str(filename).lower().endswith('.mp3') else 'audio/wav'
+
+def resolve_greeting_type_label(label, ext_type):
+    """
+    Translate a friendly spreadsheet greeting-type label into the internal
+    'rule_id:GreetingType' code, using the endpoint's actual object type to
+    disambiguate. Raises ValueError when the label can't be understood.
+    """
+    raw = str(label or '').strip()
+    if not raw:
+        raise ValueError("Greeting Type is blank")
+
+    # Collapse dashes (-, en/em dashes), slashes and underscores to spaces.
+    norm = re.sub(r'[\s\-‐-―_/]+', ' ', raw.lower()).strip()
+
+    # Single-slot object types are unambiguous regardless of how the label reads.
+    if ext_type == 'IvrMenu':
+        return 'ivr:IvrPrompt'
+    if ext_type == 'Announcement':
+        return 'business-hours-rule:Announcement'
+    if ext_type == 'Voicemail':
+        return 'business-hours-rule:Voicemail'
+
+    # Answering-rule context (defaults to business hours).
+    rule_id = 'after-hours-rule' if 'after hours' in norm else 'business-hours-rule'
+
+    # Greeting slot. Order matters: check the more specific phrases first.
+    if 'connecting message' in norm:
+        g_type = 'ConnectingMessage'
+    elif 'connecting' in norm:
+        g_type = 'ConnectingAudio'
+    elif 'hold' in norm:
+        g_type = 'HoldMusic'
+    elif 'intro' in norm:
+        g_type = 'Introductory'
+    elif 'interrupt' in norm:
+        g_type = 'InterruptPrompt'
+    elif 'announcement' in norm:
+        g_type = 'Announcement'
+    elif 'voicemail' in norm or 'voice mail' in norm:
+        g_type = 'Voicemail'
+    else:
+        raise ValueError(f"Unrecognized greeting type '{raw}' for a {ext_type} endpoint")
+
+    return f"{rule_id}:{g_type}"
+
+def build_extension_number_index():
+    """Map extension number -> extension record across every page of the account
+    directory, so spreadsheet rows can resolve a number to an internal id/type."""
+    index = {}
+    page = 1
+    while True:
+        resp = rc_api_call(
+            '/restapi/v1.0/account/~/extension',
+            params={'perPage': 1000, 'page': page},
+            raise_error=True
+        )
+        if not resp or 'records' not in resp:
+            break
+        for ext in resp['records']:
+            num = str(ext.get('extensionNumber') or '').strip()
+            if num and num not in index:
+                index[num] = ext
+        if not resp.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+        time.sleep(0.05)
+    return index
+
+def _cell_str(value):
+    """Stringify a spreadsheet cell, dropping NaN and rendering whole-number
+    floats (e.g. an ext number read as 10118.0) without the trailing '.0'."""
+    if value is None:
+        return ''
+    if isinstance(value, float):
+        if value != value:  # NaN
+            return ''
+        if value.is_integer():
+            return str(int(value))
+    return str(value).strip()
+
+def _resolve_upload_columns(df):
+    def norm(col):
+        return re.sub(r'[^a-z0-9]', '', str(col).lower())
+
+    col_map = {norm(c): c for c in df.columns}
+
+    def find(aliases):
+        for alias in aliases:
+            if alias in col_map:
+                return col_map[alias]
+        return None
+
+    ext_col = find(['extnumber', 'extensionnumber', 'extension', 'ext', 'number'])
+    type_col = find(['greetingtype', 'type'])
+    name_col = find(['greetingname', 'name', 'filename', 'file', 'audiofile', 'audio'])
+
+    missing = [
+        label for label, col in
+        [('EXT NUMBER', ext_col), ('GREETING TYPE', type_col), ('GREETING NAME', name_col)]
+        if not col
+    ]
+    if missing:
+        raise ValueError(f"Spreadsheet is missing required column(s): {', '.join(missing)}")
+
+    return ext_col, type_col, name_col
+
+def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None):
+    """
+    Drive a bulk greeting upload from an uploaded spreadsheet plus a Drive folder
+    link. Each row (EXT NUMBER, GREETING TYPE, GREETING NAME) is resolved, matched
+    to a Drive file by name, downloaded and applied. Drive is read as the signed-in
+    user when access_token is supplied. Every row is handled independently so one
+    bad row never aborts the batch.
+    """
+    import pandas as pd
+
+    folder_id = extract_drive_folder_id(drive_url)
+    if not folder_id:
+        raise ValueError("Could not read a Google Drive folder ID from the provided link.")
+
+    df = pd.read_excel(file_storage, sheet_name=0, engine='openpyxl').dropna(how='all')
+    ext_col, type_col, name_col = _resolve_upload_columns(df)
+
+    drive_files = list_drive_folder_files(folder_id, access_token=access_token)
+    if not drive_files:
+        raise ValueError("No files were found in that Drive folder.")
+    name_index = _drive_name_index(drive_files)
+    ext_index = build_extension_number_index()
+
+    rows = df.to_dict('records')
+    total = len(rows)
+    results = []
+    if task_id:
+        xlsx_upload_progress_store[task_id] = {'current': 0, 'total': total, 'logs': []}
+
+    def log(msg, status):
+        entry = {'msg': msg, 'status': status}
+        results.append(entry)
+        store = xlsx_upload_progress_store.get(task_id) if task_id else None
+        if store is not None:
+            store['logs'].append(entry)
+
+    processed = 0
+    for row in rows:
+        ext_num = _cell_str(row.get(ext_col))
+        type_label = _cell_str(row.get(type_col))
+        greeting_name = _cell_str(row.get(name_col))
+
+        # Skip fully blank rows without counting them against the total.
+        if not ext_num and not type_label and not greeting_name:
+            continue
+
+        row_label = f"Ext {ext_num or '?'} / {type_label or '?'}"
+        try:
+            ext = ext_index.get(ext_num)
+            if not ext:
+                raise ValueError(f"Extension number {ext_num} not found in account")
+
+            code = resolve_greeting_type_label(type_label, ext.get('type'))
+
+            drive_file = _match_drive_file(name_index, greeting_name)
+            if not drive_file:
+                raise ValueError(f"'{greeting_name}' not found in the Drive folder")
+
+            audio_bytes = download_drive_file_bytes(drive_file['id'], access_token=access_token)
+            upload_obj = _MemoryUpload(
+                audio_bytes, drive_file['name'], _content_type_for(drive_file['name'])
+            )
+            result = upload_custom_greeting(ext['id'], upload_obj, code, greeting_name=greeting_name)
+
+            reused = isinstance(result, dict) and result.get('reused')
+            verb = 'reused existing prompt for' if reused else 'applied'
+            log(f"{row_label}: {verb} '{drive_file['name']}' → {ext.get('name', ext_num)}", 'success')
+        except Exception as e:
+            log(f"{row_label}: {str(e)}", 'error')
+        finally:
+            processed += 1
+            store = xlsx_upload_progress_store.get(task_id) if task_id else None
+            if store is not None:
+                store['current'] = processed
+            time.sleep(0.2)
+
+    success_count = sum(1 for r in results if r['status'] == 'success')
+    error_count = sum(1 for r in results if r['status'] == 'error')
+    return {
+        'results': results,
+        'success_count': success_count,
+        'error_count': error_count,
+        'total': success_count + error_count,
+    }
+
+def generate_upload_template():
+    """Build a downloadable .xlsx template: an Upload sheet with the required
+    columns and an example row, plus a reference sheet of accepted type labels."""
+    import pandas as pd
+
+    buffer = io.BytesIO()
+    upload_df = pd.DataFrame(
+        [{
+            'EXT NUMBER': 10118,
+            'GREETING TYPE': 'Business Hours — Voicemail',
+            'GREETING NAME': 'Generic_Service_Submenu.wav',
+        }],
+        columns=['EXT NUMBER', 'GREETING TYPE', 'GREETING NAME'],
+    )
+
+    reference_df = pd.DataFrame([
+        {'Endpoint Type': 'User',
+         'Accepted GREETING TYPE labels': 'Business Hours — Voicemail; After Hours — Voicemail; Business Hours — Connecting Message; Business Hours — Connecting Audio; Business Hours — Hold Music; After Hours — Announcement'},
+        {'Endpoint Type': 'Call Queue (Department)',
+         'Accepted GREETING TYPE labels': 'Business Hours — Voicemail; After Hours — Voicemail; Business Hours — Introductory Greeting; Business Hours — Connecting Audio; Business Hours — Hold Music; Business Hours — Interrupt Prompt; After Hours — Announcement'},
+        {'Endpoint Type': 'IVR Menu',
+         'Accepted GREETING TYPE labels': 'IVR Audio Prompt (label is flexible — IVR menus have a single prompt slot)'},
+        {'Endpoint Type': 'Message Only',
+         'Accepted GREETING TYPE labels': 'Voicemail Greeting'},
+        {'Endpoint Type': 'Announcement Only',
+         'Accepted GREETING TYPE labels': 'Announcement Greeting'},
+    ])
+
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        upload_df.to_excel(writer, index=False, sheet_name='Upload')
+        reference_df.to_excel(writer, index=False, sheet_name='Accepted Types')
+
+    buffer.seek(0)
+    return buffer
