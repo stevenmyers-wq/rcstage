@@ -1068,6 +1068,22 @@ def generate_upload_template():
     columns and an example row, plus a reference sheet of accepted type labels."""
     import pandas as pd
 
+    # Every accepted friendly label, in the order used for the dropdown. Kept in
+    # sync with resolve_greeting_type_label().
+    accepted_type_labels = [
+        'Business Hours — Voicemail',
+        'After Hours — Voicemail',
+        'Business Hours — Connecting Message',
+        'Business Hours — Connecting Audio',
+        'Business Hours — Hold Music',
+        'Business Hours — Introductory Greeting',
+        'Business Hours — Interrupt Prompt',
+        'After Hours — Announcement',
+        'IVR Audio Prompt',
+        'Voicemail Greeting',
+        'Announcement Greeting',
+    ]
+
     buffer = io.BytesIO()
     upload_df = pd.DataFrame(
         [{
@@ -1094,6 +1110,33 @@ def generate_upload_template():
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         upload_df.to_excel(writer, index=False, sheet_name='Upload')
         reference_df.to_excel(writer, index=False, sheet_name='Accepted Types')
+
+        workbook = writer.book
+        upload_ws = writer.sheets['Upload']
+
+        # A hidden sheet holds the flat label list so the dropdown can reference a
+        # range (avoiding Excel's ~255 char limit on inline list sources).
+        lists_ws = workbook.add_worksheet('Lists')
+        for i, label in enumerate(accepted_type_labels):
+            lists_ws.write(i, 0, label)
+        lists_ws.hide()
+
+        # Widen columns for readability.
+        upload_ws.set_column('A:A', 14)
+        upload_ws.set_column('B:B', 34)
+        upload_ws.set_column('C:C', 34)
+
+        # Dropdown on the GREETING TYPE column (B), rows 2–1000.
+        last_row = len(accepted_type_labels)
+        upload_ws.data_validation(1, 1, 1000, 1, {
+            'validate': 'list',
+            'source': f'=Lists!$A$1:$A${last_row}',
+            'input_title': 'Greeting Type',
+            'input_message': 'Pick an accepted label from the list.',
+            'error_type': 'warning',
+            'error_title': 'Unrecognized greeting type',
+            'error_message': 'Not one of the accepted labels. See the "Accepted Types" tab for what applies to each endpoint type.',
+        })
 
     buffer.seek(0)
     return buffer
