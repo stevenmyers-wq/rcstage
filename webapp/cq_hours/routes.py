@@ -6,7 +6,6 @@ import time
 import pandas as pd
 from flask import Blueprint, jsonify, request, send_file, session, Response, stream_with_context
 from webapp.usage_tracking import track_usage
-from openpyxl.worksheet.datavalidation import DataValidation
 from . import utils
 
 cq_hours_bp = Blueprint('cq_hours', __name__, url_prefix='/api/cq_hours')
@@ -50,61 +49,9 @@ def download_template():
             "After Hours Destination": "2004"
         }
     ])
-    
-    global_timezones = [
-        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
-        "Canada/Eastern", "Canada/Central", "Canada/Mountain", "Canada/Pacific", "Canada/Atlantic",
-        "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Athens", "Europe/Moscow",
-        "GMT", "UTC", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Hong_Kong",
-        "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Adelaide", "Australia/Perth",
-        "Pacific/Auckland", "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City"
-    ]
-    
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Queue Config')
-        
-        tz_df = pd.DataFrame({"ValidTimezones": global_timezones})
-        tz_df.to_excel(writer, index=False, sheet_name='Timezone_Ref')
-        
-        workbook = writer.book
-        config_ws = workbook['Queue Config']
-        
-        dv_tz = DataValidation(type="list", formula1="=Timezone_Ref!$A$2:$A$" + str(len(global_timezones) + 1), allow_blank=True)
-        config_ws.add_data_validation(dv_tz)
-        dv_tz.add("K2:K1000") 
-        
-        schema_validations = {
-                "E": '"Enabled,Disabled"', 
-                "M": '"Default,Custom,Off"',
-                "N": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
-                "O": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
-                "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
-                "R": '"Simultaneous,Sequential,Rotating"', 
-                "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
-                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
-                "V": '"Allowed,Not Allowed"',
-                "W": '"5,10,15,20,25"', 
-                "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
-                "AB": '"Default,Custom,Off"',
-                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
-        }
+    df = df[utils.TEMPLATE_COLUMNS]
 
-        for col_letter, formula_string in schema_validations.items():
-            dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
-            config_ws.add_data_validation(dv)
-            dv.add(f"{col_letter}2:{col_letter}1000")
-            
-        # Prevent Excel from auto-converting 24/7 to July 24th dates
-        for col in config_ws.columns:
-            for cell in col:
-                cell.number_format = '@'
-
-    output.seek(0)
+    output = utils.build_config_workbook(df)
     return send_file(output, as_attachment=True, download_name='Call_Queue_Manager_Template.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @cq_hours_bp.route('/queues', methods=['GET'])

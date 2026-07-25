@@ -4,18 +4,97 @@ import time
 import io
 import json
 import pandas as pd
-import requests
 from datetime import datetime
+from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.rc_api import rc_api_call
 
 audit_progress_store = {}
 
 DAY_ABBR = {
-    "mon": "monday", "tue": "tuesday", "wed": "wednesday", 
+    "mon": "monday", "tue": "tuesday", "wed": "wednesday",
     "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"
 }
 
 _READ_ONLY = ('uri', 'id', 'type', 'name', 'creationTime', 'lastModifiedTime')
+
+# --- Shared workbook schema (used by both the download template and the audit export) ---
+# Kept in one place so the two exports can never drift apart.
+TEMPLATE_COLUMNS = [
+    "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number",
+    "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours",
+    "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Audio", "Interrupt Prompt",
+    "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status",
+    "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached",
+    "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients",
+    "Voicemail Notifications", "Voicemail Notifications Email", "After Hours Behavior",
+    "After Hours Destination"
+]
+
+GLOBAL_TIMEZONES = [
+    "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
+    "Canada/Eastern", "Canada/Central", "Canada/Mountain", "Canada/Pacific", "Canada/Atlantic",
+    "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Athens", "Europe/Moscow",
+    "GMT", "UTC", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Hong_Kong",
+    "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Adelaide", "Australia/Perth",
+    "Pacific/Auckland", "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City"
+]
+
+# Column letter -> Excel list-validation formula. Letters map to TEMPLATE_COLUMNS positions.
+SCHEMA_VALIDATIONS = {
+    "E": '"Enabled,Disabled"',
+    "M": '"Default,Custom,Off"',
+    "N": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
+    "O": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
+    "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
+    "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
+    "R": '"Simultaneous,Sequential,Rotating"',
+    "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
+    "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
+    "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"',
+    "V": '"Allowed,Not Allowed"',
+    "W": '"5,10,15,20,25"',
+    "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+    "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+    "AB": '"Default,Custom,Off"',
+    "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
+    "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+}
+
+
+def build_config_workbook(df):
+    """Render a Queue Config DataFrame to an .xlsx BytesIO with the timezone
+    reference sheet, dropdown validations and text number-formatting applied.
+    Shared by the download-template and audit-export paths."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Queue Config')
+
+        tz_df = pd.DataFrame({"ValidTimezones": GLOBAL_TIMEZONES})
+        tz_df.to_excel(writer, index=False, sheet_name='Timezone_Ref')
+
+        workbook = writer.book
+        config_ws = workbook['Queue Config']
+
+        dv_tz = DataValidation(
+            type="list",
+            formula1="=Timezone_Ref!$A$2:$A$" + str(len(GLOBAL_TIMEZONES) + 1),
+            allow_blank=True
+        )
+        config_ws.add_data_validation(dv_tz)
+        dv_tz.add("K2:K1000")
+
+        for col_letter, formula_string in SCHEMA_VALIDATIONS.items():
+            dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
+            config_ws.add_data_validation(dv)
+            dv.add(f"{col_letter}2:{col_letter}1000")
+
+        # Prevent Excel from auto-converting values like 24/7 into July 24th dates
+        for col in config_ws.columns:
+            for cell in col:
+                cell.number_format = '@'
+
+    output.seek(0)
+    return output
 
 def to_int(val):
     try: return int(float(val))
@@ -53,16 +132,6 @@ def format_schedule(schedule_dict):
             else: time_strs.append(f"{t['from']}-{t['to']}")
         days.append(f"{day[:3].capitalize()}: {', '.join(time_strs)}")
     return " | ".join(days)
-
-def get_impersonation_token(employee_token, target_account_id):
-    exchange_url = "https://auth.ps.ringcentral.com/jwks"
-    headers = {"Accept": "application/json", "Content-Type": "application/json", "access_token": employee_token}
-    payload = {"accountId": str(target_account_id), "appName": "brd"}
-    try:
-        resp = requests.post(exchange_url, headers=headers, json=payload)
-        if resp.ok: return resp.json().get("access_token")
-    except: pass
-    return None
 
 def to_24h(time_str):
     time_str = time_str.replace(" ", "").lower()
@@ -433,75 +502,12 @@ def run_cq_audit(task_id, queue_ids, token):
             time.sleep(0.35) 
 
         df = pd.DataFrame(rows)
-        template_cols = [
-            "Queue Name", "Record Group Name", "Extension", "Site", "Status", "Phone Number", 
-            "Queue Manager", "Queue Email", "Queue PIN", "Members (Ext)", "Timezone", "Hours", 
-            "Greeting", "Audio While Connecting", "Hold Music", "Interrupt Audio", "Interrupt Prompt", 
-            "Ring Type", "User Ring Time", "Total Ring Time", "Wrap Up Time", "Member Queue Status", 
-            "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached", 
-            "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients", 
-            "Voicemail Notifications", "Voicemail Notifications Email", "After Hours Behavior", 
-            "After Hours Destination"
-        ]
-        
-        for col in template_cols:
+        for col in TEMPLATE_COLUMNS:
             if col not in df.columns:
                 df[col] = ""
-        df = df[template_cols]
+        df = df[TEMPLATE_COLUMNS]
 
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Queue Config')
-            
-            global_timezones = [
-                "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
-                "Canada/Eastern", "Canada/Central", "Canada/Mountain", "Canada/Pacific", "Canada/Atlantic",
-                "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Athens", "Europe/Moscow",
-                "GMT", "UTC", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Hong_Kong",
-                "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Adelaide", "Australia/Perth",
-                "Pacific/Auckland", "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City"
-            ]
-            tz_df = pd.DataFrame({"ValidTimezones": global_timezones})
-            tz_df.to_excel(writer, index=False, sheet_name='Timezone_Ref')
-            
-            workbook = writer.book
-            config_ws = workbook['Queue Config']
-            
-            from openpyxl.worksheet.datavalidation import DataValidation
-            dv_tz = DataValidation(type="list", formula1="=Timezone_Ref!$A$2:$A$" + str(len(global_timezones) + 1), allow_blank=True)
-            config_ws.add_data_validation(dv_tz)
-            dv_tz.add("K2:K1000") 
-            
-            schema_validations = {
-                "E": '"Enabled,Disabled"', 
-                "M": '"Default,Custom,Off"',
-                "N": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
-                "O": '"Default,Ring Tones,Acoustic,Beautiful,Classical,Corporate,Country,Electronic,Modern Jazz,Nature,Pop,R&B,Rock,Upbeat,Custom,Off"',
-                "P": '"Never,10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute"',
-                "Q": '"Thank you for your patience,Higher than normal volume,Agents are currently busy,Call is very important to us,Custom,Default,Off"',
-                "R": '"Simultaneous,Sequential,Rotating"', 
-                "S": '"10 Seconds,15 Seconds,20 Seconds,25 Seconds,30 Seconds,40 Seconds,50 Seconds,1 Minute,2 Minutes"',
-                "T": '"15 Seconds,30 Seconds,45 Seconds,1 Minute,2 Minutes,3 Minutes,4 Minutes,5 Minutes,10 Minutes,15 Minutes"',
-                "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"', 
-                "V": '"Allowed,Not Allowed"',
-                "W": '"5,10,15,20,25"', 
-                "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-                "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"', 
-                "AB": '"Default,Custom,Off"',
-                "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-                "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
-            }
-
-            for col_letter, formula_string in schema_validations.items():
-                dv = DataValidation(type="list", formula1=formula_string, allow_blank=True)
-                config_ws.add_data_validation(dv)
-                dv.add(f"{col_letter}2:{col_letter}1000")
-                
-            for col in config_ws.columns:
-                for cell in col:
-                    cell.number_format = '@'
-
-        output.seek(0)
+        output = build_config_workbook(df)
         audit_progress_store[task_id]['file_data'] = output.getvalue()
         audit_progress_store[task_id]['status'] = 'completed'
         audit_progress_store[task_id]['file_ready'] = True
@@ -604,6 +610,14 @@ def update_cq_batch(records, token, is_preview=False):
         clean_num = str(num).split('.')[0].strip()
         if clean_num in ext_map: return ext_map[clean_num]
         return clean_num
+
+    def _dest_unresolved(num):
+        """A transfer destination was supplied but doesn't map to a known extension.
+        Left unresolved, RingCentral rejects the transfer and the action silently
+        falls back to Voicemail, so callers can flag it as a clear error instead."""
+        if num is None: return False
+        clean_num = str(num).split('.')[0].strip()
+        return bool(clean_num) and clean_num not in ext_map
 
     for i, row in enumerate(records):
         logs = []
@@ -838,7 +852,13 @@ def update_cq_batch(records, token, is_preview=False):
                 has_error = True; logs.append(f"Hours Parse Error: {str(e)}")
 
         # --- C. ROUTING, TIMERS & LEGACY AUDIO ---
-        if any(get_val(row, f) is not None for f in routing_fields) and orig_rule:
+        wants_routing = any(get_val(row, f) is not None for f in routing_fields)
+        if wants_routing and not orig_rule:
+            # The pre-fetch above failed, so silently dropping Ring Type / timers would
+            # look like a no-op to the user. Surface it instead.
+            has_error = True
+            logs.append("Routing Error: Could not load the queue's business-hours answering rule (Ring Type & timers skipped).")
+        if wants_routing and orig_rule:
             rule = copy.deepcopy(orig_rule)
             q_set = rule.get('queue', {})
             r_needs_update = False
@@ -884,7 +904,11 @@ def update_cq_batch(records, token, is_preview=False):
             val_wmtr = get_val(row, 'When Max Time is Reached')
             if val_wmtr is not None:
                 if val_wmtr == 'TransferToExtension':
-                    dest_id = _resolve_ext(get_val(row, 'Time Reached Destination'))
+                    tr_dest = get_val(row, 'Time Reached Destination')
+                    if _dest_unresolved(tr_dest):
+                        has_error = True
+                        logs.append(f"Max Time Dest '{tr_dest}' is not a known extension (transfer will fall back to Voicemail).")
+                    dest_id = _resolve_ext(tr_dest)
                     q_set['holdTimeExpirationAction'] = val_wmtr
                     _set_queue_transfer(q_set, 'HoldTimeExpiration', dest_id)
                 else:
@@ -894,7 +918,11 @@ def update_cq_batch(records, token, is_preview=False):
             val_wqf = get_val(row, 'When Queue is Full')
             if val_wqf is not None:
                 if val_wqf == 'TransferToExtension':
-                    dest_id = _resolve_ext(get_val(row, 'Queue Full Destination'))
+                    qf_dest = get_val(row, 'Queue Full Destination')
+                    if _dest_unresolved(qf_dest):
+                        has_error = True
+                        logs.append(f"Queue Full Dest '{qf_dest}' is not a known extension (transfer will fall back to Voicemail).")
+                    dest_id = _resolve_ext(qf_dest)
                     q_set['maxCallersAction'] = val_wqf
                     _set_queue_transfer(q_set, 'MaxCallers', dest_id)
                 else:
@@ -904,7 +932,14 @@ def update_cq_batch(records, token, is_preview=False):
             # Lean payload: Strip everything we aren't specifically allowed to touch from the deep copy
             for f in ['positionInQueue', 'callback', 'callers', 'calledNumbers']:
                 q_set.pop(f, None)
-            
+
+            # fixedOrderAgents is only valid when transferMode == 'FixedOrder'. If the queue is
+            # currently Sequential and the upload switches Ring Type to Simultaneous/Rotating, a
+            # stale agent list left in the payload makes RingCentral reject the whole queue update,
+            # so Ring Type AND every ring timer silently fail together. Drop it unless we stay FixedOrder.
+            if q_set.get('transferMode') != 'FixedOrder':
+                q_set.pop('fixedOrderAgents', None)
+
             rule['queue'] = q_set
             
             old_q = orig_rule.get('queue', {})
@@ -1045,9 +1080,13 @@ def update_cq_batch(records, token, is_preview=False):
                 a_needs_update = False
                 
                 val_ahb = get_val(row, 'After Hours Behavior')
-                if val_ahb is not None: 
+                if val_ahb is not None:
                     if val_ahb == 'TransferToExtension':
-                        dest_id = _resolve_ext(get_val(row, 'After Hours Destination'))
+                        ah_dest = get_val(row, 'After Hours Destination')
+                        if _dest_unresolved(ah_dest):
+                            has_error = True
+                            logs.append(f"After Hours Dest '{ah_dest}' is not a known extension (transfer will fall back to Voicemail).")
+                        dest_id = _resolve_ext(ah_dest)
                         ah_rule['callHandlingAction'] = val_ahb
                         if dest_id: ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
                     else:
