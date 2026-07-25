@@ -109,13 +109,15 @@ def generate_audit_spreadsheet(token):
 def process_upload_background(task_id, file_bytes, token):
     """Parses the Excel file, chunks the requests, and pushes via Bulk Apply."""
     template_progress_store[task_id] = {
-        'status': 'running', 'current': 0, 'total': 0, 'message': 'Parsing Excel file...'
+        'status': 'running', 'current': 0, 'total': 0, 'message': 'Parsing Excel file...',
+        'results': []
     }
 
     try:
         df = pd.read_excel(io.BytesIO(file_bytes))
         templates = fetch_all_templates(token)
         template_map = {t.get('name', '').replace(',', ''): t['id'] for t in templates}
+        template_names = {t['id']: t.get('name', '') for t in templates}
         
         application_batches = {}
         
@@ -150,20 +152,42 @@ def process_upload_background(task_id, file_bytes, token):
         for idx, (t_id, chunked_ext_ids) in enumerate(tasks):
             template_progress_store[task_id]['current'] = idx
             template_progress_store[task_id]['message'] = f'Applying template to batch {idx + 1} of {total_tasks}...'
-            
+
             endpoint = f'/restapi/v1.0/account/~/templates/{t_id}/bulk-apply'
             body = {
                 "extensionIds": chunked_ext_ids,
                 "notifyUsers": False,
                 "overrideAll": True
             }
-            
-            safe_api_call(endpoint, method='POST', json_payload=body, token=token)
+
+            # Bulk-apply is all-or-nothing per batch, so the batch outcome maps
+            # to every extension in the chunk for the downloadable result listing.
+            try:
+                resp = safe_api_call(endpoint, method='POST', json_payload=body, token=token)
+                if resp is not None:
+                    status, detail = 'Applied', 'Template applied'
+                else:
+                    status, detail = 'Failed', 'API call failed after retries'
+            except Exception as call_err:
+                status, detail = 'Failed', str(call_err)
+
+            for ext_id in chunked_ext_ids:
+                template_progress_store[task_id]['results'].append({
+                    'Extension ID': ext_id,
+                    'Template': template_names.get(t_id, t_id),
+                    'Status': status,
+                    'Detail': detail
+                })
+
             time.sleep(1.5) # Buffer between heavy chunks to avoid backend queuing limits
 
         template_progress_store[task_id]['current'] = total_tasks
         template_progress_store[task_id]['status'] = 'completed'
-        template_progress_store[task_id]['message'] = 'All templates applied successfully!'
+        failed = sum(1 for r in template_progress_store[task_id]['results'] if r['Status'] == 'Failed')
+        template_progress_store[task_id]['message'] = (
+            'All templates applied successfully!' if failed == 0
+            else f'Completed with {failed} failed extension(s).'
+        )
 
     except Exception as e:
         template_progress_store[task_id]['status'] = 'error'

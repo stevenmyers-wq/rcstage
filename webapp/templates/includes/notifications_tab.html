@@ -56,7 +56,10 @@
     <div class="card bg-slate-900 dark:bg-[#0b1120] text-white shadow-xl mt-8 !p-0 overflow-hidden border-slate-800 w-full">
         <div class="bg-slate-800/80 border-b border-slate-700 px-6 py-4 flex justify-between items-center">
             <span class="font-mono font-bold text-xs tracking-widest text-slate-300">SYSTEM LOGS</span>
-            <button onclick="document.getElementById('notifications-log').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors font-bold">Clear</button>
+            <div class="flex items-center gap-3">
+                <button id="notif-result-btn" class="hidden text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors">⬇ Download results (.xlsx)</button>
+                <button onclick="document.getElementById('notifications-log').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors font-bold">Clear</button>
+            </div>
         </div>
         <div id="notifications-log" class="p-6 font-mono text-xs h-64 overflow-y-auto whitespace-pre-line text-slate-400 shadow-inner outline-none">
             <div class="italic opacity-50">Ready for action...</div>
@@ -71,6 +74,12 @@
     const statusContainer = document.getElementById('status-container');
     const statusText = document.getElementById('status-text');
     const progressBar = document.getElementById('progress-bar');
+
+    // Downloadable result listing for the most recent bulk update.
+    let notifResultRows = null;
+    document.addEventListener('DOMContentLoaded', () => {
+        UCResults.attachButton(document.getElementById('notif-result-btn'), () => notifResultRows, 'Notification_Update_Results', 'Results');
+    });
 
     function log(msg, type='info') {
         if (logBox.children.length === 1 && logBox.children[0].classList.contains('italic')) logBox.innerHTML = '';
@@ -231,14 +240,18 @@
     async function startUpdateLoop(tasks) {
         isRunning = true;
         log(`Starting bulk update...`);
-        
+        notifResultRows = null;
+        document.getElementById('notif-result-btn').classList.add('hidden');
+        const results = [];
+
         for (let i = 0; i < tasks.length; i++) {
             if (!isRunning) break;
-            
+
             const task = tasks[i];
             const extId = task['Extension ID'];
             updateStatus(true, `Updating (${i+1}/${tasks.length}): ID ${extId}`, Math.round(((i+1)/tasks.length)*100));
-            
+
+            let status = 'Error', detail = '';
             try {
                 const payload = { 
                     id: extId,
@@ -262,17 +275,24 @@
                 const resJson = await resp.json();
                 
                 if (resJson.status === 'success') {
+                    status = 'Success'; detail = 'Updated';
                     log(`Updated ID ${extId}`, "success");
                 } else {
+                    status = 'Failed'; detail = resJson.message || 'API Error';
                     log(`Failed ID ${extId}: ${resJson.message}`, "error");
                 }
             } catch (err) {
+                detail = err.message;
                 log(`Error ID ${extId}: ${err.message}`, "error");
             }
+            results.push({ 'Extension ID': extId, 'Status': status, 'Detail': detail });
         }
         isRunning = false;
         updateStatus(false);
         log("Process finished.");
+
+        notifResultRows = results;
+        document.getElementById('notif-result-btn').classList.toggle('hidden', results.length === 0);
     }
 
     document.getElementById('btn-stop').addEventListener('click', () => {

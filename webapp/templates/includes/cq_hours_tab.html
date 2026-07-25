@@ -93,7 +93,7 @@
             </div>
         </div>
 
-        <div class="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80">
+        <div class="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-3">
             <div class="tab-nav">
                 <button onclick="switchTabCQ('messages')" id="btn-messages" class="tab-btn active">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
@@ -104,6 +104,7 @@
                     System Log
                 </button>
             </div>
+            <button id="cq-result-btn" class="hidden btn-primary !bg-emerald-600 hover:!bg-emerald-700 !py-2 !px-4 text-sm whitespace-nowrap">⬇ Download results (.xlsx)</button>
         </div>
 
         <div id="tab-messages" class="tab-content block overflow-x-auto w-full">
@@ -184,7 +185,12 @@
             
             const logBox = document.getElementById('cq-hours-log');
             const tableBody = document.getElementById('changes-table-body');
-            
+
+            // Downloadable result listing, accumulated as the batch streams in.
+            let cqResultRows = [];
+            const cqResultBtn = document.getElementById('cq-result-btn');
+            UCResults.attachButton(cqResultBtn, () => cqResultRows, 'CQ_Hours_Results', 'Results');
+
             const progressContainer = document.getElementById('cq-progress-container');
             const progressBar = document.getElementById('cq-progress-bar');
             const progressText = document.getElementById('cq-progress-text');
@@ -417,6 +423,8 @@
                 progressText.innerText = 'Uploading file...';
                 progressPercent.innerText = '0%';
                 tableBody.innerHTML = '';
+                cqResultRows = [];
+                cqResultBtn.classList.add('hidden');
 
                 const formData = new FormData();
                 formData.append('file', fileInput.files[0]);
@@ -459,9 +467,18 @@
                                 else if (data.type === 'progress') {
                                     const r = data.result;
                                     logEvent(`Ext ${r.ext}: ${r.message}`, r.status);
-                                    
+
+                                    const rowStatus = data.is_preview ? 'Pending' : (r.status === 'error' ? 'Aborted/Failed' : 'Applied');
                                     if (r.changes && r.changes.length > 0) {
                                         r.changes.forEach(change => {
+                                            cqResultRows.push({
+                                                'Extension': r.ext,
+                                                'Parameter': change.parameter,
+                                                'Old Value': change.old || 'None',
+                                                'New Value': change.new || 'None',
+                                                'Status': rowStatus,
+                                                'Message': r.message || ''
+                                            });
                                             let statusUi = '';
                                             if (data.is_preview) {
                                                 statusUi = `<span class="badge badge-info">Pending</span>`;
@@ -484,6 +501,14 @@
                                     }
                                     
                                     if (r.status === 'error') {
+                                         cqResultRows.push({
+                                            'Extension': r.ext,
+                                            'Parameter': 'System API',
+                                            'Old Value': '',
+                                            'New Value': '',
+                                            'Status': 'Failed',
+                                            'Message': r.message || ''
+                                         });
                                          const tr = document.createElement('tr');
                                          tr.innerHTML = `
                                             <td class="font-bold">${r.ext}</td>
@@ -511,6 +536,7 @@
                                         syncBtn.classList.remove('hidden');
                                         previewBtn.classList.add('hidden');
                                     }
+                                    cqResultBtn.classList.toggle('hidden', cqResultRows.length === 0);
                                 } 
                                 else if (data.type === 'error') {
                                     logEvent(`Fatal Error: ${data.message}`, "error");

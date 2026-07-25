@@ -6,6 +6,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedUserIds = new Set();
     let pollingInterval; // To hold the interval for progress checking
 
+    // Downloadable result listing for the most recent upload.
+    let pabResultRows = null;
+    let pabUploadCtx = { userIds: [], action: '' };
+    UCResults.attachButton(document.getElementById('pab-result-btn'), () => pabResultRows, 'Address_Book_Results', 'Results');
+    function showPabResults(rows) {
+        pabResultRows = (rows && rows.length) ? rows : null;
+        document.getElementById('pab-result-btn').classList.toggle('hidden', !pabResultRows);
+    }
+
     // --- DOM ELEMENTS ---
     const fetchUsersBtn = document.getElementById('pab-fetch-users-btn');
     const getContactsBtn = document.getElementById('pab-get-contacts-btn');
@@ -205,6 +214,28 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(link);
     });
 
+    // Build a per-user result listing for the RC bulk-add task. If RC returns a
+    // per-record array, reflect it; otherwise fall back to one row per targeted
+    // user carrying the final task status.
+    function buildTaskResultRows(data, taskStatus) {
+        const records = Array.isArray(data.records) ? data.records
+                      : (Array.isArray(data.errors) ? data.errors : null);
+        if (records) {
+            return records.map(r => ({
+                'User ID': r.extensionId || r.userId || '',
+                'Action': pabUploadCtx.action,
+                'Status': r.status || taskStatus,
+                'Detail': (r.errors ? JSON.stringify(r.errors) : (r.message || ''))
+            }));
+        }
+        return pabUploadCtx.userIds.map(uid => ({
+            'User ID': uid,
+            'Action': pabUploadCtx.action,
+            'Status': taskStatus,
+            'Detail': data.message || ''
+        }));
+    }
+
     // --- NEW: Polling function for checking task status ---
     function pollTaskStatus(taskId) {
         const progressContainer = document.getElementById('pab-progress-container');
@@ -229,7 +260,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressLabel.textContent = 'Upload complete! Refreshing...';
                     progressBar.classList.remove('progress-bar-animated', 'bg-info');
                     progressBar.classList.add('bg-success');
-                    
+                    showPabResults(buildTaskResultRows(data, 'Completed'));
+
                     setTimeout(() => {
                         progressContainer.style.display = 'none';
                         getContactsBtn.click();
@@ -240,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressLabel.textContent = `Upload failed: ${data.message || 'Check server logs.'}`;
                     progressBar.classList.remove('progress-bar-animated', 'bg-info');
                     progressBar.classList.add('bg-danger');
+                    showPabResults(buildTaskResultRows(data, 'Failed'));
                 }
             } catch (error) {
                 console.error('Polling error:', error);
@@ -289,6 +322,8 @@ document.addEventListener('DOMContentLoaded', () => {
             progressBar.classList.remove('bg-success', 'bg-danger');
             progressBar.classList.add('progress-bar-animated', 'bg-info');
             progressLabel.textContent = `Initiating '${action}' operation...`;
+            pabUploadCtx = { userIds: userIdsToUpdate, action };
+            showPabResults(null);
             progressContainer.style.display = 'block';
 
             try {
@@ -309,10 +344,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressLabel.textContent = result.status || 'Operation complete.';
                     progressBar.style.width = '100%';
                     progressBar.classList.add('bg-success');
-                    setTimeout(() => {
-                        progressContainer.style.display = 'none';
-                        getContactsBtn.click();
-                    }, 2000);
+
+                    // 'remove'/'sync' return a per-contact details array.
+                    if (Array.isArray(result.details)) {
+                        showPabResults(result.details.map(d => ({
+                            'User ID': d.userId || '',
+                            'Contact ID': d.contactId || '',
+                            'Action': action,
+                            'Status': d.status === 'success' ? 'Success' : (d.status || 'Unknown'),
+                            'Detail': d.message || ''
+                        })));
+                    } else {
+                        showPabResults(pabUploadCtx.userIds.map(uid => ({
+                            'User ID': uid, 'Action': action, 'Status': 'Completed', 'Detail': result.status || ''
+                        })));
+                    }
                 }
             } catch (error) {
                 console.error('Upload error:', error);
