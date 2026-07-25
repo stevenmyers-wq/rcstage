@@ -92,8 +92,19 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
         
         if response.status_code == 401 and has_request_context() and not token:
             logger.info("Received 401 Unauthorized. Attempting to refresh token...")
-            if refresh_rc_token():
-                headers['Authorization'] = f"Bearer {session.get('rc_access_token')}"
+            new_auth = None
+            if session.get('sm_isolated_token'):
+                # Impersonation path: silently re-mint the customer bridge token
+                # (refreshing the employee token first if needed) so long-running
+                # work doesn't force the user to rebuild the bridge by hand.
+                from webapp.auth_utils import refresh_sm_isolated_token
+                if refresh_sm_isolated_token():
+                    new_auth = session.get('sm_isolated_token')
+            elif refresh_rc_token():
+                new_auth = session.get('rc_access_token')
+
+            if new_auth:
+                headers['Authorization'] = f"Bearer {new_auth}"
                 response = requests.request(method=method, url=url, headers=headers, params=params, **kwargs)
         
         if return_response: return response
