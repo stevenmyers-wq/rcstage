@@ -7,6 +7,11 @@
     
     <!-- Official RingCentral Favicon -->
     <link rel="icon" type="image/x-icon" href="https://www.ringcentral.com/favicon.ico">
+
+    <!-- Google Identity Services, loaded app-wide so authenticated tools (e.g. the
+         Message Management XLSX upload) can request a per-user Drive access token. -->
+    <script>window.GOOGLE_CLIENT_ID = "{{ GOOGLE_CLIENT_ID }}";</script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     
     <!-- ANTI-FLICKER SCRIPT & INSTANT STYLES -->
     <script>
