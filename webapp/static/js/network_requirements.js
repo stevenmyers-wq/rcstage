@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function standaloneHtml() {
         const inner = docEl.innerHTML;
         return `<!doctype html><html><head><meta charset="utf-8">` +
-            `<title>Network Requirements — ${currentCustomerSlug()}</title>` +
+            `<title>Network Requirements - ${currentCustomerSlug()}</title>` +
             `<style>` +
             `body{font-family:Inter,Arial,sans-serif;color:#0f172a;max-width:900px;margin:2rem auto;padding:0 1.5rem;line-height:1.55;}` +
             `h1{font-size:1.6rem;margin:0 0 .25rem;}` +
@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await navigator.clipboard.writeText(docEl.innerText);
             toast('Document text copied to clipboard.');
         } catch (err) {
-            toast('Copy failed — select and copy manually.', true);
+            toast('Copy failed - select and copy manually.', true);
         }
     });
 
@@ -229,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nrPrintBtn').addEventListener('click', () => {
         const w = window.open('', '_blank');
         if (!w) {
-            toast('Pop-up blocked — allow pop-ups to print.', true);
+            toast('Pop-up blocked - allow pop-ups to print.', true);
             return;
         }
         w.document.write(standaloneHtml());

@@ -4,7 +4,7 @@ Network Requirements document generator for RingCentral UC.
 This module is a *self-contained content library*. It holds RingCentral's
 published RingEX network requirements and turns a set of tick-box selections
 into a customer-specific, print-ready HTML document. There are no RingCentral
-API calls here — the document is assembled purely from the catalogues below.
+API calls here - the document is assembled purely from the catalogues below.
 
 SOURCE OF TRUTH
 ---------------
@@ -12,7 +12,7 @@ The data below is transcribed from RingCentral's "Network requirements" article
 for RingEX (support.ringcentral.com → Resources → Network requirements). Port
 tables, supernets and provisioning FQDNs are reproduced faithfully from that
 article. Bandwidth / latency / jitter / DSCP figures are intentionally NOT
-listed here — RingCentral keeps those in the separate "Quality of Service
+listed here - RingCentral keeps those in the separate "Quality of Service
 Guidelines" document, so this tool references that document rather than
 reproducing (and risking staling) numbers it cannot verify.
 
@@ -47,7 +47,7 @@ KB_CRM_HUBSPOT = "https://support.ringcentral.com/article-v2/Installing-RingCent
 KB_CRM_GOOGLE = "https://support.ringcentral.com/article-v2/Using-the-RingCentral-for-Google-Chrome-extension.html?brand=RingCentral&product=RingEX&language=en_US"
 
 # ---------------------------------------------------------------------------
-# Regions — used to drop irrelevant region-specific domains from the document.
+# Regions - used to drop irrelevant region-specific domains from the document.
 # ---------------------------------------------------------------------------
 # key -> label. "global" is the default and keeps the .com / global domains.
 REGIONS = {
@@ -84,11 +84,11 @@ def pick_region(variants, region):
     return next(iter(variants.values()))
 
 # ---------------------------------------------------------------------------
-# SECTION 1 — Standard requirements (always included in every document)
+# SECTION 1 - Standard requirements (always included in every document)
 # These apply across all RingCentral UC services.
 # ---------------------------------------------------------------------------
 
-# Table 1.1 — Advertised IP supernets (BGP-advertised by the RingCentral cloud)
+# Table 1.1 - Advertised IP supernets (BGP-advertised by the RingCentral cloud)
 SUPERNETS = [
     "66.81.240.0/20",
     "80.81.128.0/20",
@@ -105,11 +105,11 @@ SUPERNETS = [
 SUPERNET_NOTES = [
     "The supernets are advertised by the RingCentral cloud using BGP to support Unified Communication Services. All voice and video media, signalling traffic and some other traffic use supernet addresses.",
     "Your enterprise network must accept the supernets at all locations where UC services are used, and must use them for: firewall rules (signalling and media ports); DSCP markings per the QoS Guidelines; and selectively disabling Layer-7 functions such as Deep Packet Inspection for UDP traffic to/from the UC cloud.",
-    "A domain marked (S) in the tables resolves to a supernet address — for firewall/proxy configuration the (S) marker itself should be ignored. If a .com domain resolves to a supernet it is part of 66.81.240.0/20; if a .biz domain resolves to a supernet it is part of 80.81.128.0/20.",
-    "Additional requirements apply for enterprises with private connections to the RingCentral cloud — contact RingCentral Support.",
+    "A domain marked (S) in the tables resolves to a supernet address - for firewall/proxy configuration the (S) marker itself should be ignored. If a .com domain resolves to a supernet it is part of 66.81.240.0/20; if a .biz domain resolves to a supernet it is part of 80.81.128.0/20.",
+    "Additional requirements apply for enterprises with private connections to the RingCentral cloud - contact RingCentral Support.",
 ]
 
-# Table 2.1 — Common cloud services that must always be whitelisted.
+# Table 2.1 - Common cloud services that must always be whitelisted.
 # (Purpose, Protocol, Domain(s), Ports)
 COMMON_CLOUD_SERVICES = [
     ("Company website", "HTTPS", "www.ringcentral.com (S)", "TCP 443"),
@@ -146,7 +146,7 @@ COMMON_CLOUD_NOTES = [
     "The Administrator/User account portal, Admin Portal and Analytics portals may be country- or region-specific for compliance; .com is used in North America / globally, while .eu / .co.uk refer to Europe / UK.",
 ]
 
-# Section 18 / 19 / 20 — DNS, NAT and security software
+# Section 18 / 19 / 20 - DNS, NAT and security software
 DNS_NOTES = [
     "All endpoints and services require access to a public DNS. Endpoints rely on DNS to resolve the provisioning service domain name (e.g. pp.ringcentral.com).",
     "If you use a private DNS, it must perform forward lookups to an internet-based DNS.",
@@ -155,7 +155,7 @@ DNS_NOTES = [
 NAT_NOTES = [
     "Configure a minimum NAT timeout to ensure correct hardphone operation.",
     "Cisco phones send a REGISTER refresh every 4 minutes.",
-    "Poly phones re-register every 5 minutes — set the NAT entry expiration timeout to more than 5 minutes.",
+    "Poly phones re-register every 5 minutes - set the NAT entry expiration timeout to more than 5 minutes.",
     "For Android push notifications over ports 5228-5230, implement a 30-minute or larger NAT / SPI timeout for reliable connectivity and reduced battery consumption.",
 ]
 
@@ -164,9 +164,9 @@ SECURITY_SOFTWARE_NOTES = [
     "Allow incoming and outgoing RTP/SRTP packets (audio and video) on both endpoint security software and network firewall devices.",
 ]
 
-# Section 21 / 22 — QoS and VLAN (reference the dedicated guidelines; do not invent DSCP values)
+# Section 21 / 22 - QoS and VLAN (reference the dedicated guidelines; do not invent DSCP values)
 QOS_NOTES = [
-    "Follow RingCentral's Quality of Service Guidelines to ensure correct prioritisation of traffic — otherwise either party may experience intermittent call-control or media-quality issues.",
+    "Follow RingCentral's Quality of Service Guidelines to ensure correct prioritisation of traffic - otherwise either party may experience intermittent call-control or media-quality issues.",
     "Apply DSCP markings in IP packet headers according to the QoS Guidelines, using the supernets in Section 1 to match the traffic.",
     "QoS markings are only honoured if trusted end-to-end across every hop the traffic traverses.",
     "The QoS Guidelines are linked directly from the Network requirements article.",
@@ -177,15 +177,15 @@ VLAN_NOTES = [
     "Where possible, place phones on a dedicated voice VLAN with LLDP-MED / 802.1p.",
 ]
 
-# Section 23 — VPN & firewall/proxy recommendations
+# Section 23 - VPN & firewall/proxy recommendations
 VPN_PROXY_NOTES = [
-    "VPN and firewall platforms can degrade real-time RingCentral voice and video when proxied — bypass RingCentral traffic from inline proxies.",
+    "VPN and firewall platforms can degrade real-time RingCentral voice and video when proxied - bypass RingCentral traffic from inline proxies.",
     "Turn on SSL-inspection bypass for RingCentral traffic through your proxy / secure web gateway.",
     "Add a Proxy Auto-Configuration (PAC) file that returns DIRECT for the RingCentral domains below, so real-time traffic bypasses the corporate proxy.",
     "Create VPN and firewall bypass rules for the RingCentral supernet ranges in Section 1.",
 ]
 
-# Section 23 — PAC bypass domains (return DIRECT)
+# Section 23 - PAC bypass domains (return DIRECT)
 PAC_BYPASS_DOMAINS = [
     "*.ringcentral.com", "*.ringcentral.biz", "*.rcv.com", "*.glip.com",
     "*.pubnubapi.com", "*.testrtc.com", "*.pubnub.com", "*.pndsn.com",
@@ -197,7 +197,7 @@ PAC_BYPASS_DOMAINS = [
 ]
 
 # ---------------------------------------------------------------------------
-# SECTION 2 — Service / endpoint selectable requirements (tick boxes)
+# SECTION 2 - Service / endpoint selectable requirements (tick boxes)
 # key -> {label, rows[(purpose, protocol, domain, ports)], notes[]}
 # ---------------------------------------------------------------------------
 
@@ -205,20 +205,20 @@ _PUBNUB = "ringcentral.pubnubapi.com and ringcentral-0 … ringcentral-9.pubnuba
 
 SERVICES = {
     "ringcentral_app": {
-        "label": "RingCentral App — web, desktop & mobile (Table 4.1)",
+        "label": "RingCentral App - web, desktop & mobile (Table 4.1)",
         "rows": [
             ("Media / media secured & media access control", "RTP/SRTP (DTLS) and STUN", "IP supernets", "UDP 20000-64999; for STUN: UDP 443 and UDP 19302"),
-            ("Signalling — mobile app", "SIP/TCP", "IP supernets", "TCP 5091"),
-            ("Signalling secured — mobile app", "SIP/TLS", "IP supernets", "TCP 5097"),
-            ("Signalling secured — mobile app", "SIP/WSS/TLS", "IP supernets", "TCP 443"),
-            ("Signalling secured — desktop & web app", "SIP/WSS/DTLS", "IP supernets", "TCP 8083"),
-            ("Signalling secured — desktop app", "SIP/TLS", "IP supernets", "TCP 5095"),
+            ("Signalling - mobile app", "SIP/TCP", "IP supernets", "TCP 5091"),
+            ("Signalling secured - mobile app", "SIP/TLS", "IP supernets", "TCP 5097"),
+            ("Signalling secured - mobile app", "SIP/WSS/TLS", "IP supernets", "TCP 443"),
+            ("Signalling secured - desktop & web app", "SIP/WSS/DTLS", "IP supernets", "TCP 8083"),
+            ("Signalling secured - desktop app", "SIP/TLS", "IP supernets", "TCP 5095"),
             ("Platform API for media services", "HTTPS", "media.ringcentral.com (S)", "TCP 443"),
             ("Discovery service API (login)", "HTTPS", "discovery.ringcentral.biz (S)", "TCP 443"),
             ("IOVATION SDK (two-factor login)", "HTTPS", "mpsnare.iesnare.com, ringcentral.112.2o7.net", "TCP 443"),
             ("Application file upload/download", "HTTPS", "glip-vault-1.s3.amazonaws.com, glip-vault-1.s3-accelerate.amazonaws.com", "TCP 443"),
-            ("Application service API — web/desktop", "HTTPS", "api-ucc.ringcentral.com (S)", "TCP 443"),
-            ("Application service API — mobile", "HTTPS", "api-mucc.ringcentral.com (S)", "TCP 443"),
+            ("Application service API - web/desktop", "HTTPS", "api-ucc.ringcentral.com (S)", "TCP 443"),
+            ("Application service API - mobile", "HTTPS", "api-mucc.ringcentral.com (S)", "TCP 443"),
             ("Messaging service API", "HTTPS", "*.glip.com, mvp.ringcentral.com, dl.mvp.ringcentral.com", "TCP 443"),
             ("Push notifications", "HTTPS", _PUBNUB, "TCP 443"),
             ("WebSocket push notifications", "WSS", {
@@ -245,14 +245,14 @@ SERVICES = {
         ],
         "notes": [
             "For RingCentral Video within the app, also apply the RingCentral Video table.",
-            "Messaging content (Giphy/embed.ly), Help/community and LaunchDarkly/IOVATION rows were required prior to RingCentral App v23.4.x — confirm against the current article for your deployment.",
+            "Messaging content (Giphy/embed.ly), Help/community and LaunchDarkly/IOVATION rows were required prior to RingCentral App v23.4.x - confirm against the current article for your deployment.",
         ],
     },
     "rc_video": {
-        "label": "RingCentral Video App — web, desktop & mobile (Table 5.1)",
+        "label": "RingCentral Video App - web, desktop & mobile (Table 5.1)",
         "rows": [
             ("Media secured", "SRTP", "IP supernets", "UDP 10001-10010 (default) or UDP 8801-8810"),
-            ("Media secured — UDP unavailable fallback", "SRTP", "IP supernets", "TCP 443 (avoid regular use — affects voice quality)"),
+            ("Media secured - UDP unavailable fallback", "SRTP", "IP supernets", "TCP 443 (avoid regular use - affects voice quality)"),
             ("STUN", "STUN", "IP supernets", "UDP 443, UDP 19302, UDP 3478"),
             ("TURN / TURNS", "TURN/TURNS", "IP supernets", "UDP 3478, TCP 3478, UDP 443, TCP 443"),
             ("Signalling secured", "HTTPS/WSS/TLS", "IP supernets", "TCP 443"),
@@ -271,29 +271,29 @@ SERVICES = {
         ],
     },
     "rc_webinar": {
-        "label": "RingCentral Webinar — host & attendee (Table 5.2)",
+        "label": "RingCentral Webinar - host & attendee (Table 5.2)",
         "rows": [
-            ("RingCentral Video", "—", "Apply RingCentral Video (Table 5.1)", "See Table 5.1"),
+            ("RingCentral Video", "-", "Apply RingCentral Video (Table 5.1)", "See Table 5.1"),
             ("Fetch webinar live-streaming media segments", "HTTPS", "*.cloudfront.net", "TCP 443"),
         ],
         "notes": [
-            "RingCentral Webinar is based on RingCentral Video — apply the Video table for both host and attendee clients.",
+            "RingCentral Webinar is based on RingCentral Video - apply the Video table for both host and attendee clients.",
             "If Cloudfront is already whitelisted for the RingCentral App, it need not be whitelisted again.",
         ],
     },
     "rc_rooms": {
         "label": "RingCentral Rooms (Table 5.3)",
         "rows": [
-            ("RingCentral Video — media secured", "SRTP", "IP supernets", "UDP 10001-10010 (default); UDP 443, 19302 (STUN); TCP 443 (UDP fallback)"),
-            ("RingCentral Video — signalling secured", "HTTPS/WSS/TLS", "IP supernets", "TCP 443"),
+            ("RingCentral Video - media secured", "SRTP", "IP supernets", "UDP 10001-10010 (default); UDP 443, 19302 (STUN); TCP 443 (UDP fallback)"),
+            ("RingCentral Video - signalling secured", "HTTPS/WSS/TLS", "IP supernets", "TCP 443"),
             ("SIP registration service", "HTTPS/TLS", "*.ringcentral.com", "TCP 8085-8090"),
             ("Rooms host device", "HTTPS", "Internal enterprise private IP (no WAN traversal)", "TCP 9520-9530"),
             ("Application software updates", "HTTPS", "rooms.ringcentral.com", "TCP 443"),
             ("Equipment vendor software updates", "HTTPS", "swupdate.lens.poly.com, yl-us-dmfile.yealinkops.com, www.logitech.com", "TCP 443"),
-            ("3rd-party meeting — MS Teams", "SIP/TLS + SRTP/UDP", "rc.pex.ms", "5060, 5061; SRTP UDP 10000-65535"),
-            ("3rd-party meeting — Webex", "SIP/TLS + SRTP/UDP", "webex.com, wwt.webex.com", "5060-5070; SRTP UDP 36000-59999"),
-            ("3rd-party meeting — Zoom", "SIP/TLS + SRTP/UDP", "wcrc/ecrc.ringcentral.com, zoomcrc.com, zm*.us domains", "5060-5061; SRTP UDP 3000-4000"),
-            ("3rd-party meeting — Google", "SIP/TLS + SRTP/UDP", "rc.pex.ms", "5060, 5061; SRTP UDP 10000-65535"),
+            ("3rd-party meeting - MS Teams", "SIP/TLS + SRTP/UDP", "rc.pex.ms", "5060, 5061; SRTP UDP 10000-65535"),
+            ("3rd-party meeting - Webex", "SIP/TLS + SRTP/UDP", "webex.com, wwt.webex.com", "5060-5070; SRTP UDP 36000-59999"),
+            ("3rd-party meeting - Zoom", "SIP/TLS + SRTP/UDP", "wcrc/ecrc.ringcentral.com, zoomcrc.com, zm*.us domains", "5060-5061; SRTP UDP 3000-4000"),
+            ("3rd-party meeting - Google", "SIP/TLS + SRTP/UDP", "rc.pex.ms", "5060, 5061; SRTP UDP 10000-65535"),
         ],
         "notes": [
             "RingCentral App, Video and Rooms share many of the same domains.",
@@ -314,14 +314,14 @@ SERVICES = {
     "rc_events": {
         "label": "RingCentral Events (Table 5.5)",
         "rows": [
-            ("Network connectivity settings", "—", "See RingCentral Events 'Network Connectivity Settings' documentation", "—"),
+            ("Network connectivity settings", "-", "See RingCentral Events 'Network Connectivity Settings' documentation", "-"),
         ],
         "notes": [
             "Refer to the dedicated 'Network Connectivity Settings for RingCentral Events' article for the current list.",
         ],
     },
     "deskphones": {
-        "label": "RingCentral IP Phones — desk, conference & cordless (Table 6.1)",
+        "label": "RingCentral IP Phones - desk, conference & cordless (Table 6.1)",
         "rows": [
             ("Media and media secured", "RTP/SRTP", "IP supernets", "UDP 20000-64999"),
             ("Signalling", "SIP", "IP supernets", "TCP 5090, TCP 5099**; UDP 5090, UDP 5099**"),
@@ -330,14 +330,14 @@ SERVICES = {
             ("LDAP directory service", "LDAP", "cd.ringcentral.com (S)", "TCP 636"),
         ],
         "notes": [
-            "**Ports 5098 and 5099 are opened for Busy Lamp Appearance only when using line sharing. BLA uses the signalling ports and standard SIP NOTIFY packets — no separate ports.",
+            "**Ports 5098 and 5099 are opened for Busy Lamp Appearance only when using line sharing. BLA uses the signalling ports and standard SIP NOTIFY packets - no separate ports.",
             "All listed phone-brand domains resolve to IP addresses in the 66.81.240.0/20 supernet.",
             "Endpoints require public DNS to resolve the provisioning domain (e.g. pp.ringcentral.com). Set NAT timeouts above the phone re-registration interval (Cisco 4 min, Poly 5 min).",
             "Some third-party devices (e.g. Poly IP7000 speakerphone) do not support signalling/media encryption and should be avoided where full security is required.",
         ],
     },
     "softphone_desktop": {
-        "label": "RingCentral Softphone App — desktop (Table 7.1)",
+        "label": "RingCentral Softphone App - desktop (Table 7.1)",
         "rows": [
             ("Media and media secured", "RTP/SRTP", "IP supernets", "UDP 20000-64999; for STUN UDP 443 and UDP 19302"),
             ("Signalling", "SIP", "IP supernets", "TCP 5091"),
@@ -351,7 +351,7 @@ SERVICES = {
         "notes": [],
     },
     "softphone_mobile": {
-        "label": "RingCentral Softphone App — mobile, deprecated (Table 8.1)",
+        "label": "RingCentral Softphone App - mobile, deprecated (Table 8.1)",
         "rows": [
             ("Media", "RTP/SRTP", "IP supernets", "UDP 20000-64999; for STUN UDP 443 and UDP 19302"),
             ("Signalling", "SIP", "IP supernets", "TCP 5091, UDP 5091"),
@@ -369,17 +369,17 @@ SERVICES = {
     "frontline": {
         "label": "RingCentral for Frontline Workers (Push to Talk)",
         "rows": [
-            ("Media framework", "—", "Uses RingCentral Video (mobile) as the backend", "See RingCentral Video (Table 5.1)"),
+            ("Media framework", "-", "Uses RingCentral Video (mobile) as the backend", "See RingCentral Video (Table 5.1)"),
         ],
         "notes": [
             "No additional ports/domains/IPs beyond those already listed for RingCentral Video on mobile.",
         ],
     },
     "teams_embedded": {
-        "label": "Microsoft Teams Embedded App — desktop, web & mobile (Table 10.1)",
+        "label": "Microsoft Teams Embedded App - desktop, web & mobile (Table 10.1)",
         "rows": [
             ("Media / media secured & media access control", "RTP/SRTP (DTLS) and STUN", "IP supernets", "UDP 20000-64999; for STUN UDP 443 and UDP 19302"),
-            ("Signalling secured — desktop & web", "SIP/WSS/DTLS", "IP supernets", "TCP 8083"),
+            ("Signalling secured - desktop & web", "SIP/WSS/DTLS", "IP supernets", "TCP 8083"),
             ("Platform API for media services", "HTTPS", "media.ringcentral.com (S)", "TCP 443"),
             ("Teams user/presence/contacts & app install", "HTTPS", "graph.microsoft.com", "TCP 443"),
             ("Microsoft OAuth authentication", "HTTPS", "login.microsoftonline.com", "TCP 443"),
@@ -388,7 +388,7 @@ SERVICES = {
             ("Software update", "HTTPS", "teams.ringcentral.com", "TCP 443"),
         ],
         "notes": [
-            "This is the embedded dialer/app inside Teams — it is separate from Direct Routing (see the Integrations section).",
+            "This is the embedded dialer/app inside Teams - it is separate from Direct Routing (see the Integrations section).",
         ],
     },
     "archiver": {
@@ -406,14 +406,14 @@ SERVICES = {
         "label": "Application Programming Interface (Table 13.1)",
         "rows": [
             ("Discovery service API", "HTTPS", "discovery.ringcentral.biz (S)", "TCP 443"),
-            ("Platform API — RingCentral web portals", "HTTPS", "api.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — third-party / customer integrations", "HTTPS", "platform.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — media services", "HTTPS", "media.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — Softphone desktop", "HTTPS", "api-sp.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — Communication Integration apps (MS Teams, Salesforce)", "HTTPS", "api-rcapps.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — RingCentral App web/desktop", "HTTPS", "api-ucc.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — RingCentral App mobile", "HTTPS", "api-mucc.ringcentral.com (S)", "TCP 443"),
-            ("Platform API — Video app desktop/web", "HTTPS", "api-meet.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - RingCentral web portals", "HTTPS", "api.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - third-party / customer integrations", "HTTPS", "platform.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - media services", "HTTPS", "media.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - Softphone desktop", "HTTPS", "api-sp.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - Communication Integration apps (MS Teams, Salesforce)", "HTTPS", "api-rcapps.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - RingCentral App web/desktop", "HTTPS", "api-ucc.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - RingCentral App mobile", "HTTPS", "api-mucc.ringcentral.com (S)", "TCP 443"),
+            ("Platform API - Video app desktop/web", "HTTPS", "api-meet.ringcentral.com (S)", "TCP 443"),
         ],
         "notes": [],
     },
@@ -450,7 +450,7 @@ SERVICES = {
         ],
     },
     "pots_ata": {
-        "label": "Analog Terminal Adapter — POTS line replacement (Table 17.1)",
+        "label": "Analog Terminal Adapter - POTS line replacement (Table 17.1)",
         "rows": [
             ("Media Voice", "RTP/UDP", "199.255.120.197/32, .198/32, .201/32, .202/32", "UDP 20000-64999"),
             ("Signalling Voice", "TLS/TCP", "199.255.120.197/32, .198/32, .201/32, .202/32", "TCP 5096-5097"),
@@ -515,18 +515,18 @@ DESKPHONE_VENDORS = {
 }
 
 # ---------------------------------------------------------------------------
-# SECTION 3 — Integrations & setup links (tick boxes -> setup guidance)
+# SECTION 3 - Integrations & setup links (tick boxes -> setup guidance)
 # key -> {label, portal_path, url, prerequisites[], notes}
 # Network-level requirements for Teams options come from the endpoint tables
 # above; this section is the admin/setup guidance the request asked for.
 # ---------------------------------------------------------------------------
 
 # Each integration carries:
-#   url        — primary setup link (verified KB article where confirmed,
+#   url        - primary setup link (verified KB article where confirmed,
 #                otherwise a RingCentral support-site search that lands on the
 #                current article; never a guessed article slug)
-#   link_label — friendly text for the link
-#   url_verified — True if url is a confirmed direct KB article
+#   link_label - friendly text for the link
+#   url_verified - True if url is a confirmed direct KB article
 INTEGRATIONS = {
     "sso": {
         "label": "Single Sign-On (SAML 2.0)",
@@ -542,7 +542,7 @@ INTEGRATIONS = {
         "notes": "Configure the IdP entity ID and ACS/SSO URL from the RingCentral SSO settings, upload IdP metadata, enable, then test with a pilot user before enforcing. The linked article covers Microsoft Entra ID; for Okta / Ping / Google, search the same IdP name on the RingCentral support site.",
     },
     "scim": {
-        "label": "SCIM — Automated User Provisioning",
+        "label": "SCIM - Automated User Provisioning",
         "portal_path": "Admin Portal → More → Security and Compliance → Directory / Automated provisioning",
         "url": KB_SCIM_ENTRA,
         "link_label": "KB: Using Microsoft Entra ID for automatic user provisioning",
@@ -555,7 +555,7 @@ INTEGRATIONS = {
         "notes": "Generate the SCIM token in RingCentral, paste it plus the SCIM base URL into the IdP provisioning app, map attributes, then enable provisioning/de-provisioning. For Google Workspace auto-provisioning see: " + KB_GOOGLE_PROVISIONING,
     },
     "mst_direct_routing": {
-        "label": "Microsoft Teams — Direct Routing",
+        "label": "Microsoft Teams - Direct Routing",
         "portal_path": "Admin Portal → Phone System → Microsoft Teams (Cloud PBX for Teams)",
         "url": KB_MST_DIRECT_ROUTING,
         "link_label": "KB: Setting up RingCentral Cloud PBX for Microsoft Teams",
@@ -568,7 +568,7 @@ INTEGRATIONS = {
         "notes": "Network firewall for Direct Routing follows Microsoft's guidance (Media & Signalling): " + MS_DIRECT_ROUTING_PLAN + ". Authentication uses login.microsoftonline.com; user data uses graph.microsoft.com; the RingCentral integration uses customer-specific *.cloudpbx.ringcentral.com domains provided during project definition (all TCP 443).",
     },
     "mst_embedded": {
-        "label": "Microsoft Teams — Embedded App (RingCentral for Teams)",
+        "label": "Microsoft Teams - Embedded App (RingCentral for Teams)",
         "portal_path": "Microsoft Teams Admin Center → Manage apps → RingCentral",
         "url": KB_MST_EMBEDDED,
         "link_label": "KB: Install RingCentral for Teams 2.0 from Microsoft Admin Center",
@@ -577,19 +577,19 @@ INTEGRATIONS = {
             "Teams admin able to approve/allow third-party apps.",
             "RingEX licences for the users.",
         ],
-        "notes": "Install RingCentral for Microsoft Teams from the Teams app store / admin center and allow it in the app permission policy. Network requirements are in the 'Microsoft Teams Embedded App' endpoint section above. This adds the embedded dialer — it does not require Direct Routing.",
+        "notes": "Install RingCentral for Microsoft Teams from the Teams app store / admin center and allow it in the app permission policy. Network requirements are in the 'Microsoft Teams Embedded App' endpoint section above. This adds the embedded dialer - it does not require Direct Routing.",
     },
     "crm_salesforce": {
-        "label": "CRM — Salesforce",
+        "label": "CRM - Salesforce",
         "portal_path": "Salesforce AppExchange → RingCentral for Salesforce / RingCX for Salesforce",
         "url": KB_CRM_SALESFORCE,
-        "link_label": "KB: RingCentral for Salesforce App — Install",
+        "link_label": "KB: RingCentral for Salesforce App - Install",
         "url_verified": True,
         "prerequisites": ["Salesforce admin (System Administrator profile).", "RingCentral edition supporting CRM integration."],
         "notes": "Install the managed package from AppExchange, add the CTI softphone to the call center, assign users, and configure click-to-dial / screen-pop.",
     },
     "crm_dynamics": {
-        "label": "CRM — Microsoft Dynamics 365",
+        "label": "CRM - Microsoft Dynamics 365",
         "portal_path": "RingCentral App Gallery → RingCentral for Microsoft Dynamics 365",
         "url": KB_CRM_DYNAMICS,
         "link_label": "KB: Setting up RingCentral for Microsoft Dynamics 365",
@@ -598,7 +598,7 @@ INTEGRATIONS = {
         "notes": "Deploy the RingCentral for Dynamics 365 solution, enable the embedded softphone, and map call logging to the relevant Dynamics entities.",
     },
     "crm_servicenow": {
-        "label": "CRM — ServiceNow",
+        "label": "CRM - ServiceNow",
         "portal_path": "ServiceNow Store → RingCentral for ServiceNow",
         "url": KB_CRM_SERVICENOW,
         "link_label": "KB: RingCentral for ServiceNow Overview",
@@ -607,7 +607,7 @@ INTEGRATIONS = {
         "notes": "Install from the ServiceNow Store, configure the OpenFrame/CTI phone, and enable incident/case screen-pop and click-to-dial.",
     },
     "crm_zendesk": {
-        "label": "CRM — Zendesk",
+        "label": "CRM - Zendesk",
         "portal_path": "Zendesk Marketplace → RingCentral for Zendesk",
         "url": KB_CRM_ZENDESK,
         "link_label": "KB: Connecting your RingCentral account to Zendesk",
@@ -616,7 +616,7 @@ INTEGRATIONS = {
         "notes": "Add the RingCentral app from the Zendesk Marketplace, then enable click-to-dial and automatic ticket creation / screen-pop.",
     },
     "crm_hubspot": {
-        "label": "CRM — HubSpot",
+        "label": "CRM - HubSpot",
         "portal_path": "HubSpot Marketplace → RingCentral for HubSpot",
         "url": KB_CRM_HUBSPOT,
         "link_label": "KB: Installing RingCentral for HubSpot",
@@ -683,7 +683,7 @@ def _block(heading, *inner):
 
 
 def _standard_section(region=DEFAULT_REGION):
-    parts = ['<section class="nr-section"><h2>1. Standard requirements — all RingCentral services</h2>']
+    parts = ['<section class="nr-section"><h2>1. Standard requirements - all RingCentral services</h2>']
     parts.append(
         '<p class="nr-lead">This baseline applies to every RingCentral RingEX endpoint on the '
         'customer network, regardless of the specific services or devices deployed. Apply the '
@@ -740,7 +740,7 @@ def _services_section(selected_services, selected_vendors, region=DEFAULT_REGION
                 inner.append(_table(["Purpose", "Protocol", "Domain / IP", "Ports"], rows, region))
             else:
                 inner.append(
-                    '<p class="nr-note">No specific desk-phone vendor selected — confirm the vendor and '
+                    '<p class="nr-note">No specific desk-phone vendor selected - confirm the vendor and '
                     'add its provisioning/firmware FQDNs (all resolve to the 66.81.240.0/20 supernet) before issuing this document.</p>'
                 )
         parts.append(_block(f'2.{idx} {_esc(svc["label"])}', *inner))
@@ -790,7 +790,7 @@ def _integrations_section(selected_integrations):
 def build_document(payload):
     """
     Assemble the customer-specific network requirements document as an HTML
-    fragment (the body only — the frontend wraps it for preview / print).
+    fragment (the body only - the frontend wraps it for preview / print).
 
     payload keys:
       customer_name (str), site (str), prepared_by (str), notes (str),
