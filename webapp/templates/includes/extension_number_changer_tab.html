@@ -20,15 +20,13 @@
 
         <div id="enc-filter-controls" class="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-50 pointer-events-none transition-opacity duration-300 w-full">
             <div>
-                <label class="input-label">Filter by Site <span class="text-[10px] text-slate-400 normal-case ml-1">(Hold Ctrl/Cmd to select multiple)</span></label>
-                <select id="enc-filter-site" multiple class="input-field h-32 p-2"></select>
-                <div class="text-xs text-right text-slate-400 dark:text-slate-500 mt-2 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition" onclick="document.getElementById('enc-filter-site').selectedIndex = -1">Clear Selection</div>
+                <label class="input-label">Filter by Site <span class="text-[10px] text-slate-400 normal-case ml-1">(tick any number; leave empty for all)</span></label>
+                <div id="enc-filter-site"></div>
             </div>
 
             <div>
-                <label class="input-label">Filter by Type <span class="text-[10px] text-slate-400 normal-case ml-1">(Hold Ctrl/Cmd to select multiple)</span></label>
-                <select id="enc-filter-type" multiple class="input-field h-32 p-2"></select>
-                <div class="text-xs text-right text-slate-400 dark:text-slate-500 mt-2 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition" onclick="document.getElementById('enc-filter-type').selectedIndex = -1">Clear Selection</div>
+                <label class="input-label">Filter by Type <span class="text-[10px] text-slate-400 normal-case ml-1">(tick any number; leave empty for all)</span></label>
+                <div id="enc-filter-type"></div>
             </div>
         </div>
     </div>
@@ -82,6 +80,7 @@
 <script>
     // Downloadable result listing from the most recent upload.
     let encResultRows = null;
+    let encSiteSel = null, encTypeSel = null;
 
     document.addEventListener('DOMContentLoaded', () => {
         fetchEncFilters();
@@ -92,15 +91,16 @@
         try {
             const res = await fetch('/api/extension_number_changer/filters');
             if (!res.ok) throw new Error("Failed to load filters");
-            
+
             const data = await res.json();
-            
-            const siteSelect = document.getElementById('enc-filter-site');
-            const typeSelect = document.getElementById('enc-filter-type');
-            
-            siteSelect.innerHTML = data.sites.map(s => `<option value="${s}">${s}</option>`).join('');
-            typeSelect.innerHTML = data.types.map(t => `<option value="${t}">${t}</option>`).join('');
-            
+
+            encSiteSel = CheckboxSelect.create(document.getElementById('enc-filter-site'), {
+                items: data.sites, searchable: true, searchPlaceholder: 'Search sites…', listHeightClass: 'h-40'
+            });
+            encTypeSel = CheckboxSelect.create(document.getElementById('enc-filter-type'), {
+                items: data.types, searchable: false, listHeightClass: 'h-40'
+            });
+
             document.getElementById('enc-loading-indicator').classList.add('hidden');
             document.getElementById('enc-filter-controls').classList.remove('opacity-50', 'pointer-events-none');
             document.getElementById('enc-filter-badge').innerText = `Filters Ready`;
@@ -112,11 +112,6 @@
             document.getElementById('enc-filter-badge').className = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 rounded-full text-[10px] uppercase tracking-wide font-bold shadow-sm transition-colors duration-300';
             logEnc("Failed to load filters: " + err.message, "error");
         }
-    }
-
-    function getEncSelectedValues(selectId) {
-        const select = document.getElementById(selectId);
-        return Array.from(select.selectedOptions).map(option => option.value);
     }
 
     function logEnc(msg, type='info') {
@@ -137,8 +132,8 @@
         btn.disabled = true;
         btn.innerHTML = `<div class="spinner border-white dark:border-white w-4 h-4 mr-2"></div> Generating...`;
         
-        const selectedSites = getEncSelectedValues('enc-filter-site');
-        const selectedTypes = getEncSelectedValues('enc-filter-type');
+        const selectedSites = encSiteSel ? encSiteSel.getSelected() : [];
+        const selectedTypes = encTypeSel ? encTypeSel.getSelected() : [];
 
         logEnc(`Starting Audit for ${selectedSites.length ? selectedSites.length + ' sites' : 'all sites'}, ${selectedTypes.length ? selectedTypes.length + ' types' : 'all types'}...`);
 

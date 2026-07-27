@@ -104,6 +104,180 @@ window.UCResults = (function () {
     return { loadSheetJS, stamp, download, rowsFromLog, attachButton };
 })();
 
+// --- Shared: tick-box multi-select --------------------------------------------
+// Renders a searchable checkbox list into a mount element, replacing the old
+// <select multiple> "Ctrl/Cmd-click" pattern. Selections live in a Set that is
+// independent of the current search/filter view, so ticking an item and then
+// searching for something else never loses the earlier tick.
+//
+// CheckboxSelect.create(mountEl, config) -> instance
+//   config.items            array of strings or objects
+//   config.getValue(item)   -> unique string  (default: item.value ?? String(item))
+//   config.getLabel(item)   -> display text   (default: item.label ?? value)
+//   config.getSub(item)     -> secondary text (optional)
+//   config.getFilter(item)  -> group value for the filter dropdown (optional; e.g. Site)
+//   config.filterLabel      label for the "All …" filter option (default 'Sites')
+//   config.searchable       show a search box (default true)
+//   config.searchPlaceholder
+//   config.listHeightClass  tailwind height class for the scroll area (default 'h-56')
+//   config.onChange(values) called after any selection change
+// instance: getSelected(), getSelectedItems(), setItems(items), clear(), el
+window.CheckboxSelect = (function () {
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
+
+    function create(mount, config) {
+        config = config || {};
+        const getValue = config.getValue || (it => (it && typeof it === 'object') ? String(it.value) : String(it));
+        const getLabel = config.getLabel || (it => (it && typeof it === 'object') ? (it.label != null ? it.label : String(it.value)) : String(it));
+        const getSub = config.getSub || (() => '');
+        const getFilter = config.getFilter || null;
+        const searchable = config.searchable !== false;
+        const listHeightClass = config.listHeightClass || 'h-56';
+        const onChange = config.onChange || function () {};
+
+        let items = Array.isArray(config.items) ? config.items.slice() : [];
+        const selected = new Set();
+
+        mount.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'space-y-2';
+
+        const controls = document.createElement('div');
+        controls.className = 'flex flex-col sm:flex-row gap-2';
+        let searchInput = null;
+        if (searchable) {
+            searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = config.searchPlaceholder || 'Search…';
+            searchInput.className = 'input-field !py-2 text-sm flex-grow';
+            controls.appendChild(searchInput);
+        }
+        let filterSelect = null;
+        if (getFilter) {
+            filterSelect = document.createElement('select');
+            filterSelect.className = 'input-field !py-2 text-sm sm:w-48';
+            controls.appendChild(filterSelect);
+        }
+        if (searchable || getFilter) wrap.appendChild(controls);
+
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 px-1';
+        const countEl = document.createElement('span');
+        const actions = document.createElement('div');
+        actions.className = 'flex gap-3';
+        const selectVisibleBtn = document.createElement('button');
+        selectVisibleBtn.type = 'button';
+        selectVisibleBtn.textContent = 'Select visible';
+        selectVisibleBtn.className = 'hover:text-blue-600 dark:hover:text-blue-400 transition';
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.textContent = 'Clear';
+        clearBtn.className = 'hover:text-blue-600 dark:hover:text-blue-400 transition';
+        actions.appendChild(selectVisibleBtn);
+        actions.appendChild(clearBtn);
+        header.appendChild(countEl);
+        header.appendChild(actions);
+        wrap.appendChild(header);
+
+        const list = document.createElement('div');
+        list.className = `border border-slate-200 dark:border-slate-700 rounded-lg ${listHeightClass} overflow-y-auto bg-white dark:bg-slate-900/40 divide-y divide-slate-100 dark:divide-slate-800`;
+        wrap.appendChild(list);
+        mount.appendChild(wrap);
+
+        function distinctFilters() {
+            const set = new Set();
+            items.forEach(it => { const f = getFilter(it); if (f) set.add(f); });
+            return Array.from(set).sort();
+        }
+        function rebuildFilterOptions() {
+            if (!filterSelect) return;
+            const prev = filterSelect.value;
+            filterSelect.innerHTML = ['<option value="">All ' + esc(config.filterLabel || 'Sites') + '</option>']
+                .concat(distinctFilters().map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join('');
+            if (prev) filterSelect.value = prev;
+        }
+        function visibleItems() {
+            const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
+            const fv = filterSelect ? filterSelect.value : '';
+            return items.filter(it => {
+                if (fv && getFilter && getFilter(it) !== fv) return false;
+                if (q) {
+                    const hay = (getLabel(it) + ' ' + (getSub(it) || '')).toLowerCase();
+                    if (hay.indexOf(q) === -1) return false;
+                }
+                return true;
+            });
+        }
+        function updateCount() { countEl.textContent = `${selected.size} selected`; }
+        function renderList() {
+            const vis = visibleItems();
+            if (vis.length === 0) {
+                list.innerHTML = '<div class="p-4 text-center text-sm text-slate-400 dark:text-slate-500 italic">No matches.</div>';
+                updateCount();
+                return;
+            }
+            const frag = document.createDocumentFragment();
+            vis.forEach(it => {
+                const val = getValue(it);
+                const row = document.createElement('label');
+                row.className = 'flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 flex-shrink-0';
+                cb.checked = selected.has(val);
+                cb.addEventListener('change', () => {
+                    if (cb.checked) selected.add(val); else selected.delete(val);
+                    updateCount();
+                    onChange(getSelected());
+                });
+                const txt = document.createElement('span');
+                const sub = getSub(it);
+                txt.innerHTML = esc(getLabel(it)) + (sub ? ` <span class="text-slate-400 dark:text-slate-500">${esc(sub)}</span>` : '');
+                row.appendChild(cb);
+                row.appendChild(txt);
+                frag.appendChild(row);
+            });
+            list.innerHTML = '';
+            list.appendChild(frag);
+            updateCount();
+        }
+
+        if (searchInput) searchInput.addEventListener('input', renderList);
+        if (filterSelect) filterSelect.addEventListener('change', renderList);
+        selectVisibleBtn.addEventListener('click', () => {
+            visibleItems().forEach(it => selected.add(getValue(it)));
+            renderList();
+            onChange(getSelected());
+        });
+        clearBtn.addEventListener('click', () => {
+            selected.clear();
+            renderList();
+            onChange(getSelected());
+        });
+
+        function getSelected() { return Array.from(selected); }
+        function getSelectedItems() { return items.filter(it => selected.has(getValue(it))); }
+        function setItems(next) {
+            items = Array.isArray(next) ? next.slice() : [];
+            const valid = new Set(items.map(getValue));
+            Array.from(selected).forEach(v => { if (!valid.has(v)) selected.delete(v); });
+            rebuildFilterOptions();
+            renderList();
+        }
+        function clear() { selected.clear(); renderList(); onChange(getSelected()); }
+
+        rebuildFilterOptions();
+        renderList();
+        return { getSelected, getSelectedItems, setItems, clear, el: wrap };
+    }
+
+    return { create };
+})();
+
 // ... Keep all your existing app.js code below here (handleLogin, handleRcConnect, etc) ...
 
 // Ensure initTheme is called on load

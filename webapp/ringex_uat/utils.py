@@ -20,8 +20,15 @@ def get_testable_extensions():
     if not isinstance(response, dict): return []
     records = safe_list(response, 'records')
     valid_types = ['Department', 'IvrMenu', 'SharedLinesGroup', 'Site']
+
+    def resolve_site(ext):
+        if ext.get('type') == 'Site':
+            return ext.get('name', 'Main Site')
+        site = safe_dict(ext, 'site')
+        return site.get('name') or 'Main Site'
+
     entities = [
-        {"id": ext.get('id'), "name": ext.get('name', 'Unnamed'), "extensionNumber": ext.get('extensionNumber', 'N/A'), "type": ext.get('type')}
+        {"id": ext.get('id'), "name": ext.get('name', 'Unnamed'), "extensionNumber": ext.get('extensionNumber', 'N/A'), "type": ext.get('type'), "site": resolve_site(ext)}
         for ext in records if isinstance(ext, dict) and ext.get('type') in valid_types
     ]
     return sorted(entities, key=lambda x: x['name'])

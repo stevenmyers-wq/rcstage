@@ -31,15 +31,13 @@
 
         <div id="filter-controls" class="grid grid-cols-1 md:grid-cols-2 gap-8 opacity-50 pointer-events-none transition-opacity duration-300 w-full">
             <div class="input-wrapper">
-                <label class="input-label">Filter by Site <span class="normal-case font-medium ml-1 tracking-normal">(Hold Ctrl/Cmd for multiple)</span></label>
-                <select id="filter-site" multiple class="input-field h-32 p-3"></select>
-                <div class="text-xs font-bold text-right text-slate-400 dark:text-slate-500 mt-2 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition" onclick="clearSelect('filter-site')">Clear Selection</div>
+                <label class="input-label">Filter by Site <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                <div id="filter-site"></div>
             </div>
 
             <div class="input-wrapper">
-                <label class="input-label">Filter by Type <span class="normal-case font-medium ml-1 tracking-normal">(Hold Ctrl/Cmd for multiple)</span></label>
-                <select id="filter-type" multiple class="input-field h-32 p-3"></select>
-                <div class="text-xs font-bold text-right text-slate-400 dark:text-slate-500 mt-2 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition" onclick="clearSelect('filter-type')">Clear Selection</div>
+                <label class="input-label">Filter by Type <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                <div id="filter-type"></div>
             </div>
         </div>
     </div>
@@ -92,6 +90,7 @@
 <script>
     let ALL_EXTENSIONS = [];
     let IS_LOADING = false;
+    let renSiteSel = null, renTypeSel = null;
 
     document.addEventListener('DOMContentLoaded', () => { fetchExtensionsData(); });
     if (document.readyState === 'complete') { fetchExtensionsData(); }
@@ -137,37 +136,25 @@
     }
 
     function populateFilters(data) {
-        const siteSelect = document.getElementById('filter-site');
-        const typeSelect = document.getElementById('filter-type');
-        
-        const sites = new Map();
+        const sites = new Set();
         const types = new Set();
 
         data.forEach(ext => {
             if (ext.type) types.add(ext.type);
-            const siteName = resolveSiteName(ext);
-            sites.set(siteName, siteName);
+            sites.add(resolveSiteName(ext));
         });
 
-        const sortedSites = Array.from(sites.keys()).sort();
-        siteSelect.innerHTML = sortedSites.map(s => `<option value="${s}">${s}</option>`).join('');
-
-        const sortedTypes = Array.from(types).sort();
-        typeSelect.innerHTML = sortedTypes.map(t => `<option value="${t}">${t}</option>`).join('');
-    }
-
-    function getSelectedValues(selectId) {
-        const select = document.getElementById(selectId);
-        return Array.from(select.selectedOptions).map(option => option.value);
-    }
-
-    function clearSelect(selectId) {
-        document.getElementById(selectId).selectedIndex = -1;
+        renSiteSel = CheckboxSelect.create(document.getElementById('filter-site'), {
+            items: Array.from(sites).sort(), searchable: true, searchPlaceholder: 'Search sites…', listHeightClass: 'h-32'
+        });
+        renTypeSel = CheckboxSelect.create(document.getElementById('filter-type'), {
+            items: Array.from(types).sort(), searchable: false, listHeightClass: 'h-32'
+        });
     }
 
     function getFilteredData() {
-        const selectedSites = getSelectedValues('filter-site');
-        const selectedTypes = getSelectedValues('filter-type');
+        const selectedSites = renSiteSel ? renSiteSel.getSelected() : [];
+        const selectedTypes = renTypeSel ? renTypeSel.getSelected() : [];
 
         return ALL_EXTENSIONS.filter(ext => {
             const extSiteName = resolveSiteName(ext);

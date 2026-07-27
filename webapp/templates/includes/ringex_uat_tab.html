@@ -13,11 +13,9 @@
                 <h3 class="text-heading text-lg mb-6 border-b border-slate-100 dark:border-slate-800 pb-3">Target Profile</h3>
 
                 <div class="input-wrapper mb-6">
-                    <label for="uatTargetSelect" class="input-label">Routing Scope <span class="font-normal text-slate-400 dark:text-slate-500">(optional, multi-select)</span></label>
-                    <select id="uatTargetSelect" class="input-field" multiple size="6">
-                        <option value="" disabled>Loading routing targets...</option>
-                    </select>
-                    <p class="mt-2 text-xs text-slate-400 dark:text-slate-500 leading-snug">Hold Ctrl (Cmd on Mac) to select multiple call flows. Shared downstream flows are de-duplicated.</p>
+                    <label class="input-label">Routing Scope <span class="font-normal text-slate-400 dark:text-slate-500">(optional, tick any number)</span></label>
+                    <div id="uatTargetSelect" class="text-sm text-slate-400 dark:text-slate-500 italic py-2">Loading routing targets...</div>
+                    <p class="mt-2 text-xs text-slate-400 dark:text-slate-500 leading-snug">Tick the call flows to test. Filter by site or search; ticked flows stay selected across searches. Shared downstream flows are de-duplicated.</p>
                 </div>
 
                 <div class="input-wrapper mb-6">
@@ -131,52 +129,53 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        const targetSelect = document.getElementById('uatTargetSelect');
+        const targetMount = document.getElementById('uatTargetSelect');
         const generateBtn = document.getElementById('generateUatBtn');
         const statusMsg = document.getElementById('uatStatusMessage');
         const tableBody = document.getElementById('uatTableBody');
         const tableName = document.getElementById('uatTableName');
         const exportBtn = document.getElementById('exportXlsxBtn');
-        
+
         let currentTargetName = "UAT_Script";
+        let uatTargets = null;
 
         async function loadTargets() {
             try {
                 const response = await fetch('/api/ringex_uat/entities');
                 if (response.status === 401) {
-                    targetSelect.innerHTML = '<option value="">Not connected — reconnect on the Authentication tab</option>';
+                    targetMount.innerHTML = '<span class="text-rose-500">Not connected — reconnect on the Authentication tab.</span>';
                     return;
                 }
                 const data = await response.json();
 
                 if (data.success) {
-                    targetSelect.innerHTML = '';
-                    data.entities.forEach(ext => {
-                        const opt = document.createElement('option');
-                        opt.value = ext.id;
-                        opt.dataset.name = ext.name;
-                        opt.dataset.number = ext.extensionNumber;
-                        opt.dataset.type = ext.type; 
-                        opt.textContent = `${ext.name} (Ext ${ext.extensionNumber}) - ${ext.type}`;
-                        targetSelect.appendChild(opt);
+                    uatTargets = CheckboxSelect.create(targetMount, {
+                        items: data.entities,
+                        getValue: e => String(e.id),
+                        getLabel: e => e.name,
+                        getSub: e => `(Ext ${e.extensionNumber}) · ${e.type}`,
+                        getFilter: e => e.site || 'Main Site',
+                        filterLabel: 'Sites',
+                        searchable: true,
+                        searchPlaceholder: 'Search call flows…',
+                        listHeightClass: 'h-64'
                     });
                 } else {
-                    targetSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                    targetMount.innerHTML = `<span class="text-rose-500">Error: ${data.error}</span>`;
                 }
             } catch (err) {
-                targetSelect.innerHTML = `<option value="">Failed to load data.</option>`;
+                targetMount.innerHTML = `<span class="text-rose-500">Failed to load data.</span>`;
             }
         }
 
         generateBtn.addEventListener('click', async () => {
             const suites = Array.from(document.querySelectorAll('.uat-suite:checked')).map(cb => cb.value);
             const complexity = document.querySelector('input[name="uatComplexity"]:checked')?.value || 'complex';
-            const selectedOpts = Array.from(targetSelect.selectedOptions).filter(o => o.value);
-            const targets = selectedOpts.map(o => ({
-                id: o.value,
-                name: o.dataset.name,
-                number: o.dataset.number,
-                type: o.dataset.type
+            const targets = (uatTargets ? uatTargets.getSelectedItems() : []).map(o => ({
+                id: o.id,
+                name: o.name,
+                number: o.extensionNumber,
+                type: o.type
             }));
 
             if (targets.length === 0 && suites.length === 0) {
