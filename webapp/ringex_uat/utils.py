@@ -545,7 +545,7 @@ class UATGenerator:
         # ---------------------------------------------------------
         self.add_case("Global Validation", "Voicemail Deposit & Delivery", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message. Check the designated target's inbox.", "The configured Voicemail greeting plays. The voicemail audio file is recorded without truncating and delivered accurately.")
         self.add_case("Global Validation", "Voicemail Full / Disabled Fallback", "Route a call to a mailbox that is full (or has voicemail disabled). Let the call reach the voicemail step.", "The system does not error or drop silently. It follows the configured fallback (e.g. plays a 'mailbox full' greeting and disconnects, or executes the missed-call overflow).", level='complex')
-        self.add_case("Global Validation", "Call Logs Generation", "Log into the RingCentral Admin Portal and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result across the entire traced journey.")
+        self.add_case("Global Validation", "Call Logs Generation", "Log into the RingCentral Admin Portal (Go to: https://service.ringcentral.com) and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result across the entire traced journey.")
 
 
 # =============================================================================
