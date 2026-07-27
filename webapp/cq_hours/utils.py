@@ -19,7 +19,8 @@ CQ_DEBUG = str(os.environ.get('CQ_DEBUG', '')).lower() in ('1', 'true', 'yes', '
 
 
 def _debug_dump(logs, label, payload=None, err=None):
-    """Append a payload/error snapshot to a row's log list when CQ_DEBUG is on."""
+    """Append a payload/error snapshot to a row's log list when CQ_DEBUG is on, and
+    mirror it to stdout so it also lands in the Cloud Run logs."""
     if not CQ_DEBUG:
         return
     parts = [f"[DEBUG] {label}"]
@@ -30,7 +31,9 @@ def _debug_dump(logs, label, payload=None, err=None):
             parts.append("payload=<unserializable>")
     if err is not None:
         parts.append(f"raw_error={str(err)[:1200]}")
-    logs.append(" | ".join(parts))
+    line = " | ".join(parts)
+    logs.append(line)
+    print(f"[CQ_DEBUG] {line}", flush=True)
 
 DAY_ABBR = {
     "mon": "monday", "tue": "tuesday", "wed": "wednesday",
@@ -1050,9 +1053,20 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                 
                 new_val = val.lower().strip()
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
-                
-                if new_val in ['off', 'none', 'disable', 'disabled', 'default']:
-                    pass 
+
+                if new_val in ['off', 'none', 'disable', 'disabled']:
+                    # "Off" is NOT the same as omitting the greeting. Omitting a greeting type
+                    # makes RingCentral fall back to the Default greeting (still enabled), which
+                    # is why Greeting=Off looked ignored in the portal. Off is represented by the
+                    # greeting type's "None" preset, so set it explicitly.
+                    none_id = preset_dict.get(dict_type, {}).get('none')
+                    if none_id:
+                        rule['greetings'].append({"type": slot_type, "preset": {"id": str(none_id)}})
+                    else:
+                        logs.append(f"{col_name}: no 'None' preset available to turn it Off; left unchanged.")
+                        _debug_dump(logs, f'No None/Off preset in dictionary for {dict_type}')
+                elif new_val == 'default':
+                    pass  # Omitting the greeting type reverts it to the Default greeting.
                 else:
                     matched_id = preset_dict.get(dict_type, {}).get(new_val)
                     if not matched_id:
