@@ -21,7 +21,6 @@ live article so the engineer can confirm the current values before delivery.
 """
 
 import html
-import urllib.parse
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
@@ -34,18 +33,18 @@ ADMIN_PORTAL = "https://service.ringcentral.com/"
 APP_GALLERY = "https://www.ringcentral.com/apps/"
 MS_DIRECT_ROUTING_PLAN = "https://learn.microsoft.com/en-us/microsoftteams/direct-routing-plan"
 
-# Verified RingCentral KB article URLs (confirmed via support-site search).
+# Verified RingCentral KB article URLs (confirmed on the RingCentral support site).
 KB_SSO_ENTRA = "https://support.ringcentral.com/article-v2/Using-Microsoft-Entra-ID-for-single-sign-on.html?brand=RingCentral&product=RingEX&language=en_US"
 KB_SCIM_ENTRA = "https://support.ringcentral.com/article-v2/Using-Azure-Active-Directory-for-automatic-user-provisioning.html?brand=RingCentral&product=RingEX&language=en_US"
 KB_GOOGLE_PROVISIONING = "https://support.ringcentral.com/article-v2/10587-G-Suite-Auto-User-Provisioning.html?brand=RC_US&product=RingEX&language=en_US"
-
-
-def support_search(query):
-    """Build a RingCentral support-site search deep-link (the site's own
-    /search.html?q= form). Used where a verified direct KB article URL is not
-    yet confirmed, so the link reliably lands on the current article instead of
-    a guessed slug that could 404."""
-    return "https://support.ringcentral.com/search.html?q=" + urllib.parse.quote(query)
+KB_MST_DIRECT_ROUTING = "https://support.ringcentral.com/article-v2/Setting-up-RingCentral-Cloud-PBX-for-Microsoft-Teams.html?brand=RingCentral&product=RingEX&language=en_US"
+KB_MST_EMBEDDED = "https://support.ringcentral.com/article-v2/Install-RingCentral-for-Teams-2-0-from-Microsoft-Admin-Center.html?brand=RingCentral&product=RingEX&language=en_US"
+KB_CRM_SALESFORCE = "https://support.ringcentral.com/article-v2/10676-ringcentral-salesforce-app-install.html?brand=RC_US&product=RingEX&language=en_US"
+KB_CRM_DYNAMICS = "https://support.ringcentral.com/article-v2/9579.html?brand=RC_US&product=RingEX&language=en_US"
+KB_CRM_SERVICENOW = "https://support.ringcentral.com/article-v2/RingCentral-ServiceNow-Overview.html?brand=RC_US&product=RingEX&language=en_US"
+KB_CRM_ZENDESK = "https://support.ringcentral.com/article-v2/Connecting-your-RingCentral-account-to-Zendesk.html?brand=RingCentral&product=RingEX&language=en_US"
+KB_CRM_HUBSPOT = "https://support.ringcentral.com/article-v2/Installing-RingCentral-for-Hubspot.html?brand=RingCentral&product=RingEX&language=en_US"
+KB_CRM_GOOGLE = "https://support.ringcentral.com/article-v2/Using-the-RingCentral-for-Google-Chrome-extension.html?brand=RingCentral&product=RingEX&language=en_US"
 
 # ---------------------------------------------------------------------------
 # SECTION 1 — Standard requirements (always included in every document)
@@ -488,9 +487,9 @@ INTEGRATIONS = {
     "mst_direct_routing": {
         "label": "Microsoft Teams — Direct Routing",
         "portal_path": "Admin Portal → Phone System → Microsoft Teams (Cloud PBX for Teams)",
-        "url": support_search("Cloud PBX for Microsoft Teams direct routing"),
-        "link_label": "RingCentral support: Cloud PBX for Microsoft Teams",
-        "url_verified": False,
+        "url": KB_MST_DIRECT_ROUTING,
+        "link_label": "KB: Setting up RingCentral Cloud PBX for Microsoft Teams",
+        "url_verified": True,
         "prerequisites": [
             "Microsoft 365 tenant with Teams Phone (Phone System) licences.",
             "Global admin on the Microsoft 365 tenant + RingCentral admin.",
@@ -501,9 +500,9 @@ INTEGRATIONS = {
     "mst_embedded": {
         "label": "Microsoft Teams — Embedded App (RingCentral for Teams)",
         "portal_path": "Microsoft Teams Admin Center → Manage apps → RingCentral",
-        "url": support_search("RingCentral for Microsoft Teams embedded app"),
-        "link_label": "RingCentral support: RingCentral for Microsoft Teams",
-        "url_verified": False,
+        "url": KB_MST_EMBEDDED,
+        "link_label": "KB: Install RingCentral for Teams 2.0 from Microsoft Admin Center",
+        "url_verified": True,
         "prerequisites": [
             "Teams admin able to approve/allow third-party apps.",
             "RingEX licences for the users.",
@@ -513,54 +512,54 @@ INTEGRATIONS = {
     "crm_salesforce": {
         "label": "CRM — Salesforce",
         "portal_path": "Salesforce AppExchange → RingCentral for Salesforce / RingCX for Salesforce",
-        "url": support_search("RingCentral for Salesforce"),
-        "link_label": "RingCentral support: RingCentral for Salesforce",
-        "url_verified": False,
+        "url": KB_CRM_SALESFORCE,
+        "link_label": "KB: RingCentral for Salesforce App — Install",
+        "url_verified": True,
         "prerequisites": ["Salesforce admin (System Administrator profile).", "RingCentral edition supporting CRM integration."],
         "notes": "Install the managed package from AppExchange, add the CTI softphone to the call center, assign users, and configure click-to-dial / screen-pop.",
     },
     "crm_dynamics": {
         "label": "CRM — Microsoft Dynamics 365",
         "portal_path": "RingCentral App Gallery → RingCentral for Microsoft Dynamics 365",
-        "url": support_search("RingCentral for Microsoft Dynamics 365"),
-        "link_label": "RingCentral support: RingCentral for Dynamics 365",
-        "url_verified": False,
+        "url": KB_CRM_DYNAMICS,
+        "link_label": "KB: Setting up RingCentral for Microsoft Dynamics 365",
+        "url_verified": True,
         "prerequisites": ["Dynamics 365 admin access.", "RingCentral CRM-capable licences."],
         "notes": "Deploy the RingCentral for Dynamics 365 solution, enable the embedded softphone, and map call logging to the relevant Dynamics entities.",
     },
     "crm_servicenow": {
         "label": "CRM — ServiceNow",
         "portal_path": "ServiceNow Store → RingCentral for ServiceNow",
-        "url": support_search("RingCentral for ServiceNow"),
-        "link_label": "RingCentral support: RingCentral for ServiceNow",
-        "url_verified": False,
+        "url": KB_CRM_SERVICENOW,
+        "link_label": "KB: RingCentral for ServiceNow Overview",
+        "url_verified": True,
         "prerequisites": ["ServiceNow admin (admin role).", "RingCentral CRM-capable licences."],
         "notes": "Install from the ServiceNow Store, configure the OpenFrame/CTI phone, and enable incident/case screen-pop and click-to-dial.",
     },
     "crm_zendesk": {
         "label": "CRM — Zendesk",
         "portal_path": "Zendesk Marketplace → RingCentral for Zendesk",
-        "url": support_search("RingCentral for Zendesk"),
-        "link_label": "RingCentral support: RingCentral for Zendesk",
-        "url_verified": False,
+        "url": KB_CRM_ZENDESK,
+        "link_label": "KB: Connecting your RingCentral account to Zendesk",
+        "url_verified": True,
         "prerequisites": ["Zendesk admin access.", "RingCentral CRM-capable licences."],
         "notes": "Add the RingCentral app from the Zendesk Marketplace, then enable click-to-dial and automatic ticket creation / screen-pop.",
     },
     "crm_hubspot": {
         "label": "CRM — HubSpot",
         "portal_path": "HubSpot Marketplace → RingCentral for HubSpot",
-        "url": support_search("RingCentral for HubSpot"),
-        "link_label": "RingCentral support: RingCentral for HubSpot",
-        "url_verified": False,
+        "url": KB_CRM_HUBSPOT,
+        "link_label": "KB: Installing RingCentral for HubSpot",
+        "url_verified": True,
         "prerequisites": ["HubSpot admin (Super Admin).", "RingCentral CRM-capable licences."],
         "notes": "Connect the RingCentral app from the HubSpot Marketplace and enable calling, click-to-dial and call logging against contacts.",
     },
     "crm_google": {
         "label": "Google Workspace",
         "portal_path": "RingCentral App Gallery → RingCentral for Google Workspace",
-        "url": support_search("RingCentral for Google Workspace"),
-        "link_label": "RingCentral support: RingCentral for Google Workspace",
-        "url_verified": False,
+        "url": KB_CRM_GOOGLE,
+        "link_label": "KB: Using the RingCentral for Google Chrome extension",
+        "url_verified": True,
         "prerequisites": ["Google Workspace admin.", "RingCentral licences."],
         "notes": "Install the RingCentral extension/add-on, authorise Google, and enable click-to-dial and calendar/meeting scheduling.",
     },
