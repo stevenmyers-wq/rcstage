@@ -11,18 +11,69 @@
         <div class="lg:col-span-1 flex flex-col gap-4">
             <div class="card !p-6">
                 <h3 class="text-heading text-lg mb-6 border-b border-slate-100 dark:border-slate-800 pb-3">Target Profile</h3>
-                
+
                 <div class="input-wrapper mb-6">
-                    <label for="uatTargetSelect" class="input-label">Routing Scope</label>
+                    <label for="uatTargetSelect" class="input-label">Routing Scope <span class="font-normal text-slate-400 dark:text-slate-500">(optional)</span></label>
                     <select id="uatTargetSelect" class="input-field">
                         <option value="">Loading routing targets...</option>
                     </select>
                 </div>
 
+                <div class="input-wrapper mb-6">
+                    <label class="input-label">Call Flow Depth</label>
+                    <div class="flex gap-2" id="uatComplexityToggle">
+                        <label class="flex-1 cursor-pointer">
+                            <input type="radio" name="uatComplexity" value="complex" class="peer sr-only" checked>
+                            <span class="block text-center text-sm font-semibold py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors">Complex</span>
+                        </label>
+                        <label class="flex-1 cursor-pointer">
+                            <input type="radio" name="uatComplexity" value="standard" class="peer sr-only">
+                            <span class="block text-center text-sm font-semibold py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-colors">Standard</span>
+                        </label>
+                    </div>
+                    <p class="mt-2 text-xs text-slate-400 dark:text-slate-500 leading-snug">Complex traces every routing edge, timer, and boundary. Standard keeps happy-path routing plus ring timers and audio.</p>
+                </div>
+
+                <div class="mb-6">
+                    <label class="input-label">Additional Test Suites</label>
+                    <div class="space-y-2 mt-2">
+                        <label class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input type="checkbox" class="uat-suite w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="user">
+                            User Tests
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input type="checkbox" class="uat-suite w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="device">
+                            Device Tests (Hardphone)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="input-label">Configuration &amp; Integrations</label>
+                    <div class="space-y-2 mt-2">
+                        <label class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input type="checkbox" class="uat-suite w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="scim">
+                            SCIM Provisioning
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input type="checkbox" class="uat-suite w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="teams_direct_routing">
+                            MS Teams Direct Routing
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input type="checkbox" class="uat-suite w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="teams_embedded">
+                            MS Teams Embedded App
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input type="checkbox" class="uat-suite w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="sso">
+                            Single Sign-On (SSO)
+                        </label>
+                    </div>
+                </div>
+
                 <button id="generateUatBtn" class="btn-primary w-full disabled:opacity-50">
                     Generate UAT Script
                 </button>
-                
+
                 <div id="uatStatusMessage" class="mt-4 text-sm font-medium hidden"></div>
             </div>
         </div>
@@ -53,7 +104,7 @@
                         </thead>
                         <tbody id="uatTableBody" class="bg-white dark:bg-slate-900/40">
                             <tr>
-                                <td colspan="7" class="p-20 text-center text-slate-400 dark:text-slate-500 font-medium italic">Select a Call Queue or IVR from the left panel to output structured UAT steps.</td>
+                                <td colspan="7" class="p-20 text-center text-slate-400 dark:text-slate-500 font-medium italic">Select a Call Queue or IVR, and/or tick one or more test suites on the left, to output structured UAT steps.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -79,9 +130,12 @@
         async function loadTargets() {
             try {
                 const response = await fetch('/api/ringex_uat/entities');
-                if (response.status === 401) return; 
+                if (response.status === 401) {
+                    targetSelect.innerHTML = '<option value="">Not connected — reconnect on the Authentication tab</option>';
+                    return;
+                }
                 const data = await response.json();
-                
+
                 if (data.success) {
                     targetSelect.innerHTML = '<option value="">-- Select Call Flow Target --</option>';
                     data.entities.forEach(ext => {
@@ -102,19 +156,25 @@
         }
 
         generateBtn.addEventListener('click', async () => {
-            if (!targetSelect.value) {
-                showStatus('Please select a target first.', 'text-rose-600 dark:text-rose-400');
+            const suites = Array.from(document.querySelectorAll('.uat-suite:checked')).map(cb => cb.value);
+            const complexity = document.querySelector('input[name="uatComplexity"]:checked')?.value || 'complex';
+            const selectedOpt = targetSelect.value ? targetSelect.options[targetSelect.selectedIndex] : null;
+
+            if (!selectedOpt && suites.length === 0) {
+                showStatus('Select a routing target or at least one test suite.', 'text-rose-600 dark:text-rose-400');
                 return;
             }
 
-            const selectedOpt = targetSelect.options[targetSelect.selectedIndex];
-            currentTargetName = selectedOpt.dataset.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-            
+            const targetName = selectedOpt ? selectedOpt.dataset.name : 'Suite Tests';
+            currentTargetName = targetName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
             const payload = {
-                extension_id: selectedOpt.value,
-                extension_name: selectedOpt.dataset.name,
-                extension_number: selectedOpt.dataset.number,
-                extension_type: selectedOpt.dataset.type
+                extension_id: selectedOpt ? selectedOpt.value : null,
+                extension_name: selectedOpt ? selectedOpt.dataset.name : null,
+                extension_number: selectedOpt ? selectedOpt.dataset.number : null,
+                extension_type: selectedOpt ? selectedOpt.dataset.type : null,
+                complexity: complexity,
+                suites: suites
             };
 
             generateBtn.disabled = true;
@@ -127,10 +187,17 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const data = await res.json();
+
+                if (response.status === 401) {
+                    showStatus('Session expired. Please reconnect on the Authentication tab.', 'text-rose-500');
+                    tableBody.innerHTML = `<tr><td colspan="7" class="p-16 text-center text-rose-500 font-bold bg-rose-50 dark:bg-rose-900/10">Not authenticated. Reconnect RingCentral and try again.</td></tr>`;
+                    return;
+                }
+
+                const data = await response.json();
 
                 if (data.success) {
-                    renderTable(data.cases, payload.extension_name);
+                    renderTable(data.cases, targetName);
                     statusMsg.classList.add('hidden');
                 } else {
                     showStatus(`Error: ${data.error}`, 'text-rose-500');

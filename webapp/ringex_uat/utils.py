@@ -30,7 +30,9 @@ def get_testable_extensions():
 class UATGenerator:
     """Forensic, data-driven crawler that translates raw API JSON directly into holistic UAT cases."""
     
-    def __init__(self, start_ext_id, start_ext_name, start_ext_number, start_ext_type):
+    def __init__(self, start_ext_id, start_ext_name, start_ext_number, start_ext_type, complexity='complex'):
+        # 'complex' emits every case; 'standard' trims to happy-path routing plus ring timers and audio.
+        self.complexity = complexity if complexity in ('standard', 'complex') else 'complex'
         self.ext_map = self._build_ext_map()
         self.phone_numbers_map = self._build_phone_numbers_map()
         self.queue_to_process = [{
@@ -78,8 +80,10 @@ class UATGenerator:
                         num_map[ext_id].append(phone_number)
         return num_map
 
-    def add_case(self, category, scenario, action, expected):
-        """Safely appends exactly 4 arguments to the test case list."""
+    def add_case(self, category, scenario, action, expected, level='standard'):
+        """Appends a test case. Cases tagged level='complex' are skipped in Standard mode."""
+        if level == 'complex' and self.complexity == 'standard':
+            return
         self.test_cases.append({
             "test_id": f"UAT-{self.counter:03d}",
             "category": category,
@@ -376,6 +380,9 @@ class UATGenerator:
             if not has_after_hours and bh_str != "24/7 (Always Open)":
                  self.add_case(f"{prefix}2. Schedule Boundaries", "After Hours", f"{path_str}Initiate a call OUTSIDE of Business Hours: [{bh_str}].", f"Follows default account After Hours logic.")
 
+            if cpath == "Primary Flow":
+                self.add_case(f"{prefix}2. Schedule Boundaries", "Holiday / Special Schedule Override", f"On a configured holiday or special-hours date, place a call that would normally hit Business Hours: [{bh_str}].", "The holiday / special schedule takes precedence over the normal Business Hours and After Hours logic, and the call routes to the holiday destination.", level='complex')
+
             # ---------------------------------------------------------
             # 4. CALL QUEUE EXHAUSTIVE TESTING
             # ---------------------------------------------------------
@@ -403,7 +410,7 @@ class UATGenerator:
                     self.add_case(f"{prefix}3. Caller Experience", "Interrupt Audio (When Music Ends)", f"Remain on hold in {cname} until the connecting audio track finishes.", "When the audio track ends, the interrupt prompt plays before looping.")
 
                 # --- 4. Agent Experience ---
-                self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-In", f"Agent toggles 'Accept Queue Calls' ON in the RingEX App. Place a test call.", f"Agent's device rings. The Queue Name '{cname}' is prepended to the Caller ID.")
+                self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-In", f"Agent toggles 'Accept Queue Calls' ON in the RingEX App. Place a test call.", f"Agent's device rings. The Queue Name '{cname}' is prepended to the Caller ID.", level='complex')
                 
                 if str(tmode).lower() == 'simultaneous':
                     opt_out_exp = "Agent's device does NOT ring. The call rings other available members."
@@ -412,11 +419,11 @@ class UATGenerator:
                     opt_out_exp = "Agent's device does NOT ring. The call seamlessly hunts to the next available agent."
                     decline_exp = "Ringing stops for that agent immediately. Call hunts to the next available agent without dropping the caller."
                 
-                self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-Out / DND", f"Agent toggles 'Accept Queue Calls' OFF. Place a test call.", opt_out_exp)
-                self.add_case(f"{prefix}4. Agent Experience", "Active Call Decline", f"While the queue call is ringing an agent, the agent actively clicks 'Decline'.", decline_exp)
-                
+                self.add_case(f"{prefix}4. Agent Experience", "Queue Opt-Out / DND", f"Agent toggles 'Accept Queue Calls' OFF. Place a test call.", opt_out_exp, level='complex')
+                self.add_case(f"{prefix}4. Agent Experience", "Active Call Decline", f"While the queue call is ringing an agent, the agent actively clicks 'Decline'.", decline_exp, level='complex')
+
                 if wrap_up and int(wrap_up) > 0:
-                    self.add_case(f"{prefix}4. Agent Experience", f"Wrap-Up / ACW Timer ({wrap_up}s)", f"Agent answers a queue call and hangs up. Immediately place another call.", f"Agent enters 'Wrap-Up' status and does NOT receive the second call until the {wrap_up}s timer expires.")
+                    self.add_case(f"{prefix}4. Agent Experience", f"Wrap-Up / ACW Timer ({wrap_up}s)", f"Agent answers a queue call and hangs up. Immediately place another call.", f"Agent enters 'Wrap-Up' status and does NOT receive the second call until the {wrap_up}s timer expires.", level='complex')
 
                 # --- 5. Routing & Distribution ---
                 # Check for explicit fixed order agent array
@@ -437,50 +444,52 @@ class UATGenerator:
                     self.add_case(f"{prefix}5. Routing & Distribution", f"Agent Ring Timeout ({ag_timeout}s)", f"Targeted agent lets the call ring without answering for exactly {ag_timeout} seconds.", f"The {ag_timeout}s timer expires. The call drops from Agent 1 and begins ringing the next available agent.")
 
                 # --- 6. Call Handling ---
-                self.add_case(f"{prefix}6. Call Handling", "Call Hold (Hold Music)", "Agent answers the queue call and places the caller on hold using the RingEX App.", f"The caller hears the [{hold_music_info['desc']}] hold music. The call can be successfully retrieved by the agent.")
-                self.add_case(f"{prefix}6. Call Handling", "Warm Transfer", "Agent answers, initiates a Warm Transfer to an internal extension, consults, and completes.", "The caller is successfully connected to the secondary extension with two-way audio.")
-                self.add_case(f"{prefix}6. Call Handling", "Blind Transfer", "Agent answers and initiates a Blind Transfer to an internal extension.", "The agent is immediately released. The caller is transferred and hears ringing to the secondary extension.")
-                self.add_case(f"{prefix}6. Call Handling", "Call Park", "Agent answers and Parks the call to a Park Location.", f"The caller is parked and hears the [{hold_music_info['desc']}] hold music. The call can be retrieved by dialing the park code.")
+                self.add_case(f"{prefix}6. Call Handling", "Call Hold (Hold Music)", "Agent answers the queue call and places the caller on hold using the RingEX App.", f"The caller hears the [{hold_music_info['desc']}] hold music. The call can be successfully retrieved by the agent.", level='complex')
+                self.add_case(f"{prefix}6. Call Handling", "Warm Transfer", "Agent answers, initiates a Warm Transfer to an internal extension, consults, and completes.", "The caller is successfully connected to the secondary extension with two-way audio.", level='complex')
+                self.add_case(f"{prefix}6. Call Handling", "Blind Transfer", "Agent answers and initiates a Blind Transfer to an internal extension.", "The agent is immediately released. The caller is transferred and hears ringing to the secondary extension.", level='complex')
+                self.add_case(f"{prefix}6. Call Handling", "Call Park", "Agent answers and Parks the call to a Park Location.", f"The caller is parked and hears the [{hold_music_info['desc']}] hold music. The call can be retrieved by dialing the park code.", level='complex')
 
                 # --- 7. Boundaries & Overflows ---
                 no_ans_act = queue_settings.get('noAnswerAction')
                 if no_ans_act:
                     if no_ans_act in ['WaitPrimaryMembers', 'WaitPrimaryAndOverflowMembers']:
-                        self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call remains in queue to continue waiting/hunting.")
+                        self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call remains in queue to continue waiting/hunting.", level='complex')
                     else:
                         na_name, na_id = self._resolve_target(queue_settings, no_ans_act, cname)
-                        self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call executes overflow -> {na_name}.")
+                        self.add_case(f"{prefix}7. Boundaries & Overflows", f"No Answer Action ({no_ans_act})", f"Ensure agents are available but let the call ring without being answered.", f"Agents stop ringing. Call executes overflow -> {na_name}.", level='complex')
                         if na_id and self.ext_map.get(na_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                             self.queue_to_process.append({"id": na_id, "name": self.ext_map[na_id]['name'], "ext": self.ext_map[na_id]['ext'], "type": self.ext_map[na_id]['type'], "path": f"No Answer Overflow"})
 
                 h_act = queue_settings.get('holdTimeExpirationAction')
-                h_name, h_id = self._resolve_target(queue_settings, h_act, cname) 
-                
+                h_name, h_id = self._resolve_target(queue_settings, h_act, cname)
+
                 m_act = queue_settings.get('maxCallersAction')
                 m_name, m_id = self._resolve_target(queue_settings, m_act, cname)
 
-                self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero Agents Logged In", f"Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", f"Call bypasses queue ringing and immediately executes overflow -> {h_name}.")
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero Agents Logged In", f"Ensure ALL assigned agents are Logged Out or on DND. Initiate a call.", f"Call bypasses queue ringing and immediately executes overflow -> {h_name}.", level='complex')
 
                 if hold_time and int(hold_time) > 0:
                     h_mins = int(hold_time) // 60 if int(hold_time) >= 60 else int(hold_time)
                     lbl = f"{h_mins} minutes" if int(hold_time) >= 60 else f"{hold_time} seconds"
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires (Note: time calculated after any introductory audio finishes). Call is forcefully removed from the queue and routes to -> {h_name}.")
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires (Note: time calculated after any introductory audio finishes). Call is forcefully removed from the queue and routes to -> {h_name}.", level='complex')
                     if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": f"Wait Time Overflow"})
                 else:
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Unlimited Wait Time", f"Remain on hold in {cname} for over 10 minutes.", "No maximum wait time limit configured. Call remains in queue indefinitely.")
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Unlimited Wait Time", f"Remain on hold in {cname} for over 10 minutes.", "No maximum wait time limit configured. Call remains in queue indefinitely.", level='complex')
 
                 if max_callers and int(max_callers) > 0:
                     call_target = dids[0] if dids else f"extension {cext}"
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Callers Limit ({max_callers})", f"Simultaneously call {call_target} with {max_callers} calls. Dial call #{int(max_callers) + 1}.", f"The final call breaches the capacity limit. It is forwarded and executes -> {m_name}.")
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Callers Limit ({max_callers})", f"Simultaneously call {call_target} with {max_callers} calls. Dial call #{int(max_callers) + 1}.", f"The final call breaches the capacity limit. It is forwarded and executes -> {m_name}.", level='complex')
                     if m_id and self.ext_map.get(m_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": m_id, "name": self.ext_map[m_id]['name'], "ext": self.ext_map[m_id]['ext'], "type": self.ext_map[m_id]['type'], "path": f"Max Callers Overflow"})
 
                 vmail = safe_dict(queue_settings, 'voicemail')
                 if vmail or queue_settings.get('transfer'):
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out (DTMF '0')", f"While listening to {cname} hold music, press '0' on the dialpad.", f"Call gracefully escapes the queue and routes to the applicable '0' destination (e.g. Voicemail or Operator).")
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out (DTMF '0')", f"While listening to {cname} hold music, press '0' on the dialpad.", f"Call gracefully escapes the queue and routes to the applicable '0' destination (e.g. Voicemail or Operator).", level='complex')
                 else:
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out Disabled", f"While listening to {cname} hold music, press '0' on the dialpad.", "Input is safely ignored. Call remains in the queue.")
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Zero-Out Disabled", f"While listening to {cname} hold music, press '0' on the dialpad.", "Input is safely ignored. Call remains in the queue.", level='complex')
+
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Caller Abandons in Queue", f"While waiting on hold in {cname} (before any agent answers), the caller hangs up.", "The caller is removed from the queue immediately, agents stop being presented with that call, and no agent is left ringing a dead call. The vacated position is freed for the next caller.", level='complex')
 
             # ---------------------------------------------------------
             # 5. IVR MENU TESTING
@@ -499,8 +508,9 @@ class UATGenerator:
                     ptext = f"[Preset/Audio] {prompt.get('text', 'Configured Audio File')}"
                     
                 self.add_case(f"{prefix}3. Caller Experience", "Greeting Playback & Script", f"Dial {cname}.", f"The IVR prompt {ptext} plays cleanly. Wording matches the officially approved script.")
-                self.add_case(f"{prefix}3. Caller Experience", "Barge-In (Interruptibility)", f"While the greeting is actively playing, press a valid menu key.", "The IVR registers the DTMF tone immediately and routes the call without forcing the caller to listen to the full message.")
-                
+                self.add_case(f"{prefix}3. Caller Experience", "Barge-In (Interruptibility)", f"While the greeting is actively playing, press a valid menu key.", "The IVR registers the DTMF tone immediately and routes the call without forcing the caller to listen to the full message.", level='complex')
+                self.add_case(f"{prefix}3. Caller Experience", "DTMF Reliability (Cross-Network)", f"Dial {cname} from a mobile, a PSTN landline, and a softphone. On each, press the same valid menu key.", "The DTMF tone is registered reliably on every originating network and routes to the identical destination each time, with no dropped or double digits.", level='complex')
+
                 actions = safe_list(ivr_info, 'actions')
                 if actions:
                     for act in actions:
@@ -516,19 +526,140 @@ class UATGenerator:
                         if tid and self.ext_map.get(tid, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                             self.queue_to_process.append({"id": tid, "name": self.ext_map[tid]['name'], "ext": self.ext_map[tid]['ext'], "type": self.ext_map[tid]['type'], "path": f"Key '{key}'"})
                 
-                self.add_case(f"{prefix}7. Boundaries & Overflows", "Dial-By-Extension Verification", f"While in the IVR, enter a known internal user's 3 or 4-digit extension.", "If general extension dialing is permitted, the IVR intercepts the string and transfers the call to the user.")
-                self.add_case(f"{prefix}7. Boundaries & Overflows", "Invalid Key Press", f"Press an unassigned key (e.g., '9' or '#').", "System plays an 'Invalid entry' error prompt and seamlessly replays the main menu.")
-                self.add_case(f"{prefix}7. Boundaries & Overflows", "Timeout (No Input)", f"Listen to the entire prompt and provide no DTMF input.", "System times out, replays the menu, and eventually executes the default timeout routing.")
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Dial-By-Extension Verification", f"While in the IVR, enter a known internal user's 3 or 4-digit extension.", "If general extension dialing is permitted, the IVR intercepts the string and transfers the call to the user.", level='complex')
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Invalid Key Press", f"Press an unassigned key (e.g., '9' or '#').", "System plays an 'Invalid entry' error prompt and seamlessly replays the main menu.", level='complex')
+                self.add_case(f"{prefix}7. Boundaries & Overflows", "Timeout (No Input)", f"Listen to the entire prompt and provide no DTMF input.", "System times out, replays the menu, and eventually executes the default timeout routing.", level='complex')
 
         # ---------------------------------------------------------
         # GLOBAL ACCOUNT CHECKS
         # ---------------------------------------------------------
         self.add_case("Global Validation", "Voicemail Deposit & Delivery", "Trigger any tested routing scenario that routes to Voicemail. Leave a test message. Check the designated target's inbox.", "The configured Voicemail greeting plays. The voicemail audio file is recorded without truncating and delivered accurately.")
+        self.add_case("Global Validation", "Voicemail Full / Disabled Fallback", "Route a call to a mailbox that is full (or has voicemail disabled). Let the call reach the voicemail step.", "The system does not error or drop silently. It follows the configured fallback (e.g. plays a 'mailbox full' greeting and disconnects, or executes the missed-call overflow).", level='complex')
         self.add_case("Global Validation", "Call Logs Generation", "Log into the RingCentral Admin Portal and navigate to Analytics > Call Logs.", "All test calls are accurately reflected, showing the correct originating Caller ID, target extensions, duration, and final routing result across the entire traced journey.")
 
 
-def generate_uat_cases(extension_id, extension_name, extension_number, extension_type):
-    """Entry point for the UI router."""
-    generator = UATGenerator(extension_id, extension_name, extension_number, extension_type)
-    generator.process()
-    return generator.test_cases
+# =============================================================================
+# STANDALONE SUITE CHECKLISTS (tenant-level, independent of a routing target)
+# =============================================================================
+
+def _user_test_cases():
+    cat = "User Tests"
+    cases = [
+        ("Inbound to Direct Number & Extension", "Dial the user's direct DID and, separately, their extension from another phone.", "Both calls ring the user's app and all provisioned devices, presenting the correct caller ID."),
+        ("Outbound Call", "Place an outbound external call from the user's app or device.", "Call connects with two-way audio and presents the correct outbound caller ID / company number."),
+        ("Voicemail Deposit & Retrieval", "Leave the user a voicemail, then retrieve it from the app and the message-waiting indicator.", "The personal greeting plays, the message is recorded and delivered, and the MWI clears once played."),
+        ("Call Forwarding", "Enable call forwarding to another number, then place an inbound call to the user.", "The inbound call follows the forwarding rule to the configured destination."),
+        ("Do Not Disturb / Presence", "Set the user to DND, place a test call, then check presence on a colleague's BLF/monitored key.", "Inbound calls follow the busy/voicemail path and the user's presence shows as DND/busy to others."),
+        ("Simultaneous Ring (Multi-Device)", "With multiple devices provisioned (app, desk phone), place a call to the user.", "All devices ring together; answering on one immediately stops the others."),
+        ("Warm & Blind Transfer", "As the user, answer a call and perform a warm transfer, then repeat with a blind transfer.", "Warm transfer connects after consult; blind transfer releases the user immediately and connects the caller."),
+        ("Caller ID Name (CNAM)", "Place inbound and outbound calls and inspect the displayed name on both ends.", "The correct caller ID name is presented for internal and external calls."),
+    ]
+    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+
+
+def _device_test_cases():
+    cat = "Device Tests (Hardphone)"
+    cases = [
+        ("Provisioning & Registration", "Factory-reset or reboot the hardphone and allow it to provision.", "The phone provisions automatically, registers (SIP registered), and populates the correct line keys and extension label."),
+        ("Inbound Call & Display", "Place an inbound call to the phone's extension/DID.", "The phone rings, shows the correct caller ID on the display, and can be answered via handset, speaker, and headset."),
+        ("Outbound Call & Audio", "Dial an external number from the keypad.", "The call connects with clear two-way audio and no echo or one-way audio on handset, speaker, and headset."),
+        ("Hold / Resume (Hard Key)", "Answer a call and use the phone's Hold key, then resume.", "The caller is held (hears hold music) and is cleanly resumed with two-way audio."),
+        ("Attended & Blind Transfer (Hard Keys)", "Use the phone's Transfer key for an attended transfer, then a blind transfer.", "Both transfer types complete correctly using the device keys."),
+        ("BLF / Presence Keys", "Observe a monitored extension's BLF key while that user is idle, ringing, and on a call.", "The BLF key reflects the correct status and press-to-dial / call-pickup works."),
+        ("Paging / Intercom", "Initiate a page or intercom call to the device (if configured).", "The device auto-answers the page/intercom and audio is delivered as configured."),
+        ("Firmware Baseline", "Check the phone's firmware version in the admin portal or device menu.", "Firmware matches the approved/expected baseline for the model."),
+        ("Power & Network Resilience", "Remove PoE/power or network from the phone, then restore it.", "On restore, the phone re-registers automatically within the expected window without manual intervention."),
+        ("Emergency (E911) Address", "Verify the emergency address assigned to the device, then place a test call to the designated E911 test number.", "The correct registered emergency location is associated and the test call routes as expected."),
+    ]
+    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+
+
+def _scim_test_cases():
+    cat = "SCIM Provisioning"
+    cases = [
+        ("User Provisioning (Create)", "Create a new user in the identity provider and assign the RingEX app.", "The user is auto-provisioned in RingEX with the correct attributes, extension, and license within the expected sync window."),
+        ("Attribute Update (Sync)", "Change a user's name, department, or contact attribute in the IdP.", "The updated attributes sync through to the RingEX user record."),
+        ("Group / Role Mapping", "Add or remove the user from an IdP group mapped to a RingEX role or template (if configured).", "The user receives the correct role / template based on group membership."),
+        ("Deprovisioning (Disable)", "Disable or unassign the user in the IdP.", "The RingEX user is disabled/removed and the license is reclaimed per policy."),
+        ("Re-activation", "Re-enable a previously disabled user in the IdP.", "The user is restored in RingEX with the expected configuration."),
+        ("Error Handling", "Attempt to provision an invalid or duplicate user (e.g. duplicate extension/email).", "SCIM returns a clear error and does not create a partial or conflicting record."),
+    ]
+    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+
+
+def _teams_direct_routing_test_cases():
+    cat = "MS Teams Direct Routing"
+    cases = [
+        ("Inbound PSTN to Teams User", "Call the DID of a Teams-enabled (Direct Routing) user from an external phone.", "The call rings inside the Microsoft Teams client and connects with two-way audio."),
+        ("Outbound Teams to PSTN", "From the Teams client, dial an external PSTN number.", "The call routes out via the RingCentral SBC and presents the correct outbound caller ID."),
+        ("Teams to RingEX Internal", "Place a call between a Teams Direct Routing user and a native RingEX extension.", "Internal call connects both directions with correct caller ID."),
+        ("Unanswered Call to Voicemail", "Leave an inbound call to a Teams user unanswered.", "The call follows the configured voicemail path (Teams or RingEX) as designed."),
+        ("Transfer to Queue / IVR", "From a Teams call, transfer the caller to a RingEX call queue or IVR.", "The transfer completes and the caller enters the queue/IVR correctly."),
+        ("Emergency Calling", "Place an emergency (or E911 test) call from the Teams client.", "The call routes correctly with the appropriate location information."),
+    ]
+    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+
+
+def _teams_embedded_app_test_cases():
+    cat = "MS Teams Embedded App"
+    cases = [
+        ("App Install & Load", "Install/pin the RingCentral embedded app in Microsoft Teams and open it.", "The app appears in Teams and loads without error."),
+        ("Single Sign-On to App", "Open the embedded app as a provisioned user (SSO configured).", "The user is authenticated into the embedded app without a separate manual login."),
+        ("Click-to-Dial", "Initiate a call from the embedded dialer or a Teams contact.", "The call is placed through RingEX and connects with audio."),
+        ("Inbound Call Notification", "Place an inbound call to the user while the embedded app is running.", "The incoming call surfaces in the Teams embedded app and can be answered from it."),
+        ("Presence Sync", "Change the user's status in Teams and in RingEX.", "Presence/status stays consistent between Teams and RingEX per the integration design."),
+        ("Messaging / SMS / Fax Access", "Access messaging, SMS, or fax features within the embedded app.", "The features load and function within Teams for the entitled user."),
+    ]
+    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+
+
+def _sso_test_cases():
+    cat = "Single Sign-On (SSO)"
+    cases = [
+        ("SP-Initiated Login", "Start at the RingEX login page and choose SSO.", "The user is redirected to the IdP, authenticates, and lands signed in to RingEX."),
+        ("IdP-Initiated Login", "Launch RingEX from the identity provider's app dashboard/tile.", "The user lands in RingEX already authenticated."),
+        ("Native App Login", "Sign in to the RingEX desktop and mobile apps via SSO.", "The SSO flow completes in the native apps and the session is established."),
+        ("Invalid / Denied Credentials", "Attempt SSO with invalid credentials or an unauthorized account.", "Access is denied gracefully with a clear message and no session is created."),
+        ("Deprovisioned User", "Disable the user in the IdP, then attempt SSO.", "SSO is denied and the user cannot access RingEX."),
+        ("Logout & MFA", "Complete a logout, then verify MFA is enforced on the next login (if configured).", "Logout terminates the session and MFA is enforced as configured."),
+        ("Break-Glass Admin Access", "Attempt to log in with the designated non-SSO break-glass admin account.", "The fallback admin account can still authenticate directly, ensuring lockout recovery."),
+    ]
+    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+
+
+SUITE_BUILDERS = {
+    "user": _user_test_cases,
+    "device": _device_test_cases,
+    "scim": _scim_test_cases,
+    "teams_direct_routing": _teams_direct_routing_test_cases,
+    "teams_embedded": _teams_embedded_app_test_cases,
+    "sso": _sso_test_cases,
+}
+
+
+def generate_uat_cases(extension_id, extension_name, extension_number, extension_type,
+                       complexity='complex', suites=None):
+    """Entry point for the UI router.
+
+    Runs the routing crawl when a target extension is supplied, then appends any
+    selected standalone suite checklists (User, Device, SCIM, Teams, SSO). Test
+    IDs are assigned sequentially across the whole combined script.
+    """
+    suites = suites or []
+    cases = []
+
+    if extension_id:
+        generator = UATGenerator(extension_id, extension_name, extension_number, extension_type, complexity=complexity)
+        generator.process()
+        cases.extend(generator.test_cases)
+
+    for key in suites:
+        builder = SUITE_BUILDERS.get(key)
+        if builder:
+            cases.extend(builder())
+
+    # Renumber sequentially so IDs stay contiguous across the crawl and all suites.
+    for idx, case in enumerate(cases, start=1):
+        case["test_id"] = f"UAT-{idx:03d}"
+
+    return cases
