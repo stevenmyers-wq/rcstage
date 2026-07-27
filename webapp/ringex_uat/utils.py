@@ -520,11 +520,6 @@ class UATGenerator:
                 self.add_case(f"{prefix}7. Boundaries & Overflows", "Invalid Key Press", f"Press an unassigned key (e.g., '9' or '#').", "System plays an 'Invalid entry' error prompt and seamlessly replays the main menu.")
                 self.add_case(f"{prefix}7. Boundaries & Overflows", "Timeout (No Input)", f"Listen to the entire prompt and provide no DTMF input.", "System times out, replays the menu, and eventually executes the default timeout routing.")
 
-            # ---------------------------------------------------------
-            # 8. POST-CALL (Appended to each flow)
-            # ---------------------------------------------------------
-            self.add_case(f"{prefix}8. Post-Call", "Clean Disconnect", "During any active connected state, have the caller hang up.", "The call drops immediately across all endpoints. System returns agents to 'Available' status.")
-
         # ---------------------------------------------------------
         # GLOBAL ACCOUNT CHECKS
         # ---------------------------------------------------------
