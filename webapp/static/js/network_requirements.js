@@ -185,19 +185,20 @@ document.addEventListener('DOMContentLoaded', () => {
             `a{color:#2563eb;word-break:break-all;}` +
             `.nr-searchtag{display:inline-block;margin-left:.4rem;padding:.05rem .4rem;border-radius:.4rem;background:#f1f5f9;color:#64748b;font-size:.68rem;font-weight:700;text-transform:uppercase;}` +
             `td,th{word-break:break-word;overflow-wrap:anywhere;}` +
-            // Print pagination: generous page margins, repeat table headers,
-            // never split a row or orphan a heading from its content, let long
-            // tables flow naturally (no big gaps), and start each major section
-            // on a fresh page with breathing room at the top.
+            // Print pagination: uniform per-page margins (via @page so every
+            // page - not just the first - gets the same generous inset), repeat
+            // table headers, never split a row/list-item or orphan a heading
+            // from its content, let long tables flow naturally, and start each
+            // major section on a fresh page.
             `@media print{` +
-            `@page{margin:1.9cm 1.4cm;}` +
-            `body{margin:0;max-width:none;}` +
+            `@page{margin:1.9cm;}` +
+            `html,body{margin:0;padding:0;max-width:none;orphans:3;widows:3;}` +
             `h1,h2,h3{break-after:avoid;page-break-after:avoid;}` +
             `thead{display:table-header-group;}` +
             `tr{break-inside:avoid;page-break-inside:avoid;}` +
             `table.nr-table{break-inside:auto;}` +
             `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-header{break-inside:avoid;page-break-inside:avoid;}` +
-            `.nr-section ~ .nr-section{break-before:page;page-break-before:always;padding-top:.5cm;}` +
+            `.nr-section ~ .nr-section{break-before:page;page-break-before:always;}` +
             `}` +
             `</style></head><body class="nr-doc">${inner}</body></html>`;
     }
