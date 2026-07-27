@@ -18,23 +18,30 @@ def api_get_entities():
 def api_generate_uat():
     data = request.get_json() or {}
 
-    ext_id = data.get('extension_id')
-    ext_name = data.get('extension_name', 'Unknown')
-    ext_number = data.get('extension_number', 'Unknown')
-    ext_type = data.get('extension_type', 'Unknown')
+    # Multi-select routing scope: prefer a 'targets' array, fall back to the
+    # legacy single-target fields for backward compatibility.
+    targets = data.get('targets')
+    if not isinstance(targets, list):
+        targets = []
+        if data.get('extension_id'):
+            targets = [{
+                "id": data.get('extension_id'),
+                "name": data.get('extension_name', 'Unknown'),
+                "number": data.get('extension_number', 'Unknown'),
+                "type": data.get('extension_type', 'Unknown'),
+            }]
 
     complexity = data.get('complexity', 'complex')
     suites = data.get('suites') or []
     if not isinstance(suites, list):
         suites = []
 
-    # A target is optional as long as at least one standalone suite is selected.
-    if not ext_id and not suites:
+    # A routing target is optional as long as at least one standalone suite is selected.
+    if not targets and not suites:
         return jsonify({"success": False, "error": "Select a routing target or at least one test suite."}), 400
 
     try:
-        cases = utils.generate_uat_cases(ext_id, ext_name, ext_number, ext_type,
-                                         complexity=complexity, suites=suites)
+        cases = utils.generate_uat_cases(targets=targets, complexity=complexity, suites=suites)
         return jsonify({"success": True, "cases": cases})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

@@ -46,6 +46,16 @@ class UATGenerator:
         self.test_cases = []
         self.counter = 1
 
+    def add_target(self, ext_id, ext_name, ext_number, ext_type):
+        """Seeds an additional Primary Flow target into the crawl queue (multi-select support)."""
+        self.queue_to_process.append({
+            "id": str(ext_id),
+            "name": ext_name,
+            "ext": ext_number,
+            "type": ext_type,
+            "path": "Primary Flow"
+        })
+
     def _build_ext_map(self):
         """Builds a cached dictionary of all extensions to resolve IDs into actual Names/Numbers."""
         resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 2000}, raise_error=False)
@@ -542,9 +552,16 @@ class UATGenerator:
 # STANDALONE SUITE CHECKLISTS (tenant-level, independent of a routing target)
 # =============================================================================
 
+def _suite(cat, url, rows):
+    """Builds suite case dicts, appending the portal 'go to' URL to each action step."""
+    return [
+        {"category": cat, "scenario": s, "action": f"{a} (Go to: {url})", "expected": e}
+        for (s, a, e) in rows
+    ]
+
+
 def _user_test_cases():
-    cat = "User Tests"
-    cases = [
+    return _suite("User Tests", "https://app.ringcentral.com", [
         ("Inbound to Direct Number & Extension", "Dial the user's direct DID and, separately, their extension from another phone.", "Both calls ring the user's app and all provisioned devices, presenting the correct caller ID."),
         ("Outbound Call", "Place an outbound external call from the user's app or device.", "Call connects with two-way audio and presents the correct outbound caller ID / company number."),
         ("Voicemail Deposit & Retrieval", "Leave the user a voicemail, then retrieve it from the app and the message-waiting indicator.", "The personal greeting plays, the message is recorded and delivered, and the MWI clears once played."),
@@ -553,13 +570,11 @@ def _user_test_cases():
         ("Simultaneous Ring (Multi-Device)", "With multiple devices provisioned (app, desk phone), place a call to the user.", "All devices ring together; answering on one immediately stops the others."),
         ("Warm & Blind Transfer", "As the user, answer a call and perform a warm transfer, then repeat with a blind transfer.", "Warm transfer connects after consult; blind transfer releases the user immediately and connects the caller."),
         ("Caller ID Name (CNAM)", "Place inbound and outbound calls and inspect the displayed name on both ends.", "The correct caller ID name is presented for internal and external calls."),
-    ]
-    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+    ])
 
 
 def _device_test_cases():
-    cat = "Device Tests (Hardphone)"
-    cases = [
+    return _suite("Device Tests (Hardphone)", "https://service.ringcentral.com", [
         ("Provisioning & Registration", "Factory-reset or reboot the hardphone and allow it to provision.", "The phone provisions automatically, registers (SIP registered), and populates the correct line keys and extension label."),
         ("Inbound Call & Display", "Place an inbound call to the phone's extension/DID.", "The phone rings, shows the correct caller ID on the display, and can be answered via handset, speaker, and headset."),
         ("Outbound Call & Audio", "Dial an external number from the keypad.", "The call connects with clear two-way audio and no echo or one-way audio on handset, speaker, and headset."),
@@ -570,61 +585,87 @@ def _device_test_cases():
         ("Firmware Baseline", "Check the phone's firmware version in the admin portal or device menu.", "Firmware matches the approved/expected baseline for the model."),
         ("Power & Network Resilience", "Remove PoE/power or network from the phone, then restore it.", "On restore, the phone re-registers automatically within the expected window without manual intervention."),
         ("Emergency (E911) Address", "Verify the emergency address assigned to the device, then place a test call to the designated E911 test number.", "The correct registered emergency location is associated and the test call routes as expected."),
-    ]
-    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+    ])
 
 
 def _scim_test_cases():
-    cat = "SCIM Provisioning"
-    cases = [
+    return _suite("SCIM Provisioning", "https://service.ringcentral.com", [
         ("User Provisioning (Create)", "Create a new user in the identity provider and assign the RingEX app.", "The user is auto-provisioned in RingEX with the correct attributes, extension, and license within the expected sync window."),
         ("Attribute Update (Sync)", "Change a user's name, department, or contact attribute in the IdP.", "The updated attributes sync through to the RingEX user record."),
         ("Group / Role Mapping", "Add or remove the user from an IdP group mapped to a RingEX role or template (if configured).", "The user receives the correct role / template based on group membership."),
         ("Deprovisioning (Disable)", "Disable or unassign the user in the IdP.", "The RingEX user is disabled/removed and the license is reclaimed per policy."),
         ("Re-activation", "Re-enable a previously disabled user in the IdP.", "The user is restored in RingEX with the expected configuration."),
         ("Error Handling", "Attempt to provision an invalid or duplicate user (e.g. duplicate extension/email).", "SCIM returns a clear error and does not create a partial or conflicting record."),
-    ]
-    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+    ])
 
 
 def _teams_direct_routing_test_cases():
-    cat = "MS Teams Direct Routing"
-    cases = [
+    return _suite("MS Teams Direct Routing", "https://admin.teams.microsoft.com", [
         ("Inbound PSTN to Teams User", "Call the DID of a Teams-enabled (Direct Routing) user from an external phone.", "The call rings inside the Microsoft Teams client and connects with two-way audio."),
         ("Outbound Teams to PSTN", "From the Teams client, dial an external PSTN number.", "The call routes out via the RingCentral SBC and presents the correct outbound caller ID."),
         ("Teams to RingEX Internal", "Place a call between a Teams Direct Routing user and a native RingEX extension.", "Internal call connects both directions with correct caller ID."),
         ("Unanswered Call to Voicemail", "Leave an inbound call to a Teams user unanswered.", "The call follows the configured voicemail path (Teams or RingEX) as designed."),
         ("Transfer to Queue / IVR", "From a Teams call, transfer the caller to a RingEX call queue or IVR.", "The transfer completes and the caller enters the queue/IVR correctly."),
         ("Emergency Calling", "Place an emergency (or E911 test) call from the Teams client.", "The call routes correctly with the appropriate location information."),
-    ]
-    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+    ])
 
 
 def _teams_embedded_app_test_cases():
-    cat = "MS Teams Embedded App"
-    cases = [
+    return _suite("MS Teams Embedded App", "https://admin.teams.microsoft.com", [
         ("App Install & Load", "Install/pin the RingCentral embedded app in Microsoft Teams and open it.", "The app appears in Teams and loads without error."),
         ("Single Sign-On to App", "Open the embedded app as a provisioned user (SSO configured).", "The user is authenticated into the embedded app without a separate manual login."),
         ("Click-to-Dial", "Initiate a call from the embedded dialer or a Teams contact.", "The call is placed through RingEX and connects with audio."),
         ("Inbound Call Notification", "Place an inbound call to the user while the embedded app is running.", "The incoming call surfaces in the Teams embedded app and can be answered from it."),
-        ("Presence Sync", "Change the user's status in Teams and in RingEX.", "Presence/status stays consistent between Teams and RingEX per the integration design."),
         ("Messaging / SMS / Fax Access", "Access messaging, SMS, or fax features within the embedded app.", "The features load and function within Teams for the entitled user."),
-    ]
-    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+    ])
+
+
+def _teams_presence_test_cases():
+    return _suite("MS Teams Presence Sync (Teams <> RingEX)", "https://app.ringcentral.com", [
+        ("Teams Call -> RingEX Busy", "Place the user on an active Microsoft Teams call.", "The user's RingEX presence updates to 'On a call' / busy for the duration of the Teams call."),
+        ("RingEX Call -> Teams Busy", "Place the user on an active RingEX call.", "The user's Microsoft Teams presence updates to 'In a call' / busy for the duration of the RingEX call."),
+        ("Teams Status -> RingEX", "Manually change the user's Teams status (Available, Away, Busy, Do Not Disturb).", "The equivalent RingEX presence reflects the Teams status within the expected sync window."),
+        ("RingEX Status -> Teams", "Manually change the user's RingEX presence (Available, Do Not Disturb, Invisible).", "The equivalent Microsoft Teams status reflects the RingEX presence within the expected sync window."),
+        ("Do Not Disturb Suppression", "Set the user to Do Not Disturb in Teams, then place a test call.", "DND is honoured across the integration and RingEX call notifications are suppressed as configured."),
+        ("Presence Clears on Hang-Up", "End both a Teams call and a RingEX call.", "Presence returns to the prior/available state on both platforms once each call ends, with no stuck 'busy' status."),
+    ])
 
 
 def _sso_test_cases():
-    cat = "Single Sign-On (SSO)"
-    cases = [
+    return _suite("Single Sign-On (SSO)", "https://service.ringcentral.com", [
         ("SP-Initiated Login", "Start at the RingEX login page and choose SSO.", "The user is redirected to the IdP, authenticates, and lands signed in to RingEX."),
-        ("IdP-Initiated Login", "Launch RingEX from the identity provider's app dashboard/tile.", "The user lands in RingEX already authenticated."),
         ("Native App Login", "Sign in to the RingEX desktop and mobile apps via SSO.", "The SSO flow completes in the native apps and the session is established."),
         ("Invalid / Denied Credentials", "Attempt SSO with invalid credentials or an unauthorized account.", "Access is denied gracefully with a clear message and no session is created."),
         ("Deprovisioned User", "Disable the user in the IdP, then attempt SSO.", "SSO is denied and the user cannot access RingEX."),
         ("Logout & MFA", "Complete a logout, then verify MFA is enforced on the next login (if configured).", "Logout terminates the session and MFA is enforced as configured."),
-        ("Break-Glass Admin Access", "Attempt to log in with the designated non-SSO break-glass admin account.", "The fallback admin account can still authenticate directly, ensuring lockout recovery."),
-    ]
-    return [{"category": cat, "scenario": s, "action": a, "expected": e} for (s, a, e) in cases]
+    ])
+
+
+def _crm_test_cases():
+    # Out-of-the-box RingCentral CRM integrations (native managed packages + App Connect).
+    return _suite("CRM Integration (App Connect / Native)", "https://www.ringcentral.com/apps", [
+        ("Supported CRM Confirmation", "Confirm the customer's CRM is an out-of-the-box RingCentral integration (native: Salesforce, HubSpot, Microsoft Dynamics 365, ServiceNow, Zendesk, Zoho; App Connect: Pipedrive, Insightly, Bullhorn, NetSuite, Clio, Redtail) and that the integration/extension is installed.", "The CRM integration is installed and authorised, and the RingCentral dialer/App Connect widget loads inside the CRM."),
+        ("Login / Authorisation", "Log in to RingCentral from within the CRM integration.", "Authentication completes and the embedded phone connects and shows a ready/registered state."),
+        ("Click-to-Dial", "Click a phone number on a CRM contact/lead record.", "The call is initiated through RingCentral and connects with two-way audio."),
+        ("Inbound Screen Pop / Contact Match", "Place an inbound call from a number that exists on a CRM record.", "The matching CRM record pops/surfaces for the agent as the call arrives."),
+        ("Unknown Caller Handling", "Place an inbound call from a number not in the CRM.", "The integration offers to create a new record (or follows the configured unknown-caller behaviour) without error."),
+        ("Automatic Call Logging", "Complete inbound and outbound calls, then check the CRM record's activity history.", "A call activity is logged automatically against the correct record with accurate direction, timestamp, and duration."),
+        ("Call Notes & Disposition", "During or after a call, add notes and set a disposition/outcome in the widget.", "Notes and disposition save to the associated CRM activity record."),
+        ("Recording / Transcript Link", "For a recorded call, open the logged CRM activity.", "The call recording (and transcript, where ACE/RingSense is enabled) is attached or linked on the CRM activity as configured."),
+    ])
+
+
+def _ace_test_cases():
+    # ACE = AI Conversation Expert (formerly RingSense): recording, transcription, AI insights.
+    return _suite("ACE / RingSense (AI Conversation Expert)", "https://app.ringcentral.com", [
+        ("Recording Capture", "Place a call on an ACE/RingSense-enabled extension or queue with recording enabled.", "The call is recorded and appears in the ACE/RingSense library for processing."),
+        ("Transcription Accuracy", "Open the processed call and review the transcript.", "A speaker-separated transcript is generated and reasonably reflects the spoken conversation."),
+        ("AI Call Summary", "Open the AI-generated summary for the processed call.", "A concise, accurate summary of the conversation is produced."),
+        ("Action Items & Next Steps", "Review the extracted action items / next steps on the call.", "Relevant action items and follow-ups are surfaced from the conversation."),
+        ("Sentiment & Topic Detection", "Review the sentiment score and detected keywords/topics/trackers.", "Sentiment and topics/trackers are analysed and displayed for the call."),
+        ("Ask ACE Query", "Use the 'Ask ACE' conversational interface to ask a question about tested calls.", "ACE returns a relevant, accurate natural-language answer drawn from the analysed conversations."),
+        ("Access & Permissions", "Log in as a user without ACE/RingSense entitlement and attempt to view AI insights.", "AI insights are only visible to entitled/permitted users per the configured access policy."),
+    ])
 
 
 SUITE_BUILDERS = {
@@ -633,23 +674,37 @@ SUITE_BUILDERS = {
     "scim": _scim_test_cases,
     "teams_direct_routing": _teams_direct_routing_test_cases,
     "teams_embedded": _teams_embedded_app_test_cases,
+    "teams_presence": _teams_presence_test_cases,
+    "crm": _crm_test_cases,
+    "ace": _ace_test_cases,
     "sso": _sso_test_cases,
 }
 
 
-def generate_uat_cases(extension_id, extension_name, extension_number, extension_type,
-                       complexity='complex', suites=None):
+def generate_uat_cases(targets=None, complexity='complex', suites=None):
     """Entry point for the UI router.
 
-    Runs the routing crawl when a target extension is supplied, then appends any
-    selected standalone suite checklists (User, Device, SCIM, Teams, SSO). Test
-    IDs are assigned sequentially across the whole combined script.
+    Crawls one or more routing targets (multi-select), then appends any selected
+    standalone suite checklists (User, Device, SCIM, Teams, SSO). All selected
+    targets are seeded as Primary Flows into a single crawler so shared downstream
+    flows are de-duplicated across them. Test IDs are assigned sequentially across
+    the whole combined script.
+
+    ``targets`` is a list of dicts: {"id", "name", "number", "type"}.
     """
+    targets = targets or []
     suites = suites or []
     cases = []
 
-    if extension_id:
-        generator = UATGenerator(extension_id, extension_name, extension_number, extension_type, complexity=complexity)
+    valid_targets = [t for t in targets if isinstance(t, dict) and t.get('id')]
+    if valid_targets:
+        first = valid_targets[0]
+        generator = UATGenerator(first.get('id'), first.get('name', 'Unknown'),
+                                 first.get('number', 'N/A'), first.get('type', 'Unknown'),
+                                 complexity=complexity)
+        for t in valid_targets[1:]:
+            generator.add_target(t.get('id'), t.get('name', 'Unknown'),
+                                 t.get('number', 'N/A'), t.get('type', 'Unknown'))
         generator.process()
         cases.extend(generator.test_cases)
 
