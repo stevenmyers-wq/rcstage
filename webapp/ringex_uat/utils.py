@@ -471,11 +471,11 @@ class UATGenerator:
                 if hold_time and int(hold_time) > 0:
                     h_mins = int(hold_time) // 60 if int(hold_time) >= 60 else int(hold_time)
                     lbl = f"{h_mins} minutes" if int(hold_time) >= 60 else f"{hold_time} seconds"
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires (Note: time calculated after any introductory audio finishes). Call is forcefully removed from the queue and routes to -> {h_name}.", level='complex')
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", f"Max Wait Time Limit ({lbl})", f"Remain on hold in {cname} for exactly {lbl}.", f"Timer expires (Note: time calculated after any introductory audio finishes). Call is forcefully removed from the queue and routes to -> {h_name}.")
                     if h_id and self.ext_map.get(h_id, {}).get('type') in ['Department', 'IvrMenu', 'Site']:
                         self.queue_to_process.append({"id": h_id, "name": self.ext_map[h_id]['name'], "ext": self.ext_map[h_id]['ext'], "type": self.ext_map[h_id]['type'], "path": f"Wait Time Overflow"})
                 else:
-                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Unlimited Wait Time", f"Remain on hold in {cname} for over 10 minutes.", "No maximum wait time limit configured. Call remains in queue indefinitely.", level='complex')
+                    self.add_case(f"{prefix}7. Boundaries & Overflows", "Unlimited Wait Time", f"Remain on hold in {cname} for over 10 minutes.", "No maximum wait time limit configured. Call remains in queue indefinitely.")
 
                 if max_callers and int(max_callers) > 0:
                     call_target = dids[0] if dids else f"extension {cext}"
