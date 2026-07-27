@@ -1,5 +1,7 @@
 from functools import wraps
-from flask import Blueprint, jsonify, request
+from io import BytesIO
+
+from flask import Blueprint, jsonify, request, send_file
 
 from webapp.auth_utils import is_authenticated
 from webapp.usage_tracking import track_usage
@@ -43,5 +45,48 @@ def api_generate():
     try:
         document_html = utils.build_document(data)
         return jsonify({"success": True, "document": document_html})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@network_requirements_bp.route('/export', methods=['POST'])
+@require_login
+@track_usage('Network Requirements Generator')
+def api_export():
+    """Render the customer-specific document to a downloadable PDF or Word file.
+
+    Replaces the old browser print dialog: the file is built server-side in the
+    fixed house style and streamed back as an attachment so it downloads
+    directly instead of opening a print preview.
+    """
+    data = request.get_json(silent=True) or {}
+
+    services = data.get('services') or []
+    integrations = data.get('integrations') or []
+    if not isinstance(services, list) or not isinstance(integrations, list):
+        return jsonify({"success": False, "error": "Invalid selection payload."}), 400
+
+    fmt = (data.get('format') or 'pdf').strip().lower()
+    if fmt not in ('pdf', 'word'):
+        return jsonify({"success": False, "error": "Unsupported export format."}), 400
+
+    slug = utils.customer_slug(data.get('customer_name'))
+
+    try:
+        if fmt == 'word':
+            content = utils.build_word_bytes(data)
+            return send_file(
+                BytesIO(content),
+                mimetype='application/msword',
+                as_attachment=True,
+                download_name=f'Network_Requirements_{slug}.doc',
+            )
+        content = utils.build_pdf_bytes(data)
+        return send_file(
+            BytesIO(content),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'Network_Requirements_{slug}.pdf',
+        )
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

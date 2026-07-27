@@ -672,7 +672,11 @@ def _ul(items):
 
 
 def _chips(items):
-    spans = "".join(f'<span class="nr-chip">{_esc(i)}</span>' for i in items)
+    # Separate the chips with whitespace so PDF/Word (which lay the chips out as
+    # inline text rather than flex items) get a line-break opportunity between
+    # them and wrap instead of overflowing the page. The browser preview uses
+    # flex-wrap and ignores the intervening whitespace.
+    spans = " ".join(f'<span class="nr-chip">{_esc(i)}</span>' for i in items)
     return f'<div class="nr-chips">{spans}</div>'
 
 
@@ -786,12 +790,15 @@ def _integrations_section(selected_integrations, region=DEFAULT_REGION):
         verified = item.get("url_verified")
         badge = "" if verified else ' <span class="nr-searchtag">search link</span>'
         parts.append(f'<div class="nr-block"><h3>3.{idx} {_esc(item["label"])}</h3>')
+        # The space between the label and value spans is discarded by the
+        # browser's flex layout (which adds its own gap) but is rendered by the
+        # PDF/Word exporters, which lay the spans out as inline text.
         parts.append(
-            '<p class="nr-kv"><span class="nr-k">Configure at</span>'
+            '<p class="nr-kv"><span class="nr-k">Configure at</span> '
             f'<span class="nr-v">{_esc(item["portal_path"])}</span></p>'
         )
         parts.append(
-            '<p class="nr-kv"><span class="nr-k">Setup link</span>'
+            '<p class="nr-kv"><span class="nr-k">Setup link</span> '
             f'<span class="nr-v"><a href="{_esc(url)}" target="_blank" rel="noopener">{_esc(label)}</a>{badge}</span></p>'
         )
         if item.get("prerequisites"):
@@ -807,7 +814,7 @@ def _integrations_section(selected_integrations, region=DEFAULT_REGION):
     return "".join(parts)
 
 
-def build_document(payload):
+def build_document(payload, logo_html=RC_LOGO_SVG):
     """
     Assemble the customer-specific network requirements document as an HTML
     fragment (the body only - the frontend wraps it for preview / print).
@@ -816,6 +823,10 @@ def build_document(payload):
       customer_name (str), site (str), prepared_by (str), notes (str),
       services (list[str]), deskphone_vendors (list[str]),
       integrations (list[str])
+
+    logo_html is the markup used for the document header logo. The browser
+    preview uses the inline SVG wordmark; the PDF / Word exporters pass a plain
+    text wordmark instead, because neither xhtml2pdf nor Word render inline SVG.
     """
     payload = payload or {}
     customer_name = (payload.get("customer_name") or "").strip() or "Customer"
@@ -841,7 +852,7 @@ def build_document(payload):
 
     head = [
         '<header class="nr-header">',
-        f'<div class="nr-logo">{RC_LOGO_SVG}</div>',
+        f'<div class="nr-logo">{logo_html}</div>',
         f'<h1>Network Requirements - {_esc(customer_name)}</h1>',
         '<p class="nr-sub">RingCentral Unified Communications (RingEX)</p>',
         _table(["Field", "Detail"], meta_rows),
@@ -890,3 +901,102 @@ def get_catalog():
         "deskphone_vendors": [{"key": k, "label": v["label"]} for k, v in DESKPHONE_VENDORS.items()],
         "integrations": [{"key": k, "label": v["label"]} for k, v in INTEGRATIONS.items()],
     }
+
+
+# ---------------------------------------------------------------------------
+# Document export (PDF / Word)
+# ---------------------------------------------------------------------------
+# The browser preview and the "Print / Save PDF" dialog were replaced with
+# direct, server-rendered downloads so the customer always receives a document
+# in the exact house style below - the browser's print dialog gave no control
+# over margins, fonts, colours or headers/footers and produced inconsistent
+# output across browsers.
+
+# Plain-text wordmark used for the header logo in exported files. Neither
+# xhtml2pdf (PDF) nor Word render the inline SVG wordmark, so exports use this
+# styled text instead of RC_LOGO_SVG.
+RC_LOGO_TEXT = '<span class="nr-wordmark">RingCentral</span>'
+
+# Shared export stylesheet - deliberately flexbox-free so it renders
+# consistently in the browser, in xhtml2pdf (PDF) and in Microsoft Word, which
+# all support the table / inline-block / block layout used below but not modern
+# flex/grid layout.
+EXPORT_CSS = (
+    "@page{size:A4;margin:1.9cm;}"
+    "body{font-family:'Helvetica Neue',Arial,sans-serif;color:#0f172a;font-size:11pt;line-height:1.5;}"
+    ".nr-wordmark{font-size:20pt;font-weight:800;color:#0b5cab;letter-spacing:-.5px;}"
+    "h1{font-size:19pt;margin:0 0 4px;color:#0f172a;}"
+    "h2{font-size:14pt;margin:20px 0 8px;padding-bottom:5px;border-bottom:2px solid #2563eb;color:#0f172a;}"
+    "h3{font-size:11.5pt;color:#1d4ed8;margin:14px 0 5px;}"
+    "p{margin:6px 0;}"
+    ".nr-logo{margin-bottom:10px;}"
+    ".nr-sub{color:#64748b;font-weight:600;margin:0 0 8px;}"
+    ".nr-lead{color:#475569;}"
+    ".nr-scope{font-weight:600;}"
+    "table.nr-table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:9pt;}"
+    "table.nr-table th{text-align:left;background:#f1f5f9;border:1px solid #cbd5e1;padding:5px 7px;font-weight:700;}"
+    "table.nr-table td{border:1px solid #cbd5e1;padding:5px 7px;vertical-align:top;}"
+    "ul.nr-list{padding-left:18px;margin:4px 0 10px;}"
+    "ul.nr-list li{margin:3px 0;}"
+    ".nr-kv{margin:3px 0;font-size:10pt;}"
+    # padding-right reserves a gap after the label text (the browser uses a flex
+    # gap between label and value, which PDF/Word don't honour).
+    ".nr-kv .nr-k{padding-right:8px;font-weight:700;color:#475569;}"
+    ".nr-chips{margin:6px 0 10px;line-height:2;}"
+    # display:inline (not inline-block) so xhtml2pdf/Word wrap the chips onto
+    # multiple lines at the whitespace between them instead of overflowing.
+    ".nr-chip{padding:2px 7px;border-radius:5px;background:#eff6ff;"
+    "border:1px solid #bfdbfe;color:#1e40af;font-size:8.5pt;font-family:'Courier New',monospace;white-space:nowrap;}"
+    ".nr-warning{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:9px 11px;border-radius:6px;font-size:9.5pt;margin:8px 0;}"
+    ".nr-note{color:#475569;font-size:10pt;}"
+    ".nr-freetext{white-space:pre-wrap;}"
+    ".nr-footer{margin-top:22px;padding-top:8px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:8.5pt;}"
+    "a{color:#2563eb;word-break:break-all;}"
+    ".nr-searchtag{display:inline-block;margin-left:5px;padding:1px 5px;border-radius:4px;background:#f1f5f9;"
+    "color:#64748b;font-size:7.5pt;font-weight:700;text-transform:uppercase;}"
+    "td,th{word-break:break-word;}"
+)
+
+
+def customer_slug(name):
+    """File-name-safe slug for the customer, matching the frontend behaviour."""
+    import re
+    base = re.sub(r"[^a-z0-9]+", "_", (name or "").strip(), flags=re.IGNORECASE).strip("_")
+    return base or "Customer"
+
+
+def _standalone_html(payload):
+    """Wrap the generated document body in a complete, self-contained HTML page
+    styled for export (used for both the PDF and Word downloads)."""
+    payload = payload or {}
+    customer = (payload.get("customer_name") or "").strip() or "Customer"
+    body = build_document(payload, logo_html=RC_LOGO_TEXT)
+    return (
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        f"<title>Network Requirements - {_esc(customer)}</title>"
+        f"<style>{EXPORT_CSS}</style></head>"
+        f'<body class="nr-doc">{body}</body></html>'
+    )
+
+
+def build_pdf_bytes(payload):
+    """Render the network requirements document to PDF bytes via xhtml2pdf."""
+    from io import BytesIO
+    from xhtml2pdf import pisa
+
+    source = _standalone_html(payload)
+    buffer = BytesIO()
+    result = pisa.CreatePDF(src=source, dest=buffer, encoding="utf-8")
+    if result.err:
+        raise RuntimeError("Failed to render PDF document.")
+    return buffer.getvalue()
+
+
+def build_word_bytes(payload):
+    """Render the network requirements document to a Word-compatible document.
+
+    Word opens well-formed styled HTML natively, preserving the fonts, colours
+    and table styling defined in EXPORT_CSS, so the .doc download keeps the same
+    house style as the PDF without needing a separate document-building library.
+    """
+    return _standalone_html(payload).encode("utf-8")

@@ -1,7 +1,9 @@
 // Network Requirements Generator
 // Renders the selection checkboxes from the backend catalog, then posts the
 // chosen options to /api/network_requirements/generate and shows the returned
-// document with copy / download / print controls. No RingCentral API calls.
+// document with copy / PDF / Word controls. The PDF and Word documents are
+// rendered server-side in a fixed house style and downloaded directly (no
+// browser print dialog). No RingCentral API calls.
 
 document.addEventListener('DOMContentLoaded', () => {
     const tab = document.getElementById('network-requirements-tab');
@@ -16,6 +18,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyState = document.getElementById('nrEmptyState');
     const docEl = document.getElementById('nrDocument');
     const actions = document.getElementById('nrActions');
+
+    // Payload used to build the document currently shown in the preview. Reused
+    // when exporting so the downloaded PDF / Word file always matches the
+    // preview, even if the form is edited afterwards without regenerating.
+    let lastPayload = null;
 
     // --- Small self-contained toast (does not depend on global showMessage) ---
     function toast(message, isError) {
@@ -144,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 docEl.classList.remove('hidden');
                 emptyState.classList.add('hidden');
                 actions.classList.remove('hidden');
+                lastPayload = payload;
                 docEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 toast('Document generated.');
             } else {
@@ -162,45 +170,47 @@ document.addEventListener('DOMContentLoaded', () => {
         return name.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'Customer';
     }
 
-    // Wrap the document body in a standalone printable HTML page.
-    function standaloneHtml() {
-        const inner = docEl.innerHTML;
-        return `<!doctype html><html><head><meta charset="utf-8">` +
-            `<title>Network Requirements - ${currentCustomerSlug()}</title>` +
-            `<style>` +
-            `body{font-family:Inter,Arial,sans-serif;color:#0f172a;max-width:900px;margin:2rem auto;padding:0 1.5rem;line-height:1.55;}` +
-            `h1{font-size:1.6rem;margin:0 0 .25rem;}` +
-            `h2{font-size:1.2rem;margin:1.6rem 0 .6rem;padding-bottom:.35rem;border-bottom:2px solid #2563eb;}` +
-            `h3{font-size:1rem;color:#1d4ed8;margin:1.1rem 0 .4rem;}` +
-            `.nr-logo{margin-bottom:.75rem;} .nr-logo-svg{height:32px;width:auto;}` +
-            `.nr-sub{color:#64748b;font-weight:600;margin:0 0 .5rem;}` +
-            `table.nr-table{width:100%;border-collapse:collapse;margin:.5rem 0 1rem;font-size:.85rem;}` +
-            `table.nr-table th{text-align:left;background:#f1f5f9;border:1px solid #e2e8f0;padding:.45rem .6rem;}` +
-            `table.nr-table td{border:1px solid #e2e8f0;padding:.45rem .6rem;vertical-align:top;}` +
-            `ul.nr-list{padding-left:1.2rem;} .nr-kv{display:flex;gap:.5rem;} .nr-kv .nr-k{font-weight:700;min-width:110px;}` +
-            `.nr-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0 .8rem;} .nr-chip{display:inline-block;padding:.2rem .55rem;border-radius:.5rem;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:.78rem;font-family:ui-monospace,Menlo,monospace;}` +
-            `.nr-warning{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:.7rem .9rem;border-radius:.6rem;font-size:.82rem;}` +
-            `.nr-note{color:#475569;font-size:.86rem;} .nr-freetext{white-space:pre-wrap;}` +
-            `.nr-footer{margin-top:1.5rem;padding-top:.6rem;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:.78rem;}` +
-            `a{color:#2563eb;word-break:break-all;}` +
-            `.nr-searchtag{display:inline-block;margin-left:.4rem;padding:.05rem .4rem;border-radius:.4rem;background:#f1f5f9;color:#64748b;font-size:.68rem;font-weight:700;text-transform:uppercase;}` +
-            `td,th{word-break:break-word;overflow-wrap:anywhere;}` +
-            // Print pagination: uniform per-page margins (via @page so every
-            // page - not just the first - gets the same generous inset), repeat
-            // table headers, never split a row/list-item or orphan a heading
-            // from its content, let long tables flow naturally, and start each
-            // major section on a fresh page.
-            `@media print{` +
-            `@page{margin:1.9cm;}` +
-            `html,body{margin:0;padding:0;max-width:none;orphans:3;widows:3;}` +
-            `h1,h2,h3{break-after:avoid;page-break-after:avoid;}` +
-            `thead{display:table-header-group;}` +
-            `tr{break-inside:avoid;page-break-inside:avoid;}` +
-            `table.nr-table{break-inside:auto;}` +
-            `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-header{break-inside:avoid;page-break-inside:avoid;}` +
-            `.nr-section ~ .nr-section{break-before:page;page-break-before:always;}` +
-            `}` +
-            `</style></head><body class="nr-doc">${inner}</body></html>`;
+    // Ask the backend to render the current document as a PDF or Word file and
+    // trigger a direct download. The backend builds the file in the fixed house
+    // style, so there is no browser print dialog and the output is identical
+    // across browsers.
+    async function exportDocument(format, btn) {
+        if (!lastPayload) {
+            toast('Generate a document first.', true);
+            return;
+        }
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Preparing...';
+        try {
+            const res = await fetch('/api/network_requirements/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(Object.assign({}, lastPayload, { format }))
+            });
+            if (!res.ok) {
+                let msg = 'Export failed.';
+                try { const d = await res.json(); msg = d.error || msg; } catch (e) { /* non-JSON */ }
+                toast(msg, true);
+                return;
+            }
+            const blob = await res.blob();
+            const ext = format === 'word' ? 'doc' : 'pdf';
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Network_Requirements_${currentCustomerSlug()}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast(`${format === 'word' ? 'Word document' : 'PDF'} downloaded.`);
+        } catch (err) {
+            toast('Network error during export.', true);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
     }
 
     // --- Action buttons ---
@@ -215,29 +225,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('nrDownloadBtn').addEventListener('click', () => {
-        const blob = new Blob([standaloneHtml()], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Network_Requirements_${currentCustomerSlug()}.html`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
-
-    document.getElementById('nrPrintBtn').addEventListener('click', () => {
-        const w = window.open('', '_blank');
-        if (!w) {
-            toast('Pop-up blocked - allow pop-ups to print.', true);
-            return;
-        }
-        w.document.write(standaloneHtml());
-        w.document.close();
-        w.focus();
-        setTimeout(() => w.print(), 300);
-    });
+    const pdfBtn = document.getElementById('nrPdfBtn');
+    const wordBtn = document.getElementById('nrWordBtn');
+    pdfBtn.addEventListener('click', () => exportDocument('pdf', pdfBtn));
+    wordBtn.addEventListener('click', () => exportDocument('word', wordBtn));
 
     loadCatalog();
 });
