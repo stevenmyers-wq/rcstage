@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const vendorsEl = document.getElementById('nr-vendors');
     const vendorGroup = document.getElementById('nr-vendor-group');
     const integrationsEl = document.getElementById('nr-integrations');
+    const regionsEl = document.getElementById('nr-regions');
     const generateBtn = document.getElementById('nrGenerateBtn');
     const emptyState = document.getElementById('nrEmptyState');
     const docEl = document.getElementById('nrDocument');
@@ -39,7 +40,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return wrap;
     }
 
+    function regionRow(value, label, checked) {
+        const id = `nr-region-${value}`;
+        const wrap = document.createElement('label');
+        wrap.className = 'flex items-center gap-2.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer';
+        wrap.setAttribute('for', id);
+        wrap.innerHTML =
+            `<input type="radio" name="nr-region" id="${id}" class="nr-region w-4 h-4 border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="${value}"${checked ? ' checked' : ''}>` +
+            `<span>${label}</span>`;
+        return wrap;
+    }
+
     function renderCatalog(catalog) {
+        regionsEl.innerHTML = '';
+        const def = catalog.default_region || 'global';
+        (catalog.regions || []).forEach(r => {
+            regionsEl.appendChild(regionRow(r.key, r.label, r.key === def));
+        });
+
         servicesEl.innerHTML = '';
         (catalog.services || []).forEach(s => {
             servicesEl.appendChild(checkboxRow('nr-service', s.key, s.label));
@@ -99,11 +117,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const regionEl = document.querySelector('.nr-region:checked');
         const payload = {
             customer_name: customerName,
             site: document.getElementById('nrSite').value.trim(),
             prepared_by: document.getElementById('nrPreparedBy').value.trim(),
             notes: document.getElementById('nrNotes').value.trim(),
+            region: regionEl ? regionEl.value : 'global',
             services: checkedValues('.nr-service'),
             deskphone_vendors: checkedValues('.nr-vendor'),
             integrations: checkedValues('.nr-integration')
@@ -152,6 +172,8 @@ document.addEventListener('DOMContentLoaded', () => {
             `h1{font-size:1.6rem;margin:0 0 .25rem;}` +
             `h2{font-size:1.2rem;margin:1.6rem 0 .6rem;padding-bottom:.35rem;border-bottom:2px solid #2563eb;}` +
             `h3{font-size:1rem;color:#1d4ed8;margin:1.1rem 0 .4rem;}` +
+            `.nr-logo{margin-bottom:.75rem;} .nr-logo-svg{height:32px;width:auto;}` +
+            `.nr-sub{color:#64748b;font-weight:600;margin:0 0 .5rem;}` +
             `table.nr-table{width:100%;border-collapse:collapse;margin:.5rem 0 1rem;font-size:.85rem;}` +
             `table.nr-table th{text-align:left;background:#f1f5f9;border:1px solid #e2e8f0;padding:.45rem .6rem;}` +
             `table.nr-table td{border:1px solid #e2e8f0;padding:.45rem .6rem;vertical-align:top;}` +
@@ -164,15 +186,18 @@ document.addEventListener('DOMContentLoaded', () => {
             `.nr-searchtag{display:inline-block;margin-left:.4rem;padding:.05rem .4rem;border-radius:.4rem;background:#f1f5f9;color:#64748b;font-size:.68rem;font-weight:700;text-transform:uppercase;}` +
             `td,th{word-break:break-word;overflow-wrap:anywhere;}` +
             // Print pagination: repeat table headers, never split a row or a
-            // heading from its content, and start each major section on a fresh
-            // page so the PDF breaks up neatly.
+            // heading from its content, keep each subsection together (moving it
+            // to the next page if it would run over), and start each major
+            // section on a fresh page so the PDF breaks up neatly.
             `@media print{` +
             `@page{margin:1.4cm;}` +
             `body{margin:0;max-width:none;}` +
             `h1,h2,h3{break-after:avoid;page-break-after:avoid;}` +
             `thead{display:table-header-group;}` +
             `tr{break-inside:avoid;page-break-inside:avoid;}` +
-            `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-footer{break-inside:avoid;page-break-inside:avoid;}` +
+            `table.nr-table{break-inside:auto;}` +
+            `.nr-block{break-inside:avoid;page-break-inside:avoid;}` +
+            `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-footer,.nr-header{break-inside:avoid;page-break-inside:avoid;}` +
             `.nr-section ~ .nr-section{break-before:page;page-break-before:always;}` +
             `}` +
             `</style></head><body class="nr-doc">${inner}</body></html>`;

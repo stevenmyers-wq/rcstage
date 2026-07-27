@@ -42,6 +42,9 @@
         .dark .nr-doc .nr-searchtag { background: #334155; color: #94a3b8; }
         .dark .nr-doc a { color: #60a5fa; }
         .nr-doc .nr-header { margin-bottom: 1rem; }
+        .nr-doc .nr-logo { margin-bottom: .75rem; }
+        .nr-doc .nr-logo-svg { height: 30px; width: auto; }
+        .dark .nr-doc .nr-logo { background: #fff; display: inline-block; padding: .35rem .55rem; border-radius: .5rem; }
         .nr-doc .nr-footer { margin-top: 1.5rem; padding-top: .6rem; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: .78rem; }
         .dark .nr-doc .nr-footer { border-color: #334155; }
         #nr-vendor-group { transition: opacity .2s; }
@@ -67,6 +70,10 @@
                     <div class="input-wrapper">
                         <label for="nrPreparedBy" class="input-label">Prepared by <span class="font-normal text-slate-400">(optional)</span></label>
                         <input type="text" id="nrPreparedBy" class="input-field" placeholder="Your name">
+                    </div>
+                    <div class="input-wrapper">
+                        <label class="input-label">Region <span class="font-normal text-slate-400">(filters region-specific domains)</span></label>
+                        <div id="nr-regions" class="grid grid-cols-1 gap-2 mt-1"></div>
                     </div>
                 </div>
             </div>

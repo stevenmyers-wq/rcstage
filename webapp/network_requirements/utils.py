@@ -47,6 +47,43 @@ KB_CRM_HUBSPOT = "https://support.ringcentral.com/article-v2/Installing-RingCent
 KB_CRM_GOOGLE = "https://support.ringcentral.com/article-v2/Using-the-RingCentral-for-Google-Chrome-extension.html?brand=RingCentral&product=RingEX&language=en_US"
 
 # ---------------------------------------------------------------------------
+# Regions — used to drop irrelevant region-specific domains from the document.
+# ---------------------------------------------------------------------------
+# key -> label. "global" is the default and keeps the .com / global domains.
+REGIONS = {
+    "global": "Global / Americas (.com)",
+    "canada": "Canada (.ca)",
+    "uk": "United Kingdom (.co.uk)",
+    "eu": "Europe (.eu)",
+    "apac": "Asia-Pacific",
+}
+DEFAULT_REGION = "global"
+
+# Official RingCentral wordmark (legacy blue+orange), inlined so it renders in
+# the browser preview and in the printed/downloaded PDF without any network
+# request. Sourced from RingCentral's own support-site print asset.
+RC_LOGO_SVG = (
+    '<svg class="nr-logo-svg" xmlns="http://www.w3.org/2000/svg" role="img" '
+    'aria-label="RingCentral" viewBox="0 0 162 23">'
+    '<path fill="#0073ae" d="M7.33 12.2L6.2 18.73H0L3.28.06h8.93a21.24 21.24 0 0 1 3.5.24 7.4 7.4 0 0 1 2.35.75 3.18 3.18 0 0 1 1.3 1.26 3.66 3.66 0 0 1 .42 1.8 7.14 7.14 0 0 1-.14 1.27 6.38 6.38 0 0 1-1.27 2.86 4.83 4.83 0 0 1-2.7 1.7c.37.14.72.28 1.02.43a2.77 2.77 0 0 1 .8.56 2.36 2.36 0 0 1 .5.83 3.68 3.68 0 0 1 .2 1.26 11.03 11.03 0 0 1-.2 1.88l-.3 1.63a6.63 6.63 0 0 0-.1 1.03c0 .4.17.62.5.62l-.1.57h-6.27a2.94 2.94 0 0 1-.04-.6c0-.3.02-.67.07-1.13s.1-.98.22-1.55A8.27 8.27 0 0 0 12.1 14a1.54 1.54 0 0 0-.62-1.4 4.5 4.5 0 0 0-2.27-.4H7.33zm.73-4.08h2.44a5.33 5.33 0 0 0 2.26-.4 1.72 1.72 0 0 0 .97-1.36 2.2 2.2 0 0 0 .02-.4 1.3 1.3 0 0 0-.6-1.17 2.96 2.96 0 0 0-1.57-.4h-2.9zm20.4-2.98h5l-.37 2.12a9.25 9.25 0 0 1 2.32-1.88 5.75 5.75 0 0 1 2.76-.63 4.67 4.67 0 0 1 3.4 1.06 4.14 4.14 0 0 1 1.06 3.1 9.65 9.65 0 0 1-.15 1.68l-1.43 8.14H35.6l1.27-7.18a5.6 5.6 0 0 0 .08-.9 1.97 1.97 0 0 0-.33-1.18A1.4 1.4 0 0 0 35.4 9a2.2 2.2 0 0 0-1.84.74 4.42 4.42 0 0 0-.8 2.06l-1.2 6.92H26.1zm19.3 13.95v.06a.72.72 0 0 0 .23.52 1.46 1.46 0 0 0 1.12.34 2.44 2.44 0 0 0 1.78-.6 3.82 3.82 0 0 0 .87-2.05l.2-1.1a6.53 6.53 0 0 1-1.68 1.02 6.3 6.3 0 0 1-2.52.43 5.64 5.64 0 0 1-2.17-.4 4.45 4.45 0 0 1-1.55-1.05 4.38 4.38 0 0 1-.94-1.6 6.22 6.22 0 0 1-.3-2 5.87 5.87 0 0 1 .03-.68l.1-.7a10.71 10.71 0 0 1 .74-2.5 7.7 7.7 0 0 1 1.44-2.2 7.18 7.18 0 0 1 2.2-1.58 6.85 6.85 0 0 1 2.97-.6 4.26 4.26 0 0 1 2.25.58 4.45 4.45 0 0 1 1.56 1.57l.3-1.77h4.8l-1.93 10.94a23.8 23.8 0 0 1-.66 2.85 6.05 6.05 0 0 1-1.32 2.3 5.92 5.92 0 0 1-2.44 1.54 15.13 15.13 0 0 1-7.1.24 6.3 6.3 0 0 1-2-.83 3.33 3.33 0 0 1-1.13-1.2 2.96 2.96 0 0 1-.34-1.4v-.17h5.5zM51 8.24a2.22 2.22 0 0 0-1.04.24 2.27 2.27 0 0 0-.76.64 3.5 3.5 0 0 0-.52 1 7.3 7.3 0 0 0-.3 1.2c0 .13-.03.25-.03.35l-.02.3a2.4 2.4 0 0 0 .4 1.4 1.55 1.55 0 0 0 1.34.6h.13a2.26 2.26 0 0 0 1.03-.23 2.48 2.48 0 0 0 .8-.62 3.5 3.5 0 0 0 .53-.9 5.5 5.5 0 0 0 .32-1.05 4.86 4.86 0 0 0 .07-.87 2.53 2.53 0 0 0-.42-1.47 1.65 1.65 0 0 0-1.47-.6H51zm-32 9.9L22.1 7.7h3.96l-1.6 11.02H19z"/>'
+    '<path fill="#f80" d="M71.97 7.35a1.1 1.1 0 0 1 .02-.18.9.9 0 0 0 0-.17 2.45 2.45 0 0 0-.7-1.9 2.82 2.82 0 0 0-2-.65 3.36 3.36 0 0 0-2.66 1.3A8.07 8.07 0 0 0 65.1 9.6c-.07.32-.12.64-.15.94a7.34 7.34 0 0 0-.05.87 4.77 4.77 0 0 0 .13 1.2 2.38 2.38 0 0 0 .48.93 2.28 2.28 0 0 0 .9.64 3.54 3.54 0 0 0 1.38.23 3.07 3.07 0 0 0 2.27-.86 5.1 5.1 0 0 0 1.25-2.13h5.64a10.5 10.5 0 0 1-1.43 3.08 9.57 9.57 0 0 1-2.2 2.3 9.75 9.75 0 0 1-2.85 1.43 11.8 11.8 0 0 1-6.77.02 6.95 6.95 0 0 1-2.52-1.42 6.03 6.03 0 0 1-1.56-2.27 8.1 8.1 0 0 1-.54-3.02c0-.32.02-.66.05-1s.1-.72.16-1.1a11.62 11.62 0 0 1 1.37-3.85 11.04 11.04 0 0 1 2.4-2.9A10.5 10.5 0 0 1 66.2.78a10.32 10.32 0 0 1 3.6-.66q3.9 0 5.84 1.7a6.03 6.03 0 0 1 1.92 4.77v.37a3.23 3.23 0 0 1-.03.37h-5.56zm11.28 5.4l-.04.26a2.26 2.26 0 0 0 0 .28 2 2 0 0 0 .65 1.56 2.36 2.36 0 0 0 1.63.58 2.85 2.85 0 0 0 1.26-.3 2.5 2.5 0 0 0 1-.9h5.23a6.52 6.52 0 0 1-1.5 2.13 8.4 8.4 0 0 1-2.07 1.4 9.5 9.5 0 0 1-2.38.74 14.18 14.18 0 0 1-2.45.2 9.5 9.5 0 0 1-2.7-.36 5.97 5.97 0 0 1-2.13-1.08 5 5 0 0 1-1.4-1.78 5.58 5.58 0 0 1-.5-2.42 6.46 6.46 0 0 1 .05-.7c0-.22.04-.46.08-.7a8.44 8.44 0 0 1 1.13-3.02 8.6 8.6 0 0 1 2.07-2.3 9.43 9.43 0 0 1 2.73-1.47 9.68 9.68 0 0 1 3.16-.52 8.5 8.5 0 0 1 2.93.47 6.06 6.06 0 0 1 2.13 1.3 5.34 5.34 0 0 1 1.3 2.02 7.36 7.36 0 0 1 .46 2.6 11 11 0 0 1-.22 2H83.25zm5.43-2.74a2.3 2.3 0 0 0 .03-.38 1.9 1.9 0 0 0-.57-1.4 1.97 1.97 0 0 0-1.44-.57 3 3 0 0 0-2 .63A2.87 2.87 0 0 0 83.7 10h4.97zm6.97-4.86h5l-.38 2.12a9.26 9.26 0 0 1 2.34-1.88 5.74 5.74 0 0 1 2.77-.63 4.67 4.67 0 0 1 3.38 1.06 4.14 4.14 0 0 1 1.08 3.1 9.67 9.67 0 0 1-.16 1.68l-1.4 8.14h-5.48l1.25-7.18a5.28 5.28 0 0 0 .08-.9 1.97 1.97 0 0 0-.33-1.18 1.4 1.4 0 0 0-1.22-.46 2.2 2.2 0 0 0-1.84.74 4.48 4.48 0 0 0-.78 2.06l-1.2 6.92h-5.47zm22.7 13.47c-.6.05-1.17.08-1.7.1s-1 .02-1.43.02a15.57 15.57 0 0 1-2.07-.12 3.57 3.57 0 0 1-1.34-.4 1.7 1.7 0 0 1-.7-.8 3.2 3.2 0 0 1-.2-1.25 9.74 9.74 0 0 1 .06-1.05c.04-.4.1-.82.2-1.28l1-5.67h-1.95l.54-3.12h2.02l.76-4.22h5.38l-.76 4.23h2.63l-.53 3.12h-2.62l-.87 4.94-.08.4a2.47 2.47 0 0 0-.02.37.78.78 0 0 0 .3.7 2.35 2.35 0 0 0 1.2.2h.86zm3.54-13.46h4.96l-.48 2.74h.06a5.18 5.18 0 0 1 4.78-3.13 2.57 2.57 0 0 1 .35.02l.35.06-.97 5.4c-.17-.05-.35-.08-.53-.1a3.43 3.43 0 0 0-.57-.06 3.85 3.85 0 0 0-2.67.88 5.32 5.32 0 0 0-1.37 3.08l-.8 4.7h-5.47zm17.33 13.6l-.03-1.86a7.54 7.54 0 0 1-2.64 1.46 10.2 10.2 0 0 1-2.85.38 6.94 6.94 0 0 1-1.64-.2 3.88 3.88 0 0 1-1.37-.6 3.06 3.06 0 0 1-.93-1.03 2.95 2.95 0 0 1-.34-1.47 4.37 4.37 0 0 1 .08-.8 4.28 4.28 0 0 1 1.15-2.4 5.8 5.8 0 0 1 2.05-1.3 10.9 10.9 0 0 1 2.47-.62l2.42-.3a10.77 10.77 0 0 0 1.87-.4 1.13 1.13 0 0 0 .9-.9.34.34 0 0 1 0-.08.3.3 0 0 0 0-.1.66.66 0 0 0-.17-.48 1.22 1.22 0 0 0-.44-.27 2.6 2.6 0 0 0-.53-.13 3.7 3.7 0 0 0-.47-.04 5.23 5.23 0 0 0-.62.04 1.92 1.92 0 0 0-.62.18 1.94 1.94 0 0 0-.54.4 1.5 1.5 0 0 0-.35.7h-5.25A4.98 4.98 0 0 1 132.1 7a4.53 4.53 0 0 1 1.57-1.44 8.45 8.45 0 0 1 2.5-.9 17.13 17.13 0 0 1 3.5-.3 15.57 15.57 0 0 1 3.06.24 5.18 5.18 0 0 1 1.88.72 2.48 2.48 0 0 1 .95 1.1 3.84 3.84 0 0 1 .27 1.46 7.95 7.95 0 0 1-.07 1c-.04.36-.1.72-.17 1.1l-1.1 6.35a4.63 4.63 0 0 0-.08.73 1.15 1.15 0 0 0 .1.5 2 2 0 0 0 .4.5l-.02.7h-5.65zm-2.52-3.08a2.9 2.9 0 0 0 1.26-.26 2.6 2.6 0 0 0 .9-.7 3.45 3.45 0 0 0 .57-1.08 6.1 6.1 0 0 0 .3-1.3 7.42 7.42 0 0 1-1.5.45l-1.38.3a3.56 3.56 0 0 0-1.1.5 1.35 1.35 0 0 0-.57.95v.15a.83.83 0 0 0 .38.72 1.96 1.96 0 0 0 1.15.26zm9.12 3.06L149.1.06h5.46l-3.28 18.66h-5.46z"/>'
+    "</svg>"
+)
+
+
+def pick_region(variants, region):
+    """Resolve a region-variant mapping to a single value for the selected
+    region, falling back to the global/default entry."""
+    if not isinstance(variants, dict):
+        return variants
+    if region in variants:
+        return variants[region]
+    for fallback in ("global", "default"):
+        if fallback in variants:
+            return variants[fallback]
+    return next(iter(variants.values()))
+
+# ---------------------------------------------------------------------------
 # SECTION 1 — Standard requirements (always included in every document)
 # These apply across all RingCentral UC services.
 # ---------------------------------------------------------------------------
@@ -78,11 +115,28 @@ COMMON_CLOUD_SERVICES = [
     ("Company website", "HTTPS", "www.ringcentral.com (S)", "TCP 443"),
     ("Service status portal", "HTTPS", "status.ringcentral.com (S)", "TCP 443"),
     ("Customer support", "HTTPS", "support.ringcentral.com (S)", "TCP 443"),
-    ("Federated enterprise accounts portal", "HTTPS", "enterprise-service.ringcentral.com (S) / .co.uk (S) / .eu (S)", "TCP 443"),
+    ("Federated enterprise accounts portal", "HTTPS", {
+        "global": "enterprise-service.ringcentral.com (S)",
+        "uk": "enterprise-service.ringcentral.co.uk (S)",
+        "eu": "enterprise-service.ringcentral.eu (S)",
+    }, "TCP 443"),
     ("Linked account management portal", "HTTPS", "accounts.ringcentral.com (S)", "TCP 443"),
-    ("Admin Portal", "HTTPS", "service.ringcentral.com (S) / .co.uk (S) / .eu (S)", "TCP 443"),
-    ("Administrator/User account login portal", "HTTPS", "login.ringcentral.com (S) / .co.uk (S) / .eu (S)", "TCP 443"),
-    ("Analytics portal", "HTTPS", "analytics.ringcentral.com / .ca / .co.uk / .eu", "TCP 443"),
+    ("Admin Portal", "HTTPS", {
+        "global": "service.ringcentral.com (S)",
+        "uk": "service.ringcentral.co.uk (S)",
+        "eu": "service.ringcentral.eu (S)",
+    }, "TCP 443"),
+    ("Administrator/User account login portal", "HTTPS", {
+        "global": "login.ringcentral.com (S)",
+        "uk": "login.ringcentral.co.uk (S)",
+        "eu": "login.ringcentral.eu (S)",
+    }, "TCP 443"),
+    ("Analytics portal", "HTTPS", {
+        "global": "analytics.ringcentral.com",
+        "canada": "analytics.ringcentral.ca",
+        "uk": "analytics.ringcentral.co.uk",
+        "eu": "analytics.ringcentral.eu",
+    }, "TCP 443"),
     ("Developer portal", "HTTPS", "developers.ringcentral.com (S)", "TCP 443"),
 ]
 
@@ -167,13 +221,27 @@ SERVICES = {
             ("Application service API — mobile", "HTTPS", "api-mucc.ringcentral.com (S)", "TCP 443"),
             ("Messaging service API", "HTTPS", "*.glip.com, mvp.ringcentral.com, dl.mvp.ringcentral.com", "TCP 443"),
             ("Push notifications", "HTTPS", _PUBNUB, "TCP 443"),
-            ("WebSocket push notifications — US/EU/APAC", "WSS", "us-01…06 / eu-01 / apac-01 .ws-api.ringcentral.com (S)", "TCP 443"),
+            ("WebSocket push notifications", "WSS", {
+                "global": "us-01 … us-06.ws-api.ringcentral.com (S)",
+                "canada": "us-01 … us-06.ws-api.ringcentral.com (S)",
+                "eu": "eu-01.ws-api.ringcentral.com (S)",
+                "uk": "eu-01.ws-api.ringcentral.com (S)",
+                "apac": "apac-01.ws-api.ringcentral.com (S)",
+            }, "TCP 443"),
             ("Android app push notifications", "HTTPS", "mtalk.google.com", "TCP 443, 5228, 5229, 5230"),
             ("iOS app push notifications", "HTTPS", "api.push.apple.com", "TCP 443, 2197, 5223"),
             ("Feature enablement control", "HTTPS", "*.launchdarkly.com", "TCP 443"),
             ("Software & provisioning updates", "HTTPS", "*.cloudfront.net", "TCP 443"),
-            ("Client issue reporting", "HTTPS", "cpr-na.ringcentral.com / cpr-eu.ringcentral.com", "TCP 443"),
-            ("QoS & usage reporting", "HTTPS", "edr.ringcentral.com / edr-eu.ringcentral.com", "TCP 443"),
+            ("Client issue reporting", "HTTPS", {
+                "global": "cpr-na.ringcentral.com",
+                "eu": "cpr-eu.ringcentral.com",
+                "uk": "cpr-eu.ringcentral.com",
+            }, "TCP 443"),
+            ("QoS & usage reporting", "HTTPS", {
+                "global": "edr.ringcentral.com",
+                "eu": "edr-eu.ringcentral.com",
+                "uk": "edr-eu.ringcentral.com",
+            }, "TCP 443"),
         ],
         "notes": [
             "For RingCentral Video within the app, also apply the RingCentral Video table.",
@@ -372,8 +440,10 @@ SERVICES = {
     "exchange_onprem": {
         "label": "On-premises Microsoft Exchange contact sync (Table 16.1)",
         "rows": [
-            ("North America", "HTTPS", "3.223.170.110, 54.147.91.15, 3.211.163.136", "TCP 443"),
-            ("Europe", "HTTPS", "18.196.95.223, 3.122.161.21, 3.122.122.53", "TCP 443"),
+            {"regions": {"global", "canada", "apac"},
+             "cells": ("North America", "HTTPS", "3.223.170.110, 54.147.91.15, 3.211.163.136", "TCP 443")},
+            {"regions": {"eu", "uk"},
+             "cells": ("Europe", "HTTPS", "18.196.95.223, 3.122.161.21, 3.122.122.53", "TCP 443")},
         ],
         "notes": [
             "Whitelist these RingCentral cloud IPs to synchronise on-prem Exchange contacts with RingCentral apps.",
@@ -574,11 +644,21 @@ def _esc(value):
     return html.escape(str(value if value is not None else ""))
 
 
-def _table(headers, rows):
+def _table(headers, rows, region=DEFAULT_REGION):
+    """Render a table. Rows may be plain tuples, or dicts of the form
+    {"regions": {...}, "cells": (...)} for region-specific rows (skipped when
+    the selected region is not listed). Individual cells may be region-variant
+    dicts, resolved via pick_region."""
     thead = "".join(f"<th>{_esc(h)}</th>" for h in headers)
     body = ""
     for row in rows:
-        cells = "".join(f"<td>{_esc(c)}</td>" for c in row)
+        if isinstance(row, dict):
+            if region not in row.get("regions", set()):
+                continue
+            cells_data = row["cells"]
+        else:
+            cells_data = row
+        cells = "".join(f"<td>{_esc(pick_region(c, region))}</td>" for c in cells_data)
         body += f"<tr>{cells}</tr>"
     return (
         f'<table class="nr-table"><thead><tr>{thead}</tr></thead>'
@@ -596,7 +676,13 @@ def _chips(items):
     return f'<div class="nr-chips">{spans}</div>'
 
 
-def _standard_section():
+def _block(heading, *inner):
+    """A keep-together subsection: heading plus its content, wrapped so print
+    keeps it on one page where it fits (and starts it on the next page if not)."""
+    return f'<div class="nr-block"><h3>{heading}</h3>' + "".join(inner) + "</div>"
+
+
+def _standard_section(region=DEFAULT_REGION):
     parts = ['<section class="nr-section"><h2>1. Standard requirements — all RingCentral services</h2>']
     parts.append(
         '<p class="nr-lead">This baseline applies to every RingCentral RingEX endpoint on the '
@@ -604,39 +690,29 @@ def _standard_section():
         'per-service requirements in Section 2 in addition to this section.</p>'
     )
 
-    parts.append("<h3>1.1 IP supernets</h3>")
-    parts.append(_chips(SUPERNETS))
-    parts.append(_ul(SUPERNET_NOTES))
-
-    parts.append("<h3>1.2 Common cloud services (always whitelist)</h3>")
-    parts.append(_table(["Purpose", "Protocol", "Domain / IP", "Ports"], COMMON_CLOUD_SERVICES))
-    parts.append(_ul(COMMON_CLOUD_NOTES))
-
-    parts.append("<h3>1.3 Domain Name Service (DNS)</h3>")
-    parts.append(_ul(DNS_NOTES))
-
-    parts.append("<h3>1.4 Network Address Translation (NAT)</h3>")
-    parts.append(_ul(NAT_NOTES))
-
-    parts.append("<h3>1.5 Security software</h3>")
-    parts.append(_ul(SECURITY_SOFTWARE_NOTES))
-
-    parts.append("<h3>1.6 Quality of Service (QoS)</h3>")
-    parts.append(_ul(QOS_NOTES))
-
-    parts.append("<h3>1.7 VLAN configuration</h3>")
-    parts.append(_ul(VLAN_NOTES))
-
-    parts.append("<h3>1.8 VPN &amp; firewall / proxy recommendations</h3>")
-    parts.append(_ul(VPN_PROXY_NOTES))
-    parts.append('<p class="nr-note"><strong>PAC bypass domains (return DIRECT):</strong></p>')
-    parts.append(_chips(PAC_BYPASS_DOMAINS))
+    parts.append(_block("1.1 IP supernets", _chips(SUPERNETS), _ul(SUPERNET_NOTES)))
+    parts.append(_block(
+        "1.2 Common cloud services (always whitelist)",
+        _table(["Purpose", "Protocol", "Domain / IP", "Ports"], COMMON_CLOUD_SERVICES, region),
+        _ul(COMMON_CLOUD_NOTES),
+    ))
+    parts.append(_block("1.3 Domain Name Service (DNS)", _ul(DNS_NOTES)))
+    parts.append(_block("1.4 Network Address Translation (NAT)", _ul(NAT_NOTES)))
+    parts.append(_block("1.5 Security software", _ul(SECURITY_SOFTWARE_NOTES)))
+    parts.append(_block("1.6 Quality of Service (QoS)", _ul(QOS_NOTES)))
+    parts.append(_block("1.7 VLAN configuration", _ul(VLAN_NOTES)))
+    parts.append(_block(
+        "1.8 VPN &amp; firewall / proxy recommendations",
+        _ul(VPN_PROXY_NOTES),
+        '<p class="nr-note"><strong>PAC bypass domains (return DIRECT):</strong></p>',
+        _chips(PAC_BYPASS_DOMAINS),
+    ))
 
     parts.append("</section>")
     return "".join(parts)
 
 
-def _services_section(selected_services, selected_vendors):
+def _services_section(selected_services, selected_vendors, region=DEFAULT_REGION):
     chosen = [(k, SERVICES[k]) for k in selected_services if k in SERVICES]
     if not chosen:
         return ""
@@ -651,24 +727,23 @@ def _services_section(selected_services, selected_vendors):
     idx = 0
     for key, svc in chosen:
         idx += 1
-        parts.append(f'<div class="nr-block"><h3>2.{idx} {_esc(svc["label"])}</h3>')
-        parts.append(_table(["Purpose", "Protocol", "Domain / IP", "Destination ports"], svc["rows"]))
+        inner = [_table(["Purpose", "Protocol", "Domain / IP", "Destination ports"], svc["rows"], region)]
         if svc.get("notes"):
-            parts.append(_ul(svc["notes"]))
+            inner.append(_ul(svc["notes"]))
 
         # Desk-phone vendor provisioning rows nest under the deskphones service.
         if key == "deskphones":
             vendors = [(vk, DESKPHONE_VENDORS[vk]) for vk in selected_vendors if vk in DESKPHONE_VENDORS]
             if vendors:
                 rows = [v["row"] for _, v in vendors]
-                parts.append('<p class="nr-note"><strong>Selected desk-phone vendor provisioning (Table 6.1):</strong></p>')
-                parts.append(_table(["Purpose", "Protocol", "Domain / IP", "Ports"], rows))
+                inner.append('<p class="nr-note"><strong>Selected desk-phone vendor provisioning (Table 6.1):</strong></p>')
+                inner.append(_table(["Purpose", "Protocol", "Domain / IP", "Ports"], rows, region))
             else:
-                parts.append(
+                inner.append(
                     '<p class="nr-note">No specific desk-phone vendor selected — confirm the vendor and '
                     'add its provisioning/firmware FQDNs (all resolve to the 66.81.240.0/20 supernet) before issuing this document.</p>'
                 )
-        parts.append("</div>")
+        parts.append(_block(f'2.{idx} {_esc(svc["label"])}', *inner))
 
     parts.append("</section>")
     return "".join(parts)
@@ -730,6 +805,7 @@ def build_document(payload):
     services = payload.get("services") or []
     vendors = payload.get("deskphone_vendors") or []
     integrations = payload.get("integrations") or []
+    region = payload.get("region") if payload.get("region") in REGIONS else DEFAULT_REGION
 
     today = datetime.utcnow().strftime("%d %B %Y")
 
@@ -737,6 +813,7 @@ def build_document(payload):
     meta_rows = [["Customer", customer_name]]
     if site:
         meta_rows.append(["Site / location", site])
+    meta_rows.append(["Region", REGIONS[region]])
     meta_rows.append(["Document date", today])
     if prepared_by:
         meta_rows.append(["Prepared by", prepared_by])
@@ -744,8 +821,9 @@ def build_document(payload):
 
     head = [
         '<header class="nr-header">',
+        f'<div class="nr-logo">{RC_LOGO_SVG}</div>',
         f'<h1>Network Requirements — {_esc(customer_name)}</h1>',
-        '<p class="nr-sub">RingCentral Unified Communications (RingEX) — customer deployment</p>',
+        '<p class="nr-sub">RingCentral Unified Communications (RingEX)</p>',
         _table(["Field", "Detail"], meta_rows),
         '<p class="nr-warning">Content is transcribed from RingCentral\'s published RingEX '
         '<strong>Network requirements</strong> article and applies to firewall/proxy configuration. '
@@ -770,8 +848,8 @@ def build_document(payload):
             "plus the standard requirements that apply to all services.</p>"
         )
 
-    body_parts.append(_standard_section())
-    body_parts.append(_services_section(services, vendors))
+    body_parts.append(_standard_section(region))
+    body_parts.append(_services_section(services, vendors, region))
     body_parts.append(_integrations_section(integrations))
 
     if extra_notes:
@@ -792,6 +870,8 @@ def build_document(payload):
 def get_catalog():
     """Expose the selectable options so the frontend renders the checkboxes."""
     return {
+        "regions": [{"key": k, "label": v} for k, v in REGIONS.items()],
+        "default_region": DEFAULT_REGION,
         "services": [{"key": k, "label": v["label"]} for k, v in SERVICES.items()],
         "deskphone_vendors": [{"key": k, "label": v["label"]} for k, v in DESKPHONE_VENDORS.items()],
         "integrations": [{"key": k, "label": v["label"]} for k, v in INTEGRATIONS.items()],
