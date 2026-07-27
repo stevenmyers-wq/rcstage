@@ -749,7 +749,25 @@ def _services_section(selected_services, selected_vendors, region=DEFAULT_REGION
     return "".join(parts)
 
 
-def _integrations_section(selected_integrations):
+def _sso_region_note(region):
+    """Region-specific SSO endpoint guidance. RingCentral SSO endpoints exist as
+    .com (global/Americas) and .eu (Europe/UK) variants; the IdP must point at
+    the set matching the account's data-residency location, and the other set
+    must be removed from the configuration."""
+    eu_regions = {"eu", "uk"}
+    keep, drop = (".eu", ".com") if region in eu_regions else (".com", ".eu")
+    return (
+        '<p class="nr-note"><strong>Region-specific SSO endpoints:</strong> this account is '
+        f'configured for the {_esc(REGIONS.get(region, REGIONS[DEFAULT_REGION]))} region. In the '
+        f'RingCentral SSO settings and the IdP configuration, use the <strong>{keep}</strong> SSO '
+        f'endpoints (e.g. service.ringcentral{keep}, login.ringcentral{keep}) and '
+        f'<strong>remove</strong> the {drop} endpoints. The correct set depends on the '
+        'data-residency location of the user accounts (UIDs) - remove, do not merely ignore, the '
+        'endpoints that do not apply.</p>'
+    )
+
+
+def _integrations_section(selected_integrations, region=DEFAULT_REGION):
     chosen = [(k, INTEGRATIONS[k]) for k in selected_integrations if k in INTEGRATIONS]
     if not chosen:
         return ""
@@ -781,6 +799,8 @@ def _integrations_section(selected_integrations):
             parts.append(_ul(item["prerequisites"]))
         if item.get("notes"):
             parts.append(f'<p class="nr-note"><strong>Setup:</strong> {_esc(item["notes"])}</p>')
+        if key == "sso":
+            parts.append(_sso_region_note(region))
         parts.append("</div>")
 
     parts.append("</section>")
@@ -850,7 +870,7 @@ def build_document(payload):
 
     body_parts.append(_standard_section(region))
     body_parts.append(_services_section(services, vendors, region))
-    body_parts.append(_integrations_section(integrations))
+    body_parts.append(_integrations_section(integrations, region))
 
     if extra_notes:
         body_parts.append(
