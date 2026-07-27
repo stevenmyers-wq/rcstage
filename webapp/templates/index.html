@@ -270,7 +270,7 @@
 
               {% set nav_groups = [
                 { 'id': 'cc_tools', 'title': 'CC Tools', 'tabs': [ ('cxone_audio_converter', 'CXone Audio Converter'), ('cxone_script_analyzer', 'CXone Script Analyzer') ] },
-                { 'id': 'pm_tools', 'title': 'PM Tools', 'tabs': [ ('port_mapping', 'Port Mapping') ] },
+                { 'id': 'pm_tools', 'title': 'PM Tools', 'tabs': [ ('network_requirements', 'Network Requirements'), ('port_mapping', 'Port Mapping') ] },
                 { 'id': 'se_tools', 'title': 'SE Tools', 'tabs': [ ('account_discovery', 'Account Discovery'), ('agent_form', 'Agent Form'), ('ai_demo_calls', 'AI Demo Calls'), ('click_to_call', 'Click to Call'), ('d365_ringcx', 'D365 RingCX Demo'), ('audio_streaming', 'RingCX Streaming') ] },
                 { 'id': 'uc_tools', 'title': 'UC Tools', 'tabs': [ ('air_management', 'AIR Management'), ('presence', 'BLF & Presence'), ('bulk_opening', 'Bulk Opening Hours'), ('analytics', 'Business Analytics'), ('call_flow', 'Call Flow Visualiser'), ('cost_centres', 'Cost Centres'), ('custom_rules', 'Custom Rules'), ('device_audit', 'Device Audit'), ('device_ringing_audit', 'Device Ringing Audit'), ('device_swap', 'Device Swap'), ('extension_number_changer', 'Ext Number Changer'), ('renamer', 'Extension Renamer'), ('live_events', 'Live Events'), ('message_management', 'Message Management'), ('personal_address_book', 'Multi User Address Book'), ('notifications', 'Notifications'), ('phone_number_assignment', 'Phone Number Assignment'), ('ringex_uat', 'RingEX UAT'), ('sip_fetcher', 'SIP Credentials'), ('account_migration', 'Account Migration'), ('cq_hours', 'Call Queue Manager'), ('user_templates', 'User Templates') ] }
               ] %}
@@ -402,7 +402,8 @@
                     {% elif current_tab == 'agent_form' %} {% include 'includes/agent_form_tab.html' %} 
                     {% elif current_tab == 'd365_ringcx' %} {% include 'includes/d365_ringcx_tab.html' %} 
                     {% elif current_tab == 'ai_demo_calls' %} {% include 'includes/ai_demo_calls_tab.html' %} 
-                    {% elif current_tab == 'click_to_call' %} {% include 'includes/click_to_call_tab.html' %} 
+                    {% elif current_tab == 'click_to_call' %} {% include 'includes/click_to_call_tab.html' %}
+                    {% elif current_tab == 'network_requirements' %} {% include 'includes/network_requirements_tab.html' %}
                     {% else %}
                     <div class="card text-center py-20 flex flex-col items-center">
                         <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-200 dark:border-slate-700">

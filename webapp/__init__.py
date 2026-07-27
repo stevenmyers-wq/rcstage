@@ -150,4 +150,8 @@ def create_app():
         from .device_swap import routes as device_swap_routes
         app.register_blueprint(device_swap_routes.device_swap_bp)
 
+        # Network Requirements Generator routes
+        from .network_requirements import routes as network_requirements_routes
+        app.register_blueprint(network_requirements_routes.network_requirements_bp)
+
     return app

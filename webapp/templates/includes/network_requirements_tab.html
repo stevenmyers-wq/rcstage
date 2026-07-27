@@ -1,0 +1,140 @@
+<div id="network-requirements-tab" class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">Network Requirements Generator</h2>
+        <p class="text-subheading">Build a customer-specific RingCentral UC network requirements document. The standard requirements that apply across all RingCentral services are always included; tick the services, desk phones and integrations relevant to this customer.</p>
+    </div>
+
+    <!-- Scoped styling for the generated document preview -->
+    <style>
+        .nr-doc { color: #0f172a; font-size: 0.92rem; line-height: 1.55; }
+        .dark .nr-doc { color: #e2e8f0; }
+        .nr-doc h1 { font-size: 1.6rem; font-weight: 800; margin: 0 0 .25rem; letter-spacing: -.01em; }
+        .nr-doc h2 { font-size: 1.2rem; font-weight: 700; margin: 1.6rem 0 .6rem; padding-bottom: .35rem; border-bottom: 2px solid #2563eb; }
+        .nr-doc h3 { font-size: 1rem; font-weight: 700; margin: 1.1rem 0 .4rem; color: #1d4ed8; }
+        .dark .nr-doc h3 { color: #60a5fa; }
+        .nr-doc p { margin: .5rem 0; }
+        .nr-doc .nr-sub { color: #64748b; font-weight: 600; margin-top: 0; }
+        .nr-doc .nr-lead { color: #475569; }
+        .dark .nr-doc .nr-lead { color: #94a3b8; }
+        .nr-doc .nr-scope { font-weight: 600; }
+        .nr-doc .nr-warning { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: .7rem .9rem; border-radius: .6rem; font-size: .82rem; margin-top: .8rem; }
+        .dark .nr-doc .nr-warning { background: rgba(120,53,15,.25); border-color: rgba(180,83,9,.5); color: #fdba74; }
+        .nr-doc .nr-note { color: #475569; font-size: .86rem; }
+        .dark .nr-doc .nr-note { color: #94a3b8; }
+        .nr-doc .nr-freetext { white-space: pre-wrap; }
+        .nr-doc .nr-block { margin: .4rem 0 1rem; }
+        .nr-doc table.nr-table { width: 100%; border-collapse: collapse; margin: .5rem 0 1rem; font-size: .85rem; }
+        .nr-doc table.nr-table th { text-align: left; background: #f1f5f9; border: 1px solid #e2e8f0; padding: .45rem .6rem; font-weight: 700; }
+        .dark .nr-doc table.nr-table th { background: #1e293b; border-color: #334155; }
+        .nr-doc table.nr-table td { border: 1px solid #e2e8f0; padding: .45rem .6rem; vertical-align: top; }
+        .dark .nr-doc table.nr-table td { border-color: #334155; }
+        .nr-doc ul.nr-list { margin: .3rem 0 .8rem; padding-left: 1.2rem; list-style: disc; }
+        .nr-doc ul.nr-list li { margin: .2rem 0; }
+        .nr-doc .nr-kv { display: flex; gap: .5rem; margin: .2rem 0; font-size: .86rem; }
+        .nr-doc .nr-kv .nr-k { font-weight: 700; min-width: 110px; color: #475569; }
+        .dark .nr-doc .nr-kv .nr-k { color: #94a3b8; }
+        .nr-doc .nr-kv .nr-v { flex: 1; }
+        .nr-doc .nr-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 .8rem; }
+        .nr-doc .nr-chip { display: inline-block; padding: .2rem .55rem; border-radius: .5rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: .78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .dark .nr-doc .nr-chip { background: rgba(30,58,138,.25); border-color: rgba(37,99,235,.4); color: #93c5fd; }
+        .nr-doc a { color: #2563eb; text-decoration: underline; word-break: break-all; }
+        .dark .nr-doc a { color: #60a5fa; }
+        .nr-doc .nr-header { margin-bottom: 1rem; }
+        .nr-doc .nr-footer { margin-top: 1.5rem; padding-top: .6rem; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: .78rem; }
+        .dark .nr-doc .nr-footer { border-color: #334155; }
+        #nr-vendor-group { transition: opacity .2s; }
+    </style>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-8 w-full items-start">
+
+        <!-- ===================== LEFT: SELECTION PANEL ===================== -->
+        <div class="xl:col-span-1 flex flex-col gap-6">
+
+            <!-- Customer details -->
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">Customer Details</h3>
+                <div class="space-y-4">
+                    <div class="input-wrapper">
+                        <label for="nrCustomerName" class="input-label">Customer name</label>
+                        <input type="text" id="nrCustomerName" class="input-field" placeholder="e.g. Acme Pty Ltd">
+                    </div>
+                    <div class="input-wrapper">
+                        <label for="nrSite" class="input-label">Site / location <span class="font-normal text-slate-400">(optional)</span></label>
+                        <input type="text" id="nrSite" class="input-field" placeholder="e.g. Sydney HQ">
+                    </div>
+                    <div class="input-wrapper">
+                        <label for="nrPreparedBy" class="input-label">Prepared by <span class="font-normal text-slate-400">(optional)</span></label>
+                        <input type="text" id="nrPreparedBy" class="input-field" placeholder="Your name">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standard section notice -->
+            <div class="card !p-5 bg-emerald-50/60 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800/30">
+                <div class="flex items-start gap-3">
+                    <span class="badge badge-success mt-0.5">Always included</span>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">Section 1 — the <strong>standard requirements across all RingCentral services</strong> (bandwidth, ports, IP supernets, domains, QoS, SIP ALG guidance) is always generated. Use the tick boxes below to append service, desk-phone and integration specifics.</p>
+                </div>
+            </div>
+
+            <!-- Services & endpoints -->
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-2 border-b border-slate-100 dark:border-slate-800 pb-3">Services &amp; Endpoints</h3>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mb-4 mt-3">Tick each service being deployed for this customer.</p>
+                <div id="nr-services" class="space-y-2.5"></div>
+
+                <!-- Desk-phone vendor sub-selection (revealed when Desk Phones is ticked) -->
+                <div id="nr-vendor-group" class="mt-4 pl-3 border-l-2 border-blue-200 dark:border-blue-800/50 hidden">
+                    <label class="input-label !mb-2">Desk-phone vendor(s)</label>
+                    <div id="nr-vendors" class="space-y-2.5"></div>
+                </div>
+            </div>
+
+            <!-- Integrations & setup links -->
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-2 border-b border-slate-100 dark:border-slate-800 pb-3">Integrations &amp; Setup Links</h3>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mb-4 mt-3">Tick each integration to include its setup guidance and official link.</p>
+                <div id="nr-integrations" class="space-y-2.5"></div>
+            </div>
+
+            <!-- Extra notes -->
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">Customer-specific notes <span class="text-sm font-normal text-slate-400">(optional)</span></h3>
+                <textarea id="nrNotes" class="input-field" rows="4" placeholder="Anything specific to this customer's environment..."></textarea>
+            </div>
+
+            <button id="nrGenerateBtn" class="btn-primary w-full !py-3 text-base">
+                Generate Document
+            </button>
+        </div>
+
+        <!-- ===================== RIGHT: DOCUMENT PREVIEW ===================== -->
+        <div class="xl:col-span-2">
+            <div class="card !p-0 overflow-hidden">
+                <div class="flex flex-wrap justify-between items-center gap-3 px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                    <h3 class="text-heading text-lg">Document Preview</h3>
+                    <div id="nrActions" class="flex gap-2 hidden">
+                        <button id="nrCopyBtn" class="btn-secondary !py-2 !px-4 text-xs">Copy</button>
+                        <button id="nrDownloadBtn" class="btn-secondary !py-2 !px-4 text-xs">Download HTML</button>
+                        <button id="nrPrintBtn" class="btn-primary !py-2 !px-4 text-xs">Print / Save PDF</button>
+                    </div>
+                </div>
+
+                <div class="p-6 md:p-8">
+                    <!-- Empty state -->
+                    <div id="nrEmptyState" class="text-center py-20 flex flex-col items-center">
+                        <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mb-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">No document yet</h3>
+                        <p class="text-slate-500 dark:text-slate-400 font-medium max-w-md">Fill in the customer details, tick the relevant services and integrations, then click <strong>Generate Document</strong>.</p>
+                    </div>
+                    <!-- Rendered document -->
+                    <div id="nrDocument" class="nr-doc hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/network_requirements.js') }}"></script>
