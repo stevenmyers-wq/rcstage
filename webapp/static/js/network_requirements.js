@@ -161,6 +161,20 @@ document.addEventListener('DOMContentLoaded', () => {
             `.nr-note{color:#475569;font-size:.86rem;} .nr-freetext{white-space:pre-wrap;}` +
             `.nr-footer{margin-top:1.5rem;padding-top:.6rem;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:.78rem;}` +
             `a{color:#2563eb;word-break:break-all;}` +
+            `.nr-searchtag{display:inline-block;margin-left:.4rem;padding:.05rem .4rem;border-radius:.4rem;background:#f1f5f9;color:#64748b;font-size:.68rem;font-weight:700;text-transform:uppercase;}` +
+            `td,th{word-break:break-word;overflow-wrap:anywhere;}` +
+            // Print pagination: repeat table headers, never split a row or a
+            // heading from its content, and start each major section on a fresh
+            // page so the PDF breaks up neatly.
+            `@media print{` +
+            `@page{margin:1.4cm;}` +
+            `body{margin:0;max-width:none;}` +
+            `h1,h2,h3{break-after:avoid;page-break-after:avoid;}` +
+            `thead{display:table-header-group;}` +
+            `tr{break-inside:avoid;page-break-inside:avoid;}` +
+            `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-footer{break-inside:avoid;page-break-inside:avoid;}` +
+            `.nr-section ~ .nr-section{break-before:page;page-break-before:always;}` +
+            `}` +
             `</style></head><body class="nr-doc">${inner}</body></html>`;
     }
 
