@@ -138,7 +138,8 @@ def upload_hours():
         
     is_preview = request.form.get('action') == 'preview'
     sheet_name = request.form.get('sheet_name')
-        
+    wipe_members = request.form.get('wipe_members') == '1'
+
     try:
         file = request.files['file']
         if file.filename.endswith('.csv'):
@@ -156,7 +157,7 @@ def upload_hours():
 
     def generate():
         try:
-            for chunk in utils.update_cq_batch(records, token, is_preview=is_preview):
+            for chunk in utils.update_cq_batch(records, token, is_preview=is_preview, wipe_members=wipe_members):
                 yield json.dumps(chunk) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"

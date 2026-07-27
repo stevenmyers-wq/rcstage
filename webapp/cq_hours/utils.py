@@ -556,7 +556,7 @@ def check_diff(changes_list, param_name, old_val, new_val):
         return True
     return False
 
-def update_cq_batch(records, token, is_preview=False):
+def update_cq_batch(records, token, is_preview=False, wipe_members=False):
     total_records = len(records)
     yield {"type": "start", "total": total_records, "message": "Fetching Account Directories..."}
     
@@ -1183,17 +1183,13 @@ def update_cq_batch(records, token, is_preview=False):
                         _debug_dump(logs, 'After Hours PUT failed', payload=ah_rule, err=err)
 
         # --- F. MEMBERS ---
+        # A blank Members column is always left untouched. When it has values the sheet
+        # members are added; the wipe_members toggle additionally removes any current
+        # member not listed, making the queue's membership exactly the sheet list.
         val_mems = get_val(row, 'Members (Ext)')
         if val_mems is not None:
-            mem_str = val_mems
-            mem_exts = [e.strip() for e in mem_str.split(',')] if mem_str else []
-            added_ids = []
-            for m in mem_exts:
-                m_id = _resolve_ext(m)
-                if m_id: added_ids.append({"id": m_id})
-            
-            if added_ids or not mem_str:
-                old_mems_str = "None"
+            mem_exts = [e.strip() for e in val_mems.split(',') if e.strip()]
+            if mem_exts:
                 old_mem_list = []
                 old_id_by_num = {}
                 get_succ, old_mems_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/members', method='GET', token=token)
@@ -1203,28 +1199,40 @@ def update_cq_batch(records, token, is_preview=False):
                         if num and num != 'None':
                             old_mem_list.append(num)
                             if m.get('id'): old_id_by_num[num] = str(m.get('id'))
-                    if old_mem_list: old_mems_str = ", ".join(old_mem_list)
 
-                new_mems_str = ", ".join(mem_exts) if mem_exts else "None"
+                old_set = set(old_mem_list)
+                new_set = set(mem_exts)
 
-                if set(old_mem_list) != set(mem_exts):
+                if wipe_members:
+                    # Membership becomes exactly the sheet list.
+                    target_list = mem_exts
+                    remove_nums = [n for n in old_mem_list if n not in new_set]
+                else:
+                    # Additive: keep everyone already assigned, append the new ones.
+                    target_list = old_mem_list + [n for n in mem_exts if n not in old_set]
+                    remove_nums = []
+
+                add_nums = [n for n in mem_exts if n not in old_set]
+                target_set = set(target_list)
+
+                if target_set != old_set:
+                    old_mems_str = ", ".join(old_mem_list) if old_mem_list else "None"
+                    new_mems_str = ", ".join(target_list) if target_list else "None"
                     changes.append({"parameter": "Queue Members", "old": old_mems_str, "new": new_mems_str})
                     if not is_preview:
-                        # The diff above presents Members as a full replacement, so the API call
-                        # must both add the new members and remove the ones dropped from the list;
-                        # sending only addedExtensionIds would leave stale members assigned.
-                        new_set = set(mem_exts)
-                        removed_ids = [old_id_by_num[n] for n in old_mem_list if n not in new_set and n in old_id_by_num]
-                        mem_payload = {"addedExtensionIds": [a['id'] for a in added_ids]}
-                        if removed_ids:
-                            mem_payload["removedExtensionIds"] = removed_ids
-                        s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json_payload=mem_payload, token=token)
-                        if s_succ:
-                            logs.append("Members Updated")
-                        else:
-                            has_error = True
-                            logs.append(f"Members Error: {format_api_error(err)}")
-                            _debug_dump(logs, 'Members bulk-assign failed', payload=mem_payload, err=err)
+                        added_ids = [rid for rid in (_resolve_ext(n) for n in add_nums) if rid]
+                        removed_ids = [old_id_by_num[n] for n in remove_nums if n in old_id_by_num]
+                        mem_payload = {}
+                        if added_ids: mem_payload["addedExtensionIds"] = added_ids
+                        if removed_ids: mem_payload["removedExtensionIds"] = removed_ids
+                        if mem_payload:
+                            s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json_payload=mem_payload, token=token)
+                            if s_succ:
+                                logs.append("Members Updated")
+                            else:
+                                has_error = True
+                                logs.append(f"Members Error: {format_api_error(err)}")
+                                _debug_dump(logs, 'Members bulk-assign failed', payload=mem_payload, err=err)
 
         # --- G. VOICEMAIL NOTIFICATIONS ---
         vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
