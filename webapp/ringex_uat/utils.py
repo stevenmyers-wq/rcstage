@@ -553,9 +553,13 @@ class UATGenerator:
 # =============================================================================
 
 def _suite(cat, url, rows):
-    """Builds suite case dicts, appending the portal 'go to' URL to each action step."""
+    """Builds suite case dicts. When ``url`` is set, a 'go to' portal link is
+    appended to each action step; integration/config suites pass no URL so that
+    no setup link is shown."""
+    def build_action(a):
+        return f"{a} (Go to: {url})" if url else a
     return [
-        {"category": cat, "scenario": s, "action": f"{a} (Go to: {url})", "expected": e}
+        {"category": cat, "scenario": s, "action": build_action(a), "expected": e}
         for (s, a, e) in rows
     ]
 
@@ -589,7 +593,7 @@ def _device_test_cases():
 
 
 def _scim_test_cases():
-    return _suite("SCIM Provisioning", "https://service.ringcentral.com", [
+    return _suite("SCIM Provisioning", None, [
         ("User Provisioning (Create)", "Create a new user in the identity provider and assign the RingEX app.", "The user is auto-provisioned in RingEX with the correct attributes, extension, and license within the expected sync window."),
         ("Attribute Update (Sync)", "Change a user's name, department, or contact attribute in the IdP.", "The updated attributes sync through to the RingEX user record."),
         ("Group / Role Mapping", "Add or remove the user from an IdP group mapped to a RingEX role or template (if configured).", "The user receives the correct role / template based on group membership."),
@@ -600,7 +604,7 @@ def _scim_test_cases():
 
 
 def _teams_direct_routing_test_cases():
-    return _suite("MS Teams Direct Routing", "https://admin.teams.microsoft.com", [
+    return _suite("MS Teams Direct Routing", None, [
         ("Inbound PSTN to Teams User", "Call the DID of a Teams-enabled (Direct Routing) user from an external phone.", "The call rings inside the Microsoft Teams client and connects with two-way audio."),
         ("Outbound Teams to PSTN", "From the Teams client, dial an external PSTN number.", "The call routes out via the RingCentral SBC and presents the correct outbound caller ID."),
         ("Teams to RingEX Internal", "Place a call between a Teams Direct Routing user and a native RingEX extension.", "Internal call connects both directions with correct caller ID."),
@@ -611,7 +615,7 @@ def _teams_direct_routing_test_cases():
 
 
 def _teams_embedded_app_test_cases():
-    return _suite("MS Teams Embedded App", "https://admin.teams.microsoft.com", [
+    return _suite("MS Teams Embedded App", None, [
         ("App Install & Load", "Install/pin the RingCentral embedded app in Microsoft Teams and open it.", "The app appears in Teams and loads without error."),
         ("Single Sign-On to App", "Open the embedded app as a provisioned user (SSO configured).", "The user is authenticated into the embedded app without a separate manual login."),
         ("Click-to-Dial", "Initiate a call from the embedded dialer or a Teams contact.", "The call is placed through RingEX and connects with audio."),
@@ -621,7 +625,7 @@ def _teams_embedded_app_test_cases():
 
 
 def _teams_presence_test_cases():
-    return _suite("MS Teams Presence Sync (Teams <> RingEX)", "https://app.ringcentral.com", [
+    return _suite("MS Teams Presence Sync (Teams <> RingEX)", None, [
         ("Teams Call -> RingEX Busy", "Place the user on an active Microsoft Teams call.", "The user's RingEX presence updates to 'On a call' / busy for the duration of the Teams call."),
         ("RingEX Call -> Teams Busy", "Place the user on an active RingEX call.", "The user's Microsoft Teams presence updates to 'In a call' / busy for the duration of the RingEX call."),
         ("Teams Status -> RingEX", "Manually change the user's Teams status (Available, Away, Busy, Do Not Disturb).", "The equivalent RingEX presence reflects the Teams status within the expected sync window."),
@@ -643,7 +647,7 @@ def _sso_test_cases():
 
 def _crm_test_cases():
     # Out-of-the-box RingCentral CRM integrations (native managed packages + App Connect).
-    return _suite("CRM Integration (App Connect / Native)", "https://www.ringcentral.com/apps", [
+    return _suite("CRM Integration (App Connect / Native)", None, [
         ("Supported CRM Confirmation", "Confirm the customer's CRM is an out-of-the-box RingCentral integration (native: Salesforce, HubSpot, Microsoft Dynamics 365, ServiceNow, Zendesk, Zoho; App Connect: Pipedrive, Insightly, Bullhorn, NetSuite, Clio, Redtail) and that the integration/extension is installed.", "The CRM integration is installed and authorised, and the RingCentral dialer/App Connect widget loads inside the CRM."),
         ("Login / Authorisation", "Log in to RingCentral from within the CRM integration.", "Authentication completes and the embedded phone connects and shows a ready/registered state."),
         ("Click-to-Dial", "Click a phone number on a CRM contact/lead record.", "The call is initiated through RingCentral and connects with two-way audio."),
@@ -657,7 +661,7 @@ def _crm_test_cases():
 
 def _ace_test_cases():
     # ACE = AI Conversation Expert (formerly RingSense): recording, transcription, AI insights.
-    return _suite("ACE / RingSense (AI Conversation Expert)", "https://app.ringcentral.com", [
+    return _suite("ACE / RingSense (AI Conversation Expert)", None, [
         ("Recording Capture", "Place a call on an ACE/RingSense-enabled extension or queue with recording enabled.", "The call is recorded and appears in the ACE/RingSense library for processing."),
         ("Transcription Accuracy", "Open the processed call and review the transcript.", "A speaker-separated transcript is generated and reasonably reflects the spoken conversation."),
         ("AI Call Summary", "Open the AI-generated summary for the processed call.", "A concise, accurate summary of the conversation is produced."),
