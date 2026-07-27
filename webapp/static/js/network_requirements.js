@@ -185,20 +185,19 @@ document.addEventListener('DOMContentLoaded', () => {
             `a{color:#2563eb;word-break:break-all;}` +
             `.nr-searchtag{display:inline-block;margin-left:.4rem;padding:.05rem .4rem;border-radius:.4rem;background:#f1f5f9;color:#64748b;font-size:.68rem;font-weight:700;text-transform:uppercase;}` +
             `td,th{word-break:break-word;overflow-wrap:anywhere;}` +
-            // Print pagination: repeat table headers, never split a row or a
-            // heading from its content, keep each subsection together (moving it
-            // to the next page if it would run over), and start each major
-            // section on a fresh page so the PDF breaks up neatly.
+            // Print pagination: generous page margins, repeat table headers,
+            // never split a row or orphan a heading from its content, let long
+            // tables flow naturally (no big gaps), and start each major section
+            // on a fresh page with breathing room at the top.
             `@media print{` +
-            `@page{margin:1.4cm;}` +
+            `@page{margin:1.9cm 1.4cm;}` +
             `body{margin:0;max-width:none;}` +
             `h1,h2,h3{break-after:avoid;page-break-after:avoid;}` +
             `thead{display:table-header-group;}` +
             `tr{break-inside:avoid;page-break-inside:avoid;}` +
             `table.nr-table{break-inside:auto;}` +
-            `.nr-block{break-inside:avoid;page-break-inside:avoid;}` +
-            `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-footer,.nr-header{break-inside:avoid;page-break-inside:avoid;}` +
-            `.nr-section ~ .nr-section{break-before:page;page-break-before:always;}` +
+            `.nr-kv,ul.nr-list li,.nr-chips,.nr-warning,.nr-header{break-inside:avoid;page-break-inside:avoid;}` +
+            `.nr-section ~ .nr-section{break-before:page;page-break-before:always;padding-top:.5cm;}` +
             `}` +
             `</style></head><body class="nr-doc">${inner}</body></html>`;
     }
