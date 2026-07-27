@@ -156,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `table.nr-table th{text-align:left;background:#f1f5f9;border:1px solid #e2e8f0;padding:.45rem .6rem;}` +
             `table.nr-table td{border:1px solid #e2e8f0;padding:.45rem .6rem;vertical-align:top;}` +
             `ul.nr-list{padding-left:1.2rem;} .nr-kv{display:flex;gap:.5rem;} .nr-kv .nr-k{font-weight:700;min-width:110px;}` +
+            `.nr-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0 .8rem;} .nr-chip{display:inline-block;padding:.2rem .55rem;border-radius:.5rem;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:.78rem;font-family:ui-monospace,Menlo,monospace;}` +
             `.nr-warning{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:.7rem .9rem;border-radius:.6rem;font-size:.82rem;}` +
             `.nr-note{color:#475569;font-size:.86rem;} .nr-freetext{white-space:pre-wrap;}` +
             `.nr-footer{margin-top:1.5rem;padding-top:.6rem;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:.78rem;}` +
