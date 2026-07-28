@@ -1,8 +1,6 @@
 import logging
 import time
 
-from flask import session
-
 from webapp.rc_api import rc_api_call
 
 logger = logging.getLogger(__name__)
@@ -33,16 +31,6 @@ class RCPresenceManager:
         self.base_path = f"/restapi/v1.0/account/{self.account_id}"
         self.max_retries = max_retries
 
-    @staticmethod
-    def _pkce_token():
-        """BLF/presence deliberately uses ONLY the standard PKCE OAuth token
-        (like the analytics module), never the SM impersonation bridge. The
-        presence write endpoints require the EditPresence app permission, so
-        the operator connects with a client id known to hold it. Passing the
-        token explicitly also bypasses rc_api_call's impersonation-first
-        selection and its 401 impersonation-refresh path."""
-        return session.get('rc_access_token')
-
     # ------------------------------------------------------------------
     # Core transport with retry/backoff + honest error propagation
     # ------------------------------------------------------------------
@@ -55,7 +43,9 @@ class RCPresenceManager:
         any non-2xx that survives the retries so failures can never be
         misreported as successes.
         """
-        kwargs.setdefault('token', self._pkce_token())
+        # No explicit token is passed: rc_api_call selects the SM impersonation
+        # bridge token first (falling back to the PKCE token) and, on a 401,
+        # auto-refreshes/re-mints it — which only happens when token is unset.
         attempt = 0
         while True:
             resp = rc_api_call(endpoint, method=method, return_response=True, **kwargs)
@@ -99,26 +89,26 @@ class RCPresenceManager:
     # ------------------------------------------------------------------
     def get_sites(self):
         endpoint = f"{self.base_path}/sites"
-        response = rc_api_call(endpoint, method="GET", token=self._pkce_token())
+        response = rc_api_call(endpoint, method="GET")
         return response.get('records', []) if response else []
 
     def get_all_users(self, site_id=None):
         endpoint = f"{self.base_path}/extension"
         params = {"type": ["User"], "perPage": 1000}
         if site_id: params["siteId"] = site_id
-        response = rc_api_call(endpoint, method="GET", params=params, token=self._pkce_token())
+        response = rc_api_call(endpoint, method="GET", params=params)
         return response.get('records', []) if response else []
 
     def get_all_extensions_raw(self):
         endpoint = f"{self.base_path}/extension"
         params = {"perPage": 1000}
-        response = rc_api_call(endpoint, method="GET", params=params, token=self._pkce_token())
+        response = rc_api_call(endpoint, method="GET", params=params)
         return response.get('records', []) if response else []
 
     def get_extension_by_number(self, ext_number):
         endpoint = f"{self.base_path}/extension"
         params = {"extensionNumber": ext_number}
-        response = rc_api_call(endpoint, method="GET", params=params, token=self._pkce_token())
+        response = rc_api_call(endpoint, method="GET", params=params)
         records = response.get('records', []) if response else []
         return str(records[0].get('id')) if records else None
 

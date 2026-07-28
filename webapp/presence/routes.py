@@ -310,18 +310,21 @@ def presence_diag():
     from flask import session
     from webapp.rc_api import rc
 
-    # Use ONLY the standard PKCE token, matching the rest of the presence
-    # module — never the impersonation bridge.
-    token = session.get('rc_access_token')
-
+    # Probe with the SAME token selection the presence module uses: no explicit
+    # token, so rc_api_call picks the SM impersonation bridge first (falling
+    # back to PKCE). This tests the real path.
     out = {}
-    out['token_type'] = 'rc_access_token' if token else 'none'
-    out['impersonation_present_but_unused'] = bool(session.get('sm_isolated_token'))
+    out['token_type'] = (
+        'sm_isolated_token (impersonation)' if session.get('sm_isolated_token')
+        else 'rc_access_token (pkce)' if session.get('rc_access_token')
+        else 'none'
+    )
+    out['bridge_target'] = session.get('sm_target_id')
 
     # Arbitrary read probe (safe: GET only).
     probe = request.args.get('probe')
     if probe:
-        r = rc.get(probe, token=token)
+        r = rc.get(probe)
         return jsonify({
             "probe": probe,
             "status_code": getattr(r, 'status_code', None),
@@ -329,14 +332,14 @@ def presence_diag():
         })
 
     # Who does this token represent?
-    self_resp = rc.get('/restapi/v1.0/account/~/extension/~', token=token)
+    self_resp = rc.get('/restapi/v1.0/account/~/extension/~')
     self_ext = _safe_json(self_resp) if getattr(self_resp, 'ok', False) else {}
     self_id = str(self_ext.get('id')) if self_ext.get('id') else None
     out['self'] = {k: self_ext.get(k) for k in ('id', 'extensionNumber', 'name', 'type')}
     out['self_read_status'] = getattr(self_resp, 'status_code', None)
 
     # What presence-related permissions does the user hold?
-    authz = rc.get('/restapi/v1.0/account/~/extension/~/authz-profile', token=token)
+    authz = rc.get('/restapi/v1.0/account/~/extension/~/authz-profile')
     authz_body = _safe_json(authz) if getattr(authz, 'ok', False) else {}
     perm_ids = [
         (p.get('permission') or {}).get('id')
@@ -348,14 +351,14 @@ def presence_diag():
     # Raw read of a target's presence lines (shape confirmation).
     target = request.args.get('target')
     if target:
-        tr = rc.get(f'/restapi/v1.0/account/~/extension/{target}/presence/line', token=token)
+        tr = rc.get(f'/restapi/v1.0/account/~/extension/{target}/presence/line')
         out['target_line_read'] = {"status_code": getattr(tr, 'status_code', None), "body": _safe_json(tr)}
 
     # Does a presence/line WRITE succeed on the token's OWN extension?
-    # No-op echo of the editable lines; gated behind ?selfwrite=1 since any PUT
+    # No-op echo of the current lines; gated behind ?selfwrite=1 since any PUT
     # is a real (here idempotent) write.
     if request.args.get('selfwrite') == '1' and self_id:
-        sr = rc.get(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', token=token)
+        sr = rc.get(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line')
         recs = (_safe_json(sr) or {}).get('records', []) if getattr(sr, 'ok', False) else []
         # Full-list echo as a BARE ARRAY (the shape this endpoint actually
         # requires), locked lines included, so it is a valid no-op self-write.
@@ -364,9 +367,9 @@ def presence_diag():
             for r in recs
             if r.get('extension', {}).get('id')
         ]
-        wr = rc.put(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', json=echo, token=token)
+        wr = rc.put(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', json=echo)
         out['self_write'] = {
-            "sent": {"records": echo},
+            "sent": echo,
             "status_code": getattr(wr, 'status_code', None),
             "body": _safe_json(wr),
         }
