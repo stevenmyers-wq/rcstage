@@ -35,9 +35,18 @@
                     <input type="text" id="cq-search" placeholder="Search by name or extension..." class="input-field">
                 </div>
 
-                <div class="input-wrapper">
+                <div class="input-wrapper relative">
                     <label class="input-label">Filter by Site</label>
-                    <div id="cq-site-filter" class="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-0.5"></div>
+                    <button type="button" id="cq-site-dropdown-btn" class="input-field flex items-center justify-between text-left w-full">
+                        <span id="cq-site-dropdown-label" class="truncate">All sites</span>
+                        <svg class="w-4 h-4 flex-shrink-0 ml-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div id="cq-site-dropdown" class="hidden absolute z-30 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg">
+                        <div class="p-2 border-b border-slate-100 dark:border-slate-800">
+                            <input type="text" id="cq-site-search" placeholder="Search sites..." class="input-field !py-1.5 text-sm">
+                        </div>
+                        <div id="cq-site-filter" class="max-h-48 overflow-y-auto p-1"></div>
+                    </div>
                 </div>
 
                 <div class="flex items-center justify-between px-1">
@@ -253,8 +262,9 @@
                             siteFilter.innerHTML = '';
                             sites.forEach(s => {
                                 const lbl = document.createElement('label');
-                                lbl.className = 'flex items-center gap-2 text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 select-none';
-                                lbl.innerHTML = `<input type="checkbox" class="cq-site-cb w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="${s}"><span>${s}</span>`;
+                                lbl.className = 'cq-site-row flex items-center gap-2 text-xs px-2 py-1.5 rounded-md cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 select-none';
+                                lbl.dataset.site = s.toLowerCase();
+                                lbl.innerHTML = `<input type="checkbox" class="cq-site-cb w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="${s}"><span class="truncate">${s}</span>`;
                                 siteFilter.appendChild(lbl);
                             });
 
@@ -262,6 +272,7 @@
                             filterSection.classList.add('flex');
                             btnExport.classList.remove('hidden');
                             btnLoadQueues.classList.add('hidden');
+                            updateSiteLabel();
                             renderQueueList();
                             updateCount();
                         } else {
@@ -328,8 +339,42 @@
                 syncSelectAll();
             }
 
+            // --- Site dropdown (searchable, tick to filter) ---
+            const siteDropdownBtn = document.getElementById('cq-site-dropdown-btn');
+            const siteDropdown = document.getElementById('cq-site-dropdown');
+            const siteDropdownLabel = document.getElementById('cq-site-dropdown-label');
+            const siteSearch = document.getElementById('cq-site-search');
+
+            function updateSiteLabel() {
+                const sel = getSelectedSites();
+                siteDropdownLabel.innerText = sel.length === 0 ? 'All sites'
+                    : (sel.length === 1 ? sel[0] : `${sel.length} sites selected`);
+            }
+
+            if (siteDropdownBtn) {
+                siteDropdownBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    siteDropdown.classList.toggle('hidden');
+                    if (!siteDropdown.classList.contains('hidden')) siteSearch.focus();
+                });
+            }
+            document.addEventListener('click', (e) => {
+                if (siteDropdown && !siteDropdown.classList.contains('hidden')
+                    && !siteDropdown.contains(e.target) && !siteDropdownBtn.contains(e.target)) {
+                    siteDropdown.classList.add('hidden');
+                }
+            });
+            if (siteSearch) {
+                siteSearch.addEventListener('input', () => {
+                    const t = siteSearch.value.toLowerCase().trim();
+                    siteFilter.querySelectorAll('.cq-site-row').forEach(row => {
+                        row.style.display = (!t || row.dataset.site.includes(t)) ? '' : 'none';
+                    });
+                });
+            }
+
             if (searchInput) searchInput.addEventListener('input', renderQueueList);
-            if (siteFilter) siteFilter.addEventListener('change', renderQueueList);
+            if (siteFilter) siteFilter.addEventListener('change', () => { updateSiteLabel(); renderQueueList(); });
 
             // Delegated: toggling a queue checkbox updates the persistent selection set.
             listContainer.addEventListener('change', (e) => {

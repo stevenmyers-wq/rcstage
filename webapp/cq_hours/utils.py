@@ -404,7 +404,9 @@ def run_cq_audit(task_id, queue_ids, token):
             row["Status"] = base.get('status', '').capitalize()
             row["Queue Email"] = base.get('contact', {}).get('email', '')
             
-            editable = base.get('editableMemberStatus')
+            # editableMemberStatus lives on the call-queue object, not the extension.
+            succ_cq, cq_base = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}', token=token)
+            editable = cq_base.get('editableMemberStatus') if succ_cq and isinstance(cq_base, dict) else None
             if editable is True:
                 row["Member Queue Status"] = "Allowed"
             elif editable is False:
@@ -463,21 +465,20 @@ def run_cq_audit(task_id, queue_ids, token):
 
                 for g in rule.get('greetings', []):
                     g_type = g.get('type')
-                    g_id = str(g.get('preset', {}).get('id', ''))
-                    
+                    g_preset = g.get('preset', {}) or {}
+                    g_id = str(g_preset.get('id', ''))
+                    # The greeting embeds its own preset name (e.g. "Acoustic"). Prefer the
+                    # id->name dictionary, but fall back to that embedded name so genre presets
+                    # aren't collapsed to a bare "Default" when the dictionary lookup misses.
+                    g_embedded = str(g_preset.get('name', '')).strip()
+
                     if g_id:
-                        if g_type == 'Introductory':
-                            g_name = preset_id_to_name.get('Introductory', {}).get(g_id, 'Default')
-                        elif g_type in ['ConnectingAudio', 'ConnectingMessage']:
-                            g_name = preset_id_to_name.get('ConnectingAudio', {}).get(g_id, 'Default')
-                        elif g_type == 'HoldMusic':
-                            g_name = preset_id_to_name.get('HoldMusic', {}).get(g_id, 'Default')
-                        elif g_type == 'InterruptPrompt':
-                            g_name = preset_id_to_name.get('InterruptPrompt', {}).get(g_id, 'Default')
-                        elif g_type == 'Voicemail':
-                            g_name = preset_id_to_name.get('Voicemail', {}).get(g_id, 'Default')
+                        type_key = 'ConnectingAudio' if g_type in ['ConnectingAudio', 'ConnectingMessage'] else g_type
+                        g_name = preset_id_to_name.get(type_key, {}).get(g_id) or (g_embedded.title() if g_embedded else 'Default')
+                    elif 'custom' in g:
+                        g_name = 'Custom'
                     else:
-                        g_name = 'Custom' if 'custom' in g else 'Default'
+                        g_name = 'Default'
                     
                     if g_type == 'Introductory': row["Greeting"] = g_name
                     elif g_type in ['ConnectingAudio', 'ConnectingMessage']: row["Audio While Connecting"] = g_name
@@ -529,11 +530,17 @@ def run_cq_audit(task_id, queue_ids, token):
                 else:
                     row["Voicemail Notifications"] = "Off"
                 
+                # Basic mode keeps addresses at the top level; advanced mode keeps them under
+                # the voicemails block (as emailAddresses or advancedEmailAddresses). Gather from
+                # all of them so a queue on either setup still exports its addresses.
                 if notif.get('advancedMode'):
-                    emails = vm_set.get('emailAddresses', [])
+                    emails = vm_set.get('emailAddresses') or vm_set.get('advancedEmailAddresses') or []
                 else:
-                    emails = notif.get('emailAddresses', [])
-                    
+                    emails = notif.get('emailAddresses') or []
+                if not emails:
+                    emails = (vm_set.get('emailAddresses') or vm_set.get('advancedEmailAddresses')
+                              or notif.get('emailAddresses') or [])
+                emails = list(dict.fromkeys(emails))
                 if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
 
             rows.append(row)
