@@ -179,11 +179,12 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         val = row.get(sheet_col) if sheet_col in df.columns else None
 
         # Lines 1 & 2 (and any notEditableOnHud line) carry the user's own
-        # presence and cannot be changed per the RC BLF API — always re-send
-        # them unchanged so the replacement PUT preserves them.
+        # presence and cannot be changed per the RC BLF API. RC manages these
+        # slots itself and REJECTS a PUT body that includes them, so we must
+        # omit them entirely. Seed seen_extensions with the self extension so
+        # it is never re-added as an editable monitored line.
         if is_locked:
             if current_ext_id:
-                payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
                 seen_extensions.add(current_ext_id)
             continue
 
@@ -243,7 +244,13 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         cleaned_records.append(p)
     payload_records = cleaned_records
 
-    current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
+    # Compare only editable lines: the locked self-lines are excluded from the
+    # payload (RC manages them), so they must be excluded from the baseline too,
+    # otherwise every row would look "changed" and trigger a needless PUT.
+    current_exts = [
+        str(r.get('extension', {}).get('id', ''))
+        for r in live_records if not r.get('notEditableOnHud', False)
+    ]
     payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
 
     if current_exts != payload_exts:
