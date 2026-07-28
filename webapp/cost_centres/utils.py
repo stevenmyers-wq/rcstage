@@ -96,19 +96,162 @@ def fetch_all_pages(endpoint, token, params=None):
             break
         params['page'] += 1
         time.sleep(0.05)
-        
+
     return records
+
+
+# ---------------------------------------------------------------------------
+# License classification
+# ---------------------------------------------------------------------------
+# RingCentral does not expose the assigned license SKU on an extension, nor any
+# per-extension license endpoint (every candidate 404s; the v2 licenses
+# endpoint only returns per-cost-centre aggregates). We therefore attribute the
+# license each object *consumes* using RingCentral's own model:
+#   - a User extension consumes a Digital Line seat;
+#   - a non-user extension (VirtualUser / Message-Only / Announcement / IVR /
+#     Site / ...) that carries a phone number consumes an Additional Local
+#     Number for that number;
+#   - a non-user extension with no number consumes nothing billable.
+# The authoritative per-cost-centre variant split (DL-UNL vs DL-BAS, ALN totals,
+# etc.) comes from the v2 licenses endpoint and is surfaced separately as the
+# License Inventory.
+
+# Extension types that consume a Digital Line seat.
+DIGITAL_LINE_EXTENSION_TYPES = {'User', 'DigitalUser'}
+
+# Friendly names for the license SKU prefixes returned by /v2/.../licenses.
+# skuId looks like 'LC_DL-UNL_50' -> prefix 'DL-UNL'. Unknown prefixes fall
+# back to the raw SKU so nothing is silently mislabelled.
+LICENSE_SKU_NAMES = {
+    'DL-UNL': 'Digital Line Unlimited',
+    'DL-BAS': 'Digital Line Basic (Metered)',
+    'DL-HDSK': 'Digital Line (Hot Desk / Deskphone)',
+    'FDL': 'Additional Digital Line',
+    'ALN': 'Additional Local Number',
+    'ALNSMS': 'Additional Local Number (SMS)',
+    'ATN': 'Additional Toll-Free Number',
+    'RS': 'RingCentral Rooms',
+    'RCRM': 'RingCentral Rooms',
+    'LR': 'Live Reports',
+}
+
+
+def decode_license_sku(sku_id):
+    """'LC_DL-UNL_50' -> 'Digital Line Unlimited' (raw SKU if unknown)."""
+    if not sku_id:
+        return 'Unknown License'
+    code = sku_id[3:] if sku_id.startswith('LC_') else sku_id
+    code = code.rsplit('_', 1)[0]  # strip trailing numeric license-type id
+    return LICENSE_SKU_NAMES.get(code, sku_id)
+
+
+def classify_extension_license(ext_type, phone_number_count):
+    """License an extension object consumes, per the rules above."""
+    if ext_type in DIGITAL_LINE_EXTENSION_TYPES:
+        return 'Digital Line'
+    if phone_number_count > 0:
+        return 'Additional Local Number' + (
+            f' (x{phone_number_count})' if phone_number_count > 1 else '')
+    return ''
+
+
+def classify_phone_number_license(usage_type, payment_type):
+    """License a standalone (extension-less) phone number consumes."""
+    if usage_type == 'MainCompanyNumber':
+        return 'Main Company Number'
+    if payment_type == 'External':
+        return 'External / Forwarded Number'
+    if payment_type == 'TollFree' or usage_type == 'TollFreeNumber':
+        return 'Additional Toll-Free Number'
+    if usage_type in ('CompanyNumber', 'AdditionalCompanyNumber'):
+        return 'Additional Company Number'
+    if usage_type in ('ForwardedNumber', 'ForwardedCompanyNumber'):
+        return 'Forwarded Number'
+    if usage_type == 'DirectNumber':
+        return 'Additional Local Number'
+    return usage_type or 'Phone Number'
+
+
+def build_license_inventory(token, cc_map):
+    """Authoritative per-cost-centre license inventory from /v2/.../licenses.
+
+    Returns a list of cost centres, each with its license SKUs and the
+    assigned / available quantities -- the same breakdown the RingCentral Admin
+    Portal Cost Center license report shows.
+    """
+    resp = rc_api_call('/restapi/v2/accounts/~/licenses', method='GET',
+                       token=token, return_response=True)
+    if not resp or getattr(resp, 'status_code', 500) != 200:
+        return []
+    try:
+        licenses = resp.json().get('licenses', [])
+    except Exception:
+        return []
+
+    # cc_id -> sku_id -> {name, sku, assigned, available}
+    grouped = {}
+    for lic in licenses:
+        cc_id = str(lic.get('costCenterId', '') or '')
+        sku = lic.get('skuId', '') or ''
+        qty = lic.get('quantity', 0) or 0
+        assigned = bool(lic.get('assigned'))
+        node = grouped.setdefault(cc_id, {}).setdefault(sku, {
+            'sku': sku,
+            'name': decode_license_sku(sku),
+            'assigned': 0,
+            'available': 0,
+        })
+        if assigned:
+            node['assigned'] += qty
+        else:
+            node['available'] += qty
+
+    inventory = []
+    for cc_id, skus in grouped.items():
+        rows = sorted(skus.values(), key=lambda r: r['name'].lower())
+        for r in rows:
+            r['total'] = r['assigned'] + r['available']
+        inventory.append({
+            'costCenterId': cc_id,
+            'costCenterName': cc_map.get(cc_id, f'Cost Centre {cc_id}'),
+            'licenses': rows,
+            'totalAssigned': sum(r['assigned'] for r in rows),
+            'totalAvailable': sum(r['available'] for r in rows),
+        })
+
+    inventory.sort(key=lambda c: c['costCenterName'].lower())
+    return inventory
+
 
 def get_cost_centres_data(token):
     # 1. Fetch available cost centres and build a lookup map
     cost_centres = fetch_all_pages('/restapi/v1.0/account/~/cost-center', token=token)
     cc_map = {str(cc['id']): cc.get('name', f"Cost Centre {cc['id']}") for cc in cost_centres}
 
-    # 2. Build Site to Cost Centre Map
-    # We must fetch extensions first to map sites to their cost centres
+    # 2. Fetch the core object lists up front so we can build cost-centre name
+    #    lookups and per-extension phone-number counts before classifying.
     ext_params = {'status': ['Enabled', 'Disabled', 'NotActivated', 'Unassigned']}
     extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token=token, params=ext_params)
-    
+    phone_numbers = fetch_all_pages('/restapi/v1.0/account/~/phone-number', token=token)
+    devices = fetch_all_pages('/restapi/v1.0/account/~/device', token=token)
+
+    # The dedicated /cost-center list endpoint 404s on some accounts, so harvest
+    # cost-centre names from the costCenter objects embedded on each record.
+    for _rec in list(extensions) + list(phone_numbers) + list(devices):
+        _cc = _rec.get('costCenter') or {}
+        _cid = str(_cc.get('id', '') or '')
+        if _cid and _cc.get('name'):
+            cc_map.setdefault(_cid, _cc.get('name'))
+
+    # Per-extension phone-number count. A non-user extension that carries a
+    # number consumes an Additional Local Number for it.
+    ext_number_count = {}
+    for _pn in phone_numbers:
+        _ext = _pn.get('extension') or {}
+        _eid = str(_ext.get('id', '') or '')
+        if _eid:
+            ext_number_count[_eid] = ext_number_count.get(_eid, 0) + 1
+
     site_cc_map = {}
     main_site_cc_id = None
     main_site_cc_name = None
@@ -182,12 +325,13 @@ def get_cost_centres_data(token):
             'number': ext.get('extensionNumber', 'N/A'),
             'site': ext.get('site', {}).get('name', 'Main Site'),
             'department': ext.get('contact', {}).get('department', 'N/A') or 'N/A',
+            'licenseType': classify_extension_license(
+                ext.get('type'), ext_number_count.get(str(ext.get('id')), 0)),
             'costCenterId': cc_id,
             'costCenterName': cc_name
         })
 
-    # 5. Fetch Phone Numbers
-    phone_numbers = fetch_all_pages('/restapi/v1.0/account/~/phone-number', token=token)
+    # 5. Process standalone Phone Numbers (not attached to an extension).
     for pn in phone_numbers:
         usage = pn.get('usageType', '')
         if usage in ['CompanyNumber', 'MainCompanyNumber', 'DirectNumber', 'ForwardedNumber'] and not pn.get('extension'):
@@ -200,12 +344,12 @@ def get_cost_centres_data(token):
                 'number': pn.get('phoneNumber', ''),
                 'site': 'N/A',
                 'department': 'N/A',
+                'licenseType': classify_phone_number_license(usage, pn.get('paymentType')),
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
-            
-    # 6. Fetch Devices
-    devices = fetch_all_pages('/restapi/v1.0/account/~/device', token=token)
+
+    # 6. Process standalone Devices (not attached to an extension).
     for dev in devices:
         if not dev.get('extension'):
             cc_id, cc_name = resolve_cost_centre(dev)
@@ -217,11 +361,12 @@ def get_cost_centres_data(token):
                 'number': dev.get('serial', 'N/A'),
                 'site': dev.get('site', {}).get('name', 'Main Site'),
                 'department': 'N/A',
+                'licenseType': 'Device',
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
 
-    # 7. Fetch Billing Items / Licenses
+    # 7. Fetch account-level add-on Licenses (Live Reports, Rooms, etc.).
     try:
         licenses = fetch_all_pages('/restapi/v1.0/account/~/licenses', token=token)
         for lic in licenses:
@@ -235,13 +380,27 @@ def get_cost_centres_data(token):
                 'number': f"Qty: {lic.get('quantity', '1')}",
                 'site': 'N/A',
                 'department': 'N/A',
+                'licenseType': l_type,
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
     except Exception as e:
         print(f"[Cost Centres] Licenses fetch skipped: {e}")
 
-    return {'cost_centres': cost_centres, 'assets': assets}
+    # 8. Authoritative per-cost-centre license inventory (v2 endpoint).
+    license_inventory = build_license_inventory(token, cc_map)
+
+    # Cost-centre list for the dropdowns, built from every cost centre we saw
+    # (the dedicated /cost-center list endpoint 404s on some accounts).
+    cost_centres_out = sorted(
+        [{'id': cid, 'name': name} for cid, name in cc_map.items()],
+        key=lambda c: c['name'].lower())
+
+    return {
+        'cost_centres': cost_centres_out,
+        'assets': assets,
+        'license_inventory': license_inventory,
+    }
 
 
 def update_asset_cost_centre(token, asset, cost_centre_id):

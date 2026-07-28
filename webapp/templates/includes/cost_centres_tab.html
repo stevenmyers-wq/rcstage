@@ -1,7 +1,7 @@
 <div class="space-y-6 animate-fade-in w-full">
     <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <h2 class="text-heading mb-1">Cost Centres</h2>
-        <p class="text-subheading">Audit and update Cost Centre allocations for Extensions, Phone Numbers, Devices, and Billing Items. FOR FUTURE USE, BILLING ITEM UPDATE IS CURRENTLY NOT API SUPPORTED!!</p>
+        <p class="text-subheading">Audit and update Cost Centre allocations for Extensions, Phone Numbers, Devices, and Billing Items. The <span class="font-semibold">License Inventory</span> below shows the authoritative per-cost-centre license counts (RingCentral billing), and the <span class="font-semibold">License</span> column shows what each object consumes (User = Digital Line; a number on a non-user extension = Additional Local Number). FOR FUTURE USE, BILLING ITEM UPDATE IS CURRENTLY NOT API SUPPORTED!!</p>
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
@@ -13,7 +13,7 @@
                     🔄 Refresh Data
                 </button>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
                     <label class="input-label">Search</label>
                     <input type="text" id="cc-search" placeholder="Name or Number..." class="input-field !py-2 !text-sm">
@@ -22,6 +22,12 @@
                     <label class="input-label">Type</label>
                     <select id="cc-filter-type" class="input-field !py-2 !text-sm">
                         <option value="">All Types</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="input-label">License</label>
+                    <select id="cc-filter-license" class="input-field !py-2 !text-sm">
+                        <option value="">All Licenses</option>
                     </select>
                 </div>
                 <div>
@@ -52,6 +58,15 @@
         </div>
     </div>
 
+    <div class="card !p-5">
+        <button id="cc-inventory-toggle" type="button" class="w-full flex items-center justify-between text-left">
+            <span class="font-bold text-slate-800 dark:text-slate-100 text-lg">License Inventory by Cost Centre</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400"><span id="cc-inventory-caret">▼</span> click to expand / collapse</span>
+        </button>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">Authoritative license counts from RingCentral billing (assigned vs available), per cost centre.</p>
+        <div id="cc-inventory" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+    </div>
+
     <div class="card !p-0 overflow-hidden relative w-full">
         <div id="cc-loader" class="absolute inset-0 bg-white/80 dark:bg-slate-900/80 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
             <div class="spinner mb-3 h-8 w-8"></div>
@@ -68,6 +83,7 @@
                         <th>Name</th>
                         <th>Number / Qty</th>
                         <th>Type</th>
+                        <th>License</th>
                         <th>Site</th>
                         <th>Department</th>
                         <th>Current Cost Centre</th>
@@ -83,17 +99,21 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     // State
-    let rawData = { cost_centres: [], assets: [] };
+    let rawData = { cost_centres: [], assets: [], license_inventory: [] };
     let filteredAssets = [];
-    let selectedAssets = new Set(); 
+    let selectedAssets = new Set();
 
     // DOM Elements
     const loader = document.getElementById('cc-loader');
     const loaderText = document.getElementById('cc-loader-text');
     const tbody = document.getElementById('cc-tbody');
-    
+    const inventoryEl = document.getElementById('cc-inventory');
+    const inventoryToggle = document.getElementById('cc-inventory-toggle');
+    const inventoryCaret = document.getElementById('cc-inventory-caret');
+
     const searchInput = document.getElementById('cc-search');
     const typeFilter = document.getElementById('cc-filter-type');
+    const licenseFilter = document.getElementById('cc-filter-license');
     const siteFilter = document.getElementById('cc-filter-site');
     const currentCcFilter = document.getElementById('cc-filter-current');
     
@@ -110,8 +130,14 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn.addEventListener('click', loadData);
     searchInput.addEventListener('input', applyFilters);
     typeFilter.addEventListener('change', applyFilters);
+    licenseFilter.addEventListener('change', applyFilters);
     siteFilter.addEventListener('change', applyFilters);
     currentCcFilter.addEventListener('change', applyFilters);
+
+    inventoryToggle.addEventListener('click', () => {
+        const hidden = inventoryEl.classList.toggle('hidden');
+        inventoryCaret.textContent = hidden ? '▶' : '▼';
+    });
     
     selectAllCb.addEventListener('change', (e) => {
         const isChecked = e.target.checked;
@@ -189,11 +215,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             rawData = data.data;
+            if (!rawData.license_inventory) rawData.license_inventory = [];
             populateDropdowns();
+            renderInventory();
             applyFilters();
 
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-red-500 font-medium">Error: ${e.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-red-500 font-medium">Error: ${e.message}</td></tr>`;
         } finally {
             loader.classList.add('hidden');
         }
@@ -250,26 +278,74 @@ document.addEventListener('DOMContentLoaded', () => {
             return labels[type] || type;
         };
 
-        typeFilter.innerHTML = '<option value="">All Types</option>' + 
+        typeFilter.innerHTML = '<option value="">All Types</option>' +
             Array.from(types).sort().map(t => `<option value="${t}">${formatTypeLabel(t)}</option>`).join('');
+
+        const licenses = new Set();
+        rawData.assets.forEach(a => { if (a.licenseType) licenses.add(a.licenseType); });
+        licenseFilter.innerHTML = '<option value="">All Licenses</option>' +
+            Array.from(licenses).sort().map(l => `<option value="${l}">${l}</option>`).join('');
+    }
+
+    const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    function renderInventory() {
+        const inv = rawData.license_inventory || [];
+        if (inv.length === 0) {
+            inventoryEl.innerHTML = `<div class="text-sm text-slate-500 dark:text-slate-400 italic col-span-full">No license inventory returned for this account.</div>`;
+            return;
+        }
+        inventoryEl.innerHTML = inv.map(cc => {
+            const rows = (cc.licenses || []).map(l => `
+                <tr class="border-t border-slate-100 dark:border-slate-700/50">
+                    <td class="py-1.5 pr-2">
+                        <div class="font-medium text-slate-700 dark:text-slate-200">${escapeHtml(l.name)}</div>
+                        <div class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${escapeHtml(l.sku)}</div>
+                    </td>
+                    <td class="py-1.5 px-2 text-center font-semibold text-green-700 dark:text-green-400">${l.assigned}</td>
+                    <td class="py-1.5 px-2 text-center text-slate-500 dark:text-slate-400">${l.available}</td>
+                    <td class="py-1.5 pl-2 text-center font-semibold">${l.total}</td>
+                </tr>`).join('');
+            return `
+            <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50/50 dark:bg-slate-800/30">
+                <div class="flex items-baseline justify-between mb-2">
+                    <h4 class="font-bold text-slate-800 dark:text-slate-100">${escapeHtml(cc.costCenterName)}</h4>
+                    <span class="text-xs text-slate-500 dark:text-slate-400">${cc.totalAssigned} assigned · ${cc.totalAvailable} available</span>
+                </div>
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                            <th class="text-left font-semibold pb-1">License</th>
+                            <th class="px-2 font-semibold pb-1">Assigned</th>
+                            <th class="px-2 font-semibold pb-1">Available</th>
+                            <th class="font-semibold pb-1">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+        }).join('');
     }
 
     function applyFilters() {
         const term = searchInput.value.toLowerCase();
         const tFilter = typeFilter.value;
+        const lFilter = licenseFilter.value;
         const sFilter = siteFilter.value;
         const cFilter = currentCcFilter.value;
 
         filteredAssets = rawData.assets.filter(a => {
             const matchSearch = (a.name.toLowerCase().includes(term) || a.number.toLowerCase().includes(term));
             const matchType = tFilter === '' || a.subType === tFilter;
+            const matchLicense = lFilter === '' || a.licenseType === lFilter;
             const matchSite = sFilter === '' || a.site === sFilter;
-            
+
             let matchCc = true;
             if (cFilter === 'Unassigned') matchCc = (a.costCenterName === 'Unassigned' || a.costCenterId === '');
             else if (cFilter !== '') matchCc = (a.costCenterId === cFilter);
 
-            return matchSearch && matchType && matchSite && matchCc;
+            return matchSearch && matchType && matchLicense && matchSite && matchCc;
         });
 
         renderTable();
@@ -280,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectAllCb.checked = false;
 
         if (filteredAssets.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500 dark:text-slate-400 italic">No assets found matching filters.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-500 dark:text-slate-400 italic">No assets found matching filters.</td></tr>`;
             return;
         }
 
@@ -320,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${formatTypeLabel(asset.subType || asset.type)}
                     </span>
                 </td>
+                <td class="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300">${asset.licenseType ? escapeHtml(asset.licenseType) : '<span class="text-slate-400 dark:text-slate-500">&mdash;</span>'}</td>
                 <td class="px-4 py-2 opacity-80 text-xs">${asset.site}</td>
                 <td class="px-4 py-2 opacity-80 text-xs">${asset.department}</td>
                 <td class="px-4 py-2 font-medium ${asset.costCenterName === 'Unassigned' ? 'text-red-500 dark:text-red-400 italic' : 'text-blue-700 dark:text-blue-400'}">
