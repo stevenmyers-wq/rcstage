@@ -59,6 +59,20 @@ def get_license_debug_dump(token):
         probe('extension_features',
               f'/restapi/v1.0/account/~/extension/{ext_id}/features')
 
+    # 3b. CAN we attribute a specific SKU to a specific named user? Probe every
+    #     candidate endpoint that might return a per-extension license mapping.
+    if ext_id:
+        probe('ext_licenses_v2', f'/restapi/v2/accounts/~/extensions/{ext_id}/licenses')
+        probe('ext_licenses_v1', f'/restapi/v1.0/account/~/extension/{ext_id}/licenses')
+    # Ask the v2 licenses endpoint for a per-assignment / extension-scoped view.
+    probe('licenses_v2_detailed', '/restapi/v2/accounts/~/licenses',
+          params={'view': 'Detailed', 'perPage': 5})
+    if ext_id:
+        probe('licenses_v2_by_ext', '/restapi/v2/accounts/~/licenses',
+              params={'extensionId': ext_id})
+    probe('licenses_v2_assignments', '/restapi/v2/accounts/~/license-assignments',
+          params={'perPage': 5})
+
     # 4. Cost-center definitions (already used by the tab) for completeness.
     probe('cost_centers', '/restapi/v1.0/account/~/cost-center')
 
