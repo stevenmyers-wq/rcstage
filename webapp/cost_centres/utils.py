@@ -1,82 +1,7 @@
+import io
 import time
 from webapp.rc_api import rc_api_call
 
-
-def get_license_debug_dump(token):
-    """Diagnostic probe: hit every endpoint that could plausibly expose the
-    license/product a given object consumes, and return the raw responses so
-    we can determine what (if anything) RingCentral publishes for THIS account.
-
-    RingCentral's public provisioning API (extension / phone-number / device
-    records) does not carry an assigned-license field, and the seat/package a
-    user holds (e.g. Digital Line vs Video Pro) cannot be derived from the
-    extension `type`. This probe checks the remaining candidates before we
-    conclude the data is unavailable.
-    """
-    result = {}
-
-    def probe(label, endpoint, params=None):
-        resp = rc_api_call(endpoint, method='GET', params=params,
-                           token=token, return_response=True)
-        entry = {'endpoint': endpoint, 'status': getattr(resp, 'status_code', None)}
-        try:
-            body = resp.json()
-        except Exception:
-            body = getattr(resp, 'text', '')
-        # Trim record lists to the first 3 items to keep the dump readable.
-        if isinstance(body, dict) and isinstance(body.get('records'), list):
-            entry['record_count'] = len(body['records'])
-            entry['sample_records'] = body['records'][:3]
-            entry['navigation'] = body.get('navigation')
-            entry['paging'] = body.get('paging')
-        else:
-            entry['body'] = body
-        result[label] = entry
-
-    # 1. Account-level license inventory (undocumented in older specs).
-    probe('licenses_v1', '/restapi/v1.0/account/~/licenses')
-    probe('licenses_v2', '/restapi/v2/accounts/~/licenses')
-
-    # 2. Full phone-number record — check for any billing/product/feature field
-    #    beyond usageType/paymentType.
-    probe('phone_numbers_full', '/restapi/v1.0/account/~/phone-number',
-          params={'perPage': 3})
-    probe('phone_numbers_v2', '/restapi/v2/accounts/~/phone-numbers',
-          params={'perPage': 3})
-
-    # 3. Extension detail (list gives limited fields; detail/Full view may
-    #    include a package/service descriptor).
-    ext_list = rc_api_call('/restapi/v1.0/account/~/extension',
-                           params={'perPage': 1, 'type': 'User'},
-                           token=token, return_response=True)
-    try:
-        first_ext = (ext_list.json().get('records') or [{}])[0]
-    except Exception:
-        first_ext = {}
-    ext_id = first_ext.get('id')
-    if ext_id:
-        probe('extension_detail', f'/restapi/v1.0/account/~/extension/{ext_id}')
-        probe('extension_features',
-              f'/restapi/v1.0/account/~/extension/{ext_id}/features')
-
-    # 3b. CAN we attribute a specific SKU to a specific named user? Probe every
-    #     candidate endpoint that might return a per-extension license mapping.
-    if ext_id:
-        probe('ext_licenses_v2', f'/restapi/v2/accounts/~/extensions/{ext_id}/licenses')
-        probe('ext_licenses_v1', f'/restapi/v1.0/account/~/extension/{ext_id}/licenses')
-    # Ask the v2 licenses endpoint for a per-assignment / extension-scoped view.
-    probe('licenses_v2_detailed', '/restapi/v2/accounts/~/licenses',
-          params={'view': 'Detailed', 'perPage': 5})
-    if ext_id:
-        probe('licenses_v2_by_ext', '/restapi/v2/accounts/~/licenses',
-              params={'extensionId': ext_id})
-    probe('licenses_v2_assignments', '/restapi/v2/accounts/~/license-assignments',
-          params={'perPage': 5})
-
-    # 4. Cost-center definitions (already used by the tab) for completeness.
-    probe('cost_centers', '/restapi/v1.0/account/~/cost-center')
-
-    return result
 
 def fetch_all_pages(endpoint, token, params=None):
     if params is None:
@@ -221,6 +146,56 @@ def build_license_inventory(token, cc_map):
 
     inventory.sort(key=lambda c: c['costCenterName'].lower())
     return inventory
+
+
+def build_cost_centres_workbook(token):
+    """Build a two-sheet .xlsx (License Inventory + Objects) as a BytesIO."""
+    import pandas as pd
+
+    data = get_cost_centres_data(token)
+    assets = data.get('assets', [])
+    inventory = data.get('license_inventory', [])
+
+    inv_rows = []
+    for cc in inventory:
+        for lic in cc.get('licenses', []):
+            inv_rows.append({
+                'Cost Centre': cc.get('costCenterName', ''),
+                'License': lic.get('name', ''),
+                'SKU': lic.get('sku', ''),
+                'Assigned': lic.get('assigned', 0),
+                'Available': lic.get('available', 0),
+                'Total': lic.get('total', 0),
+            })
+    inv_cols = ['Cost Centre', 'License', 'SKU', 'Assigned', 'Available', 'Total']
+    df_inventory = pd.DataFrame(inv_rows, columns=inv_cols)
+
+    obj_rows = [{
+        'Name': a.get('name', ''),
+        'Number / Qty': a.get('number', ''),
+        'Type': a.get('subType') or a.get('type', ''),
+        'License': a.get('licenseType', '') or '',
+        'Site': a.get('site', ''),
+        'Department': a.get('department', ''),
+        'Current Cost Centre': a.get('costCenterName', ''),
+    } for a in assets]
+    obj_cols = ['Name', 'Number / Qty', 'Type', 'License', 'Site',
+                'Department', 'Current Cost Centre']
+    df_objects = pd.DataFrame(obj_rows, columns=obj_cols)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_inventory.to_excel(writer, index=False, sheet_name='License Inventory')
+        df_objects.to_excel(writer, index=False, sheet_name='Objects')
+        for sheet_name in ('License Inventory', 'Objects'):
+            worksheet = writer.sheets[sheet_name]
+            for column in worksheet.columns:
+                length = max((len(str(cell.value)) if cell.value is not None else 0)
+                             for cell in column)
+                worksheet.column_dimensions[column[0].column_letter].width = min(length + 4, 60)
+
+    output.seek(0)
+    return output
 
 
 def get_cost_centres_data(token):

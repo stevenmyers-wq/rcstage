@@ -9,9 +9,14 @@
         <div class="xl:col-span-3 card !p-5">
             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
                 <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg">Filters</h3>
-                <button id="cc-refresh-btn" class="btn-secondary !py-1.5 !px-3 text-sm">
-                    🔄 Refresh Data
-                </button>
+                <div class="flex items-center gap-2">
+                    <button id="cc-export-btn" class="btn-secondary !py-1.5 !px-3 text-sm">
+                        ⬇ Export XLSX
+                    </button>
+                    <button id="cc-refresh-btn" class="btn-secondary !py-1.5 !px-3 text-sm">
+                        🔄 Refresh Data
+                    </button>
+                </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
@@ -120,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetCcSelect = document.getElementById('cc-target-select');
     const transferBtn = document.getElementById('cc-transfer-btn');
     const refreshBtn = document.getElementById('cc-refresh-btn');
+    const exportBtn = document.getElementById('cc-export-btn');
     const selectAllCb = document.getElementById('cc-select-all');
     const selectedCountLabel = document.getElementById('cc-selected-count');
 
@@ -137,6 +143,34 @@ document.addEventListener('DOMContentLoaded', () => {
     inventoryToggle.addEventListener('click', () => {
         const hidden = inventoryEl.classList.toggle('hidden');
         inventoryCaret.textContent = hidden ? '▶' : '▼';
+    });
+
+    exportBtn.addEventListener('click', async () => {
+        const original = exportBtn.innerHTML;
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = 'Exporting…';
+        try {
+            const res = await fetch('/api/cost_centres/export');
+            if (!res.ok) {
+                let msg = 'Export failed.';
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Cost_Centres_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) {
+            alert(`Error: ${e.message}`);
+        } finally {
+            exportBtn.disabled = false;
+            exportBtn.innerHTML = original;
+        }
     });
     
     selectAllCb.addEventListener('change', (e) => {

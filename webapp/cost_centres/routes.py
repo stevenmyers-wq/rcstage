@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify, request, session
+from datetime import datetime
+from flask import Blueprint, jsonify, request, session, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from . import utils
@@ -16,16 +17,21 @@ def get_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@cost_centres_bp.route('/debug/licenses', methods=['GET'])
+@cost_centres_bp.route('/export', methods=['GET'])
 @require_rc_token
-@track_usage('Cost Centres - License Debug')
-def debug_licenses():
-    """Diagnostic: dump raw responses from candidate license/billing endpoints
-    so we can verify whether per-object license data is available for this
-    account. Safe/read-only; intended for investigation only."""
+@track_usage('Cost Centres - Export')
+def export_data():
+    """Export the Cost Centre objects and per-cost-centre License Inventory as
+    a two-sheet .xlsx workbook."""
     token = get_rc_access_token()
     try:
-        return jsonify({'success': True, 'data': utils.get_license_debug_dump(token)})
+        output = utils.build_cost_centres_workbook(token)
+        return send_file(
+            output,
+            download_name=f"Cost_Centres_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
