@@ -499,7 +499,11 @@ def run_cq_audit(task_id, queue_ids, token):
                         g_name = 'Default'
 
                     if g_type == 'Introductory': row["Greeting"] = g_name
-                    elif g_type in ['ConnectingAudio', 'ConnectingMessage']: row["Audio While Connecting"] = g_name
+                    elif g_type == 'ConnectingAudio':
+                        # The real "Audio While Connecting" genre (e.g. Acoustic). ConnectingMessage
+                        # is a separate slot and is intentionally ignored here — it was overwriting
+                        # this value with unrelated content (e.g. "No").
+                        row["Audio While Connecting"] = g_name
                     elif g_type == 'HoldMusic': row["Hold Music"] = g_name
                     elif g_type == 'InterruptPrompt':
                         if 'patience' in g_name.lower(): row["Interrupt Prompt"] = "Thank you for your patience"
