@@ -74,6 +74,10 @@ def classify_extension_license(ext_type, phone_number_count):
     """License an extension object consumes, per the rules above."""
     if ext_type in DIGITAL_LINE_EXTENSION_TYPES:
         return 'Digital Line'
+    # A Limited extension is a Common Area Phone; its number is part of that
+    # license, not a separate Additional Local Number.
+    if ext_type == 'Limited':
+        return 'Common Area Phone'
     if phone_number_count > 0:
         return 'Additional Local Number' + (
             f' (x{phone_number_count})' if phone_number_count > 1 else '')
