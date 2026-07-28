@@ -292,3 +292,91 @@ def presence_sandbox(extension_id):
         return jsonify({"status": "error", "status_code": e.status_code, "message": e.body or str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
+
+
+# ==========================================
+# PRESENCE DIAGNOSTICS (admin-only)
+# Answers: who is the token, what presence permissions it has, whether a
+# presence/line WRITE succeeds at all (self vs. target), and lets us probe
+# arbitrary RC read endpoints — all without another deploy cycle.
+# Usage:
+#   GET /api/presence/diag                      -> identity + permissions + read checks
+#   GET /api/presence/diag?target=233306125     -> also raw-read that extension's lines
+#   GET /api/presence/diag?selfwrite=1          -> also attempt a no-op PUT to self
+#   GET /api/presence/diag?probe=/restapi/...   -> raw GET of any RC path
+# ==========================================
+@presence_bp.route('/api/presence/diag', methods=['GET'])
+@require_rc_token
+def presence_diag():
+    if not is_admin_user():
+        return jsonify({"status": "error", "message": "Admin privileges required."}), 403
+
+    from flask import session
+    from webapp.rc_api import rc_api_call, rc
+
+    out = {}
+    out['token_type'] = (
+        'sm_isolated_token' if session.get('sm_isolated_token')
+        else 'rc_access_token' if session.get('rc_access_token')
+        else 'none'
+    )
+
+    # Arbitrary read probe (safe: GET only).
+    probe = request.args.get('probe')
+    if probe:
+        r = rc.get(probe)
+        return jsonify({
+            "probe": probe,
+            "status_code": getattr(r, 'status_code', None),
+            "body": _safe_json(r),
+        })
+
+    # Who does this token represent?
+    self_resp = rc.get('/restapi/v1.0/account/~/extension/~')
+    self_ext = _safe_json(self_resp) if getattr(self_resp, 'ok', False) else {}
+    self_id = str(self_ext.get('id')) if self_ext.get('id') else None
+    out['self'] = {k: self_ext.get(k) for k in ('id', 'extensionNumber', 'name', 'type')}
+    out['self_read_status'] = getattr(self_resp, 'status_code', None)
+
+    # What presence-related permissions does the user hold?
+    authz = rc.get('/restapi/v1.0/account/~/extension/~/authz-profile')
+    authz_body = _safe_json(authz) if getattr(authz, 'ok', False) else {}
+    perm_ids = [
+        (p.get('permission') or {}).get('id')
+        for p in (authz_body.get('permissions') or [])
+    ]
+    out['all_permission_ids'] = sorted([p for p in perm_ids if p])
+    out['presence_permissions'] = sorted([p for p in perm_ids if p and ('presence' in p.lower() or 'hud' in p.lower())])
+
+    # Raw read of a target's presence lines (shape confirmation).
+    target = request.args.get('target')
+    if target:
+        tr = rc.get(f'/restapi/v1.0/account/~/extension/{target}/presence/line')
+        out['target_line_read'] = {"status_code": getattr(tr, 'status_code', None), "body": _safe_json(tr)}
+
+    # Does a presence/line WRITE succeed on the token's OWN extension?
+    # No-op echo of the editable lines; gated behind ?selfwrite=1 since any PUT
+    # is a real (here idempotent) write.
+    if request.args.get('selfwrite') == '1' and self_id:
+        sr = rc.get(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line')
+        recs = (_safe_json(sr) or {}).get('records', []) if getattr(sr, 'ok', False) else []
+        echo = [
+            {"id": str(r.get('id')), "extension": {"id": str(r.get('extension', {}).get('id', ''))}}
+            for r in recs
+            if not r.get('notEditableOnHud', False) and r.get('extension', {}).get('id')
+        ]
+        wr = rc.put(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', json={"records": echo})
+        out['self_write'] = {
+            "sent": {"records": echo},
+            "status_code": getattr(wr, 'status_code', None),
+            "body": _safe_json(wr),
+        }
+
+    return jsonify(out)
+
+
+def _safe_json(resp):
+    try:
+        return resp.json()
+    except Exception:
+        return getattr(resp, 'text', '')[:1000]
