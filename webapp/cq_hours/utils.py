@@ -494,7 +494,9 @@ def run_cq_audit(task_id, queue_ids, token):
                         else:
                             g_name = 'Default'
                     elif 'custom' in g:
-                        g_name = 'Custom'
+                        c_uri = str((g.get('custom') or {}).get('uri', '')).strip()
+                        # The audio binary lives at the greeting resource URI + /content.
+                        g_name = f"Custom - {c_uri}/content" if c_uri else 'Custom'
                     else:
                         g_name = 'Default'
 
@@ -1093,7 +1095,15 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                 new_val = val.lower().strip()
                 rule['greetings'] = [g for g in rule['greetings'] if g.get('type') != slot_type]
 
-                if new_val in ['off', 'none', 'disable', 'disabled']:
+                if new_val.startswith('custom'):
+                    # "Custom" or "Custom - <url>" (as the audit exports it) means keep the queue's
+                    # existing custom audio. We can't upload audio from a URL here, so preserve the
+                    # original greeting and record no change.
+                    orig_g = next((g for g in orig_rule.get('greetings', []) if g.get('type') == slot_type), None)
+                    if orig_g:
+                        rule['greetings'].append(orig_g)
+                    return
+                elif new_val in ['off', 'none', 'disable', 'disabled']:
                     # "Off" is NOT the same as omitting the greeting. Omitting a greeting type
                     # makes RingCentral fall back to the Default greeting (still enabled), which
                     # is why Greeting=Off looked ignored in the portal. Off is represented by the
