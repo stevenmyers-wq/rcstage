@@ -7,6 +7,7 @@ import json
 import pandas as pd
 from datetime import datetime
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.utils import get_column_letter
 from webapp.rc_api import rc_api_call
 
 audit_progress_store = {}
@@ -119,10 +120,16 @@ def build_config_workbook(df):
             config_ws.add_data_validation(dv)
             dv.add(f"{col_letter}2:{col_letter}1000")
 
-        # Prevent Excel from auto-converting values like 24/7 into July 24th dates
-        for col in config_ws.columns:
-            for cell in col:
-                cell.number_format = '@'
+        # Force the whole config grid to Text so Excel doesn't auto-convert entries
+        # (24/7 -> a date, extensions losing leading zeros, long numbers -> scientific).
+        # openpyxl only formats cells that exist, so set the column default AND stamp every
+        # row the user might type into (not just the written header/data rows).
+        n_cols = df.shape[1]
+        for c in range(1, n_cols + 1):
+            col_letter = get_column_letter(c)
+            config_ws.column_dimensions[col_letter].number_format = '@'
+            for r in range(1, 1001):
+                config_ws.cell(row=r, column=c).number_format = '@'
 
     output.seek(0)
     return output
