@@ -226,13 +226,38 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         })
         seen_extensions.add(monitored_id)
 
+    # Defensive: never send a record whose extension id (or slot id) is empty
+    # or a non-numeric placeholder like "None"/"nan". RC rejects these with a
+    # generic "InvalidParameter" and it corrupts the whole full-replacement PUT.
+    def _valid_id(v):
+        return bool(v) and str(v).strip().lower() not in ('', 'none', 'nan') and str(v).strip().isdigit()
+
+    cleaned_records = []
+    dropped = []
+    for p in payload_records:
+        ext_id = str(p.get('extension', {}).get('id', '')).strip()
+        slot_id = p.get('id')
+        if not _valid_id(ext_id) or (slot_id is not None and not _valid_id(slot_id)):
+            dropped.append(p)
+            continue
+        cleaned_records.append(p)
+    payload_records = cleaned_records
+
     current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
     payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
 
     if current_exts != payload_exts:
-        # Raises RCPresenceError on rejection -> caller records a real failure.
-        manager.update_monitored_lines(t_id, payload_records)
-        results["success"] += 1
+        sent = {"records": payload_records}
+        logging.info("Presence PUT ext=%s payload=%s", t_id, json.dumps(sent))
+        try:
+            manager.update_monitored_lines(t_id, payload_records)
+            results["success"] += 1
+        except RCPresenceError as e:
+            drop_note = f" | dropped {len(dropped)} invalid record(s)" if dropped else ""
+            results["errors"].append(
+                f"Ext {t_id}: RC rejected ({e.status_code}): {e.body} | sent: {json.dumps(sent)}{drop_note}"
+            )
+        return
     elif toggles_applied:
         results["success"] += 1
     else:
