@@ -178,13 +178,13 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         sheet_col = f"Line {i + 1} Extension"
         val = row.get(sheet_col) if sheet_col in df.columns else None
 
-        # Lines 1 & 2 (and any notEditableOnHud line) carry the user's own
-        # presence and cannot be changed per the RC BLF API. RC manages these
-        # slots itself and REJECTS a PUT body that includes them, so we must
-        # omit them entirely. Seed seen_extensions with the self extension so
-        # it is never re-added as an editable monitored line.
+        # notEditableOnHud lines (the user's own presence on lines 1 & 2, plus
+        # any system-managed slot such as a monitored Department) cannot be
+        # changed, but they MUST be re-sent verbatim in their positions — the
+        # PUT is a full-list replacement and dropping a locked slot is rejected.
         if is_locked:
             if current_ext_id:
+                payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
                 seen_extensions.add(current_ext_id)
             continue
 
@@ -244,13 +244,9 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         cleaned_records.append(p)
     payload_records = cleaned_records
 
-    # Compare only editable lines: the locked self-lines are excluded from the
-    # payload (RC manages them), so they must be excluded from the baseline too,
-    # otherwise every row would look "changed" and trigger a needless PUT.
-    current_exts = [
-        str(r.get('extension', {}).get('id', ''))
-        for r in live_records if not r.get('notEditableOnHud', False)
-    ]
+    # Payload mirrors the full live list (locked lines re-sent verbatim), so
+    # compare against the full live extension list to detect real changes.
+    current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
     payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
 
     if current_exts != payload_exts:
@@ -361,12 +357,14 @@ def presence_diag():
     if request.args.get('selfwrite') == '1' and self_id:
         sr = rc.get(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', token=token)
         recs = (_safe_json(sr) or {}).get('records', []) if getattr(sr, 'ok', False) else []
+        # Full-list echo as a BARE ARRAY (the shape this endpoint actually
+        # requires), locked lines included, so it is a valid no-op self-write.
         echo = [
             {"id": str(r.get('id')), "extension": {"id": str(r.get('extension', {}).get('id', ''))}}
             for r in recs
-            if not r.get('notEditableOnHud', False) and r.get('extension', {}).get('id')
+            if r.get('extension', {}).get('id')
         ]
-        wr = rc.put(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', json={"records": echo}, token=token)
+        wr = rc.put(f'/restapi/v1.0/account/~/extension/{self_id}/presence/line', json=echo, token=token)
         out['self_write'] = {
             "sent": {"records": echo},
             "status_code": getattr(wr, 'status_code', None),

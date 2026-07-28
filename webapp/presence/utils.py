@@ -163,8 +163,12 @@ class RCPresenceManager:
         return {"records": all_records}
 
     def update_monitored_lines(self, extension_id, line_records):
-        payload = {"records": line_records}
+        # NOTE: despite the published OpenAPI spec (UpdatePresenceLinesRequest =
+        # {"records": [...]}), this Limited/internal endpoint requires the body
+        # to be a BARE JSON ARRAY of line records. Sending the {"records": ...}
+        # wrapper is rejected with a root-level CMN-101 "Parameter [] value is
+        # invalid". Confirmed empirically against a live extension.
         return self._call(
             f"{self.base_path}/extension/{extension_id}/presence/line",
-            method="PUT", json=payload,
+            method="PUT", json=line_records,
         )
