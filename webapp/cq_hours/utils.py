@@ -42,6 +42,12 @@ DAY_ABBR = {
 
 _READ_ONLY = ('uri', 'id', 'type', 'name', 'creationTime', 'lastModifiedTime')
 
+# Genre names valid for the music slots (Audio While Connecting / Hold Music).
+AUDIO_GENRES = frozenset({
+    'ring tones', 'acoustic', 'beautiful', 'classical', 'corporate', 'country',
+    'electronic', 'modern jazz', 'nature', 'pop', 'r&b', 'rock', 'upbeat'
+})
+
 # --- Shared workbook schema (used by both the download template and the audit export) ---
 # Kept in one place so the two exports can never drift apart.
 TEMPLATE_COLUMNS = [
@@ -463,23 +469,35 @@ def run_cq_audit(task_id, queue_ids, token):
                 if vm_recip and vm_recip != 'None':
                     row["Voicemail Recipients"] = ext_id_to_num.get(vm_recip, vm_recip)
 
+                if CQ_DEBUG:
+                    print(f"[CQ_DEBUG] Audit greetings ext={row.get('Extension')}: "
+                          f"{json.dumps(rule.get('greetings', []), default=str)[:2000]}", flush=True)
+
                 for g in rule.get('greetings', []):
                     g_type = g.get('type')
                     g_preset = g.get('preset', {}) or {}
                     g_id = str(g_preset.get('id', ''))
-                    # The greeting embeds its own preset name (e.g. "Acoustic"). Prefer the
-                    # id->name dictionary, but fall back to that embedded name so genre presets
-                    # aren't collapsed to a bare "Default" when the dictionary lookup misses.
                     g_embedded = str(g_preset.get('name', '')).strip()
 
+                    is_music = g_type in ['ConnectingAudio', 'ConnectingMessage', 'HoldMusic']
                     if g_id:
                         type_key = 'ConnectingAudio' if g_type in ['ConnectingAudio', 'ConnectingMessage'] else g_type
-                        g_name = preset_id_to_name.get(type_key, {}).get(g_id) or (g_embedded.title() if g_embedded else 'Default')
+                        mapped = preset_id_to_name.get(type_key, {}).get(g_id)
+                        if mapped:
+                            g_name = mapped
+                        elif is_music:
+                            # Music slots: only trust a genuine genre name; other embedded values
+                            # (e.g. a "None"/"No" default marker) collapse to Default.
+                            g_name = g_embedded.title() if g_embedded.lower() in AUDIO_GENRES else 'Default'
+                        elif g_embedded:
+                            g_name = g_embedded.title()
+                        else:
+                            g_name = 'Default'
                     elif 'custom' in g:
                         g_name = 'Custom'
                     else:
                         g_name = 'Default'
-                    
+
                     if g_type == 'Introductory': row["Greeting"] = g_name
                     elif g_type in ['ConnectingAudio', 'ConnectingMessage']: row["Audio While Connecting"] = g_name
                     elif g_type == 'HoldMusic': row["Hold Music"] = g_name
