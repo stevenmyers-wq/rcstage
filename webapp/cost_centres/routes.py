@@ -17,15 +17,27 @@ def get_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@cost_centres_bp.route('/export', methods=['GET'])
+@cost_centres_bp.route('/export', methods=['POST', 'GET'])
 @require_rc_token
 @track_usage('Cost Centres - Export')
 def export_data():
     """Export the Cost Centre objects and per-cost-centre License Inventory as
-    a two-sheet .xlsx workbook."""
+    a two-sheet .xlsx workbook.
+
+    The client POSTs the current (possibly filtered) view so the download
+    mirrors what's on screen. With no body (e.g. a GET), the full account
+    dataset is exported."""
     token = get_rc_access_token()
     try:
-        output = utils.build_cost_centres_workbook(token)
+        payload = request.get_json(silent=True) or {}
+        if payload.get('assets') is not None:
+            data = {
+                'assets': payload.get('assets') or [],
+                'license_inventory': payload.get('license_inventory') or [],
+            }
+        else:
+            data = utils.get_cost_centres_data(token)
+        output = utils.build_cost_centres_workbook(data)
         return send_file(
             output,
             download_name=f"Cost_Centres_{datetime.now().strftime('%Y%m%d')}.xlsx",

@@ -145,12 +145,29 @@ document.addEventListener('DOMContentLoaded', () => {
         inventoryCaret.textContent = hidden ? '▶' : '▼';
     });
 
+    const isFilterActive = () => !!(searchInput.value || typeFilter.value ||
+        licenseFilter.value || siteFilter.value || currentCcFilter.value);
+
     exportBtn.addEventListener('click', async () => {
         const original = exportBtn.innerHTML;
         exportBtn.disabled = true;
         exportBtn.innerHTML = 'Exporting…';
         try {
-            const res = await fetch('/api/cost_centres/export');
+            // Mirror the on-screen view: unfiltered exports everything;
+            // filtered exports only the filtered rows (and the inventory for
+            // the cost centres those rows belong to).
+            const filtered = isFilterActive();
+            const assetsOut = filteredAssets;
+            let inventoryOut = rawData.license_inventory || [];
+            if (filtered) {
+                const ccIds = new Set(assetsOut.map(a => a.costCenterId).filter(Boolean));
+                inventoryOut = inventoryOut.filter(cc => ccIds.has(cc.costCenterId));
+            }
+            const res = await fetch('/api/cost_centres/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assets: assetsOut, license_inventory: inventoryOut })
+            });
             if (!res.ok) {
                 let msg = 'Export failed.';
                 try { msg = (await res.json()).error || msg; } catch (e) {}

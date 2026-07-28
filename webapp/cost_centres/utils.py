@@ -148,13 +148,13 @@ def build_license_inventory(token, cc_map):
     return inventory
 
 
-def build_cost_centres_workbook(token):
-    """Build a two-sheet .xlsx (License Inventory + Objects) as a BytesIO."""
+def build_cost_centres_workbook(data):
+    """Build a two-sheet .xlsx (License Inventory + Objects) as a BytesIO from
+    a data dict {'assets': [...], 'license_inventory': [...]}."""
     import pandas as pd
 
-    data = get_cost_centres_data(token)
-    assets = data.get('assets', [])
-    inventory = data.get('license_inventory', [])
+    assets = data.get('assets', []) or []
+    inventory = data.get('license_inventory', []) or []
 
     inv_rows = []
     for cc in inventory:
@@ -336,7 +336,7 @@ def get_cost_centres_data(token):
                 'number': dev.get('serial', 'N/A'),
                 'site': dev.get('site', {}).get('name', 'Main Site'),
                 'department': 'N/A',
-                'licenseType': 'Device',
+                'licenseType': '',
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
