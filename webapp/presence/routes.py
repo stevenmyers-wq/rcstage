@@ -2,7 +2,9 @@ import io
 import json
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
-from webapp.presence.utils import RCPresenceManager
+from webapp.presence.utils import RCPresenceManager, RCPresenceError
+from webapp.auth_utils import require_rc_token, is_admin_user
+from webapp.usage_tracking import track_usage
 import logging
 
 presence_bp = Blueprint('presence', __name__)
@@ -12,6 +14,7 @@ def parse_bool(val):
     return str(val).strip().lower() in ['true', '1', 'yes', 'y']
 
 @presence_bp.route('/api/presence/sites', methods=['GET'])
+@require_rc_token
 def get_sites():
     try:
         manager = RCPresenceManager()
@@ -39,6 +42,7 @@ def get_template():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/users', methods=['GET'])
+@require_rc_token
 def get_users():
     try:
         manager = RCPresenceManager()
@@ -48,6 +52,8 @@ def get_users():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/audit', methods=['POST'])
+@require_rc_token
+@track_usage('BLF Presence Audit')
 def generate_audit_report():
     try:
         data = request.json
@@ -102,127 +108,155 @@ def generate_audit_report():
         return jsonify({"status": "error", "message": f"Audit Failed: {str(e)}"}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
+@require_rc_token
+@track_usage('BLF Presence Update')
 def update_blf():
     try:
         file = request.files['file']
         df = pd.read_excel(file, sheet_name=0)
         df.columns = df.columns.str.strip()
-        
+
         manager = RCPresenceManager()
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
-        
+
         results = {"success": 0, "errors": []}
 
+        target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
+
         for _, row in df.iterrows():
-            target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
             if not target_col: continue
-            
+
             t_id = str(row.get(target_col, "")).split('.')[0].strip()
             if not t_id or t_id.lower() == 'nan': continue
-            
-            toggles = {}
-            for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"), 
-                               ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
-                               ("Allow other users to see my presence status", "allowSeeMyPresence")]:
-                val = parse_bool(row.get(key))
-                if val is not None: toggles[field] = val
-            if toggles: manager.update_presence_settings(t_id, toggles)
 
-            live_resp = manager.get_monitored_lines(t_id)
-            live_records = live_resp.get('records', [])
-            
-            payload_records = []
-            seen_extensions = set()
+            try:
+                _process_row(manager, df, row, t_id, ext_map, results)
+            except RCPresenceError as e:
+                results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
+                logging.error(f"RC API Error during update for {t_id}: {e}")
+            except Exception as e:
+                results["errors"].append(f"Ext {t_id}: {str(e)}")
+                logging.exception(f"Unexpected error during update for {t_id}")
 
-            for i, record in enumerate(live_records):
-                real_slot_id = str(record.get('id')) 
-                is_locked = record.get('notEditableOnHud', False)
-                current_ext_id = str(record.get('extension', {}).get('id', ''))
-                
-                sheet_col = f"Line {i + 1} Extension"
-                val = row.get(sheet_col) if sheet_col in df.columns else None
-                
-                if is_locked:
-                    if current_ext_id:
-                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
-                        seen_extensions.add(current_ext_id)
-                    continue
-                
-                if pd.isna(val) or str(val).strip() == "":
-                    if current_ext_id and current_ext_id not in seen_extensions:
-                        payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
-                        seen_extensions.add(current_ext_id)
-                    continue
-                
-                val_str = str(val).split('.')[0].strip()
-                
-                if val_str.upper() == "CLEAR":
-                    continue 
-                
-                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-                if monitored_id in seen_extensions:
-                    continue 
-                
-                payload_records.append({
-                    "id": real_slot_id,
-                    "extension": {"id": monitored_id}
-                })
-                seen_extensions.add(monitored_id)
-
-            for i in range(len(live_records), 100):
-                sheet_col = f"Line {i + 1} Extension"
-                val = row.get(sheet_col) if sheet_col in df.columns else None
-                
-                if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
-                    continue
-                    
-                val_str = str(val).split('.')[0].strip()
-                monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-                
-                if monitored_id in seen_extensions:
-                    continue
-                    
-                payload_records.append({
-                    "extension": {"id": monitored_id}
-                })
-                seen_extensions.add(monitored_id)
-
-            current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
-            payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
-            
-            if current_exts != payload_exts:
-                try:
-                    manager.update_monitored_lines(t_id, payload_records)
-                    results["success"] += 1
-                except Exception as e:
-                    results["errors"].append(f"Ext {t_id}: {str(e)}")
-                    logging.exception(f"RC API Error during update for {t_id}")
-            elif toggles:
-                results["success"] += 1
-            else:
-                results["errors"].append(f"Ext {t_id}: No changes detected.")
-
-        return jsonify({"status": "completed", "message": f"Updated {results['success']} users", "errors": results["errors"]})
+        status = "completed" if results["success"] or not results["errors"] else "error"
+        return jsonify({"status": status, "message": f"Updated {results['success']} users", "errors": results["errors"]})
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+def _process_row(manager, df, row, t_id, ext_map, results):
+    """Apply presence toggles + monitored-line changes for a single target
+    extension. Raises RCPresenceError if RingCentral rejects a write so the
+    caller records a real failure instead of a false success."""
+    toggles = {}
+    for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"),
+                       ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
+                       ("Allow other users to see my presence status", "allowSeeMyPresence")]:
+        val = parse_bool(row.get(key))
+        if val is not None: toggles[field] = val
+
+    toggles_applied = False
+    if toggles:
+        manager.update_presence_settings(t_id, toggles)
+        toggles_applied = True
+
+    # A failed read must abort this row: the PUT is a full replacement, so
+    # acting on an empty/partial list would wipe or corrupt the user's lines.
+    live_resp = manager.get_monitored_lines(t_id)
+    live_records = live_resp.get('records', [])
+
+    payload_records = []
+    seen_extensions = set()
+
+    for i, record in enumerate(live_records):
+        real_slot_id = str(record.get('id'))
+        is_locked = record.get('notEditableOnHud', False)
+        current_ext_id = str(record.get('extension', {}).get('id', ''))
+
+        sheet_col = f"Line {i + 1} Extension"
+        val = row.get(sheet_col) if sheet_col in df.columns else None
+
+        # Lines 1 & 2 (and any notEditableOnHud line) carry the user's own
+        # presence and cannot be changed per the RC BLF API — always re-send
+        # them unchanged so the replacement PUT preserves them.
+        if is_locked:
+            if current_ext_id:
+                payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                seen_extensions.add(current_ext_id)
+            continue
+
+        if pd.isna(val) or str(val).strip() == "":
+            if current_ext_id and current_ext_id not in seen_extensions:
+                payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                seen_extensions.add(current_ext_id)
+            continue
+
+        val_str = str(val).split('.')[0].strip()
+
+        if val_str.upper() == "CLEAR":
+            continue
+
+        monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+        if monitored_id in seen_extensions:
+            continue
+
+        payload_records.append({
+            "id": real_slot_id,
+            "extension": {"id": monitored_id}
+        })
+        seen_extensions.add(monitored_id)
+
+    for i in range(len(live_records), 100):
+        sheet_col = f"Line {i + 1} Extension"
+        val = row.get(sheet_col) if sheet_col in df.columns else None
+
+        if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
+            continue
+
+        val_str = str(val).split('.')[0].strip()
+        monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+
+        if monitored_id in seen_extensions:
+            continue
+
+        payload_records.append({
+            "extension": {"id": monitored_id}
+        })
+        seen_extensions.add(monitored_id)
+
+    current_exts = [str(r.get('extension', {}).get('id', '')) for r in live_records]
+    payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
+
+    if current_exts != payload_exts:
+        # Raises RCPresenceError on rejection -> caller records a real failure.
+        manager.update_monitored_lines(t_id, payload_records)
+        results["success"] += 1
+    elif toggles_applied:
+        results["success"] += 1
+    else:
+        results["errors"].append(f"Ext {t_id}: No changes detected.")
+
+
 # ==========================================
-# THE DIAGNOSTICS SANDBOX BACKDOOR
+# THE DIAGNOSTICS SANDBOX (admin-only)
 # ==========================================
 @presence_bp.route('/api/presence/sandbox/<extension_id>', methods=['POST'])
+@require_rc_token
 def presence_sandbox(extension_id):
+    # Fires an arbitrary raw PUT straight at RC — restrict to admins.
+    if not is_admin_user():
+        return jsonify({"status": "error", "message": "Admin privileges required."}), 403
     try:
-        raw_payload = request.json 
+        raw_payload = request.json
         manager = RCPresenceManager()
-        
-        from webapp.rc_api import rc_api_call
         endpoint = f"{manager.base_path}/extension/{extension_id}/presence/line"
-        
-        # Fires the exact payload you paste in directly at RC
-        response = rc_api_call(endpoint, method="PUT", json=raw_payload)
+
+        # Surface the real HTTP status/body from RC instead of swallowing it.
+        response = manager._call(endpoint, method="PUT", json=raw_payload)
         return jsonify({"status": "success", "data": response})
+    except RCPresenceError as e:
+        return jsonify({"status": "error", "status_code": e.status_code, "message": e.body or str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
