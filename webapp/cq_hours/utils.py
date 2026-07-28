@@ -18,6 +18,24 @@ audit_progress_store = {}
 # shape) can be dialed in against a live account without guessing.
 CQ_DEBUG = str(os.environ.get('CQ_DEBUG', '')).lower() in ('1', 'true', 'yes', 'on')
 
+# Service-web host used to build browser-downloadable greeting links. The API's platform
+# host (platform.ringcentral.com) is global even for AU accounts, so the console region
+# can't be derived from it — configure via env var; default matches this deployment (AU).
+RC_SERVICE_WEB_HOST = os.environ.get('RC_SERVICE_WEB_HOST', 'service.ringcentral.com.au').strip()
+
+
+def _greeting_download_url(custom_obj):
+    """Build a browser-downloadable greeting URL (works with a logged-in service-web
+    session) from a custom greeting's {id, uri}. Returns '' if it can't be built."""
+    if not isinstance(custom_obj, dict):
+        return ''
+    g_id = str(custom_obj.get('id', '')).strip()
+    m = re.search(r'/extension/(\d+)', str(custom_obj.get('uri', '')))
+    mailbox_id = m.group(1) if m else ''
+    if g_id and mailbox_id:
+        return f"https://{RC_SERVICE_WEB_HOST}/mobile/media?cmd=downloadGreeting&gId={g_id}&mailboxId={mailbox_id}"
+    return ''
+
 
 def _debug_dump(logs, label, payload=None, err=None):
     """Append a payload/error snapshot to a row's log list when CQ_DEBUG is on, and
@@ -501,9 +519,10 @@ def run_cq_audit(task_id, queue_ids, token):
                         else:
                             g_name = 'Default'
                     elif 'custom' in g:
-                        c_uri = str((g.get('custom') or {}).get('uri', '')).strip()
-                        # The audio binary lives at the greeting resource URI + /content.
-                        g_name = f"Custom - {c_uri}/content" if c_uri else 'Custom'
+                        # Browser-downloadable service-web link (works with a logged-in portal
+                        # session), built from the greeting id + owning extension id.
+                        dl = _greeting_download_url(g.get('custom'))
+                        g_name = f"Custom - {dl}" if dl else 'Custom'
                     else:
                         g_name = 'Default'
 
