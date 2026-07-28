@@ -17,6 +17,18 @@ def get_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@cost_centres_bp.route('/debug/license-types', methods=['GET'])
+@require_rc_token
+@track_usage('Cost Centres - License Types Debug')
+def debug_license_types():
+    """Diagnostic: dump the RingCentral license-types dictionary to determine
+    how domestic vs international variants are named. Read-only."""
+    token = get_rc_access_token()
+    try:
+        return jsonify({'success': True, 'data': utils.get_license_dictionary_dump(token)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @cost_centres_bp.route('/export', methods=['POST', 'GET'])
 @require_rc_token
 @track_usage('Cost Centres - Export')

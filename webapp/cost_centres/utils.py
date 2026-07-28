@@ -3,6 +3,38 @@ import time
 from webapp.rc_api import rc_api_call
 
 
+def get_license_dictionary_dump(token):
+    """Diagnostic (read-only): dump the RingCentral license-types dictionary so
+    we can see how domestic vs international DL / ALN / TFN variants are named,
+    and whether the v2 licenses SKU numeric suffix maps to a dictionary id."""
+    result = {}
+
+    def probe(label, endpoint, params=None):
+        resp = rc_api_call(endpoint, method='GET', params=params,
+                           token=token, return_response=True)
+        entry = {'endpoint': endpoint, 'status': getattr(resp, 'status_code', None)}
+        try:
+            body = resp.json()
+        except Exception:
+            body = getattr(resp, 'text', '')
+        if isinstance(body, dict) and isinstance(body.get('records'), list):
+            entry['record_count'] = len(body['records'])
+            entry['records'] = body['records']  # full list; the dictionary is small
+            entry['paging'] = body.get('paging')
+        else:
+            entry['body'] = body
+        result[label] = entry
+
+    # Full license-types dictionary (each v1 license references this).
+    probe('license_types', '/restapi/v1.0/dictionary/license-types',
+          params={'perPage': 1000})
+    # Do the v2 SKU numeric suffixes (DL-UNL_50, ALN_38, ATN_39, LR_398, ...)
+    # map to dictionary ids?
+    for lid in ('50', '38', '39', '398', '178', '177', '401'):
+        probe(f'license_type_{lid}', f'/restapi/v1.0/dictionary/license-types/{lid}')
+    return result
+
+
 def fetch_all_pages(endpoint, token, params=None):
     if params is None:
         params = {}
