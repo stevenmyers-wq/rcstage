@@ -1236,10 +1236,16 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                     if not is_preview:
                         added_ids = [rid for rid in (_resolve_ext(n) for n in add_nums) if rid]
                         removed_ids = [old_id_by_num[n] for n in remove_nums if n in old_id_by_num]
-                        mem_payload = {}
-                        if added_ids: mem_payload["addedExtensionIds"] = added_ids
-                        if removed_ids: mem_payload["removedExtensionIds"] = removed_ids
-                        if mem_payload:
+                        if added_ids or removed_ids:
+                            # RingCentral's bulk-assign only applies reliably when BOTH keys are
+                            # present. Sending addedExtensionIds alone (the additive case, where
+                            # nothing is removed) left the queue unchanged, so always include both,
+                            # empty array when unused.
+                            mem_payload = {
+                                "addedExtensionIds": added_ids,
+                                "removedExtensionIds": removed_ids,
+                            }
+                            _debug_dump(logs, f'Members bulk-assign (wipe={wipe_members})', payload=mem_payload)
                             s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json_payload=mem_payload, token=token)
                             if s_succ:
                                 logs.append("Members Updated")
