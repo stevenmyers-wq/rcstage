@@ -394,7 +394,8 @@ def run_cq_audit(task_id, queue_ids, token):
         for idx, qid in enumerate(queue_ids):
             audit_progress_store[task_id]['current'] = idx + 1
             row = {}
-            
+            fixed_order_nums = []
+
             succ, base = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}', token=token)
             if not succ: continue
             
@@ -429,6 +430,13 @@ def run_cq_audit(task_id, queue_ids, token):
                 if transfer_mode == 'FixedOrder': row["Ring Type"] = "Sequential"
                 elif transfer_mode == 'Rotating': row["Ring Type"] = "Rotating"
                 else: row["Ring Type"] = transfer_mode
+
+                # For Sequential queues the agent ring order matters, so remember it and export
+                # Members in that exact order (below) — otherwise a plain re-upload would scramble it.
+                if transfer_mode == 'FixedOrder':
+                    fixed_order_nums = [ext_id_to_num.get(str(a.get('extension', {}).get('id', '')), '')
+                                        for a in q_set.get('fixedOrderAgents', [])]
+                    fixed_order_nums = [n for n in fixed_order_nums if n]
                 
                 row["User Ring Time"] = format_sec(q_set.get('agentTimeout'))
                 row["Total Ring Time"] = format_sec(q_set.get('holdTime'))
@@ -504,6 +512,11 @@ def run_cq_audit(task_id, queue_ids, token):
             succ, mem_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/members', token=token)
             if succ and mem_resp.get('records'):
                 mems = [str(m.get('extensionNumber')) for m in mem_resp['records'] if m.get('extensionNumber')]
+                if fixed_order_nums:
+                    # Sequential queue: list agents in ring order, then any members not in it.
+                    ordered = [n for n in fixed_order_nums if n in mems]
+                    ordered += [n for n in mems if n not in fixed_order_nums]
+                    mems = ordered
                 row["Members (Ext)"] = ", ".join(mems)
 
             succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/notification-settings', token=token)
@@ -988,14 +1001,11 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
             if q_set.get('transferMode') != 'FixedOrder':
                 q_set.pop('fixedOrderAgents', None)
             elif not q_set.get('fixedOrderAgents'):
-                # Switching TO Sequential requires an explicit agent order, which the queue
-                # didn't have before. Seed it from the row's Members column (preferred order)
-                # or the queue's current membership so the mode change isn't rejected.
-                mem_raw = get_val(row, 'Members (Ext)')
-                ordered_ids = []
-                if mem_raw:
-                    ordered_ids = [rid for rid in (_resolve_ext(e.strip()) for e in mem_raw.split(',') if e.strip()) if rid]
-                fo_agents = _build_fixed_order_agents(q_id, ordered_ids)
+                # Switching TO Sequential requires a non-empty agent order for the PUT to be
+                # valid. Seed it from current membership just to satisfy that; the real ring
+                # order from the sheet's Members column is applied in section F2 below, after
+                # membership has been settled.
+                fo_agents = _build_fixed_order_agents(q_id, [])
                 if fo_agents:
                     q_set['fixedOrderAgents'] = fo_agents
                     _debug_dump(logs, 'Seeded fixedOrderAgents', payload=fo_agents)
@@ -1200,6 +1210,7 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
         # A blank Members column is always left untouched. When it has values the sheet
         # members are added; the wipe_members toggle additionally removes any current
         # member not listed, making the queue's membership exactly the sheet list.
+        members_changed = False
         val_mems = get_val(row, 'Members (Ext)')
         if val_mems is not None:
             mem_exts = [e.strip() for e in val_mems.split(',') if e.strip()]
@@ -1249,10 +1260,41 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                             s_succ, err = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{q_id}/bulk-assign', method='POST', json_payload=mem_payload, token=token)
                             if s_succ:
                                 logs.append("Members Updated")
+                                members_changed = True
                             else:
                                 has_error = True
                                 logs.append(f"Members Error: {format_api_error(err)}")
                                 _debug_dump(logs, 'Members bulk-assign failed', payload=mem_payload, err=err)
+
+        # --- F2. FIXED-ORDER RING SEQUENCE ---
+        # For Sequential (FixedOrder) queues the agent order decides who rings first, so the
+        # sheet's Members order is significant. Apply it here, after section F has settled
+        # membership, so every listed agent is already a member when the sequence is set.
+        mem_order_raw = get_val(row, 'Members (Ext)')
+        if mem_order_raw:
+            ordered_ids = [rid for rid in (_resolve_ext(e.strip()) for e in mem_order_raw.split(',') if e.strip()) if rid]
+            if members_changed and not is_preview:
+                time.sleep(2.0)  # let a just-changed membership settle before referencing it
+            get_succ, fo_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
+            if get_succ and isinstance(fo_rule, dict) and fo_rule.get('queue', {}).get('transferMode') == 'FixedOrder' and ordered_ids:
+                cur_ids = [str(a.get('extension', {}).get('id', '')) for a in fo_rule['queue'].get('fixedOrderAgents', [])]
+                des_ids = [str(m) for m in ordered_ids]
+                if cur_ids != des_ids:
+                    old_nums = ", ".join(ext_id_to_num.get(i, i) for i in cur_ids) or "None"
+                    new_nums = ", ".join(ext_id_to_num.get(i, i) for i in des_ids)
+                    changes.append({"parameter": "Ring Order", "old": old_nums, "new": new_nums})
+                    if not is_preview:
+                        fo_rule['queue']['fixedOrderAgents'] = [{"extension": {"id": m}, "index": idx} for idx, m in enumerate(des_ids, start=1)]
+                        for f in _READ_ONLY: fo_rule.pop(f, None)
+                        for f in _READ_ONLY:
+                            if 'queue' in fo_rule: fo_rule['queue'].pop(f, None)
+                        put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='PUT', json_payload=fo_rule, token=token)
+                        if put_succ:
+                            logs.append("Ring Order Updated")
+                        else:
+                            has_error = True
+                            logs.append(f"Ring Order Error: {format_api_error(err)}")
+                            _debug_dump(logs, 'Fixed order PUT failed', payload=fo_rule.get('queue'), err=err)
 
         # --- G. VOICEMAIL NOTIFICATIONS ---
         vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
