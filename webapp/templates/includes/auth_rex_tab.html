@@ -53,5 +53,86 @@
                 </button>
             </div>
         </form>
+        <div id="rc-connect-status" class="text-sm font-semibold text-center mt-4 hidden"></div>
     </div>
 </div>
+
+<script>
+(function () {
+    const form = document.getElementById('rc-connect-form');
+    if (!form || form.dataset.wired) return;
+    form.dataset.wired = '1';
+
+    const input = document.getElementById('rc-client-id-input');
+    const connectBtn = document.getElementById('rc-connect-button');
+    const disconnectBtn = document.getElementById('rc-disconnect-button');
+    const card = document.getElementById('rc-connection-card');
+    const statusEl = document.getElementById('rc-connect-status');
+
+    function setStatus(msg, isError) {
+        if (!statusEl) return;
+        statusEl.textContent = msg;
+        statusEl.classList.remove('hidden');
+        statusEl.classList.toggle('text-rose-500', !!isError);
+        statusEl.classList.toggle('text-emerald-600', !isError);
+    }
+
+    async function refreshStatus() {
+        try {
+            const res = await fetch('/api/rc/status');
+            const data = await res.json();
+            if (data.status === 'connected') {
+                card.classList.remove('rc-disconnected');
+                card.classList.add('rc-connected');
+                connectBtn.style.display = 'none';
+                disconnectBtn.style.display = 'block';
+                if (input) { input.value = data.client_id || ''; input.disabled = true; }
+                setStatus('Connected' + (data.rc_user_email ? ' (owner ' + data.rc_user_email + ')' : ''), false);
+            } else {
+                card.classList.add('rc-disconnected');
+                card.classList.remove('rc-connected');
+                connectBtn.style.display = 'block';
+                disconnectBtn.style.display = 'none';
+                if (input) input.disabled = false;
+            }
+        } catch (e) { /* status is best-effort */ }
+    }
+
+    // Intercept the submit so the browser redirects to RingCentral's OAuth
+    // authorize page instead of doing a default form post (which just reloads).
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const clientId = (input.value || '').trim();
+        if (!clientId) { setStatus('Please enter a Client ID.', true); return; }
+        connectBtn.disabled = true;
+        const original = connectBtn.textContent;
+        connectBtn.textContent = 'Redirecting to RingCentral...';
+        try {
+            const res = await fetch('/auth/initiate-pkce', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ client_id: clientId })
+            });
+            const data = await res.json();
+            if (res.ok && data.redirect_url) {
+                window.location.href = data.redirect_url;
+                return;
+            }
+            setStatus(data.message || 'Failed to start authorization.', true);
+        } catch (err) {
+            setStatus('Network error: ' + err.message, true);
+        }
+        connectBtn.disabled = false;
+        connectBtn.textContent = original;
+    });
+
+    disconnectBtn.addEventListener('click', async () => {
+        disconnectBtn.disabled = true;
+        try { await fetch('/api/rc/disconnect', { method: 'POST' }); }
+        catch (e) { /* ignore */ }
+        window.location.reload();
+    });
+
+    refreshStatus();
+})();
+</script>
