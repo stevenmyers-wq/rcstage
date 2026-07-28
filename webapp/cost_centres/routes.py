@@ -16,6 +16,19 @@ def get_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@cost_centres_bp.route('/debug/licenses', methods=['GET'])
+@require_rc_token
+@track_usage('Cost Centres - License Debug')
+def debug_licenses():
+    """Diagnostic: dump raw responses from candidate license/billing endpoints
+    so we can verify whether per-object license data is available for this
+    account. Safe/read-only; intended for investigation only."""
+    token = get_rc_access_token()
+    try:
+        return jsonify({'success': True, 'data': utils.get_license_debug_dump(token)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @cost_centres_bp.route('/transfer', methods=['POST'])
 @require_rc_token
 @track_usage('Cost Centres - Transfer')

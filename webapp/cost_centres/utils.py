@@ -1,73 +1,68 @@
 import time
 from webapp.rc_api import rc_api_call
 
-# ---------------------------------------------------------------------------
-# License / product type derivation
-# ---------------------------------------------------------------------------
-# RingCentral's public REST API (extension, phone-number and device records)
-# does NOT expose the literal billing SKU shown in the Admin Portal Cost Center
-# report (e.g. "RingEX Digital Line Unlimited"). That value lives in the
-# internal billing catalogue which is not published through the provisioning
-# API this tool uses.
-#
-# The license *category* an object consumes is, however, deterministic from the
-# fields we already fetch: an extension's `type`, and a phone number's
-# `usageType` / `paymentType`. We map those to human-readable license labels so
-# the tab can display "what does this object consume" per row.
 
-# Extension type -> consumed license label
-EXTENSION_LICENSE_MAP = {
-    'User': 'Digital Line',
-    'DigitalUser': 'Digital Line',
-    'VirtualUser': 'Virtual Extension',
-    'FlexibleUser': 'Flexible User',
-    'FaxUser': 'Fax User',
-    'Limited': 'Limited Extension',
-    'Department': 'Call Queue (No License)',
-    'IvrMenu': 'IVR Menu (No License)',
-    'Announcement': 'Announcement-Only (No License)',
-    'AnnouncementOnly': 'Announcement-Only (No License)',
-    'Voicemail': 'Message-Only (No License)',
-    'SharedLinesGroup': 'Shared Lines Group',
-    'PagingOnly': 'Paging Group (No License)',
-    'PagingOnlyGroup': 'Paging Group (No License)',
-    'ParkLocation': 'Park Location (No License)',
-    'Bot': 'Bot (No License)',
-    'Room': 'Room',
-    'Site': 'Site (No License)',
-}
+def get_license_debug_dump(token):
+    """Diagnostic probe: hit every endpoint that could plausibly expose the
+    license/product a given object consumes, and return the raw responses so
+    we can determine what (if anything) RingCentral publishes for THIS account.
 
+    RingCentral's public provisioning API (extension / phone-number / device
+    records) does not carry an assigned-license field, and the seat/package a
+    user holds (e.g. Digital Line vs Video Pro) cannot be derived from the
+    extension `type`. This probe checks the remaining candidates before we
+    conclude the data is unavailable.
+    """
+    result = {}
 
-def derive_extension_license(ext_type):
-    return EXTENSION_LICENSE_MAP.get(ext_type, ext_type or 'Extension')
+    def probe(label, endpoint, params=None):
+        resp = rc_api_call(endpoint, method='GET', params=params,
+                           token=token, return_response=True)
+        entry = {'endpoint': endpoint, 'status': getattr(resp, 'status_code', None)}
+        try:
+            body = resp.json()
+        except Exception:
+            body = getattr(resp, 'text', '')
+        # Trim record lists to the first 3 items to keep the dump readable.
+        if isinstance(body, dict) and isinstance(body.get('records'), list):
+            entry['record_count'] = len(body['records'])
+            entry['sample_records'] = body['records'][:3]
+            entry['navigation'] = body.get('navigation')
+            entry['paging'] = body.get('paging')
+        else:
+            entry['body'] = body
+        result[label] = entry
 
+    # 1. Account-level license inventory (undocumented in older specs).
+    probe('licenses_v1', '/restapi/v1.0/account/~/licenses')
+    probe('licenses_v2', '/restapi/v2/accounts/~/licenses')
 
-def derive_phone_number_license(usage_type, payment_type):
-    """Map a phone number's usage/payment type to the license it consumes."""
-    if usage_type == 'MainCompanyNumber':
-        return 'Main Company Number'
-    if payment_type == 'External':
-        return 'External / Forwarded Number'
-    if payment_type == 'TollFree':
-        return 'Additional Toll-Free Number'
-    if usage_type in ('CompanyNumber', 'AdditionalCompanyNumber'):
-        return 'Additional Company Number'
-    if usage_type in ('ForwardedNumber', 'ForwardedCompanyNumber'):
-        return 'Forwarded Number'
-    if usage_type == 'DirectNumber':
-        return 'Additional Local Number'
-    return usage_type or 'Phone Number'
+    # 2. Full phone-number record — check for any billing/product/feature field
+    #    beyond usageType/paymentType.
+    probe('phone_numbers_full', '/restapi/v1.0/account/~/phone-number',
+          params={'perPage': 3})
+    probe('phone_numbers_v2', '/restapi/v2/accounts/~/phone-numbers',
+          params={'perPage': 3})
 
+    # 3. Extension detail (list gives limited fields; detail/Full view may
+    #    include a package/service descriptor).
+    ext_list = rc_api_call('/restapi/v1.0/account/~/extension',
+                           params={'perPage': 1, 'type': 'User'},
+                           token=token, return_response=True)
+    try:
+        first_ext = (ext_list.json().get('records') or [{}])[0]
+    except Exception:
+        first_ext = {}
+    ext_id = first_ext.get('id')
+    if ext_id:
+        probe('extension_detail', f'/restapi/v1.0/account/~/extension/{ext_id}')
+        probe('extension_features',
+              f'/restapi/v1.0/account/~/extension/{ext_id}/features')
 
-def derive_device_license(dev_type):
-    labels = {
-        'HardPhone': 'Device (Hard Phone)',
-        'SoftPhone': 'Device (Soft Phone)',
-        'OtherPhone': 'Device (Other)',
-        'Paging': 'Paging Device',
-    }
-    return labels.get(dev_type, dev_type or 'Device')
+    # 4. Cost-center definitions (already used by the tab) for completeness.
+    probe('cost_centers', '/restapi/v1.0/account/~/cost-center')
 
+    return result
 
 def fetch_all_pages(endpoint, token, params=None):
     if params is None:
@@ -173,7 +168,6 @@ def get_cost_centres_data(token):
             'number': ext.get('extensionNumber', 'N/A'),
             'site': ext.get('site', {}).get('name', 'Main Site'),
             'department': ext.get('contact', {}).get('department', 'N/A') or 'N/A',
-            'licenseType': derive_extension_license(ext.get('type')),
             'costCenterId': cc_id,
             'costCenterName': cc_name
         })
@@ -192,7 +186,6 @@ def get_cost_centres_data(token):
                 'number': pn.get('phoneNumber', ''),
                 'site': 'N/A',
                 'department': 'N/A',
-                'licenseType': derive_phone_number_license(usage, pn.get('paymentType')),
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
@@ -210,7 +203,6 @@ def get_cost_centres_data(token):
                 'number': dev.get('serial', 'N/A'),
                 'site': dev.get('site', {}).get('name', 'Main Site'),
                 'department': 'N/A',
-                'licenseType': derive_device_license(dev.get('type')),
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
@@ -229,7 +221,6 @@ def get_cost_centres_data(token):
                 'number': f"Qty: {lic.get('quantity', '1')}",
                 'site': 'N/A',
                 'department': 'N/A',
-                'licenseType': l_type,
                 'costCenterId': cc_id,
                 'costCenterName': cc_name
             })
