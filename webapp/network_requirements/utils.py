@@ -34,7 +34,7 @@ APP_GALLERY = "https://www.ringcentral.com/apps/"
 MS_DIRECT_ROUTING_PLAN = "https://learn.microsoft.com/en-us/microsoftteams/direct-routing-plan"
 
 # Verified RingCentral KB article URLs (confirmed on the RingCentral support site).
-KB_SSO_ENTRA = "https://support.ringcentral.com/article-v2/Using-Microsoft-Entra-ID-for-single-sign-on.html?brand=RingCentral&product=RingEX&language=en_US"
+KB_SSO_ENTRA = "https://support.ringcentral.com/article-v2/Single-Sign-On-Integrate-RingCentral-Azure-Active-Directory.html?brand=RC_US&product=RingEX&language=en_US"
 KB_SCIM_ENTRA = "https://support.ringcentral.com/article-v2/Using-Azure-Active-Directory-for-automatic-user-provisioning.html?brand=RingCentral&product=RingEX&language=en_US"
 KB_GOOGLE_PROVISIONING = "https://support.ringcentral.com/article-v2/10587-G-Suite-Auto-User-Provisioning.html?brand=RC_US&product=RingEX&language=en_US"
 KB_MST_DIRECT_ROUTING = "https://support.ringcentral.com/article-v2/Setting-up-RingCentral-Cloud-PBX-for-Microsoft-Teams.html?brand=RingCentral&product=RingEX&language=en_US"
