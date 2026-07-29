@@ -17,6 +17,9 @@ from webapp.rc_api import rc_api_call
 
 export_progress_store = {}
 xlsx_upload_progress_store = {}
+# Per-task setup cache so a chunked bulk upload only lists the Drive folder and
+# builds the extension index once, then reuses them across chunks.
+_xlsx_upload_cache = {}
 
 DRIVE_API_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 
@@ -847,6 +850,14 @@ def download_drive_file_bytes(file_id, access_token=None):
     )
     if resp.status_code == 200:
         return resp.content
+    if resp.status_code == 401:
+        # Not a rate limit: the per-user Drive OAuth token has expired (these
+        # last about an hour and cannot be refreshed server-side). The chunked
+        # upload refreshes the token between chunks, so this should be rare.
+        raise ValueError(
+            "Google Drive authorization expired (HTTP 401) — this is a token "
+            "timeout, not a rate limit. Re-run the upload to reauthorize."
+        )
     raise ValueError(f"Failed to download Drive file (HTTP {resp.status_code}).")
 
 def _drive_name_index(files):
@@ -978,14 +989,19 @@ def _resolve_upload_columns(df):
 
     return ext_col, type_col, name_col
 
-def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None):
-    """
-    Drive a bulk greeting upload from an uploaded spreadsheet plus a Drive folder
-    link. Each row (EXT NUMBER, GREETING TYPE, GREETING NAME) is resolved, matched
-    to a Drive file by name, downloaded and applied. Drive is read as the signed-in
-    user when access_token is supplied. Every row is handled independently so one
-    bad row never aborts the batch.
-    """
+def _prune_xlsx_cache(max_age_seconds=7200):
+    """Drop stale per-task setup so abandoned uploads don't leak memory."""
+    now = time.time()
+    for key in [k for k, v in _xlsx_upload_cache.items()
+                if now - v.get('created', now) > max_age_seconds]:
+        _xlsx_upload_cache.pop(key, None)
+        xlsx_upload_progress_store.pop(key, None)
+
+
+def _prepare_xlsx_upload(file_storage, drive_url, access_token):
+    """One-time setup for a bulk upload: parse the sheet, list the Drive folder,
+    and build the extension index. Expensive, so it's cached per task and reused
+    across chunks."""
     import pandas as pd
 
     folder_id = extract_drive_folder_id(drive_url)
@@ -998,24 +1014,77 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None):
     drive_files = list_drive_folder_files(folder_id, access_token=access_token)
     if not drive_files:
         raise ValueError("No files were found in that Drive folder.")
-    name_index = _drive_name_index(drive_files)
-    ext_index = build_extension_number_index()
 
     rows = df.to_dict('records')
-    total = len(rows)
-    results = []
-    if task_id:
+    total = sum(
+        1 for row in rows
+        if _cell_str(row.get(ext_col)) or _cell_str(row.get(type_col)) or _cell_str(row.get(name_col))
+    )
+    return {
+        'rows': rows,
+        'ext_col': ext_col,
+        'type_col': type_col,
+        'name_col': name_col,
+        'name_index': _drive_name_index(drive_files),
+        'ext_index': build_extension_number_index(),
+        'total': total,
+        'created': time.time(),
+    }
+
+
+def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
+                     cursor=0, chunk_size=None):
+    """
+    Drive a bulk greeting upload from an uploaded spreadsheet plus a Drive folder
+    link. Each row (EXT NUMBER, GREETING TYPE, GREETING NAME) is resolved, matched
+    to a Drive file by name, downloaded and applied. Drive is read as the signed-in
+    user when access_token is supplied. Every row is handled independently so one
+    bad row never aborts the batch.
+
+    When ``chunk_size`` is given the call processes only the rows starting at
+    ``cursor`` and returns a ``next_cursor``/``done`` pair so the caller can loop,
+    handing in a freshly refreshed Drive token each chunk. This keeps any single
+    request well inside the ~1h OAuth token lifetime, which is what previously
+    caused a wave of HTTP 401s partway through large batches. With ``chunk_size``
+    omitted the whole sheet is processed in one pass (legacy behaviour).
+    """
+    chunked = chunk_size is not None
+
+    ctx = _xlsx_upload_cache.get(task_id) if (chunked and task_id) else None
+    if ctx is None:
+        ctx = _prepare_xlsx_upload(file_storage, drive_url, access_token)
+        if chunked and task_id:
+            _prune_xlsx_cache()
+            _xlsx_upload_cache[task_id] = ctx
+
+    rows = ctx['rows']
+    ext_col, type_col, name_col = ctx['ext_col'], ctx['type_col'], ctx['name_col']
+    name_index, ext_index, total = ctx['name_index'], ctx['ext_index'], ctx['total']
+
+    if task_id and task_id not in xlsx_upload_progress_store:
         xlsx_upload_progress_store[task_id] = {'current': 0, 'total': total, 'logs': []}
+    store = xlsx_upload_progress_store.get(task_id) if task_id else None
+
+    # Rows already logged in earlier chunks; this call appends to the same list.
+    chunk_start_len = len(store['logs']) if store is not None else 0
 
     def log(msg, status):
         entry = {'msg': msg, 'status': status}
-        results.append(entry)
-        store = xlsx_upload_progress_store.get(task_id) if task_id else None
         if store is not None:
             store['logs'].append(entry)
 
-    processed = 0
-    for row in rows:
+    start = cursor if chunked else 0
+    end = len(rows)
+    next_cursor = end
+    processed_in_chunk = 0
+    i = start
+    while i < end:
+        if chunked and processed_in_chunk >= chunk_size:
+            next_cursor = i
+            break
+        row = rows[i]
+        i += 1
+
         ext_num = _cell_str(row.get(ext_col))
         type_label = _cell_str(row.get(type_col))
         greeting_name = _cell_str(row.get(name_col))
@@ -1048,19 +1117,32 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None):
         except Exception as e:
             log(f"{row_label}: {str(e)}", 'error')
         finally:
-            processed += 1
-            store = xlsx_upload_progress_store.get(task_id) if task_id else None
+            processed_in_chunk += 1
             if store is not None:
-                store['current'] = processed
+                store['current'] = store.get('current', 0) + 1
             time.sleep(0.2)
 
-    success_count = sum(1 for r in results if r['status'] == 'success')
-    error_count = sum(1 for r in results if r['status'] == 'error')
+    done = (not chunked) or (next_cursor >= end)
+
+    all_logs = store['logs'] if store is not None else []
+    chunk_logs = all_logs[chunk_start_len:]
+    success_count = sum(1 for r in all_logs if r['status'] == 'success')
+    error_count = sum(1 for r in all_logs if r['status'] == 'error')
+
+    if done and task_id:
+        _xlsx_upload_cache.pop(task_id, None)
+
+    # ``results`` carries the full cumulative log so the final report is complete;
+    # ``chunk_results`` is just this call's rows.
     return {
-        'results': results,
+        'results': all_logs,
+        'chunk_results': chunk_logs,
         'success_count': success_count,
         'error_count': error_count,
-        'total': success_count + error_count,
+        'total': total,
+        'current': store['current'] if store is not None else success_count + error_count,
+        'next_cursor': next_cursor,
+        'done': done,
     }
 
 def generate_upload_template():

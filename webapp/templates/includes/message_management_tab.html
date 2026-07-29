@@ -1178,11 +1178,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Per-user Google Drive authorization (OAuth access token via GIS) ---
     let _driveTokenClient = null;
-    let _driveToken = null; // { access_token, expires_at }
+    let _driveToken = null;   // { access_token, expires_at }
+    let _drivePending = null; // { resolve, reject } for the in-flight request
 
     function ensureDriveToken() {
         return new Promise((resolve, reject) => {
-            // Reuse a still-valid token so we don't re-prompt every upload.
+            // Reuse a still-valid token so we don't re-prompt on every chunk.
             if (_driveToken && (_driveToken.expires_at - Date.now()) > 60000) {
                 resolve(_driveToken.access_token);
                 return;
@@ -1196,27 +1197,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 reject(new Error('Google authorization library has not loaded yet. Refresh the page and try again.'));
                 return;
             }
+            // The token client is created once, but its callback fires for every
+            // requestAccessToken(); route each result to the current promise.
+            const hadToken = !!_driveToken;
+            _drivePending = { resolve, reject };
             if (!_driveTokenClient) {
                 _driveTokenClient = google.accounts.oauth2.initTokenClient({
                     client_id: clientId,
                     scope: 'https://www.googleapis.com/auth/drive.readonly',
                     callback: (resp) => {
+                        const pending = _drivePending;
+                        _drivePending = null;
                         if (resp && resp.access_token) {
                             _driveToken = {
                                 access_token: resp.access_token,
                                 expires_at: Date.now() + ((resp.expires_in || 3600) * 1000)
                             };
-                            resolve(resp.access_token);
-                        } else {
-                            reject(new Error('Google Drive authorization was cancelled.'));
+                            if (pending) pending.resolve(resp.access_token);
+                        } else if (pending) {
+                            pending.reject(new Error('Google Drive authorization was cancelled.'));
                         }
                     },
-                    error_callback: (err) => reject(new Error('Google Drive authorization failed: ' + ((err && err.type) || 'unknown')))
+                    error_callback: (err) => {
+                        const pending = _drivePending;
+                        _drivePending = null;
+                        if (pending) pending.reject(new Error('Google Drive authorization failed: ' + ((err && err.type) || 'unknown')));
+                    }
                 });
             }
             // Must be called during the user gesture so the popup isn't blocked.
-            try { _driveTokenClient.requestAccessToken(); }
-            catch (e) { reject(new Error('Could not start Google Drive authorization: ' + e.message)); }
+            // Once a grant exists, prompt:'' refreshes silently (no popup) — this
+            // is what lets a long chunked upload renew its token mid-run.
+            try { _driveTokenClient.requestAccessToken(hadToken ? { prompt: '' } : {}); }
+            catch (e) { _drivePending = null; reject(new Error('Could not start Google Drive authorization: ' + e.message)); }
         });
     }
 
@@ -1263,31 +1276,58 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {}
         }, 1000);
 
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('drive_url', driveUrl);
-        formData.append('task_id', taskId);
-        formData.append('drive_token', driveToken);
+        // Process the sheet in small chunks, refreshing the Drive token before
+        // each one. This keeps every request well inside the ~1h OAuth token
+        // lifetime, which previously expired mid-run and caused a wave of 401s.
+        const CHUNK_SIZE = 25;
+        let cursor = 0;
+        let summary = null;
 
         try {
-            const res = await fetch('/api/message_management/xlsx_upload', { method: 'POST', body: formData });
-            const data = await res.json();
+            while (true) {
+                // Silently renews when the current token is near expiry.
+                const token = await ensureDriveToken();
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('drive_url', driveUrl);
+                formData.append('task_id', taskId);
+                formData.append('drive_token', token);
+                formData.append('cursor', String(cursor));
+                formData.append('chunk_size', String(CHUNK_SIZE));
+
+                const res = await fetch('/api/message_management/xlsx_upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!res.ok || data.error) throw new Error(data.error || 'Bulk upload failed.');
+
+                summary = data;
+                if (data.done) break;
+                if (typeof data.next_cursor !== 'number' || data.next_cursor <= cursor) break; // no forward progress: stop
+                cursor = data.next_cursor;
+            }
             clearInterval(pollInterval);
 
-            if (!res.ok || data.error) throw new Error(data.error || 'Bulk upload failed.');
+            // Flush any log lines the poll hadn't rendered yet.
+            try {
+                const statusRes = await fetch(`/api/message_management/xlsx_upload/status?task_id=${taskId}`);
+                if (statusRes.ok) {
+                    const st = await statusRes.json();
+                    if (Array.isArray(st.logs)) {
+                        for (let j = seenLogs; j < st.logs.length; j++) logProgress(st.logs[j].msg, st.logs[j].status);
+                        seenLogs = st.logs.length;
+                    }
+                }
+            } catch (e) {}
 
-            if (Array.isArray(data.results)) {
-                for (let j = seenLogs; j < data.results.length; j++) logProgress(data.results[j].msg, data.results[j].status);
-            }
-
+            const s = summary || { success_count: 0, error_count: 0, total: 0, results: [] };
             progressBar.style.width = '100%';
-            progressBar.className = (data.error_count ? 'bg-amber-500' : 'bg-emerald-500') + ' h-full rounded-full transition-all duration-300';
-            progressPct.textContent = `${data.total}/${data.total}`;
+            progressBar.className = (s.error_count ? 'bg-amber-500' : 'bg-emerald-500') + ' h-full rounded-full transition-all duration-300';
+            progressPct.textContent = `${s.total}/${s.total}`;
             progressTitle.textContent = "Bulk Upload Complete";
-            logProgress(`Finished — ${data.success_count} applied, ${data.error_count} failed.`, data.error_count ? 'error' : 'success');
+            logProgress(`Finished — ${s.success_count} applied, ${s.error_count} failed.`, s.error_count ? 'error' : 'success');
 
-            if (Array.isArray(data.results) && data.results.length) {
-                const rows = data.results.map(r => ({
+            if (Array.isArray(s.results) && s.results.length) {
+                const rows = s.results.map(r => ({
                     Status: r.status === 'success' ? 'Success' : (r.status === 'error' ? 'Failed' : 'Info'),
                     Detail: r.msg
                 }));

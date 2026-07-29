@@ -170,10 +170,25 @@ def xlsx_upload():
         task_id = request.form.get('task_id')
         drive_token = (request.form.get('drive_token') or '').strip() or None
 
+        # The client processes the sheet in chunks, refreshing the Drive token
+        # between each, so no single request outlives the ~1h OAuth token.
+        def _as_int(value, default):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        cursor = _as_int(request.form.get('cursor'), 0)
+        raw_chunk = request.form.get('chunk_size')
+        chunk_size = _as_int(raw_chunk, None) if raw_chunk not in (None, '') else None
+
         if not drive_url:
             return jsonify({'error': 'Missing Google Drive folder link'}), 400
 
-        summary = utils.xlsx_bulk_upload(file_obj, drive_url, task_id, access_token=drive_token)
+        summary = utils.xlsx_bulk_upload(
+            file_obj, drive_url, task_id, access_token=drive_token,
+            cursor=cursor, chunk_size=chunk_size,
+        )
         return jsonify({'success': True, **summary})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
