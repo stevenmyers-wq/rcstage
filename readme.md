@@ -15,8 +15,7 @@ An internal web application providing a suite of tools for interacting with the 
 - [Project Structure](#project-structure)
 - [Current Tools](#current-tools)
 - [Developer Guide: Adding a New Tool](#developer-guide-adding-a-new-tool)
-- [Key Development Patterns](#key-development-patterns)
-- [Frontend Patterns](#frontend-patterns)
+- [Cooperative STOP Facility](#cooperative-stop-facility)
 - [Environment Variables Reference](#environment-variables-reference)
 - [Local Development Setup](#local-development-setup)
 - [Deployment](#deployment)
@@ -41,13 +40,32 @@ The application is a **modular Flask Blueprint** app. Each tool is a fully self-
 ### Layer 1 — Website Auth (Google SSO)
 All users must sign in with a `@ringcentral.com` Google account. Handled by `webapp/core/routes.py`. Do not modify.
 
-### Layer 2 — RingCentral PKCE OAuth (most tools)
-Most tools act on behalf of a specific RingCentral customer account via PKCE flow.
-Session keys: `session['rc_access_token']`, `session['rc_client_id']`
+### Layer 2 — RingCentral PKCE OAuth (customer-connected tools)
+Tools that act on behalf of a specific RingCentral customer account via PKCE flow.
+Session keys: `session['rc_access_token']`, `session['rc_refresh_token']`, `session['rc_current_client_id']`
 Protect routes with `@require_rc_token`.
 
 Callback URL: `https://rcau-api-tools-396158962307.us-central1.run.app/auth/callback`
 Local: `http://localhost:8080/auth/callback`
+
+### Layer 2b — SM Employee Impersonation Bridge (most UC tools)
+Most bulk UC tools do **not** connect to the customer via PKCE. Instead the engineer
+signs in with their own RingCentral **employee** account and then bridges to a target
+customer account by ID. The employee token is exchanged for a customer-scoped
+impersonation token via the whitelisted PS bridge (`auth.ps.ringcentral.com`,
+`appName: brd`).
+
+Handled by `webapp/auth/routes.py` (`/api/sm_auth/*`) and `webapp/auth_utils.py`.
+Session keys: `session['sm_employee_token']` (+ refresh token), `session['sm_isolated_token']`,
+`session['sm_target_id']`, `session['sm_target_name']`.
+
+`@require_rc_token` accepts **either** a standard PKCE token or an SM isolated token, and
+`rc_api_call()` automatically prefers `sm_isolated_token` over `rc_access_token`. On a `401`
+it silently re-mints the bridge (refreshing the employee token first if needed), so
+long-running bulk jobs never force the engineer to rebuild the bridge by hand.
+
+Tools requiring this bridge show a "RingCentral Employee Login" gate followed by a
+"Target Account Required" prompt (see the `sm_auth_tabs` list in `index.html`).
 
 ### Layer 3 — JWT Server-to-Server (AI Demo Calls only)
 Static RingCentral JWTs from env vars. Does not use PKCE.
@@ -86,63 +104,140 @@ RCAU/
 │
 └── webapp/
     ├── __init__.py                  # App factory — register all blueprints here
-    ├── rc_api.py
-    ├── auth_utils.py
+    ├── rc_api.py                    # rc_api_call() — SM-token-aware, auto-refresh on 401
+    ├── auth_utils.py                # @require_rc_token + SM impersonation bridge helpers
+    ├── task_control.py              # Shared cooperative STOP registry for bulk write tools
     ├── usage_tracking.py
     ├── firestore_utils.py
     │
-    ├── audio_streaming/             # RingCX streaming tab
-    │   ├── __init__.py
-    │   ├── routes.py                # Auth, SSE, webhook, active dialogs, gRPC URL
-    │   └── utils.py                 # RingCX token exchange/refresh/accounts
+    ├── core/                        # Index page + Google SSO login/logout (do not touch)
+    ├── auth/                        # RC PKCE + SM employee bridge routes (/auth, /api/sm_auth)
     │
+    │   # Each tool below is a self-contained blueprint: routes.py (+ optional utils.py),
+    │   # a templates/includes/<name>_tab.html partial, and a static/js/<name>.js file.
+    │
+    │   # ── CC Tools ──
+    ├── cxone_audio_converter/       # Convert audio files for CXone
+    ├── cxone_script_analyzer/       # CXone changelogs & as-builts
+    │
+    │   # ── PM Tools ──
+    ├── network_requirements/        # Generate customer UC network requirements doc
+    ├── port_mapping/                # Map phone numbers from LOA/BRD
+    │
+    │   # ── SE Tools ──
+    ├── account_health/              # Account Discovery — pre-engagement analysis
     ├── agent_form/                  # Agent form tab + standalone iframe page
-    │   ├── __init__.py
-    │   └── routes.py                # /agent-form/ page + /agent-form/suggest AI endpoint
+    ├── ai_demo_calls/               # Generate AI demo calls (JWT auth)
+    ├── click_to_call/               # Trigger outbound call via RingCX dialer
+    ├── d365_ringcx/                 # Dynamics 365 + RingCX demo (leads, scoring, routing)
+    ├── audio_streaming/             # RingCX live transcript streaming tab
+    │
+    │   # ── UC Tools (most use the SM impersonation bridge) ──
+    ├── air_management/              # Bulk AI Receptionist audit/create/modify
+    ├── presence/                    # BLF & Presence — audit monitored lines
+    ├── bulk_hours/                  # Bulk Opening Hours (Sites/Queues)
+    ├── analytics/                   # Business Analytics reports
+    ├── visualiser/                  # Call Flow Visualiser
+    ├── cost_centres/                # Audit/update Cost Centre allocations
+    ├── custom_rules/                # Bulk answering rules via CSV
+    ├── device_audit/                # Audit provisioned devices + online status
+    ├── device_ringing_audit/        # Query V1/V2 call-handling ringing states
+    ├── device_swap/                 # Swap DLs/Extensions
+    ├── extension_number_changer/    # Bulk change extension numbers via Excel
+    ├── extension_renamer/           # Bulk edit extension names
+    ├── live_events/                 # Real-time subscription listener
+    ├── message_management/          # Greeting Studio — audit/apply/export audio
+    ├── personal_address_book/       # Multi-user address book
+    ├── notifications/               # Audit/update notification prefs
+    ├── phone_number_assignment/     # Bulk assign numbers from inventory via Excel
+    ├── ringex_uat/                  # Generate UAT scripts
+    ├── sip_fetcher/                 # Fetch SIP credentials
+    ├── account_migration/           # Export account programming/settings/audio
+    ├── cq_hours/                    # Call Queue Manager — hours/routing/timers/limits
+    ├── site_allocation/             # Bulk re-allocate users to a Site
+    ├── user_templates/              # Bulk apply User Templates via Excel
     │
     ├── static/js/
-    │   ├── app.js
-    │   ├── audio_streaming.js       # Streaming tab JS
-    │   ├── agent_form_tab.js        # Agent form RCAU tab JS
-    │   └── ...
+    │   ├── app.js                   # Shared: showMessage(), checkRcStatus(), PKCE connect
+    │   └── <tool_name>.js           # One JS file per tool
     │
     └── templates/
-        ├── index.html
-        ├── agent_form.html          # Standalone iframe page (no RCAU chrome)
+        ├── index.html              # Grouped sidebar nav (CC/PM/SE/UC) + SM auth gate
+        ├── agent_form.html         # Standalone iframe page (no RCAU chrome)
         └── includes/
-            ├── audio_streaming_tab.html
-            ├── agent_form_tab.html
-            └── ...
+            └── <tool_name>_tab.html # One UI partial per tool
 ```
 
 ---
 
 ## Current Tools
 
+Tools are grouped in the sidebar by function: **CC** (Contact Centre), **PM** (Project
+Management), **SE** (Sales Engineering), and **UC** (Unified Comms). The **Auth** column:
+`L1` Google SSO only · `L2` RC PKCE OAuth · `SM` SM employee impersonation bridge (see
+Layer 2b) · `L3` JWT · `L4` RingCX token exchange.
+
+### Authentication (sidebar)
+
 | Tab ID | Display Name | Auth | Description |
 |---|---|---|---|
-| `auth_rex` | REX Authentication | Layer 1 | PKCE OAuth connection |
-| `auth_cxone` | RCCC Authentication | Layer 1 | CXone authentication |
-| `sip_fetcher` | SIP Credentials | Layer 2 | Fetch SIP credentials |
-| `device_swap` | Device Swap | Layer 2 | Swap DLs/Extensions |
-| `renamer` | Extension Renamer | Layer 2 | Bulk edit extension names |
-| `bulk_opening` | Bulk Opening Hours | Layer 2 | Mass Site/Queue hours config |
-| `call_flow` | Call Flow Visualiser | Layer 2 | Visual routing path |
-| `personal_address_book` | Multi User Address Book | Layer 2 | Multi-user address book |
-| `live_events` | Live Events | Layer 2 | Real-time subscription listener |
-| `custom_rules` | Custom Rules | Layer 2 | Bulk answering rules via CSV |
-| `notifications` | Notifications | Layer 2 | Audit/update notification prefs |
-| `greetings_uploader` | Greetings Uploader | Layer 2 | Upload greetings |
-| `ringex_uat` | RingEX UAT | Layer 2 | Generate UAT scripts |
-| `ai_demo_calls` | AI Demo Calls | Layer 3 | Generate demo calls |
-| `analytics` | Business Analytics | Layer 2 | Call performance reports |
-| `presence` | BLF & Presence | Layer 2 | Audit BLF monitored lines |
-| `account_discovery` | Account Discovery | Layer 2 | Pre-engagement account analysis |
-| `cxone_script_analyzer` | CXone Script Analyzer | Layer 2 | Changelogs & as-builts |
-| `cxone_audio_converter` | CXone Audio Converter | Layer 2 | Convert audio files |
-| `port_mapping` | Port Mapping | Layer 2 | Map phone numbers from LOA/BRD |
-| `audio_streaming` | RingCX Streaming | Layer 4 | Live call transcript monitor |
-| `agent_form` | Agent Form | Layer 1 (tab) / None (iframe) | AI-assisted triage form |
+| `auth_rex` | REX Authentication | L1 | RC PKCE OAuth connection |
+| `auth_cxone` | RCCC Authentication | L1 | CXone authentication |
+
+### CC Tools
+
+| Tab ID | Display Name | Auth | Description |
+|---|---|---|---|
+| `cxone_audio_converter` | CXone Audio Converter | L2 | Convert audio files for CXone |
+| `cxone_script_analyzer` | CXone Script Analyzer | L2 | CXone changelogs & as-builts |
+
+### PM Tools
+
+| Tab ID | Display Name | Auth | Description |
+|---|---|---|---|
+| `network_requirements` | Network Requirements | L2 | Generate customer UC network requirements doc |
+| `port_mapping` | Port Mapping | SM | Map phone numbers from LOA/BRD |
+
+### SE Tools
+
+| Tab ID | Display Name | Auth | Description |
+|---|---|---|---|
+| `account_discovery` | Account Discovery | L2 | Pre-engagement account analysis |
+| `agent_form` | Agent Form | L1 (tab) / None (iframe) | AI-assisted triage form |
+| `ai_demo_calls` | AI Demo Calls | L3 | Generate AI demo calls |
+| `click_to_call` | Click to Call | L2 | Trigger an outbound call via the RingCX dialer |
+| `d365_ringcx` | D365 RingCX Demo | L2 | Dynamics 365 + RingCX demo (leads, scoring, routing) |
+| `audio_streaming` | RingCX Streaming | L4 | Live call transcript monitor |
+
+### UC Tools
+
+| Tab ID | Display Name | Auth | Description |
+|---|---|---|---|
+| `air_management` | AIR Management | SM | Bulk audit/create/modify AI Receptionists |
+| `presence` | BLF & Presence | SM | Audit BLF monitored lines |
+| `bulk_opening` | Bulk Opening Hours | SM | Mass Site/Queue hours config |
+| `analytics` | Business Analytics | L2 | Call performance reports |
+| `call_flow` | Call Flow Visualiser | SM | Visual routing path |
+| `cost_centres` | Cost Centres | SM | Audit/update Cost Centre allocations |
+| `custom_rules` | Custom Rules | SM | Bulk answering rules via CSV |
+| `device_audit` | Device Audit | SM | Audit provisioned devices + online status |
+| `device_ringing_audit` | Device Ringing Audit | SM | Query V1/V2 call-handling ringing states |
+| `device_swap` | Device Swap | SM | Swap DLs/Extensions |
+| `extension_number_changer` | Ext Number Changer | SM | Bulk change extension numbers via Excel |
+| `renamer` | Extension Renamer | SM | Bulk edit extension names |
+| `live_events` | Live Events | SM | Real-time subscription listener |
+| `message_management` | Message Management | SM | Greeting Studio — audit/apply/export audio |
+| `personal_address_book` | Multi User Address Book | SM | Multi-user address book |
+| `notifications` | Notifications | SM | Audit/update notification prefs |
+| `phone_number_assignment` | Phone Number Assignment | SM | Bulk assign numbers from inventory via Excel |
+| `ringex_uat` | RingEX UAT | SM | Generate UAT scripts |
+| `sip_fetcher` | SIP Credentials | SM | Fetch SIP credentials |
+| `account_migration` | Account Migration | SM | Export account programming/settings/audio |
+| `cq_hours` | Call Queue Manager | SM | Bulk hours/routing/timers/limits for Call Queues |
+| `site_allocation` | Site Allocation | SM | Bulk re-allocate users to a Site |
+| `user_templates` | User Templates | SM | Bulk apply User Templates via Excel |
+
+Admins additionally see an **Admin Dashboard** tab (`admin_dashboard`).
 
 ---
 
@@ -154,7 +249,10 @@ Five locations to touch. No existing module files modified.
 2. Create `webapp/templates/includes/your_tool_name_tab.html`
 3. Create `webapp/static/js/your_tool_name.js`
 4. Register blueprint in `webapp/__init__.py`
-5. Add tab entry to `{% set tabs %}` in `index.html` and add `{% elif %}` include block
+5. Add the tab to the appropriate `nav_groups` group (CC/PM/SE/UC) in `index.html`,
+   add an `{% elif current_tab == 'your_tool_name' %}` include block, and — if the tool
+   should act on customers via the employee bridge rather than PKCE — add its tab ID to the
+   `sm_auth_tabs` list.
 
 ### Decorator order (non-negotiable)
 ```python
@@ -168,8 +266,44 @@ def your_function():
 ```python
 from webapp.rc_api import rc_api_call
 data = rc_api_call("/restapi/v1.0/account/~/extension")
-# NEVER pass token manually
+# NEVER pass token manually — rc_api_call() picks the right session token
+# (SM impersonation token preferred, else PKCE token) and refreshes on 401.
 ```
+
+---
+
+## Cooperative STOP Facility
+
+Any tool that writes to an account in bulk (item by item, in batches, or as a streamed
+job) should be stoppable mid-run. Rather than each tool re-inventing a cancel flag, they
+share one in-memory registry: `webapp/task_control.py`, keyed by a `task_id`.
+
+This is safe because the app runs as a **single** Gunicorn process with threads
+(`--workers 1 --threads 8`, see the dockerfile), so the worker doing the writes and the
+`/cancel` request that stops it share the same memory. If the app ever moves to multiple
+worker processes, this registry must move to a shared backend (Firestore/Redis).
+
+Cancellation is cooperative and best-effort: a worker checks `is_stopped()` between items
+and bails cleanly. Items already sent to RingCentral cannot be recalled — only not-yet-sent
+items are skipped.
+
+```python
+from webapp import task_control
+
+# Worker loop (background thread, generator, or synchronous request)
+for item in items:
+    if task_control.is_stopped(task_id):
+        break                       # record a 'stopped' outcome, then stop
+    ... write item ...
+task_control.clear(task_id)         # always clear when the task ends
+
+# Expose a /cancel endpoint in one line
+bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
+```
+
+Use `task_control.interruptible_sleep(task_id, seconds)` instead of `time.sleep()` when a
+tool waits out RingCentral rate limits or an account-wide apply lock, so a stop request is
+honoured promptly rather than after a multi-minute wait.
 
 ---
 
@@ -189,6 +323,10 @@ data = rc_api_call("/restapi/v1.0/account/~/extension")
 | `RCAU_WEBHOOK_SECRET` | Shared secret with gRPC service |
 | `GCP_PROJECT_NUMBER` | GCP project number (default: `396158962307`) |
 | `GEMINI_API_KEY` | Google Gemini API key (AI Demo Calls + Agent Form) |
+| `SM_CLIENT_ID` | RC OAuth client ID for the SM employee impersonation bridge |
+| `SM_CLIENT_SECRET` | RC OAuth client secret for the SM bridge (optional — public clients pass the ID in-body) |
+| `DEMO_RC_JWT_AU` / `_UK` / `_US` | Static RC JWTs for AI Demo Calls (Layer 3) |
+| `DEMO_RC_CLIENT_ID` / `DEMO_RC_CLIENT_SECRET` | JWT app credentials for AI Demo Calls |
 
 ### gRPC service (set in Cloud Run console)
 
@@ -222,7 +360,13 @@ ADMIN_EMAILS=your@ringcentral.com
 RCAU_WEBHOOK_SECRET=your-shared-secret
 GCP_PROJECT_NUMBER=396158962307
 GEMINI_API_KEY=your-gemini-key
+SM_CLIENT_ID=your-sm-bridge-client-id
+SM_CLIENT_SECRET=your-sm-bridge-client-secret
 ```
+
+> In `FLASK_ENV=development`, Google SSO is bypassed (`authenticated=True`,
+> `user_email=developer@local.test`, `is_admin=True`). The SM employee bridge and RC PKCE
+> flows still require real RingCentral credentials to reach live accounts.
 
 Run Flask:
 ```bash
