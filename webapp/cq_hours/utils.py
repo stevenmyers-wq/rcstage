@@ -9,6 +9,7 @@ from datetime import datetime
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 
 audit_progress_store = {}
 
@@ -633,7 +634,7 @@ def check_diff(changes_list, param_name, old_val, new_val):
         return True
     return False
 
-def update_cq_batch(records, token, is_preview=False, wipe_members=False):
+def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_id=None):
     total_records = len(records)
     yield {"type": "start", "total": total_records, "message": "Fetching Account Directories..."}
     
@@ -731,10 +732,18 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
         return [{"extension": {"id": mid}, "index": idx} for idx, mid in enumerate(ids, start=1) if mid]
 
     for i, row in enumerate(records):
+        # Cooperative stop (real apply only -- preview writes nothing). Queues
+        # already synced cannot be recalled; remaining rows are simply skipped.
+        if not is_preview and task_control.is_stopped(task_id):
+            yield {"type": "cancelled", "current": i, "total": total_records,
+                   "message": f"Stopped by user. {i} of {total_records} row(s) processed; the rest were skipped."}
+            task_control.clear(task_id)
+            return
+
         logs = []
         changes = []
         has_error = False
-        
+
         ext_raw = get_val(row, 'Extension') or get_val(row, 'Extension Number')
         if not ext_raw: 
             yield {"type": "progress", "current": i + 1, "total": total_records, "result": {"ext": "N/A", "status": "info", "message": "Skipped row", "changes": []}, "is_preview": is_preview}
@@ -1484,6 +1493,7 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
             res_dict = {"ext": ext_num, "status": "success", "message": "Evaluated successfully." if is_preview else "Changes synced.", "changes": changes}
             
         yield {"type": "progress", "current": i + 1, "total": total_records, "result": res_dict, "is_preview": is_preview}
-        time.sleep(1.5) 
-            
+        time.sleep(1.5)
+
+    task_control.clear(task_id)
     yield {"type": "done", "is_preview": is_preview}

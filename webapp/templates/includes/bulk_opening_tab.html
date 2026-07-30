@@ -140,6 +140,9 @@
         </div>
         
         <div class="mt-8 space-y-3">
+            <button id="progress-stop-btn" class="hidden w-full btn-secondary !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                ■ Stop
+            </button>
             <button id="progress-result-btn" class="hidden w-full btn-primary !bg-emerald-600 hover:!bg-emerald-700">
                 ⬇ Download results (.xlsx)
             </button>
@@ -183,6 +186,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressTitle = document.getElementById('progress-title');
     const progressCloseBtn = document.getElementById('progress-close-btn');
     const progressResultBtn = document.getElementById('progress-result-btn');
+    const progressStopBtn = document.getElementById('progress-stop-btn');
+    // Shared with the server during an apply so /cancel can flag this run.
+    let bulkHoursTaskId = null;
+    if (progressStopBtn) {
+        progressStopBtn.addEventListener('click', async () => {
+            if (!bulkHoursTaskId) return;
+            progressStopBtn.disabled = true;
+            progressStopBtn.textContent = 'Stopping...';
+            logProgress('Stop requested — finishing the current entity, then halting...', 'info');
+            try {
+                await fetch(`/api/bulk_hours/cancel?task_id=${bulkHoursTaskId}`, { method: 'POST' });
+            } catch (e) { /* server loop also polls the flag */ }
+        });
+    }
 
     // Downloadable result listing for the current apply run.
     let lastResultRows = null;
@@ -408,12 +425,14 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal('modal-progress');
         progressLog.innerHTML = '';
         progressCloseBtn.classList.add('hidden');
+        bulkHoursTaskId = `bh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        if (progressStopBtn) { progressStopBtn.classList.remove('hidden'); progressStopBtn.disabled = false; progressStopBtn.textContent = '■ Stop'; }
         setResultData(null);
         progressBar.style.width = '10%';
         progressBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
         progressTitle.textContent = "Updating RingCentral...";
         logProgress(`Packaging ${records.length} records for ${currentDataType.toLowerCase()} update...`, 'info');
-        
+
         try {
             progressBar.style.width = '50%';
             logProgress(`Sending request to RingCentral API...`, 'info');
@@ -421,16 +440,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/bulk_hours/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dataType: currentDataType, records: records })
+                body: JSON.stringify({ dataType: currentDataType, records: records, task_id: bulkHoursTaskId })
             });
             const results = await response.json();
             if (!response.ok) throw new Error(results.error || 'Unknown upload error.');
-            
+
             progressBar.style.width = '100%';
+            const cancelled = results.some(r => r.status === 'cancelled');
             const success = results.filter(r => r.status === 'success').length;
-            const errors = results.length - success;
-            
-            results.forEach(r => logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, r.status));
+            const errors = results.filter(r => r.status === 'error').length;
+
+            results.forEach(r => logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, r.status === 'success' ? 'success' : (r.status === 'error' ? 'error' : 'info')));
 
             setResultData(results.map(r => ({
                 'Data Type': currentDataType,
@@ -439,7 +459,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Detail': r.message
             })));
 
-            if (errors === 0) {
+            if (cancelled) {
+                progressTitle.textContent = `Stopped${errors ? ` (${errors} error(s))` : ''}`;
+                progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
+            } else if (errors === 0) {
                 progressTitle.textContent = "Update Successful";
                 progressBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-300';
                 tbody.innerHTML = `<tr><td colspan="15" class="py-20 text-center text-emerald-600 font-medium">Updates applied successfully. Please fetch data again to verify.</td></tr>`;
@@ -455,6 +478,8 @@ document.addEventListener('DOMContentLoaded', () => {
             progressTitle.textContent = "Update Failed";
             logProgress(error.message, 'error');
         } finally {
+            bulkHoursTaskId = null;
+            if (progressStopBtn) progressStopBtn.classList.add('hidden');
             progressCloseBtn.classList.remove('hidden');
         }
     };

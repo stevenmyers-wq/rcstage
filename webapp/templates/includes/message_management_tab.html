@@ -257,6 +257,9 @@
         </div>
         
         <div class="mt-8 space-y-3">
+            <button id="progress-stop-btn" class="hidden w-full btn-secondary !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                ■ Stop
+            </button>
             <button id="progress-result-btn" class="hidden w-full btn-primary !bg-emerald-600 hover:!bg-emerald-700">
                 ⬇ Download results (.xlsx)
             </button>
@@ -828,6 +831,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressPct = document.getElementById('progress-pct');
     const progressTitle = document.getElementById('progress-title');
     const progressCloseBtn = document.getElementById('progress-close-btn');
+    const progressStopBtn = document.getElementById('progress-stop-btn');
+    // Set while the bulk XLSX upload runs; the client loop and the /cancel
+    // endpoint both key off this. Cleared when the run ends.
+    let mmXlsxStop = false;
+    let mmXlsxTaskId = null;
+    if (progressStopBtn) {
+        progressStopBtn.addEventListener('click', async () => {
+            mmXlsxStop = true;
+            progressStopBtn.disabled = true;
+            progressStopBtn.textContent = 'Stopping...';
+            if (mmXlsxTaskId) {
+                try { await fetch(`/api/message_management/xlsx_upload/cancel?task_id=${mmXlsxTaskId}`, { method: 'POST' }); }
+                catch (e) { /* client loop also breaks on the flag */ }
+            }
+        });
+    }
     const progressResultBtn = document.getElementById('progress-result-btn');
 
     function logProgress(msg, type='info') {
@@ -1257,6 +1276,9 @@ document.addEventListener('DOMContentLoaded', () => {
         logProgress('Google Drive authorized. Parsing spreadsheet and listing the folder...', 'info');
 
         const taskId = 'xlsx_' + Date.now();
+        mmXlsxStop = false;
+        mmXlsxTaskId = taskId;
+        if (progressStopBtn) { progressStopBtn.classList.remove('hidden'); progressStopBtn.disabled = false; progressStopBtn.textContent = '■ Stop'; }
         let seenLogs = 0;
 
         const pollInterval = setInterval(async () => {
@@ -1301,7 +1323,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok || data.error) throw new Error(data.error || 'Bulk upload failed.');
 
                 summary = data;
-                if (data.done) break;
+                if (data.done || data.cancelled) break;
+                if (mmXlsxStop) break; // user asked to stop; don't request the next chunk
                 if (typeof data.next_cursor !== 'number' || data.next_cursor <= cursor) break; // no forward progress: stop
                 cursor = data.next_cursor;
             }
@@ -1320,11 +1343,14 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {}
 
             const s = summary || { success_count: 0, error_count: 0, total: 0, results: [] };
+            const wasStopped = mmXlsxStop || (s && s.cancelled);
+            if (progressStopBtn) progressStopBtn.classList.add('hidden');
+            mmXlsxTaskId = null;
             progressBar.style.width = '100%';
-            progressBar.className = (s.error_count ? 'bg-amber-500' : 'bg-emerald-500') + ' h-full rounded-full transition-all duration-300';
-            progressPct.textContent = `${s.total}/${s.total}`;
-            progressTitle.textContent = "Bulk Upload Complete";
-            logProgress(`Finished — ${s.success_count} applied, ${s.error_count} failed.`, s.error_count ? 'error' : 'success');
+            progressBar.className = (wasStopped ? 'bg-amber-500' : (s.error_count ? 'bg-amber-500' : 'bg-emerald-500')) + ' h-full rounded-full transition-all duration-300';
+            progressPct.textContent = `${s.current || s.total}/${s.total}`;
+            progressTitle.textContent = wasStopped ? "Bulk Upload Stopped" : "Bulk Upload Complete";
+            logProgress(`${wasStopped ? 'Stopped — ' : 'Finished — '}${s.success_count} applied, ${s.error_count} failed${wasStopped ? ' (remaining rows skipped)' : ''}.`, s.error_count ? 'error' : (wasStopped ? 'info' : 'success'));
 
             if (Array.isArray(s.results) && s.results.length) {
                 const rows = s.results.map(r => ({
@@ -1336,6 +1362,8 @@ document.addEventListener('DOMContentLoaded', () => {
             progressCloseBtn.classList.remove('hidden');
         } catch (err) {
             clearInterval(pollInterval);
+            if (progressStopBtn) progressStopBtn.classList.add('hidden');
+            mmXlsxTaskId = null;
             logProgress(`Error: ${err.message}`, 'error');
             progressBar.style.width = '100%';
             progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';

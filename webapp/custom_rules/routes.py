@@ -8,9 +8,11 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from .utils import build_v1_payload, format_phone, parse_rule_to_row, transform_v1_to_v2
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
+custom_rules_bp.add_url_rule('/api/custom_rules/cancel', 'custom_rules_cancel', task_control.cancel_view, methods=['POST'])
 
 # --- HELPERS ---
 def get_extension_id(extension_number):
@@ -111,6 +113,7 @@ def audit_rules():
 def update_rules():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
+    task_id = request.form.get('task_id')
     try:
         if file.filename.endswith('.csv'): df = pd.read_csv(file)
         else: df = pd.read_excel(file)
@@ -119,7 +122,13 @@ def update_rules():
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
     results = []
+    cancelled = False
     for index, row in df.iterrows():
+        # Cooperative stop: rules already written stand; the rest are skipped.
+        if task_control.is_stopped(task_id):
+            cancelled = True
+            results.append("■ Stopped by user — remaining rows were skipped.")
+            break
         raw_ext_num = row.get('Ext Number')
         if pd.isna(raw_ext_num): continue
         try:
@@ -179,7 +188,8 @@ def update_rules():
                     raise http_err
         except Exception as e:
             results.append(f"❌ Error Ext {raw_ext_num}: {str(e)}")
-    return jsonify({"logs": results})
+    task_control.clear(task_id)
+    return jsonify({"logs": results, "cancelled": cancelled})
 
 # --- TEMPLATE DOWNLOAD ROUTE (UPDATED) ---
 @custom_rules_bp.route('/api/custom_rules/template', methods=['GET'])

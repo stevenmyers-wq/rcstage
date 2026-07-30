@@ -6,9 +6,11 @@ import time
 import pandas as pd
 from flask import Blueprint, jsonify, request, send_file, session, Response, stream_with_context
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 cq_hours_bp = Blueprint('cq_hours', __name__, url_prefix='/api/cq_hours')
+cq_hours_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
 @cq_hours_bp.route('/template', methods=['GET'])
 def download_template():
@@ -139,6 +141,7 @@ def upload_hours():
     is_preview = request.form.get('action') == 'preview'
     sheet_name = request.form.get('sheet_name')
     wipe_members = request.form.get('wipe_members') == '1'
+    task_id = request.form.get('task_id')
 
     try:
         file = request.files['file']
@@ -157,7 +160,7 @@ def upload_hours():
 
     def generate():
         try:
-            for chunk in utils.update_cq_batch(records, token, is_preview=is_preview, wipe_members=wipe_members):
+            for chunk in utils.update_cq_batch(records, token, is_preview=is_preview, wipe_members=wipe_members, task_id=task_id):
                 yield json.dumps(chunk) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"

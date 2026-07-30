@@ -9,6 +9,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // Downloadable result listing for the most recent upload.
     let pabResultRows = null;
     let pabUploadCtx = { userIds: [], action: '' };
+    // Shared with the server during a write so /cancel can flag this run.
+    let pabStopTaskId = null;
+    const pabStopBtn = document.getElementById('pab-stop-btn');
+    if (pabStopBtn) {
+        pabStopBtn.addEventListener('click', async () => {
+            if (!pabStopTaskId) return;
+            pabStopBtn.disabled = true;
+            pabStopBtn.textContent = 'Stopping...';
+            try {
+                await fetch(`/api/pab/cancel?task_id=${pabStopTaskId}`, { method: 'POST' });
+            } catch (e) { /* server loop also polls the flag */ }
+        });
+    }
+    function pabShowStop(show) {
+        if (!pabStopBtn) return;
+        pabStopBtn.classList.toggle('hidden', !show);
+        pabStopBtn.disabled = false;
+        pabStopBtn.textContent = '■ Stop';
+    }
     UCResults.attachButton(document.getElementById('pab-result-btn'), () => pabResultRows, 'Address_Book_Results', 'Results');
     function showPabResults(rows) {
         pabResultRows = (rows && rows.length) ? rows : null;
@@ -181,17 +200,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const contactsToDelete = selectedContactIndexes.map(index => allContacts[index]);
         contactLoader.style.display = 'block';
         contactLoaderText.textContent = 'Deleting contacts...';
+        pabStopTaskId = `pab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        pabShowStop(true);
         try {
             const response = await fetch('/api/pab/contacts/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contacts: contactsToDelete })
+                body: JSON.stringify({ contacts: contactsToDelete, stop_task_id: pabStopTaskId })
             });
             if (!response.ok) throw new Error('Failed to delete contacts.');
             getContactsBtn.click();
         } catch (error) {
             console.error("Error deleting contacts:", error);
         } finally {
+            pabStopTaskId = null;
+            pabShowStop(false);
             contactLoader.style.display = 'none';
         }
     });
@@ -325,12 +348,16 @@ document.addEventListener('DOMContentLoaded', () => {
             pabUploadCtx = { userIds: userIdsToUpdate, action };
             showPabResults(null);
             progressContainer.style.display = 'block';
+            // 'add' is a single RC bulk task (not item-by-item on our side), so
+            // only offer Stop for the item-by-item remove/update paths.
+            pabStopTaskId = `pab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            pabShowStop(action !== 'add');
 
             try {
                 const response = await fetch('/api/pab/contacts/upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userIds: userIdsToUpdate, contacts, action })
+                    body: JSON.stringify({ userIds: userIdsToUpdate, contacts, action, stop_task_id: pabStopTaskId })
                 });
                 const result = await response.json();
                 if (!response.ok || result.error) throw new Error(result.error || `Failed to start ${action} process.`);
@@ -364,6 +391,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Upload error:', error);
                 progressLabel.textContent = `Error: ${error.message}`;
                 progressBar.classList.add('bg-danger');
+            } finally {
+                // For the 'add' path the RC task keeps polling; the stop button
+                // was never shown there. For remove/update the work is done here.
+                if (action !== 'add') { pabStopTaskId = null; pabShowStop(false); }
             }
         };
         reader.readAsText(file);

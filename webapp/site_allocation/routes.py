@@ -4,9 +4,11 @@ import pandas as pd
 from flask import Blueprint, jsonify, request, send_file, session, Response, stream_with_context
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 site_allocation_bp = Blueprint('site_allocation_bp', __name__, url_prefix='/api/site_allocation')
+site_allocation_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
 
 def _token():
@@ -80,6 +82,7 @@ def upload():
         return jsonify({"type": "error", "message": "No file uploaded."}), 400
 
     is_preview = request.form.get('action', 'preview') != 'apply'
+    task_id = request.form.get('task_id')
 
     try:
         file = request.files['file']
@@ -97,7 +100,7 @@ def upload():
 
     def generate():
         try:
-            for chunk in utils.process_site_batch(records, token, is_preview=is_preview):
+            for chunk in utils.process_site_batch(records, token, is_preview=is_preview, task_id=task_id):
                 yield json.dumps(chunk) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"

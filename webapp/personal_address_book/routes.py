@@ -2,6 +2,7 @@
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 import traceback
 
@@ -9,6 +10,7 @@ personal_address_book_bp = Blueprint(
     'personal_address_book_bp', __name__,
     url_prefix='/api/pab'
 )
+personal_address_book_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
 # ... (keep existing routes: /users, /contacts, /contacts/delete) ...
 
@@ -58,20 +60,23 @@ def upload_contacts():
     user_ids = data.get('userIds')
     contacts = data.get('contacts')
     action = data.get('action')
+    stop_task_id = data.get('stop_task_id')
 
     if not all([user_ids, contacts, action]):
         return jsonify({"error": "Request body must include 'userIds', 'contacts', and 'action'."}), 400
-    
+
     if action.lower() not in ['add', 'remove', 'update']:
         return jsonify({"error": "Invalid action specified. Must be 'add', 'remove', or 'update'."}), 400
 
     try:
-        results = utils.process_contact_upload(user_ids, contacts, action.lower())
+        results = utils.process_contact_upload(user_ids, contacts, action.lower(), stop_task_id=stop_task_id)
         return jsonify(results)
     except Exception as e:
         print(f"Error processing contact upload: {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred during the upload process."}), 500
+    finally:
+        task_control.clear(stop_task_id)
 
 
 @personal_address_book_bp.route('/contacts/delete', methods=['POST'])
@@ -83,17 +88,20 @@ def delete_contacts():
     """
     data = request.get_json()
     contacts_to_delete = data.get('contacts')
+    stop_task_id = data.get('stop_task_id')
 
     if not contacts_to_delete or not isinstance(contacts_to_delete, list):
         return jsonify({"error": "Request body must include a 'contacts' array."}), 400
-    
+
     try:
-        results = utils.delete_selected_contacts(contacts_to_delete)
+        results = utils.delete_selected_contacts(contacts_to_delete, stop_task_id=stop_task_id)
         return jsonify(results)
     except Exception as e:
         print(f"Error deleting contacts: {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred while deleting contacts."}), 500
+    finally:
+        task_control.clear(stop_task_id)
 
 # --- NEW ROUTE FOR POLLING ---
 @personal_address_book_bp.route('/contacts/task-status/<task_id>', methods=['GET'])

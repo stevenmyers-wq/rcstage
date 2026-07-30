@@ -70,6 +70,9 @@
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
                 Start Updating
             </button>
+            <button id="renamer-stop-btn" onclick="renamerStopProcess()" class="hidden btn-secondary w-full !py-3 mt-3 !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                ■ Stop
+            </button>
         </div>
     </div>
 
@@ -207,37 +210,58 @@
         box.scrollTop = box.scrollHeight;
     }
 
+    // Set when the operator clicks Stop. The per-row loop checks it between
+    // extensions and halts; rows already sent to RingCentral are unaffected.
+    let renamerStopRequested = false;
+
+    function renamerStopProcess() {
+        renamerStopRequested = true;
+        const stopBtn = document.getElementById('renamer-stop-btn');
+        stopBtn.disabled = true;
+        stopBtn.textContent = 'Stopping...';
+        renamerLog('Stop requested — halting after the current extension...', 'info');
+    }
+
     function renamerProcessFile() {
         const fileInput = document.getElementById('renamer-file-input');
         if (!fileInput.files[0]) return alert("Please select a file first.");
 
         const btn = document.getElementById('renamer-process-btn');
+        const stopBtn = document.getElementById('renamer-stop-btn');
+        renamerStopRequested = false;
         btn.disabled = true;
         btn.classList.add('opacity-50', 'cursor-not-allowed');
+        stopBtn.classList.remove('hidden');
+        stopBtn.disabled = false;
+        stopBtn.textContent = '■ Stop';
 
         const reader = new FileReader();
         reader.onload = async (e) => {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, {type: 'array'});
             const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-            
+
             renamerLog(`Found ${jsonData.length} rows. Starting update process...`, "info");
-            
+
+            let stopped = false;
             for (const row of jsonData) {
+                if (renamerStopRequested) { stopped = true; break; }
+
                 const id = row["ID (DO NOT EDIT)"];
                 const type = row["Type (DO NOT EDIT)"];
                 const extNum = row["Extension Number"];
                 const newFirst = row["New First Name"] || "";
                 const newLast = row["New Last Name"] || "";
 
-                if (!id) continue; 
+                if (!id) continue;
 
                 await renamerUpdateSingle(id, type, extNum, newFirst, newLast);
-                await new Promise(r => setTimeout(r, 2000)); 
+                await new Promise(r => setTimeout(r, 2000));
             }
-            renamerLog("--- Batch Process Complete ---", "success");
+            renamerLog(stopped ? "--- Stopped by user (remaining rows skipped) ---" : "--- Batch Process Complete ---", stopped ? "info" : "success");
             btn.disabled = false;
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            stopBtn.classList.add('hidden');
         };
         reader.readAsArrayBuffer(fileInput.files[0]);
     }

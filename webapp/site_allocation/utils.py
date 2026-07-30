@@ -1,5 +1,6 @@
 import time
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +165,7 @@ def _clean(value):
     return text
 
 
-def process_site_batch(records, token, is_preview=True):
+def process_site_batch(records, token, is_preview=True, task_id=None):
     """Validates (and optionally applies) Extension -> Site re-allocations.
 
     Yields NDJSON-friendly progress chunks mirroring the Call Queue Manager:
@@ -199,6 +200,14 @@ def process_site_batch(records, token, is_preview=True):
     id_to_site_name = {s.get('id'): s.get('name') for s in sites}
 
     for i, row in enumerate(records):
+        # Cooperative stop (apply only -- preview writes nothing). Already-applied
+        # rows stand; remaining rows are skipped.
+        if not is_preview and task_control.is_stopped(task_id):
+            yield {"type": "cancelled", "current": i, "total": total,
+                   "message": f"Stopped by user. {i} of {total} row(s) processed; the rest were skipped."}
+            task_control.clear(task_id)
+            return
+
         ext_num = _clean(row.get('Extension', ''))
         site_name = _clean(row.get('Site', ''))
 
@@ -266,4 +275,5 @@ def process_site_batch(records, token, is_preview=True):
             yield progress("error", f"{ext_display}: failed — {msg}", change)
         time.sleep(0.05)
 
+    task_control.clear(task_id)
     yield {"type": "done", "is_preview": is_preview}

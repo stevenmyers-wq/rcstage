@@ -5,8 +5,24 @@ import pandas as pd
 import time
 import requests
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 
 migration_progress_store = {}
+
+
+def _stopped_and_marked(task_id):
+    """True if the user has asked to stop this import. When it returns True it
+    also records a 'cancelled' status so the polling UI can react. Objects
+    already created on the account remain; not-yet-created ones are skipped."""
+    if not task_control.is_stopped(task_id):
+        return False
+    entry = migration_progress_store.get(task_id, {})
+    update_progress(
+        task_id, entry.get('current', 0), entry.get('total', 100),
+        "Stopped by user. Objects already created remain; the rest were skipped.",
+        status='cancelled'
+    )
+    return True
 
 def update_progress(task_id, current, total, message, status='running'):
     # Preserve any accumulated per-item results across progress updates, since
@@ -342,6 +358,8 @@ def run_account_import(task_id, zip_bytes, token=None):
                     pass
 
             for cc in config.get("cost_centers", []):
+                if _stopped_and_marked(task_id):
+                    return
                 try:
                     payload = {"name": cc['name'], "billingCode": cc.get('billingCode')}
                     new_cc = safe_rc_api_call('/restapi/v1.0/account/~/cost-center', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
@@ -353,6 +371,8 @@ def run_account_import(task_id, zip_bytes, token=None):
             # Pass 1: Sites
             update_progress(task_id, 10, 100, "Recreating Sites...")
             for site in config.get("sites", []):
+                if _stopped_and_marked(task_id):
+                    return
                 if site['id'] == 'main-site':
                     old_to_new_sites[site['id']] = 'main-site'
                     continue
@@ -369,6 +389,8 @@ def run_account_import(task_id, zip_bytes, token=None):
             detailed_exts = config.get("detailed_extensions", {})
             
             for old_id, details in detailed_exts.items():
+                if _stopped_and_marked(task_id):
+                    return
                 ext_type = details['base_info'].get('type')
                 payload = {"extensionNumber": details['base_info'].get('extensionNumber')}
                 
@@ -400,6 +422,8 @@ def run_account_import(task_id, zip_bytes, token=None):
             # Pass 3: Audio Uploads
             total_audio = len(audio_map)
             for i, a_map in enumerate(audio_map):
+                if _stopped_and_marked(task_id):
+                    return
                 update_progress(task_id, 60 + int((i/total_audio)*35), 100, f"Uploading Audio: {a_map['filename']}")
                 new_ext_id = old_to_new_exts.get(str(a_map['ext_id']))
                 if not new_ext_id:
@@ -425,3 +449,7 @@ def run_account_import(task_id, zip_bytes, token=None):
 
     except Exception as e:
         update_progress(task_id, 0, 100, f"Import Error: {str(e)}", status='error')
+    finally:
+        # Clear the stop flag whatever the outcome so a later import that reuses
+        # this task_id doesn't inherit a stale cancel.
+        task_control.clear(task_id)
