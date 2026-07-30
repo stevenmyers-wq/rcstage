@@ -3,6 +3,7 @@ import threading
 from flask import Blueprint, jsonify, request, send_file, session
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 user_templates_bp = Blueprint('user_templates_bp', __name__, url_prefix='/api/user_templates')
@@ -50,13 +51,13 @@ def upload_audit():
 @require_rc_token
 def cancel_task():
     task_id = request.args.get('task_id') or (request.get_json(silent=True) or {}).get('task_id')
-    data = utils.template_progress_store.get(task_id)
-    if data is None:
+    if utils.template_progress_store.get(task_id) is None:
         return jsonify({"error": "Unknown or expired task."}), 404
-    # Cooperative cancel: the worker checks this flag between batches and during
-    # its wait for the account lock. Batches already sent to RingCentral cannot
-    # be recalled -- only not-yet-sent batches are skipped.
-    data['cancel'] = True
+    # Cooperative cancel via the shared registry: the worker checks
+    # task_control.is_stopped() between batches and during its wait for the
+    # account lock. Batches already sent to RingCentral cannot be recalled --
+    # only not-yet-sent batches are skipped.
+    task_control.request_stop(task_id)
     return jsonify({"success": True})
 
 @user_templates_bp.route('/status', methods=['GET'])

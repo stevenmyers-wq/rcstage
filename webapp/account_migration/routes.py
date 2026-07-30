@@ -2,9 +2,11 @@ import threading
 from flask import Blueprint, jsonify, request, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 account_migration_bp = Blueprint('account_migration_bp', __name__, url_prefix='/api/migration')
+account_migration_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
 @account_migration_bp.route('/export', methods=['POST'])
 @require_rc_token

@@ -12,12 +12,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const progPct = document.getElementById('mig-progress-pct');
     const progMsg = document.getElementById('mig-progress-msg');
     const btnClose = document.getElementById('mig-progress-close-btn');
+    const btnStop = document.getElementById('mig-progress-stop-btn');
     const resultBtn = document.getElementById('mig-result-btn');
 
     let migResultRows = null;
     UCResults.attachButton(resultBtn, () => migResultRows, 'Account_Migration_Results', 'Results');
 
     let pollInterval = null;
+    // Set to the current import's task_id while an import runs (null otherwise).
+    // Export is read-only, so no Stop is offered for it.
+    let currentImportTaskId = null;
+
+    if (btnStop) {
+        btnStop.addEventListener('click', async () => {
+            if (!currentImportTaskId) return;
+            btnStop.disabled = true;
+            btnStop.textContent = 'Stopping...';
+            progMsg.textContent = 'Stop requested — objects already created remain; the rest will be skipped.';
+            try {
+                await fetch(`/api/migration/cancel?task_id=${currentImportTaskId}`, { method: 'POST' });
+            } catch (e) { /* worker also polls the flag */ }
+        });
+    }
 
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
@@ -29,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function openProgressModal(title) {
+    function openProgressModal(title, showStop = false) {
         progTitle.textContent = title;
         progBar.style.width = '0%';
         progBar.className = 'bg-blue-600 h-3 rounded-full transition-all duration-300';
@@ -37,6 +53,11 @@ document.addEventListener('DOMContentLoaded', () => {
         progMsg.textContent = 'Starting...';
         progMsg.className = 'text-xs font-mono text-blue-600 text-left mt-2 truncate';
         btnClose.classList.add('hidden');
+        if (btnStop) {
+            btnStop.classList.toggle('hidden', !showStop);
+            btnStop.disabled = false;
+            btnStop.textContent = '■ Stop';
+        }
         migResultRows = null;
         resultBtn.classList.add('hidden');
 
@@ -76,6 +97,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (data.status === 'completed') {
                     clearInterval(pollInterval);
+                    currentImportTaskId = null;
+                    if (btnStop) btnStop.classList.add('hidden');
                     progBar.classList.replace('bg-blue-600', 'bg-green-500');
                     progTitle.textContent = 'Success!';
                     progMsg.classList.replace('text-blue-600', 'text-green-600');
@@ -84,8 +107,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     btnExport.disabled = false;
                     btnImport.disabled = false;
                     if (onSuccess) onSuccess();
+                } else if (data.status === 'cancelled') {
+                    clearInterval(pollInterval);
+                    currentImportTaskId = null;
+                    if (btnStop) btnStop.classList.add('hidden');
+                    progBar.classList.replace('bg-blue-600', 'bg-amber-500');
+                    progTitle.textContent = 'Stopped';
+                    progMsg.textContent = data.message;
+                    progMsg.classList.replace('text-blue-600', 'text-amber-600');
+                    btnClose.classList.remove('hidden');
+                    showMigResults(data.results);
+                    btnExport.disabled = false;
+                    btnImport.disabled = false;
                 } else if (data.status === 'error') {
                     clearInterval(pollInterval);
+                    currentImportTaskId = null;
+                    if (btnStop) btnStop.classList.add('hidden');
                     progBar.classList.replace('bg-blue-600', 'bg-red-500');
                     progTitle.textContent = 'Failed';
                     progMsg.textContent = data.message;
@@ -149,7 +186,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnImport.disabled = true;
 
         const taskId = 'import_' + Date.now();
-        openProgressModal("Importing Account Data");
+        currentImportTaskId = taskId;
+        openProgressModal("Importing Account Data", true);
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);

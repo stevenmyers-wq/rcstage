@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.rc_api import rc_api_call
 from webapp.auth_utils import get_impersonation_token
+from webapp import task_control
 
 # Global store for background task progress
 template_progress_store = {}
@@ -456,7 +457,7 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
     applies each batch via the async Bulk Apply task."""
     template_progress_store[task_id] = {
         'status': 'running', 'current': 0, 'total': 0, 'message': 'Parsing Excel file...',
-        'results': [], 'cancel': False
+        'results': []
     }
     store = template_progress_store[task_id]
     auth = _Auth(auth_bundle)
@@ -542,7 +543,7 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
         # (RC runs these serially per account).
         cancelled = False
         for idx, (t_id, chunk) in enumerate(tasks):
-            if store.get('cancel'):
+            if task_control.is_stopped(task_id):
                 cancelled = True
                 break
 
@@ -554,7 +555,7 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
             status, detail = _apply_batch(
                 t_id, chunk, auth,
                 note=lambda m, _l=label: store.__setitem__('message', f'{_l}: {m}'),
-                should_cancel=lambda: store.get('cancel')
+                should_cancel=lambda: task_control.is_stopped(task_id)
             )
 
             if status == 'Cancelled':
@@ -615,3 +616,7 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
     except Exception as e:
         store['status'] = 'error'
         store['error'] = str(e)
+    finally:
+        # Clear the stop flag whatever the outcome so a later run that reuses
+        # this task_id doesn't inherit a stale cancel.
+        task_control.clear(task_id)
