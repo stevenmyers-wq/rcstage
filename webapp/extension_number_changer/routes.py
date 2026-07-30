@@ -4,9 +4,11 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, session
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 ext_num_changer_bp = Blueprint('ext_num_changer_bp', __name__, url_prefix='/api/extension_number_changer')
+ext_num_changer_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
 @ext_num_changer_bp.route('/filters', methods=['GET'])
 @require_rc_token
@@ -113,6 +115,7 @@ def upload_updates():
         return jsonify({"error": "No file uploaded"}), 400
         
     file = request.files['file']
+    task_id = request.form.get('task_id')
     try:
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
@@ -122,8 +125,16 @@ def upload_updates():
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
     results = []
-    
-    for index, row in df.iterrows():
+    cancelled = False
+
+    try:
+      for index, row in df.iterrows():
+        # Cooperative stop: numbers already changed stand; the rest are skipped.
+        if task_control.is_stopped(task_id):
+            cancelled = True
+            results.append("■ Stopped by user — remaining rows were skipped.")
+            break
+
         ext_id = str(row.get('Extension ID', '')).replace('.0', '').strip()
         old_num = str(row.get('Extension Number', '')).replace('.0', '').strip()
         new_num = str(row.get('New Extension Number', '')).replace('.0', '').strip()
@@ -144,8 +155,10 @@ def upload_updates():
                 results.append(f"❌ Error on '{name}': {msg}")
         except Exception as e:
             results.append(f"❌ Error on '{name}': {str(e)}")
-            
+    finally:
+        task_control.clear(task_id)
+
     if not results:
         results.append("No valid changes found to process. Make sure 'New Extension Number' is filled out.")
-            
-    return jsonify({"logs": results})
+
+    return jsonify({"logs": results, "cancelled": cancelled})

@@ -1,5 +1,6 @@
 # webapp/bulk_hours/utils.py
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 import json
 
 # Caches for extension lookups to prevent rate-limiting during bulk fetches & uploads
@@ -128,10 +129,14 @@ def fetch_operating_hours(entity_type):
         print(f"FATAL ERROR in fetch_operating_hours: {e}")
         raise e
 
-def update_hours_from_records(records):
+def update_hours_from_records(records, task_id=None):
     """Processes a list of records and updates RC business hours."""
     results = []
     for record in records:
+        # Cooperative stop: entities already updated stand; the rest are skipped.
+        if task_control.is_stopped(task_id):
+            results.append({"name": "—", "status": "cancelled", "message": "Stopped by user — remaining entities were skipped."})
+            break
         entity_id = record.get("EntityID")
         entity_name = record.get("EntityName")
         if not entity_id or not entity_name: continue
@@ -245,10 +250,14 @@ def fetch_rules(entity_type, category='all'):
         print(f"FATAL ERROR in fetch_rules: {e}")
         raise e
 
-def update_rules_from_records(records):
+def update_rules_from_records(records, task_id=None):
     """Updates base routing rules or creates/updates custom rules from records."""
     results = []
     for rule in records:
+        # Cooperative stop: rules already written stand; the rest are skipped.
+        if task_control.is_stopped(task_id):
+            results.append({"name": "—", "status": "cancelled", "message": "Stopped by user — remaining rules were skipped."})
+            break
         action = rule.get("Action", "").upper()
         entity_id = rule.get("EntityID")
         entity_name = rule.get("EntityName")

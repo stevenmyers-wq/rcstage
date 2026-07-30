@@ -76,6 +76,9 @@
         <div id="cc-loader" class="absolute inset-0 bg-white/80 dark:bg-slate-900/80 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
             <div class="spinner mb-3 h-8 w-8"></div>
             <span id="cc-loader-text" class="font-semibold text-slate-700 dark:text-slate-300">Fetching account data...</span>
+            <button id="cc-stop-btn" class="hidden mt-4 btn-secondary !py-1.5 !px-4 text-xs !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                ■ Stop
+            </button>
         </div>
 
         <div class="overflow-x-auto max-h-[600px] w-full">
@@ -111,6 +114,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM Elements
     const loader = document.getElementById('cc-loader');
     const loaderText = document.getElementById('cc-loader-text');
+    const ccStopBtn = document.getElementById('cc-stop-btn');
+    // Shared with the server during a transfer so /cancel can flag this run.
+    let ccTaskId = null;
+    if (ccStopBtn) {
+        ccStopBtn.addEventListener('click', async () => {
+            if (!ccTaskId) return;
+            ccStopBtn.disabled = true;
+            ccStopBtn.textContent = 'Stopping...';
+            loaderText.textContent = 'Stop requested — finishing the current asset, then halting...';
+            try {
+                await fetch(`/api/cost_centres/cancel?task_id=${ccTaskId}`, { method: 'POST' });
+            } catch (e) { /* server loop also polls the flag */ }
+        });
+    }
     const tbody = document.getElementById('cc-tbody');
     const inventoryEl = document.getElementById('cc-inventory');
     const inventoryToggle = document.getElementById('cc-inventory-toggle');
@@ -217,11 +234,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         loaderText.textContent = `Transferring ${selectedAssets.size} items...`;
         loader.classList.remove('hidden');
+        ccTaskId = `cc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        if (ccStopBtn) { ccStopBtn.classList.remove('hidden'); ccStopBtn.disabled = false; ccStopBtn.textContent = '■ Stop'; }
 
         try {
             const payload = {
                 target_cost_centre_id: targetId,
-                assets: Array.from(selectedAssets)
+                assets: Array.from(selectedAssets),
+                task_id: ccTaskId
             };
 
             const res = await fetch('/api/cost_centres/transfer', {
@@ -231,14 +251,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await res.json();
-            
+
             if (!res.ok) throw new Error(data.error || 'Transfer failed.');
 
+            const stopped = data.cancelled ? ' (stopped early — remaining assets were skipped)' : '';
             if (data.results.errors.length > 0) {
-                alert(`Transfer completed with errors.\nSuccess: ${data.results.success}\nFailed: ${data.results.errors.length}\nCheck console for details.`);
+                alert(`Transfer completed with errors${stopped}.\nSuccess: ${data.results.success}\nFailed: ${data.results.errors.length}\nCheck console for details.`);
                 console.error("Transfer Errors:", data.results.errors);
             } else {
-                alert(`Successfully transferred ${data.results.success} items.`);
+                alert(`Successfully transferred ${data.results.success} items${stopped}.`);
             }
 
             loadData(); // Refresh UI after transfer
@@ -246,6 +267,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             alert(`Error: ${e.message}`);
             loader.classList.add('hidden');
+        } finally {
+            ccTaskId = null;
+            if (ccStopBtn) ccStopBtn.classList.add('hidden');
         }
     });
 

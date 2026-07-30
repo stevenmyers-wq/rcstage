@@ -1,12 +1,14 @@
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 bulk_hours_bp = Blueprint(
     'bulk_hours_bp', __name__,
     url_prefix='/api/bulk_hours'
 )
+bulk_hours_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
 @bulk_hours_bp.route('/hours/<entity_type>', methods=['GET'])
 @require_rc_token
@@ -56,16 +58,19 @@ def upload_data():
         
     records = data['records']
     data_type = data['dataType']
+    task_id = data.get('task_id')
 
     try:
         if data_type == 'Hours':
-            results = utils.update_hours_from_records(records)
+            results = utils.update_hours_from_records(records, task_id=task_id)
         elif data_type == 'Rules':
-            results = utils.update_rules_from_records(records)
+            results = utils.update_rules_from_records(records, task_id=task_id)
         else:
             return jsonify({"error": f"Invalid dataType '{data_type}' specified."}), 400
-            
+
         return jsonify(results)
     except Exception as e:
         print(f"Error during upload process: {e}")
         return jsonify({"error": "An internal error occurred during the update process."}), 500
+    finally:
+        task_control.clear(task_id)
