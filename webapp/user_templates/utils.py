@@ -11,6 +11,10 @@ template_progress_store = {}
 
 CHUNK_SIZE = 100
 
+# How long (seconds) to keep resubmitting a batch while RingCentral reports an
+# account-wide "apply operation is in progress" 409 before giving up on it.
+ACCOUNT_LOCK_TIMEOUT = 600
+
 # Statuses RingCentral reports while an async bulk task is still running.
 # Anything NOT in this set is treated as terminal.
 _NONTERMINAL_STATUSES = {
@@ -191,11 +195,11 @@ def _poll_task(endpoint, token, timeout=180):
 def _apply_batch(t_id, ext_ids, token):
     """Apply one template batch and wait for the async task to settle.
 
-    bulk-apply is asynchronous: a 2xx only means RingCentral *accepted* the
-    job, not that it finished. RC also serialises these tasks per account, so a
-    batch fired while a previous one is still running gets rejected. We poll the
-    returned task to completion (which also spaces batches correctly) and retry
-    'busy' rejections instead of labelling them as failures.
+    bulk-apply is asynchronous and serialised account-wide: a 2xx only means
+    RingCentral *accepted* the job, and while it runs, any other batch is
+    rejected with 409 "apply operation is in progress". We wait that lock out
+    (resubmitting until accepted) instead of labelling the collision a failure,
+    then poll the returned task to a terminal state where the API exposes one.
 
     Returns (status, detail) where status is one of
     'Applied' | 'Failed' | 'Partial' | 'Submitted'.
@@ -212,21 +216,36 @@ def _apply_batch(t_id, ext_ids, token):
         "overrideAll": False,
     }
 
+    # RingCentral locks template-apply ACCOUNT-WIDE while one is running and
+    # returns 409 "Template apply operation is in progress" to any other batch.
+    # The response also does not (in this tenant) hand back a pollable task, so
+    # the only reliable way to serialise batches is to keep resubmitting until
+    # the account lock clears. Wait it out patiently rather than giving up.
+    deadline = time.time() + ACCOUNT_LOCK_TIMEOUT
+    attempt = 0
     resp = None
-    for attempt in range(5):
+    while True:
         resp = rc_api_call(endpoint, method='POST', json=body, return_response=True, token=token)
         code = getattr(resp, 'status_code', None)
+
+        if getattr(resp, 'ok', False):
+            break
+
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return 'Failed', _error_detail(resp)
+
         if code == 429:
             wait = int(resp.headers.get('Retry-After', 15)) + 1 if hasattr(resp, 'headers') else 15
-            time.sleep(wait)
-            continue
-        if code in (400, 409, 503) and _looks_like_busy(resp):
-            time.sleep(min(60, 10 * (attempt + 1)))
-            continue
-        break
+        elif code in (400, 409, 503) and _looks_like_busy(resp):
+            # Another apply is still running account-wide -- back off and retry.
+            wait = min(30, 5 + 5 * attempt)
+        else:
+            # A genuine error (bad template, auth, malformed request): don't spin.
+            return 'Failed', _error_detail(resp)
 
-    if not resp or not getattr(resp, 'ok', False):
-        return 'Failed', _error_detail(resp)
+        attempt += 1
+        time.sleep(min(wait, max(1, remaining)))
 
     # Accepted -- poll the async task to a terminal state where possible.
     task_path, _initial_status = _task_endpoint(resp)
