@@ -461,8 +461,16 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
         template_names = {t['id']: t.get('name', '') for t in templates}
 
         # Group extension IDs by the template they need applied.
+        #
+        # De-dupe by extension: an ID that appears more than once (duplicate row,
+        # or the same user assigned two templates) must be applied only ONCE.
+        # Without this, a repeated ID lands in two different batches and gets
+        # applied a full lock-cycle apart -- which looks like "batch 1 running
+        # again as batch 2". First occurrence wins.
         application_batches = {}
         unmatched = []
+        seen_ext = set()
+        duplicates = 0
         for _, row in df.iterrows():
             template_name = row.get("Template to Apply")
             ext_id = row.get("Extension ID")
@@ -472,8 +480,17 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
             if t_name_clean not in template_map:
                 unmatched.append(t_name_clean)
                 continue
+            if pd.isna(ext_id):
+                continue
+            ext_clean = str(ext_id).split('.')[0].strip()
+            if not ext_clean or ext_clean.lower() == 'nan':
+                continue
+            if ext_clean in seen_ext:
+                duplicates += 1
+                continue
+            seen_ext.add(ext_clean)
             t_id = template_map[t_name_clean]
-            application_batches.setdefault(t_id, []).append(str(ext_id).split('.')[0].strip())
+            application_batches.setdefault(t_id, []).append(ext_clean)
 
         assigned_count = sum(len(v) for v in application_batches.values())
 
@@ -583,7 +600,10 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
             parts.append(f'{failed} failed')
         if other:
             parts.append(f'{other} submitted/partial (see results)')
-        store['message'] = 'Finished: ' + ', '.join(parts) + '.'
+        msg = 'Finished: ' + ', '.join(parts) + '.'
+        if duplicates:
+            msg += f' ({duplicates} duplicate row(s) ignored — each user applied once.)'
+        store['message'] = msg
 
     except Exception as e:
         store['status'] = 'error'
