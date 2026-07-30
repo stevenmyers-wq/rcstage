@@ -96,6 +96,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let pollInterval = null;
 
+    // Recolour the status message line for a given outcome tone. Full literal
+    // class strings so Tailwind never purges them.
+    const MSG_BASE = 'text-xs font-mono text-left mt-3 p-2 border rounded truncate ';
+    const MSG_TONES = {
+        green: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 border-green-100 dark:border-green-800',
+        amber: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border-amber-100 dark:border-amber-800',
+        red:   'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-800',
+    };
+    function recolorMsg(tone) {
+        progMsg.className = MSG_BASE + (MSG_TONES[tone] || MSG_TONES.green);
+    }
+
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
             filenameDisplay.textContent = e.target.files[0].name;
@@ -148,41 +160,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) return;
                 
                 const data = await res.json();
-                
+
+                // Always reflect the latest status text (progress bar only when
+                // we actually have batches to count).
+                if (data.message) progMsg.textContent = data.message;
                 if (data.total > 0) {
                     const pct = Math.round((data.current / data.total) * 100);
                     progBar.style.width = `${pct}%`;
                     progPct.textContent = `${pct}%`;
-                    progMsg.textContent = data.message;
                 }
 
-                if (data.status === 'completed') {
+                if (data.status === 'empty') {
+                    // Nothing matched a template -- not a success, not an error.
                     clearInterval(pollInterval);
-                    progBar.classList.replace('bg-blue-600', 'bg-green-500');
-                    progTitle.textContent = 'Success!';
+                    progBar.style.width = '100%';
+                    progBar.classList.replace('bg-blue-600', 'bg-amber-500');
+                    progPct.textContent = '';
+                    progTitle.textContent = 'Nothing applied';
+                    recolorMsg('amber');
+                    btnClose.classList.remove('hidden');
+                } else if (data.status === 'completed') {
+                    clearInterval(pollInterval);
 
                     if (Array.isArray(data.results) && data.results.length) {
                         utResultRows = data.results;
                         document.getElementById('ut-result-btn').classList.remove('hidden');
                     }
-                    progMsg.classList.replace('text-blue-600', 'text-green-600');
-                    progMsg.classList.replace('dark:text-blue-400', 'dark:text-green-400');
-                    progMsg.classList.replace('bg-blue-50', 'bg-green-50');
-                    progMsg.classList.replace('dark:bg-blue-900/30', 'dark:bg-green-900/30');
-                    progMsg.classList.replace('border-blue-100', 'border-green-100');
-                    progMsg.classList.replace('dark:border-blue-800', 'dark:border-green-800');
+
+                    // Only celebrate if every extension was confirmed applied.
+                    const rows = Array.isArray(data.results) ? data.results : [];
+                    const hadIssue = rows.some(r => r.Status !== 'Applied');
+                    if (hadIssue) {
+                        progBar.classList.replace('bg-blue-600', 'bg-amber-500');
+                        progTitle.textContent = 'Finished with issues';
+                        recolorMsg('amber');
+                    } else {
+                        progBar.classList.replace('bg-blue-600', 'bg-green-500');
+                        progTitle.textContent = 'Success!';
+                        recolorMsg('green');
+                    }
                     btnClose.classList.remove('hidden');
                 } else if (data.status === 'error') {
                     clearInterval(pollInterval);
                     progBar.classList.replace('bg-blue-600', 'bg-red-500');
                     progTitle.textContent = 'Failed';
                     progMsg.textContent = data.error;
-                    progMsg.classList.replace('text-blue-600', 'text-red-600');
-                    progMsg.classList.replace('dark:text-blue-400', 'dark:text-red-400');
-                    progMsg.classList.replace('bg-blue-50', 'bg-red-50');
-                    progMsg.classList.replace('dark:bg-blue-900/30', 'dark:bg-red-900/30');
-                    progMsg.classList.replace('border-blue-100', 'border-red-100');
-                    progMsg.classList.replace('dark:border-blue-800', 'dark:border-red-800');
+                    recolorMsg('red');
                     btnClose.classList.remove('hidden');
                 }
             } catch (e) {
@@ -214,12 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
             progBar.classList.replace('bg-blue-600', 'bg-red-500');
             progTitle.textContent = 'Upload Failed';
             progMsg.textContent = err.message;
-            progMsg.classList.replace('text-blue-600', 'text-red-600');
-            progMsg.classList.replace('dark:text-blue-400', 'dark:text-red-400');
-            progMsg.classList.replace('bg-blue-50', 'bg-red-50');
-            progMsg.classList.replace('dark:bg-blue-900/30', 'dark:bg-red-900/30');
-            progMsg.classList.replace('border-blue-100', 'border-red-100');
-            progMsg.classList.replace('dark:border-blue-800', 'dark:border-red-800');
+            recolorMsg('red');
             btnClose.classList.remove('hidden');
             btnUpload.disabled = false;
         }

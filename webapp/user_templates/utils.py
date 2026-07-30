@@ -1,5 +1,6 @@
 import io
 import time
+from urllib.parse import urlparse
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -7,6 +8,14 @@ from webapp.rc_api import rc_api_call
 
 # Global store for background task progress
 template_progress_store = {}
+
+CHUNK_SIZE = 100
+
+# Statuses RingCentral reports while an async bulk task is still running.
+# Anything NOT in this set is treated as terminal.
+_NONTERMINAL_STATUSES = {
+    "accepted", "pending", "inprogress", "in_progress", "running", "queued", "processing"
+}
 
 def safe_api_call(endpoint, method='GET', json_payload=None, token=None):
     """Helper to safely request API data while respecting 429 Rate Limits."""
@@ -106,89 +115,252 @@ def generate_audit_spreadsheet(token):
     output.seek(0)
     return output
 
+def _read_body(resp):
+    """Best-effort JSON body from a response (real or MockResponse)."""
+    try:
+        return resp.json() or {}
+    except Exception:
+        return {}
+
+
+def _error_detail(resp):
+    """Human-readable error string, preserving RingCentral's own message."""
+    if resp is None:
+        return 'No response from RingCentral'
+    code = getattr(resp, 'status_code', '?')
+    body = _read_body(resp)
+    msg = body.get('message') or body.get('error')
+    if not msg and isinstance(body.get('errors'), list) and body['errors']:
+        msg = body['errors'][0].get('message')
+    if not msg:
+        msg = (getattr(resp, 'text', '') or 'unknown error')
+    return f'HTTP {code}: {msg}'[:300]
+
+
+def _looks_like_busy(resp):
+    """Detect the 'a bulk task is already running' style rejection so we can
+    wait and retry the submission instead of falsely reporting a failure."""
+    txt = (_error_detail(resp) or '').lower()
+    return any(k in txt for k in (
+        'in progress', 'already', 'busy', 'concurrent', 'try again', 'another task', 'in process'
+    ))
+
+
+def _task_endpoint(resp):
+    """Extract a pollable async-task path from a bulk-apply response, if any."""
+    body = _read_body(resp)
+    task = body.get('task') if isinstance(body.get('task'), dict) else {}
+    uri = None
+    try:
+        uri = resp.headers.get('Location') if hasattr(resp, 'headers') else None
+    except Exception:
+        uri = None
+    uri = uri or body.get('uri') or task.get('uri')
+    if not uri:
+        return None, (body.get('status') or task.get('status'))
+    path = urlparse(uri).path if uri.startswith('http') else uri
+    return path, (body.get('status') or task.get('status'))
+
+
+def _poll_task(endpoint, token, timeout=180):
+    """Poll an async RC task until it reaches a terminal state.
+
+    Best-effort and non-raising: on any uncertainty it returns the last status
+    it saw so the caller degrades gracefully rather than misreporting success.
+    Returns (final_status_or_None, detail).
+    """
+    if not endpoint:
+        return None, None
+    deadline = time.time() + timeout
+    last_status = None
+    while time.time() < deadline:
+        resp = rc_api_call(endpoint, method='GET', return_response=True, token=token)
+        code = getattr(resp, 'status_code', None)
+        if code == 429:
+            wait = int(resp.headers.get('Retry-After', 10)) + 1 if hasattr(resp, 'headers') else 10
+            time.sleep(wait)
+            continue
+        body = _read_body(resp)
+        last_status = body.get('status') or last_status
+        if last_status and str(last_status).lower().replace(' ', '') not in _NONTERMINAL_STATUSES:
+            return last_status, (body.get('message') or '')
+        time.sleep(2)
+    return last_status, 'Timed out waiting for the RingCentral task to finish'
+
+
+def _apply_batch(t_id, ext_ids, token):
+    """Apply one template batch and wait for the async task to settle.
+
+    bulk-apply is asynchronous: a 2xx only means RingCentral *accepted* the
+    job, not that it finished. RC also serialises these tasks per account, so a
+    batch fired while a previous one is still running gets rejected. We poll the
+    returned task to completion (which also spaces batches correctly) and retry
+    'busy' rejections instead of labelling them as failures.
+
+    Returns (status, detail) where status is one of
+    'Applied' | 'Failed' | 'Partial' | 'Submitted'.
+    """
+    endpoint = f'/restapi/v1.0/account/~/templates/{t_id}/bulk-apply'
+    body = {
+        "extensionIds": ext_ids,
+        "notifyUsers": False,
+        # overrideAll was previously True, which forced EVERY section of the
+        # template (site, call handling, phone/device options, caller ID) onto
+        # each user -- overwriting settings the template was never meant to
+        # touch. False applies only the sections the template actually
+        # configures. Do not set this back to True.
+        "overrideAll": False,
+    }
+
+    resp = None
+    for attempt in range(5):
+        resp = rc_api_call(endpoint, method='POST', json=body, return_response=True, token=token)
+        code = getattr(resp, 'status_code', None)
+        if code == 429:
+            wait = int(resp.headers.get('Retry-After', 15)) + 1 if hasattr(resp, 'headers') else 15
+            time.sleep(wait)
+            continue
+        if code in (400, 409, 503) and _looks_like_busy(resp):
+            time.sleep(min(60, 10 * (attempt + 1)))
+            continue
+        break
+
+    if not resp or not getattr(resp, 'ok', False):
+        return 'Failed', _error_detail(resp)
+
+    # Accepted -- poll the async task to a terminal state where possible.
+    task_path, _initial_status = _task_endpoint(resp)
+    final_status, detail = _poll_task(task_path, token)
+
+    if final_status is None:
+        # No pollable task was exposed; we genuinely cannot confirm completion.
+        return 'Submitted', 'Accepted by RingCentral (async; completion not confirmed)'
+    norm = str(final_status).lower()
+    if norm in ('completed', 'success', 'succeeded', 'done'):
+        return 'Applied', 'Template applied'
+    if 'error' in norm or 'partial' in norm:
+        return 'Partial', detail or f'Task status: {final_status}'
+    return 'Failed', detail or f'Task status: {final_status}'
+
+
+def _snapshot_extension(ext_id, token):
+    """Capture a user's current key settings BEFORE any change, so there is a
+    rollback reference. Read-only.
+
+    Note: this is a lightweight snapshot (site + status). Full call-handling /
+    phone-option state lives on separate endpoints and is not captured here.
+    """
+    resp = safe_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', token=token)
+    if not resp:
+        return {'Original Site': '', 'Original Status': '', 'Snapshot': 'unavailable'}
+    return {
+        'Original Site': (resp.get('site') or {}).get('name', ''),
+        'Original Status': resp.get('status', ''),
+        'Snapshot': 'captured',
+    }
+
+
 def process_upload_background(task_id, file_bytes, token):
-    """Parses the Excel file, chunks the requests, and pushes via Bulk Apply."""
+    """Parses the Excel file, snapshots current state, chunks the requests, and
+    applies each batch via the async Bulk Apply task."""
     template_progress_store[task_id] = {
         'status': 'running', 'current': 0, 'total': 0, 'message': 'Parsing Excel file...',
         'results': []
     }
+    store = template_progress_store[task_id]
 
     try:
         df = pd.read_excel(io.BytesIO(file_bytes))
         templates = fetch_all_templates(token)
         template_map = {t.get('name', '').replace(',', ''): t['id'] for t in templates}
         template_names = {t['id']: t.get('name', '') for t in templates}
-        
+
+        # Group extension IDs by the template they need applied.
         application_batches = {}
-        
-        # Group extension IDs by the template they need applied
+        unmatched = []
         for _, row in df.iterrows():
             template_name = row.get("Template to Apply")
             ext_id = row.get("Extension ID")
-            
-            if pd.notna(template_name) and str(template_name).strip() != "":
-                t_name_clean = str(template_name).strip()
-                if t_name_clean in template_map:
-                    t_id = template_map[t_name_clean]
-                    if t_id not in application_batches:
-                        application_batches[t_id] = []
-                    application_batches[t_id].append(str(ext_id).split('.')[0].strip())
+            if pd.isna(template_name) or str(template_name).strip() == "":
+                continue
+            t_name_clean = str(template_name).strip()
+            if t_name_clean not in template_map:
+                unmatched.append(t_name_clean)
+                continue
+            t_id = template_map[t_name_clean]
+            application_batches.setdefault(t_id, []).append(str(ext_id).split('.')[0].strip())
 
-        # Flatten into tasks for the progress bar (Chunking by 100)
-        CHUNK_SIZE = 100
+        assigned_count = sum(len(v) for v in application_batches.values())
+
+        # Nothing to do. This is NOT success -- the old code marked total==0 as
+        # 'completed', which the UI rendered as a green "Success!" while the
+        # progress text was stuck on "Initializing...". Report it plainly.
+        if assigned_count == 0:
+            store['status'] = 'empty'
+            store['total'] = 0
+            if unmatched:
+                store['message'] = (
+                    f"Nothing applied: no rows matched a known template. "
+                    f"{len(unmatched)} row(s) had unrecognised template names "
+                    f"(e.g. '{unmatched[0]}'). Re-download a fresh roster and "
+                    f"pick templates from the dropdown."
+                )
+            else:
+                store['message'] = (
+                    "Nothing applied: no rows had a template selected in the "
+                    "'Template to Apply' column."
+                )
+            return
+
+        # Chunk into batches of CHUNK_SIZE.
         tasks = []
         for t_id, ext_ids in application_batches.items():
             for i in range(0, len(ext_ids), CHUNK_SIZE):
                 tasks.append((t_id, ext_ids[i:i + CHUNK_SIZE]))
+        store['total'] = len(tasks)
 
-        total_tasks = len(tasks)
-        template_progress_store[task_id]['total'] = total_tasks
+        # Snapshot current settings for every affected user first (read-only),
+        # so there is a rollback reference regardless of what happens next.
+        store['message'] = f'Backing up current settings for {assigned_count} user(s)...'
+        snapshots = {}
+        for _t_id, ext_ids in application_batches.items():
+            for ext_id in ext_ids:
+                if ext_id not in snapshots:
+                    snapshots[ext_id] = _snapshot_extension(ext_id, token)
+                    time.sleep(0.05)
 
-        if total_tasks == 0:
-            template_progress_store[task_id]['status'] = 'completed'
-            template_progress_store[task_id]['message'] = 'No templates assigned in the uploaded file.'
-            return
-
-        for idx, (t_id, chunked_ext_ids) in enumerate(tasks):
-            template_progress_store[task_id]['current'] = idx
-            template_progress_store[task_id]['message'] = f'Applying template to batch {idx + 1} of {total_tasks}...'
-
-            endpoint = f'/restapi/v1.0/account/~/templates/{t_id}/bulk-apply'
-            body = {
-                "extensionIds": chunked_ext_ids,
-                "notifyUsers": False,
-                "overrideAll": True
-            }
-
-            # Bulk-apply is all-or-nothing per batch, so the batch outcome maps
-            # to every extension in the chunk for the downloadable result listing.
-            try:
-                resp = safe_api_call(endpoint, method='POST', json_payload=body, token=token)
-                if resp is not None:
-                    status, detail = 'Applied', 'Template applied'
-                else:
-                    status, detail = 'Failed', 'API call failed after retries'
-            except Exception as call_err:
-                status, detail = 'Failed', str(call_err)
-
-            for ext_id in chunked_ext_ids:
-                template_progress_store[task_id]['results'].append({
+        # Apply each batch, waiting for its async task to finish before the next
+        # (RC runs these serially per account).
+        for idx, (t_id, chunk) in enumerate(tasks):
+            store['message'] = (
+                f'Applying "{template_names.get(t_id, t_id)}" to batch '
+                f'{idx + 1} of {len(tasks)}...'
+            )
+            status, detail = _apply_batch(t_id, chunk, token)
+            for ext_id in chunk:
+                row = {
                     'Extension ID': ext_id,
                     'Template': template_names.get(t_id, t_id),
                     'Status': status,
-                    'Detail': detail
-                })
+                    'Detail': detail,
+                }
+                row.update(snapshots.get(ext_id, {}))
+                store['results'].append(row)
+            store['current'] = idx + 1
 
-            time.sleep(1.5) # Buffer between heavy chunks to avoid backend queuing limits
-
-        template_progress_store[task_id]['current'] = total_tasks
-        template_progress_store[task_id]['status'] = 'completed'
-        failed = sum(1 for r in template_progress_store[task_id]['results'] if r['Status'] == 'Failed')
-        template_progress_store[task_id]['message'] = (
-            'All templates applied successfully!' if failed == 0
-            else f'Completed with {failed} failed extension(s).'
-        )
+        # Summarise honestly -- 'Applied' means confirmed complete, anything
+        # else is called out separately.
+        applied = sum(1 for r in store['results'] if r['Status'] == 'Applied')
+        failed = sum(1 for r in store['results'] if r['Status'] == 'Failed')
+        other = len(store['results']) - applied - failed
+        store['status'] = 'completed'
+        parts = [f'{applied} confirmed applied']
+        if failed:
+            parts.append(f'{failed} failed')
+        if other:
+            parts.append(f'{other} submitted/partial (see results)')
+        store['message'] = 'Finished: ' + ', '.join(parts) + '.'
 
     except Exception as e:
-        template_progress_store[task_id]['status'] = 'error'
-        template_progress_store[task_id]['error'] = str(e)
+        store['status'] = 'error'
+        store['error'] = str(e)
