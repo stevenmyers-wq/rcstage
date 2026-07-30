@@ -372,8 +372,12 @@ def _set_queue_transfer(q_set, action_type, ext_id):
 
 def _safe_get_ah_transfer_id(transfer_data):
     if not transfer_data: return ''
+    # RingCentral returns the answering-rule transfer as an object
+    # ({"extension": {"id": ...}}); tolerate the list form too for safety.
     if isinstance(transfer_data, list) and len(transfer_data) > 0:
         return str(transfer_data[0].get('extension', {}).get('id', ''))
+    if isinstance(transfer_data, dict):
+        return str(transfer_data.get('extension', {}).get('id', ''))
     return ''
 
 def get_old_greeting_name(orig_rule, slot_type):
@@ -1229,6 +1233,11 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                 
                 val_ahb = get_val(row, 'After Hours Behavior')
                 if val_ahb is not None:
+                    # RingCentral's answering-rule enum uses 'TakeMessagesOnly' for
+                    # voicemail. Accept the human-friendly 'Voicemail' too so a value
+                    # typed into the sheet doesn't get rejected with CMN-101.
+                    if val_ahb.strip().lower() in ('voicemail', 'takemessagesonly'):
+                        val_ahb = 'TakeMessagesOnly'
                     if val_ahb == 'TransferToExtension':
                         ah_dest = get_val(row, 'After Hours Destination')
                         if _dest_unresolved(ah_dest):
@@ -1236,7 +1245,8 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                             logs.append(f"After Hours Dest '{ah_dest}' is not a known extension (transfer will fall back to Voicemail).")
                         dest_id = _resolve_ext(ah_dest)
                         ah_rule['callHandlingAction'] = val_ahb
-                        if dest_id: ah_rule['transfer'] = [{'extension': {'id': dest_id}}]
+                        # transfer is an object, not a list (see bulk_hours _build_rule_api_body).
+                        if dest_id: ah_rule['transfer'] = {'extension': {'id': dest_id}}
                     else:
                         ah_rule['callHandlingAction'] = val_ahb
                         ah_rule.pop('transfer', None)
@@ -1257,7 +1267,8 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False):
                     
                     if not put_succ and ('transfer' in str(err) or 'transfer.extension.id' in str(err)):
                         ah_rule.pop('transfer', None)
-                        ah_rule['callHandlingAction'] = 'Voicemail'
+                        # 'TakeMessagesOnly' is the API's voicemail value; 'Voicemail' is rejected (CMN-101).
+                        ah_rule['callHandlingAction'] = 'TakeMessagesOnly'
                         put_succ2, err2 = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/after-hours-rule', method='PUT', json_payload=ah_rule, token=token)
                         if put_succ2: logs.append("After Hours Updated (Invalid transfer stripped & reverted to Voicemail)")
                         else:
