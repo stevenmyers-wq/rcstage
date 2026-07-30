@@ -1,10 +1,15 @@
 import io
+import os
 import time
+import base64
+import requests
 from urllib.parse import urlparse
 import pandas as pd
+from flask import current_app
 from openpyxl import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.rc_api import rc_api_call
+from webapp.auth_utils import get_impersonation_token
 
 # Global store for background task progress
 template_progress_store = {}
@@ -24,6 +29,125 @@ CHUNK_SIZE = 100
 POLL_INTERVAL_START = 30
 POLL_INTERVAL_MAX = 300          # 5 minutes
 ACCOUNT_LOCK_TIMEOUT = 6 * 3600  # 6 hours
+
+
+def _rc_base():
+    try:
+        return current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com')
+    except Exception:
+        return os.getenv('RC_SERVER_URL', 'https://platform.ringcentral.com')
+
+
+def capture_auth(session):
+    """Snapshot everything needed to KEEP a token alive after the request ends.
+
+    A background job runs with no Flask session and an explicit token, so
+    rc_api_call's built-in 401 refresh never fires. We copy the refresh material
+    out of the session here (at request time) so the worker can re-mint the
+    token itself. Covers both auth modes: SM impersonation bridge and standard
+    RingCentral OAuth."""
+    return {
+        'token': session.get('sm_isolated_token') or session.get('rc_access_token'),
+        'mode': 'sm' if session.get('sm_isolated_token') else 'rc',
+        # SM impersonation path
+        'sm_target_id': session.get('sm_target_id'),
+        'sm_employee_token': session.get('sm_employee_token'),
+        'sm_employee_refresh_token': session.get('sm_employee_refresh_token'),
+        # Standard RingCentral OAuth path
+        'rc_refresh_token': session.get('rc_refresh_token'),
+        'rc_client_id': session.get('rc_current_client_id'),
+    }
+
+
+def _refresh_sm_employee(b):
+    """Refresh the SM employee OAuth token from env creds + captured refresh
+    token (no session). Returns the new employee token or None."""
+    rt = b.get('sm_employee_refresh_token')
+    cid = os.getenv('SM_CLIENT_ID')
+    csecret = os.getenv('SM_CLIENT_SECRET')
+    if not rt or not cid:
+        return None
+    data = {'grant_type': 'refresh_token', 'refresh_token': rt}
+    headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'}
+    if csecret:
+        headers['Authorization'] = 'Basic ' + base64.b64encode(f'{cid}:{csecret}'.encode()).decode()
+    else:
+        data['client_id'] = cid
+    try:
+        resp = requests.post(f'{_rc_base()}/restapi/oauth/token', data=data, headers=headers)
+        if resp.ok:
+            td = resp.json()
+            b['sm_employee_token'] = td.get('access_token')
+            if td.get('refresh_token'):
+                b['sm_employee_refresh_token'] = td.get('refresh_token')
+            return b['sm_employee_token']
+    except Exception:
+        pass
+    return None
+
+
+def _refresh_rc(b):
+    """Refresh a standard RingCentral OAuth token from the captured refresh
+    token + client id (no session). Returns the new access token or None."""
+    rt = b.get('rc_refresh_token')
+    cid = b.get('rc_client_id')
+    if not rt or not cid:
+        return None
+    data = {'grant_type': 'refresh_token', 'refresh_token': rt, 'client_id': cid}
+    try:
+        resp = requests.post(f'{_rc_base()}/restapi/oauth/token', data=data,
+                             headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        if resp.ok:
+            td = resp.json()
+            if td.get('refresh_token'):
+                b['rc_refresh_token'] = td.get('refresh_token')
+            return td.get('access_token')
+    except Exception:
+        pass
+    return None
+
+
+def _mint_token(b):
+    """Re-mint an access token from captured refresh material, session-free."""
+    if b.get('mode') == 'sm':
+        tid = b.get('sm_target_id')
+        emp = b.get('sm_employee_token')
+        # Cheap path: re-mint the impersonation bridge with the current employee
+        # token (doesn't rotate anything session-critical).
+        if tid and emp:
+            t = get_impersonation_token(emp, tid)
+            if t:
+                return t
+        # Employee token itself expired -- refresh it, then re-mint the bridge.
+        emp2 = _refresh_sm_employee(b)
+        if emp2 and tid:
+            return get_impersonation_token(emp2, tid)
+        return None
+    return _refresh_rc(b)
+
+
+class _Auth:
+    """Carries the current access token and can re-mint it on demand."""
+    def __init__(self, bundle):
+        self._b = bundle
+        self.token = bundle.get('token')
+
+    def refresh(self):
+        new = _mint_token(self._b)
+        if new:
+            self.token = new
+        return new
+
+
+def _rc_request(auth, endpoint, method='GET', json_payload=None):
+    """rc_api_call for background work, with a session-free 401 refresh: if the
+    call returns 401, re-mint the token once and retry."""
+    resp = rc_api_call(endpoint, method=method, json=json_payload,
+                       return_response=True, token=auth.token)
+    if getattr(resp, 'status_code', None) == 401 and auth.refresh():
+        resp = rc_api_call(endpoint, method=method, json=json_payload,
+                           return_response=True, token=auth.token)
+    return resp
 
 # Statuses RingCentral reports while an async bulk task is still running.
 # Anything NOT in this set is treated as terminal.
@@ -176,7 +300,7 @@ def _task_endpoint(resp):
     return path, (body.get('status') or task.get('status'))
 
 
-def _poll_task(endpoint, token, timeout=180):
+def _poll_task(endpoint, auth, timeout=180):
     """Poll an async RC task until it reaches a terminal state.
 
     Best-effort and non-raising: on any uncertainty it returns the last status
@@ -188,7 +312,7 @@ def _poll_task(endpoint, token, timeout=180):
     deadline = time.time() + timeout
     last_status = None
     while time.time() < deadline:
-        resp = rc_api_call(endpoint, method='GET', return_response=True, token=token)
+        resp = _rc_request(auth, endpoint, method='GET')
         code = getattr(resp, 'status_code', None)
         if code == 429:
             wait = int(resp.headers.get('Retry-After', 10)) + 1 if hasattr(resp, 'headers') else 10
@@ -219,7 +343,7 @@ def _interruptible_sleep(seconds, should_cancel):
     return bool(should_cancel and should_cancel())
 
 
-def _apply_batch(t_id, ext_ids, token, note=None, should_cancel=None):
+def _apply_batch(t_id, ext_ids, auth, note=None, should_cancel=None):
     """Apply one template batch, waiting out RingCentral's account-wide lock.
 
     bulk-apply is asynchronous and serialised account-wide: a 2xx only means
@@ -258,7 +382,7 @@ def _apply_batch(t_id, ext_ids, token, note=None, should_cancel=None):
     interval = POLL_INTERVAL_START
     resp = None
     while True:
-        resp = rc_api_call(endpoint, method='POST', json=body, return_response=True, token=token)
+        resp = _rc_request(auth, endpoint, method='POST', json_payload=body)
         code = getattr(resp, 'status_code', None)
 
         if getattr(resp, 'ok', False):
@@ -289,7 +413,7 @@ def _apply_batch(t_id, ext_ids, token, note=None, should_cancel=None):
 
     # Accepted -- poll the async task to a terminal state where possible.
     task_path, _initial_status = _task_endpoint(resp)
-    final_status, detail = _poll_task(task_path, token)
+    final_status, detail = _poll_task(task_path, auth)
 
     if final_status is None:
         # No pollable task was exposed; we genuinely cannot confirm completion.
@@ -302,24 +426,25 @@ def _apply_batch(t_id, ext_ids, token, note=None, should_cancel=None):
     return 'Failed', detail or f'Task status: {final_status}'
 
 
-def _snapshot_extension(ext_id, token):
+def _snapshot_extension(ext_id, auth):
     """Capture a user's current key settings BEFORE any change, so there is a
     rollback reference. Read-only.
 
     Note: this is a lightweight snapshot (site + status). Full call-handling /
     phone-option state lives on separate endpoints and is not captured here.
     """
-    resp = safe_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', token=token)
-    if not resp:
+    resp = _rc_request(auth, f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+    if not resp or not getattr(resp, 'ok', False):
         return {'Original Site': '', 'Original Status': '', 'Snapshot': 'unavailable'}
+    body = _read_body(resp)
     return {
-        'Original Site': (resp.get('site') or {}).get('name', ''),
-        'Original Status': resp.get('status', ''),
+        'Original Site': (body.get('site') or {}).get('name', ''),
+        'Original Status': body.get('status', ''),
         'Snapshot': 'captured',
     }
 
 
-def process_upload_background(task_id, file_bytes, token):
+def process_upload_background(task_id, file_bytes, auth_bundle):
     """Parses the Excel file, snapshots current state, chunks the requests, and
     applies each batch via the async Bulk Apply task."""
     template_progress_store[task_id] = {
@@ -327,10 +452,11 @@ def process_upload_background(task_id, file_bytes, token):
         'results': [], 'cancel': False
     }
     store = template_progress_store[task_id]
+    auth = _Auth(auth_bundle)
 
     try:
         df = pd.read_excel(io.BytesIO(file_bytes))
-        templates = fetch_all_templates(token)
+        templates = fetch_all_templates(auth.token)
         template_map = {t.get('name', '').replace(',', ''): t['id'] for t in templates}
         template_names = {t['id']: t.get('name', '') for t in templates}
 
@@ -385,7 +511,7 @@ def process_upload_background(task_id, file_bytes, token):
         for _t_id, ext_ids in application_batches.items():
             for ext_id in ext_ids:
                 if ext_id not in snapshots:
-                    snapshots[ext_id] = _snapshot_extension(ext_id, token)
+                    snapshots[ext_id] = _snapshot_extension(ext_id, auth)
                     time.sleep(0.05)
 
         # Apply each batch, waiting for its async task to finish before the next
@@ -402,7 +528,7 @@ def process_upload_background(task_id, file_bytes, token):
             )
             store['message'] = f'Applying {label}...'
             status, detail = _apply_batch(
-                t_id, chunk, token,
+                t_id, chunk, auth,
                 note=lambda m, _l=label: store.__setitem__('message', f'{_l}: {m}'),
                 should_cancel=lambda: store.get('cancel')
             )

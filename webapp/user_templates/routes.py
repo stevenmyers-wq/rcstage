@@ -27,17 +27,20 @@ def download_audit():
 @require_rc_token
 @track_usage('User Templates - Upload')
 def upload_audit():
-    token = session.get('sm_isolated_token') or session.get('rc_access_token')
-    
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
         
     file = request.files['file']
     file_bytes = file.read()
-    
+
     task_id = f"template_apply_{int(time.time())}"
-    
-    thread = threading.Thread(target=utils.process_upload_background, args=(task_id, file_bytes, token))
+
+    # Capture refresh material now (while we still have the session) so the
+    # background worker can re-mint the token itself on a long run -- otherwise
+    # the token expires mid-run and every call 401s "Token not found".
+    auth_bundle = utils.capture_auth(session)
+
+    thread = threading.Thread(target=utils.process_upload_background, args=(task_id, file_bytes, auth_bundle))
     thread.daemon = True
     thread.start()
     
