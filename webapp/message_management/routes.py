@@ -3,12 +3,14 @@ from flask import Blueprint, jsonify, request, Response, send_file
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 from . import utils
 
 message_management_bp = Blueprint(
     'message_management_bp', __name__,
     url_prefix='/api/message_management'
 )
+message_management_bp.add_url_rule('/xlsx_upload/cancel', 'xlsx_upload_cancel', task_control.cancel_view, methods=['POST'])
 
 @message_management_bp.route('/endpoints', methods=['GET'])
 @require_rc_token

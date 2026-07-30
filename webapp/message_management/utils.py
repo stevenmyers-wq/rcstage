@@ -14,6 +14,7 @@ from flask import session
 from google import genai
 from google.genai import types
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 
 export_progress_store = {}
 xlsx_upload_progress_store = {}
@@ -1077,9 +1078,17 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
     end = len(rows)
     next_cursor = end
     processed_in_chunk = 0
+    cancelled = False
     i = start
     while i < end:
         if chunked and processed_in_chunk >= chunk_size:
+            next_cursor = i
+            break
+        # Cooperative stop: greetings already applied stand; remaining rows are
+        # skipped. Checked here so a stop lands even mid-chunk, and the client's
+        # own loop also stops calling for the next chunk.
+        if task_control.is_stopped(task_id):
+            cancelled = True
             next_cursor = i
             break
         row = rows[i]
@@ -1122,7 +1131,8 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
                 store['current'] = store.get('current', 0) + 1
             time.sleep(0.2)
 
-    done = (not chunked) or (next_cursor >= end)
+    # A stop ends the whole job, so treat it as done regardless of cursor.
+    done = cancelled or (not chunked) or (next_cursor >= end)
 
     all_logs = store['logs'] if store is not None else []
     chunk_logs = all_logs[chunk_start_len:]
@@ -1131,6 +1141,7 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
 
     if done and task_id:
         _xlsx_upload_cache.pop(task_id, None)
+        task_control.clear(task_id)
 
     # ``results`` carries the full cumulative log so the final report is complete;
     # ``chunk_results`` is just this call's rows.
@@ -1143,6 +1154,7 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
         'current': store['current'] if store is not None else success_count + error_count,
         'next_cursor': next_cursor,
         'done': done,
+        'cancelled': cancelled,
     }
 
 def generate_upload_template():
