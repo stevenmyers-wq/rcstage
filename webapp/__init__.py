@@ -154,4 +154,8 @@ def create_app():
         from .network_requirements import routes as network_requirements_routes
         app.register_blueprint(network_requirements_routes.network_requirements_bp)
 
+        # Site Allocation routes
+        from .site_allocation import routes as site_allocation_routes
+        app.register_blueprint(site_allocation_routes.site_allocation_bp)
+
     return app
