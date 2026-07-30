@@ -43,6 +43,19 @@ def upload_audit():
     
     return jsonify({"success": True, "task_id": task_id})
 
+@user_templates_bp.route('/cancel', methods=['POST'])
+@require_rc_token
+def cancel_task():
+    task_id = request.args.get('task_id') or (request.get_json(silent=True) or {}).get('task_id')
+    data = utils.template_progress_store.get(task_id)
+    if data is None:
+        return jsonify({"error": "Unknown or expired task."}), 404
+    # Cooperative cancel: the worker checks this flag between batches and during
+    # its wait for the account lock. Batches already sent to RingCentral cannot
+    # be recalled -- only not-yet-sent batches are skipped.
+    data['cancel'] = True
+    return jsonify({"success": True})
+
 @user_templates_bp.route('/status', methods=['GET'])
 @require_rc_token
 def get_status():

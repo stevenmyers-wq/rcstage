@@ -208,7 +208,18 @@ def _format_elapsed(seconds):
     return f'{m}m {s}s' if m else f'{s}s'
 
 
-def _apply_batch(t_id, ext_ids, token, note=None):
+def _interruptible_sleep(seconds, should_cancel):
+    """Sleep in short slices so a cancel request is honoured promptly instead of
+    only after a multi-minute wait. Returns True if cancellation was requested."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if should_cancel and should_cancel():
+            return True
+        time.sleep(min(2, max(0.1, end - time.time())))
+    return bool(should_cancel and should_cancel())
+
+
+def _apply_batch(t_id, ext_ids, token, note=None, should_cancel=None):
     """Apply one template batch, waiting out RingCentral's account-wide lock.
 
     bulk-apply is asynchronous and serialised account-wide: a 2xx only means
@@ -221,10 +232,11 @@ def _apply_batch(t_id, ext_ids, token, note=None):
     task to a terminal state where the API exposes one.
 
     `note`, if given, is called with a human-readable status string while we
-    wait, so the caller can surface progress to the UI.
+    wait, so the caller can surface progress to the UI. `should_cancel`, if
+    given, is polled during waits; if it returns True we abort before sending.
 
     Returns (status, detail) where status is one of
-    'Applied' | 'Failed' | 'Partial' | 'Submitted'.
+    'Applied' | 'Failed' | 'Partial' | 'Submitted' | 'Cancelled'.
     """
     endpoint = f'/restapi/v1.0/account/~/templates/{t_id}/bulk-apply'
     body = {
@@ -237,6 +249,9 @@ def _apply_batch(t_id, ext_ids, token, note=None):
         # configures. Do not set this back to True.
         "overrideAll": False,
     }
+
+    if should_cancel and should_cancel():
+        return 'Cancelled', 'Stopped by user before this batch was sent'
 
     deadline = time.time() + ACCOUNT_LOCK_TIMEOUT
     started = time.time()
@@ -269,7 +284,8 @@ def _apply_batch(t_id, ext_ids, token, note=None):
             # A genuine error (bad template, auth, malformed request): don't spin.
             return 'Failed', _error_detail(resp)
 
-        time.sleep(min(wait, max(1, remaining)))
+        if _interruptible_sleep(min(wait, max(1, remaining)), should_cancel):
+            return 'Cancelled', 'Stopped by user while waiting for the account to free up'
 
     # Accepted -- poll the async task to a terminal state where possible.
     task_path, _initial_status = _task_endpoint(resp)
@@ -308,7 +324,7 @@ def process_upload_background(task_id, file_bytes, token):
     applies each batch via the async Bulk Apply task."""
     template_progress_store[task_id] = {
         'status': 'running', 'current': 0, 'total': 0, 'message': 'Parsing Excel file...',
-        'results': []
+        'results': [], 'cancel': False
     }
     store = template_progress_store[task_id]
 
@@ -374,7 +390,12 @@ def process_upload_background(task_id, file_bytes, token):
 
         # Apply each batch, waiting for its async task to finish before the next
         # (RC runs these serially per account).
+        cancelled = False
         for idx, (t_id, chunk) in enumerate(tasks):
+            if store.get('cancel'):
+                cancelled = True
+                break
+
             label = (
                 f'Batch {idx + 1} of {len(tasks)} '
                 f'("{template_names.get(t_id, t_id)}", {len(chunk)} user(s))'
@@ -382,8 +403,25 @@ def process_upload_background(task_id, file_bytes, token):
             store['message'] = f'Applying {label}...'
             status, detail = _apply_batch(
                 t_id, chunk, token,
-                note=lambda m, _l=label: store.__setitem__('message', f'{_l}: {m}')
+                note=lambda m, _l=label: store.__setitem__('message', f'{_l}: {m}'),
+                should_cancel=lambda: store.get('cancel')
             )
+
+            if status == 'Cancelled':
+                # Stopped before this batch was sent; record it as skipped and
+                # stop -- do NOT send any further batches.
+                for ext_id in chunk:
+                    row = {
+                        'Extension ID': ext_id,
+                        'Template': template_names.get(t_id, t_id),
+                        'Status': 'Skipped',
+                        'Detail': detail,
+                    }
+                    row.update(snapshots.get(ext_id, {}))
+                    store['results'].append(row)
+                cancelled = True
+                break
+
             for ext_id in chunk:
                 row = {
                     'Extension ID': ext_id,
@@ -394,6 +432,19 @@ def process_upload_background(task_id, file_bytes, token):
                 row.update(snapshots.get(ext_id, {}))
                 store['results'].append(row)
             store['current'] = idx + 1
+
+        # Sent to RingCentral (applied or accepted) vs not.
+        sent = sum(1 for r in store['results']
+                   if r['Status'] in ('Applied', 'Submitted', 'Partial'))
+
+        if cancelled:
+            store['status'] = 'cancelled'
+            store['message'] = (
+                f'Stopped by user. {sent} user(s) in already-sent batches were '
+                f'submitted to RingCentral and cannot be recalled; the remaining '
+                f'batches were not sent.'
+            )
+            return
 
         # Summarise honestly -- 'Applied' means confirmed complete, anything
         # else is called out separately.
