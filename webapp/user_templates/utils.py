@@ -11,9 +11,19 @@ template_progress_store = {}
 
 CHUNK_SIZE = 100
 
-# How long (seconds) to keep resubmitting a batch while RingCentral reports an
-# account-wide "apply operation is in progress" 409 before giving up on it.
-ACCOUNT_LOCK_TIMEOUT = 600
+# RingCentral serialises template-apply account-wide: while one apply runs, any
+# other batch is rejected with 409 "apply operation is in progress". On large
+# accounts a single apply can take well over ten minutes, so we don't give up on
+# a fixed short deadline -- we keep re-checking on an interval until the account
+# frees up.
+#
+# POLL_INTERVAL_START: first wait after a 409 (short, so small/fast applies
+#   resume quickly). POLL_INTERVAL_MAX: the interval widens up to this cap
+#   (default 5 min) for long-running applies. ACCOUNT_LOCK_TIMEOUT: overall
+#   safety ceiling so a genuinely stuck apply can't spin forever.
+POLL_INTERVAL_START = 30
+POLL_INTERVAL_MAX = 300          # 5 minutes
+ACCOUNT_LOCK_TIMEOUT = 6 * 3600  # 6 hours
 
 # Statuses RingCentral reports while an async bulk task is still running.
 # Anything NOT in this set is treated as terminal.
@@ -192,14 +202,26 @@ def _poll_task(endpoint, token, timeout=180):
     return last_status, 'Timed out waiting for the RingCentral task to finish'
 
 
-def _apply_batch(t_id, ext_ids, token):
-    """Apply one template batch and wait for the async task to settle.
+def _format_elapsed(seconds):
+    seconds = int(seconds)
+    m, s = divmod(seconds, 60)
+    return f'{m}m {s}s' if m else f'{s}s'
+
+
+def _apply_batch(t_id, ext_ids, token, note=None):
+    """Apply one template batch, waiting out RingCentral's account-wide lock.
 
     bulk-apply is asynchronous and serialised account-wide: a 2xx only means
     RingCentral *accepted* the job, and while it runs, any other batch is
-    rejected with 409 "apply operation is in progress". We wait that lock out
-    (resubmitting until accepted) instead of labelling the collision a failure,
-    then poll the returned task to a terminal state where the API exposes one.
+    rejected with 409 "apply operation is in progress". Rather than give up on a
+    fixed deadline, we keep re-checking whether the account will accept the batch
+    on a widening interval (up to POLL_INTERVAL_MAX) until it does -- this is the
+    only reliable "is it free yet?" signal RC gives us, since a busy account
+    simply 409s and a 409 has no side effect. Once accepted we poll the returned
+    task to a terminal state where the API exposes one.
+
+    `note`, if given, is called with a human-readable status string while we
+    wait, so the caller can surface progress to the UI.
 
     Returns (status, detail) where status is one of
     'Applied' | 'Failed' | 'Partial' | 'Submitted'.
@@ -216,13 +238,9 @@ def _apply_batch(t_id, ext_ids, token):
         "overrideAll": False,
     }
 
-    # RingCentral locks template-apply ACCOUNT-WIDE while one is running and
-    # returns 409 "Template apply operation is in progress" to any other batch.
-    # The response also does not (in this tenant) hand back a pollable task, so
-    # the only reliable way to serialise batches is to keep resubmitting until
-    # the account lock clears. Wait it out patiently rather than giving up.
     deadline = time.time() + ACCOUNT_LOCK_TIMEOUT
-    attempt = 0
+    started = time.time()
+    interval = POLL_INTERVAL_START
     resp = None
     while True:
         resp = rc_api_call(endpoint, method='POST', json=body, return_response=True, token=token)
@@ -233,18 +251,24 @@ def _apply_batch(t_id, ext_ids, token):
 
         remaining = deadline - time.time()
         if remaining <= 0:
-            return 'Failed', _error_detail(resp)
+            waited = _format_elapsed(time.time() - started)
+            return 'Failed', f'RingCentral still busy after {waited}: {_error_detail(resp)}'
 
         if code == 429:
-            wait = int(resp.headers.get('Retry-After', 15)) + 1 if hasattr(resp, 'headers') else 15
+            wait = int(resp.headers.get('Retry-After', 30)) + 1 if hasattr(resp, 'headers') else 30
         elif code in (400, 409, 503) and _looks_like_busy(resp):
-            # Another apply is still running account-wide -- back off and retry.
-            wait = min(30, 5 + 5 * attempt)
+            # Another apply is still running account-wide. Wait, then re-check.
+            wait = interval
+            interval = min(POLL_INTERVAL_MAX, int(interval * 1.5))
+            if note:
+                waited = _format_elapsed(time.time() - started)
+                next_in = int(min(wait, remaining))
+                note(f'RingCentral is still applying a previous batch '
+                     f'(waited {waited}); re-checking in {next_in}s...')
         else:
             # A genuine error (bad template, auth, malformed request): don't spin.
             return 'Failed', _error_detail(resp)
 
-        attempt += 1
         time.sleep(min(wait, max(1, remaining)))
 
     # Accepted -- poll the async task to a terminal state where possible.
@@ -351,11 +375,15 @@ def process_upload_background(task_id, file_bytes, token):
         # Apply each batch, waiting for its async task to finish before the next
         # (RC runs these serially per account).
         for idx, (t_id, chunk) in enumerate(tasks):
-            store['message'] = (
-                f'Applying "{template_names.get(t_id, t_id)}" to batch '
-                f'{idx + 1} of {len(tasks)}...'
+            label = (
+                f'Batch {idx + 1} of {len(tasks)} '
+                f'("{template_names.get(t_id, t_id)}", {len(chunk)} user(s))'
             )
-            status, detail = _apply_batch(t_id, chunk, token)
+            store['message'] = f'Applying {label}...'
+            status, detail = _apply_batch(
+                t_id, chunk, token,
+                note=lambda m, _l=label: store.__setitem__('message', f'{_l}: {m}')
+            )
             for ext_id in chunk:
                 row = {
                     'Extension ID': ext_id,
