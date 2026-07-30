@@ -195,17 +195,24 @@ def fetch_all_templates(token):
     return templates
 
 def fetch_all_users(token):
-    """Fetches all active users."""
+    """Fetches all active users, de-duplicated by extension id.
+
+    RC's paginated extension list can return the same record on two pages if the
+    directory changes between page fetches, which would otherwise put a user in
+    the roster (and the apply) twice. Track seen ids so each user appears once.
+    """
     users = []
+    seen = set()
     page = 1
     while True:
         resp = safe_api_call(f"/restapi/v1.0/account/~/extension?type=User&perPage=1000&page={page}", token=token)
-        if not resp or 'records' not in resp: 
+        if not resp or 'records' not in resp:
             break
         for u in resp['records']:
-            if u.get('status') in ['Enabled', 'NotActivated']:
+            if u.get('status') in ['Enabled', 'NotActivated'] and u.get('id') not in seen:
+                seen.add(u.get('id'))
                 users.append(u)
-        if not resp.get('navigation', {}).get('nextPage'): 
+        if not resp.get('navigation', {}).get('nextPage'):
             break
         page += 1
         time.sleep(0.05)
