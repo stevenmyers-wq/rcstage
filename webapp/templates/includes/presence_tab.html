@@ -37,6 +37,9 @@
         </div>
 
         <div id="upload-status" class="hidden card !py-4 text-center text-sm font-medium"></div>
+        <button id="presence-stop-btn" class="hidden w-full btn-secondary mt-3 !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+            ■ Stop
+        </button>
 
         <div class="card !p-4 flex flex-wrap gap-4 items-end w-full">
             <div class="input-wrapper flex-grow min-w-[200px]">
@@ -271,17 +274,44 @@ document.addEventListener('DOMContentLoaded', () => {
         if (resp.ok) { const b = await resp.blob(); const url = URL.createObjectURL(b); const a = document.createElement('a'); a.href = url; a.download = 'Presence_Audit.xlsx'; a.click(); }
     };
 
+    let presenceTaskId = null;
+    const presenceStopBtn = document.getElementById('presence-stop-btn');
+    if (presenceStopBtn) {
+        presenceStopBtn.addEventListener('click', async () => {
+            if (!presenceTaskId) return;
+            presenceStopBtn.disabled = true;
+            presenceStopBtn.textContent = 'Stopping...';
+            try {
+                await fetch(`/api/presence/cancel?task_id=${presenceTaskId}`, { method: 'POST' });
+            } catch (err) { /* server loop also polls the flag */ }
+        });
+    }
+
     document.getElementById('excel-file').onchange = async (e) => {
-        const fd = new FormData(); fd.append('file', e.target.files[0]);
+        presenceTaskId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const fd = new FormData(); fd.append('file', e.target.files[0]); fd.append('task_id', presenceTaskId);
         const status = document.getElementById('upload-status');
         const label = document.getElementById('upload-btn-label');
         label.innerText = "Updating...";
+        status.classList.remove('hidden');
         status.className = "card !py-4 text-center bg-blue-50/60 dark:bg-blue-900/10 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm block";
         status.innerText = "Processing batch templates...";
-        const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
-        const data = await resp.json();
+        if (presenceStopBtn) { presenceStopBtn.classList.remove('hidden'); presenceStopBtn.disabled = false; presenceStopBtn.textContent = '■ Stop'; }
+        let data;
+        try {
+            const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
+            data = await resp.json();
+        } finally {
+            presenceTaskId = null;
+            if (presenceStopBtn) presenceStopBtn.classList.add('hidden');
+        }
         label.innerHTML = 'Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">';
-        status.className = `card !py-4 text-center block ${data.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60' : 'bg-rose-50 dark:bg-rose-900/10 text-rose-800 dark:text-rose-400 border-rose-200 dark:border-rose-800'}`;
+        const tone = data.status === 'completed'
+            ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
+            : (data.status === 'cancelled'
+                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                : 'bg-rose-50 dark:bg-rose-900/10 text-rose-800 dark:text-rose-400 border-rose-200 dark:border-rose-800');
+        status.className = `card !py-4 text-center block ${tone}`;
         status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2 text-left inline-block"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
     };
 });

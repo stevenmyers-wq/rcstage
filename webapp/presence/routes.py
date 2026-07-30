@@ -5,9 +5,11 @@ from flask import Blueprint, request, jsonify, send_file
 from webapp.presence.utils import RCPresenceManager, RCPresenceError
 from webapp.auth_utils import require_rc_token, is_admin_user
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 import logging
 
 presence_bp = Blueprint('presence', __name__)
+presence_bp.add_url_rule('/api/presence/cancel', 'presence_cancel', task_control.cancel_view, methods=['POST'])
 
 def parse_bool(val):
     if pd.isna(val) or str(val).strip() == "": return None
@@ -113,6 +115,7 @@ def generate_audit_report():
 def update_blf():
     try:
         file = request.files['file']
+        task_id = request.form.get('task_id')
         df = pd.read_excel(file, sheet_name=0)
         df.columns = df.columns.str.strip()
 
@@ -121,26 +124,39 @@ def update_blf():
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
 
         results = {"success": 0, "errors": []}
+        cancelled = False
 
         target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
 
-        for _, row in df.iterrows():
-            if not target_col: continue
+        try:
+            for _, row in df.iterrows():
+                # Cooperative stop: users already updated stand; the rest skipped.
+                if task_control.is_stopped(task_id):
+                    cancelled = True
+                    break
+                if not target_col: continue
 
-            t_id = str(row.get(target_col, "")).split('.')[0].strip()
-            if not t_id or t_id.lower() == 'nan': continue
+                t_id = str(row.get(target_col, "")).split('.')[0].strip()
+                if not t_id or t_id.lower() == 'nan': continue
 
-            try:
-                _process_row(manager, df, row, t_id, ext_map, results)
-            except RCPresenceError as e:
-                results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
-                logging.error(f"RC API Error during update for {t_id}: {e}")
-            except Exception as e:
-                results["errors"].append(f"Ext {t_id}: {str(e)}")
-                logging.exception(f"Unexpected error during update for {t_id}")
+                try:
+                    _process_row(manager, df, row, t_id, ext_map, results)
+                except RCPresenceError as e:
+                    results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
+                    logging.error(f"RC API Error during update for {t_id}: {e}")
+                except Exception as e:
+                    results["errors"].append(f"Ext {t_id}: {str(e)}")
+                    logging.exception(f"Unexpected error during update for {t_id}")
+        finally:
+            task_control.clear(task_id)
 
-        status = "completed" if results["success"] or not results["errors"] else "error"
-        return jsonify({"status": status, "message": f"Updated {results['success']} users", "errors": results["errors"]})
+        if cancelled:
+            status = "cancelled"
+            message = f"Stopped by user. Updated {results['success']} user(s); the rest were skipped."
+        else:
+            status = "completed" if results["success"] or not results["errors"] else "error"
+            message = f"Updated {results['success']} users"
+        return jsonify({"status": status, "message": message, "cancelled": cancelled, "errors": results["errors"]})
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500

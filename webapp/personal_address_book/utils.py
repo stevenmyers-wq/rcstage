@@ -1,5 +1,6 @@
 # webapp/personal_address_book/utils.py
 from webapp.rc_api import rc_api_call
+from webapp import task_control
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
@@ -87,8 +88,13 @@ def delete_contact_entry(user_id, contact_id):
     except Exception as e:
         return {"userId": user_id, "contactId": contact_id, "status": "error", "message": str(e)}
 
-def delete_selected_contacts(contacts_to_delete):
-    """Deletes multiple contacts across multiple users in parallel."""
+def delete_selected_contacts(contacts_to_delete, stop_task_id=None):
+    """Deletes multiple contacts across multiple users in parallel.
+
+    Cooperative stop: when a stop is requested we stop collecting and cancel any
+    not-yet-started deletions. Deletions already in flight (up to max_workers)
+    still finish -- they cannot be recalled once sent to RingCentral.
+    """
     results = []
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(delete_contact_entry, user_info['userId'], user_info['contactId'])
@@ -96,6 +102,10 @@ def delete_selected_contacts(contacts_to_delete):
                    for user_info in contact_group.get("users", [])]
         for future in as_completed(futures):
             results.append(future.result())
+            if task_control.is_stopped(stop_task_id):
+                for f in futures:
+                    f.cancel()  # only not-yet-started tasks are actually cancelled
+                break
     return results
 
 # --- NEW AND UPDATED FUNCTIONS ---
@@ -157,9 +167,9 @@ def sync_contacts_for_user(user_id, contacts_from_csv):
     ]
     return contacts_to_add, contacts_to_delete
 
-def process_contact_upload(user_ids, contacts, action):
+def process_contact_upload(user_ids, contacts, action, stop_task_id=None):
     """Orchestrates the contact upload process using the bulk endpoint."""
-    
+
     if action == 'add':
         # Use the new bulk add function directly
         return bulk_add_contacts(user_ids, contacts)
@@ -169,7 +179,7 @@ def process_contact_upload(user_ids, contacts, action):
         aggregated_contacts = fetch_and_aggregate_contacts(user_ids)
         csv_keys = {get_contact_unique_key(c) for c in contacts}
         to_delete = [c for c in aggregated_contacts if get_contact_unique_key(c['contactData']) in csv_keys]
-        delete_results = delete_selected_contacts(to_delete)
+        delete_results = delete_selected_contacts(to_delete, stop_task_id=stop_task_id)
         return {"status": "Completed 'remove' operation", "details": delete_results}
 
     elif action == 'update':
@@ -195,7 +205,12 @@ def process_contact_upload(user_ids, contacts, action):
         # 2. Perform all deletions first
         if all_contacts_to_delete:
             print(f"Performing {len(all_contacts_to_delete)} deletions...")
-            delete_selected_contacts(all_contacts_to_delete)
+            delete_selected_contacts(all_contacts_to_delete, stop_task_id=stop_task_id)
+
+        # If the user asked to stop during the deletion phase, don't push the
+        # follow-up bulk add -- honour the stop.
+        if task_control.is_stopped(stop_task_id):
+            return {"status": "cancelled", "message": "Stopped by user before adding new contacts."}
 
         # 3. Perform a single bulk add for all new contacts
         if all_contacts_to_add:
