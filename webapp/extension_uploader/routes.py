@@ -1,5 +1,6 @@
 import io
 import json
+import time
 
 import pandas as pd
 from flask import (
@@ -18,6 +19,68 @@ extension_uploader_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view
 def _token():
     """Prefer the SM impersonation (bridge) token, falling back to PKCE."""
     return session.get('sm_isolated_token') or session.get('rc_access_token')
+
+
+@extension_uploader_bp.route('/diagnostics', methods=['GET'])
+@require_rc_token
+@track_usage('Extension Uploader - Diagnostics')
+def diagnostics():
+    """Reads what the live account actually exposes for extension provisioning:
+    the account's extension-number limits and the free (assignable) numbers per
+    extension type. Optionally dry-runs a specific number+type (query params
+    `ext`, `userType`) and reports whether it validates and whether it appears in
+    the type's free-number pool -- to explain why createExtension may return
+    EXT-250 for a specific number even though validate passed."""
+    token = _token()
+    if not token:
+        return jsonify({"success": False, "error": "Unauthorized: please bridge the connection first."}), 401
+    try:
+        limits = utils.fetch_account_limits(token)
+        types = []
+        for label in utils.USER_TYPES:
+            api_type = utils.USER_TYPE_MAP[label]
+            nums = utils.fetch_free_numbers(token, api_type, count=20)
+            types.append({
+                "userType": label,
+                "apiType": api_type,
+                "queryable": nums is not None,
+                "available": None if nums is None else len(nums),
+                "sample": (nums or [])[:20],
+            })
+
+        result = {"success": True, "limits": limits, "types": types}
+
+        ext = (request.args.get('ext') or '').strip()
+        user_type = (request.args.get('userType') or '').strip()
+        if ext and user_type in utils.USER_TYPE_MAP:
+            api_type = utils.USER_TYPE_MAP[user_type]
+            plan = {
+                'ext': ext, 'first_name': 'Diagnostic', 'last_name': '',
+                'drop_last_name': user_type in utils.FIRST_NAME_ONLY_TYPES,
+                # Unique throwaway email so validate isn't rejected for a
+                # duplicate; this dry-run creates nothing.
+                'email': f'eu-diagnostic-{int(time.time())}@example.com',
+                'department': '', 'user_type': user_type, 'api_type': api_type,
+                'site_id': None,
+            }
+            state, msg = utils.validate_new_extension(plan, token)
+            # Fetch a large slice of the free pool to test membership of the
+            # specific number. If the returned size is below the requested count
+            # the list is complete and membership is definitive.
+            free = utils.fetch_free_numbers(token, api_type, count=1000)
+            result["test"] = {
+                "ext": ext,
+                "userType": user_type,
+                "apiType": api_type,
+                "validate": state,
+                "message": msg,
+                "freePoolQueryable": free is not None,
+                "freePoolSize": None if free is None else len(free),
+                "inFreePool": (free is not None) and (ext in free),
+            }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @extension_uploader_bp.route('/template', methods=['GET'])

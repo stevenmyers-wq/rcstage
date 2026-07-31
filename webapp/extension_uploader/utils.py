@@ -470,6 +470,17 @@ def validate_new_extension(plan, token):
     return 'unavailable', None
 
 
+def fetch_account_limits(token):
+    """Returns the account's extension-number limits (maxExtensionNumberLength,
+    siteCodeLength, shortExtensionNumberLength, ...), or {} if unavailable."""
+    resp = rc_api_call('/restapi/v1.0/account/~/service-info', token=token, raise_error=False)
+    limits = resp.get('limits') if isinstance(resp, dict) else None
+    if not limits:
+        resp2 = rc_api_call('/restapi/v1.0/account/~', token=token, raise_error=False)
+        limits = resp2.get('limits') if isinstance(resp2, dict) else None
+    return limits or {}
+
+
 def preflight_row(plan, token, free_cache):
     """Review-time check for one planned extension against the live account.
 
