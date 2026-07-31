@@ -276,6 +276,42 @@ def _error_message(resp):
     return str(msg)[:300]
 
 
+def _full_error(resp):
+    """Verbose error string for create/update failures.
+
+    Unlike `_error_message` (which returns only the top-level message), this
+    surfaces the HTTP status, RC's `errorCode`, and any nested per-field
+    `errors[]` detail -- so a bare 500 "Internal Server Error" still reveals the
+    specific RC code/reason hidden underneath it, which is exactly what we need
+    to see for the Message Only (Voicemail) create failures."""
+    if resp is None:
+        return 'No response from RingCentral'
+    status = getattr(resp, 'status_code', '?')
+    try:
+        body = resp.json() or {}
+    except Exception:
+        body = {}
+    code = body.get('errorCode')
+    msg = body.get('message') or body.get('error') or ''
+    nested = []
+    errs = body.get('errors')
+    if isinstance(errs, list):
+        for e in errs[:3]:
+            if not isinstance(e, dict):
+                continue
+            ec = e.get('errorCode')
+            em = e.get('message') or ''
+            piece = f"{ec + ': ' if ec else ''}{em}".strip()
+            if piece:
+                nested.append(piece)
+    head = f"HTTP {status}"
+    if code:
+        head += f" · {code}"
+    tail = '; '.join(nested) or msg or (getattr(resp, 'text', '') or '')
+    out = f"{head} — {tail}".strip(' —').strip()
+    return out[:400]
+
+
 def _rc_write(endpoint, payload, token, method='POST'):
     """POST/PUT helper with a short 429 back-off loop.
 
@@ -317,7 +353,7 @@ def create_extension(plan, token):
 
     ok, body, resp = _rc_write('/restapi/v1.0/account/~/extension', payload, token, method='POST')
     if not ok:
-        return False, f"Create failed — {_error_message(resp)}"
+        return False, f"Create failed — {_full_error(resp)}"
 
     new_id = (body or {}).get('id')
 
@@ -334,7 +370,7 @@ def create_extension(plan, token):
             token, method='PUT',
         )
         if not r_ok:
-            warnings.append(f"role assignment failed ({_error_message(r_resp)})")
+            warnings.append(f"role assignment failed ({_full_error(r_resp)})")
 
     # Second pass: set the notification email (voicemail / missed-call notices).
     # This is independent of the contact email set at create time and may differ.
@@ -345,7 +381,7 @@ def create_extension(plan, token):
             token, method='PUT',
         )
         if not n_ok:
-            warnings.append(f"notification email update failed ({_error_message(n_resp)})")
+            warnings.append(f"notification email update failed ({_full_error(n_resp)})")
 
     if warnings:
         return True, 'Created, but ' + '; '.join(warnings)

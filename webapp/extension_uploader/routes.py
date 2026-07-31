@@ -67,10 +67,12 @@ def diagnostics():
                 'site_id': None,
             }
             state, msg = utils.validate_new_extension(plan, token)
-            # Probe a large slice of the free pool to test membership of the
-            # specific number. If the returned size is below the requested count
-            # the list is complete and membership is definitive.
-            p = utils.probe_free_numbers(token, api_type, count=1000)
+            # Probe a slice of the free pool to test membership of the specific
+            # number. RingCentral caps the free-numbers `count` (an oversized
+            # request 400s with EXT-361), so ask for a value it accepts. If the
+            # returned size is below the requested count the list is complete and
+            # a "not in pool" answer is definitive.
+            p = utils.probe_free_numbers(token, api_type, count=100)
             free = p["numbers"]
             result["test"] = {
                 "ext": ext,
