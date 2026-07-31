@@ -332,30 +332,68 @@ def _rc_write(endpoint, payload, token, method='POST'):
     return False, None, None
 
 
-def _set_notification_email(ext_id, email, token):
-    """Sets the notification (voicemail etc.) recipient email for an extension.
+def _apply_notification_settings(ext_id, email, enable_transcription, token):
+    """Read-modify-write the extension's notification-settings.
 
-    A bare PUT of {"emailAddresses": [email]} makes RC validate every channel,
-    and a Message Only (Voicemail) box has no inbound SMS / fax / missed-call
-    channels, so it answers 400 CMN-101 "Parameter [inboundTexts]/[inboundFaxes]/
-    [missedCalls] value is invalid". Following the account's existing bulk
-    notification updater (webapp/notifications/utils.py), read the current
-    settings first -- they come back shaped for this extension's type -- set the
-    recipient list, drop the read-only `emailRecipients` echo, and write the
-    same structure back so only the channels the extension actually has are
-    validated. Returns (ok, response)."""
+    Sets the voicemail/notification recipient email (when given), and for
+    Message Only (Voicemail) extensions enables Voicemail-to-Text by turning on
+    email notification + transcription on the voicemail channel -- mirroring the
+    account's cq_hours notifications updater.
+
+    A bare {"emailAddresses": [...]} PUT makes RC validate every channel, and a
+    Message Only box has no inbound SMS / fax / missed-call channels, so it
+    answers 400 CMN-101 "Parameter [inboundTexts]/[inboundFaxes]/[missedCalls]
+    value is invalid". Reading the current settings first (they come back shaped
+    for this extension's type), dropping the read-only `emailRecipients` echo,
+    and writing the same structure back keeps only the valid channels. Accounts
+    without the Voicemail-to-Text feature reject the transcription toggles, so
+    those are dropped and retried. Returns (ok, response, transcription_dropped).
+    """
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
     current = rc_api_call(endpoint, token=token, raise_error=False)
-    if not isinstance(current, dict):
-        # Couldn't read current settings -- fall back to the bare write.
-        ok, _b, resp = _rc_write(endpoint, {'emailAddresses': [email]}, token, method='PUT')
-        return ok, resp
+    if isinstance(current, dict):
+        settings = dict(current)
+        settings.pop('emailRecipients', None)
+    else:
+        # Couldn't read current settings -- best-effort minimal body.
+        settings = {}
 
-    settings = dict(current)
-    settings['emailAddresses'] = [email]
-    settings.pop('emailRecipients', None)
+    if email:
+        # In advanced mode each channel has its own recipients; otherwise the
+        # top-level list is shared (same split as the cq_hours updater).
+        if settings.get('advancedMode'):
+            vm = dict(settings.get('voicemails') or {})
+            vm['emailAddresses'] = [email]
+            settings['voicemails'] = vm
+        else:
+            settings['emailAddresses'] = [email]
+
+    if enable_transcription:
+        vm = dict(settings.get('voicemails') or {})
+        vm['notifyByEmail'] = True
+        vm['includeTranscription'] = True
+        settings['voicemails'] = vm
+
     ok, _b, resp = _rc_write(endpoint, settings, token, method='PUT')
-    return ok, resp
+
+    # Accounts without Voicemail-to-Text reject the transcription (and related)
+    # toggles -- drop them and retry so the email still applies (cq_hours does
+    # the same).
+    transcription_dropped = False
+    if not ok and enable_transcription and isinstance(settings.get('voicemails'), dict):
+        _code, msg = _error_code_and_message(resp)
+        if any(k in (msg or '') for k in ('includeTranscription', 'includeAttachment', 'markAsRead')):
+            vm = dict(settings['voicemails'])
+            vm.pop('includeTranscription', None)
+            vm.pop('includeAttachment', None)
+            vm.pop('markAsRead', None)
+            settings['voicemails'] = vm
+            r_ok, _rb, r_resp = _rc_write(endpoint, settings, token, method='PUT')
+            if r_ok:
+                ok, resp, transcription_dropped = True, r_resp, True
+            else:
+                resp = r_resp
+    return ok, resp, transcription_dropped
 
 
 def create_extension(plan, token):
@@ -428,10 +466,21 @@ def create_extension(plan, token):
 
     # Second pass: set the notification email (voicemail / missed-call notices).
     # This is independent of the contact email set at create time and may differ.
-    if plan.get('notif_email') and new_id:
-        n_ok, n_resp = _set_notification_email(new_id, plan['notif_email'], token)
+    # Message Only (Voicemail) extensions are created with Voicemail-to-Text
+    # enabled. The notification email (if given) is applied in the same pass.
+    enable_vm2t = plan.get('api_type') == 'Voicemail'
+    if (plan.get('notif_email') or enable_vm2t) and new_id:
+        n_ok, n_resp, vm2t_dropped = _apply_notification_settings(
+            new_id, plan.get('notif_email'), enable_vm2t, token)
         if not n_ok:
-            warnings.append(f"notification email update failed ({_full_error(n_resp)})")
+            labels = []
+            if plan.get('notif_email'):
+                labels.append('notification email')
+            if enable_vm2t:
+                labels.append('voicemail-to-text')
+            warnings.append(f"{' / '.join(labels)} update failed ({_full_error(n_resp)})")
+        elif vm2t_dropped:
+            warnings.append("voicemail-to-text not enabled (account feature unavailable)")
 
     if warnings:
         return True, 'Created, but ' + '; '.join(warnings)
@@ -518,27 +567,6 @@ def fetch_free_numbers(token, api_type, count=1):
     return None
 
 
-def probe_free_numbers(token, api_type, count=20):
-    """Like fetch_free_numbers, but returns the raw outcome for diagnostics:
-    {'ok', 'status', 'numbers' (list|None), 'errorCode', 'error'}."""
-    endpoint = (
-        f"/restapi/v1.0/account/~/extension/free-numbers"
-        f"?extensionType={api_type}&count={count}"
-    )
-    resp = rc_api_call(endpoint, token=token, return_response=True)
-    status = getattr(resp, 'status_code', None)
-    if resp is not None and getattr(resp, 'ok', False):
-        try:
-            nums = (resp.json() or {}).get('extensionNumbers')
-        except Exception:
-            nums = None
-        return {'ok': True, 'status': status,
-                'numbers': nums if isinstance(nums, list) else [],
-                'errorCode': None, 'error': None}
-    code, msg = _error_code_and_message(resp)
-    return {'ok': False, 'status': status, 'numbers': None, 'errorCode': code, 'error': msg}
-
-
 def validate_new_extension(plan, token):
     """Dry-run an extension via POST extension/validate (creates nothing).
 
@@ -575,37 +603,6 @@ def validate_new_extension(plan, token):
             return 'invalid', f"{err_code + ': ' if err_code else ''}{msg}"
         return 'unavailable', None
     return 'unavailable', None
-
-
-def probe_sites(token):
-    """Raw account sites for diagnostics: the actual GET /sites records, so we
-    can see the real site ids / names / codes. On a multi-site account
-    createExtension needs a site, and the number may be scoped to a specific
-    site's code range -- this surfaces which sites exist and whether the account
-    even returns a main site with a real id (vs only the synthetic 'main-site'
-    token the uploader falls back to)."""
-    resp = rc_api_call('/restapi/v1.0/account/~/sites?perPage=1000', token=token, raise_error=False)
-    records = resp.get('records') if isinstance(resp, dict) else None
-    out = []
-    for s in (records or []):
-        out.append({
-            'id': s.get('id'),
-            'name': s.get('name'),
-            'code': s.get('code'),
-            'extensionNumber': s.get('extensionNumber'),
-        })
-    return out
-
-
-def fetch_account_limits(token):
-    """Returns the account's extension-number limits (maxExtensionNumberLength,
-    siteCodeLength, shortExtensionNumberLength, ...), or {} if unavailable."""
-    resp = rc_api_call('/restapi/v1.0/account/~/service-info', token=token, raise_error=False)
-    limits = resp.get('limits') if isinstance(resp, dict) else None
-    if not limits:
-        resp2 = rc_api_call('/restapi/v1.0/account/~', token=token, raise_error=False)
-        limits = resp2.get('limits') if isinstance(resp2, dict) else None
-    return limits or {}
 
 
 def preflight_row(plan, token, free_cache):
