@@ -332,6 +332,32 @@ def _rc_write(endpoint, payload, token, method='POST'):
     return False, None, None
 
 
+def _set_notification_email(ext_id, email, token):
+    """Sets the notification (voicemail etc.) recipient email for an extension.
+
+    A bare PUT of {"emailAddresses": [email]} makes RC validate every channel,
+    and a Message Only (Voicemail) box has no inbound SMS / fax / missed-call
+    channels, so it answers 400 CMN-101 "Parameter [inboundTexts]/[inboundFaxes]/
+    [missedCalls] value is invalid". Following the account's existing bulk
+    notification updater (webapp/notifications/utils.py), read the current
+    settings first -- they come back shaped for this extension's type -- set the
+    recipient list, drop the read-only `emailRecipients` echo, and write the
+    same structure back so only the channels the extension actually has are
+    validated. Returns (ok, response)."""
+    endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
+    current = rc_api_call(endpoint, token=token, raise_error=False)
+    if not isinstance(current, dict):
+        # Couldn't read current settings -- fall back to the bare write.
+        ok, _b, resp = _rc_write(endpoint, {'emailAddresses': [email]}, token, method='PUT')
+        return ok, resp
+
+    settings = dict(current)
+    settings['emailAddresses'] = [email]
+    settings.pop('emailRecipients', None)
+    ok, _b, resp = _rc_write(endpoint, settings, token, method='PUT')
+    return ok, resp
+
+
 def create_extension(plan, token):
     """Creates one extension from a validated plan dict, then assigns its role if
     one was resolved. Returns (ok, message)."""
@@ -403,11 +429,7 @@ def create_extension(plan, token):
     # Second pass: set the notification email (voicemail / missed-call notices).
     # This is independent of the contact email set at create time and may differ.
     if plan.get('notif_email') and new_id:
-        n_ok, _n_body, n_resp = _rc_write(
-            f'/restapi/v1.0/account/~/extension/{new_id}/notification-settings',
-            {'emailAddresses': [plan['notif_email']]},
-            token, method='PUT',
-        )
+        n_ok, n_resp = _set_notification_email(new_id, plan['notif_email'], token)
         if not n_ok:
             warnings.append(f"notification email update failed ({_full_error(n_resp)})")
 
