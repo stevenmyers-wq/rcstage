@@ -116,7 +116,10 @@ def update_blf():
     try:
         file = request.files['file']
         task_id = request.form.get('task_id')
-        additive = request.form.get('additive', 'false').lower() == 'true'
+        # Additive is the default behaviour (no UI toggle): add listed extensions
+        # to each user's existing lines, never replace/remove. An explicit
+        # additive=false can still request positional replacement via the API.
+        additive = request.form.get('additive', 'true').lower() == 'true'
         df = pd.read_excel(file, sheet_name=0)
         df.columns = df.columns.str.strip()
 
