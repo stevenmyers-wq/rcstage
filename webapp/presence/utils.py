@@ -112,6 +112,17 @@ class RCPresenceManager:
         records = response.get('records', []) if response else []
         return str(records[0].get('id')) if records else None
 
+    def extension_exists(self, extension_id):
+        """True if the given value is a real internal extension id in this
+        account. Used to reject sheet values that look like ids but don't
+        resolve (e.g. an extension *number* typed where an id is expected),
+        which RC otherwise rejects with CMN-102 and fails the whole PUT."""
+        resp = rc_api_call(
+            f"{self.base_path}/extension/{extension_id}",
+            method="GET", return_response=True,
+        )
+        return bool(resp is not None and getattr(resp, "ok", False))
+
     # ------------------------------------------------------------------
     # Presence settings + monitored lines (strict: surface every failure)
     # ------------------------------------------------------------------

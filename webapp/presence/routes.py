@@ -122,6 +122,7 @@ def update_blf():
         manager = RCPresenceManager()
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
+        valid_ids = {str(e.get('id')) for e in all_exts if e.get('id')}
 
         results = {"success": 0, "errors": []}
         cancelled = False
@@ -140,7 +141,7 @@ def update_blf():
                 if not t_id or t_id.lower() == 'nan': continue
 
                 try:
-                    _process_row(manager, df, row, t_id, ext_map, results)
+                    _process_row(manager, df, row, t_id, ext_map, valid_ids, results)
                 except RCPresenceError as e:
                     results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
                     logging.error(f"RC API Error during update for {t_id}: {e}")
@@ -162,7 +163,7 @@ def update_blf():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _process_row(manager, df, row, t_id, ext_map, results):
+def _process_row(manager, df, row, t_id, ext_map, valid_ids, results):
     """Apply presence toggles + monitored-line changes for a single target
     extension. Raises RCPresenceError if RingCentral rejects a write so the
     caller records a real failure instead of a false success."""
@@ -178,16 +179,31 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         manager.update_presence_settings(t_id, toggles)
         toggles_applied = True
 
+    def resolve(val_str):
+        """Resolve a sheet cell to a real internal extension id, or None if it
+        can't be resolved (so we skip + report it rather than sending a bogus
+        id that RC rejects with CMN-102, failing the entire PUT)."""
+        if val_str in ext_map:            # extension number -> id
+            return ext_map[val_str]
+        if val_str in valid_ids:          # already a known internal id
+            return val_str
+        looked = manager.get_extension_by_number(val_str)   # query by number
+        if looked:
+            return str(looked)
+        if manager.extension_exists(val_str):   # an id not in our page cache
+            return val_str
+        return None
+
     # A failed read must abort this row: the PUT is a full replacement, so
     # acting on an empty/partial list would wipe or corrupt the user's lines.
     live_resp = manager.get_monitored_lines(t_id)
     live_records = live_resp.get('records', [])
 
-    payload_records = []
+    payload_records = []      # each is {"extension": {"id": ...}}; ids assigned below
     seen_extensions = set()
+    unresolved = []
 
     for i, record in enumerate(live_records):
-        real_slot_id = str(record.get('id'))
         is_locked = record.get('notEditableOnHud', False)
         current_ext_id = str(record.get('extension', {}).get('id', ''))
 
@@ -196,17 +212,16 @@ def _process_row(manager, df, row, t_id, ext_map, results):
 
         # notEditableOnHud lines (the user's own presence on lines 1 & 2, plus
         # any system-managed slot such as a monitored Department) cannot be
-        # changed, but they MUST be re-sent verbatim in their positions — the
-        # PUT is a full-list replacement and dropping a locked slot is rejected.
+        # changed; re-send them verbatim so the full-list replacement keeps them.
         if is_locked:
-            if current_ext_id:
-                payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+            if current_ext_id and current_ext_id not in seen_extensions:
+                payload_records.append({"extension": {"id": current_ext_id}})
                 seen_extensions.add(current_ext_id)
             continue
 
         if pd.isna(val) or str(val).strip() == "":
             if current_ext_id and current_ext_id not in seen_extensions:
-                payload_records.append({"id": real_slot_id, "extension": {"id": current_ext_id}})
+                payload_records.append({"extension": {"id": current_ext_id}})
                 seen_extensions.add(current_ext_id)
             continue
 
@@ -215,14 +230,18 @@ def _process_row(manager, df, row, t_id, ext_map, results):
         if val_str.upper() == "CLEAR":
             continue
 
-        monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
+        monitored_id = resolve(val_str)
+        if not monitored_id:
+            unresolved.append(val_str)
+            # Keep the line's current extension rather than dropping it.
+            if current_ext_id and current_ext_id not in seen_extensions:
+                payload_records.append({"extension": {"id": current_ext_id}})
+                seen_extensions.add(current_ext_id)
+            continue
         if monitored_id in seen_extensions:
             continue
 
-        payload_records.append({
-            "id": real_slot_id,
-            "extension": {"id": monitored_id}
-        })
+        payload_records.append({"extension": {"id": monitored_id}})
         seen_extensions.add(monitored_id)
 
     for i in range(len(live_records), 100):
@@ -233,32 +252,27 @@ def _process_row(manager, df, row, t_id, ext_map, results):
             continue
 
         val_str = str(val).split('.')[0].strip()
-        monitored_id = ext_map.get(val_str) or manager.get_extension_by_number(val_str) or val_str
-
+        monitored_id = resolve(val_str)
+        if not monitored_id:
+            unresolved.append(val_str)
+            continue
         if monitored_id in seen_extensions:
             continue
 
-        payload_records.append({
-            "extension": {"id": monitored_id}
-        })
+        payload_records.append({"extension": {"id": monitored_id}})
         seen_extensions.add(monitored_id)
 
-    # Defensive: never send a record whose extension id (or slot id) is empty
-    # or a non-numeric placeholder like "None"/"nan". RC rejects these with a
-    # generic "InvalidParameter" and it corrupts the whole full-replacement PUT.
-    def _valid_id(v):
-        return bool(v) and str(v).strip().lower() not in ('', 'none', 'nan') and str(v).strip().isdigit()
+    # RC requires every record to carry a slot id, and a new line can't be sent
+    # without one. Assign contiguous 1-based ids by position: this matches the
+    # compacted id space RC returns from GET, and RC places these BLF/extension
+    # lines around any (API-invisible) speed-dial keys on the physical phone.
+    for idx, rec in enumerate(payload_records, start=1):
+        rec["id"] = str(idx)
 
-    cleaned_records = []
-    dropped = []
-    for p in payload_records:
-        ext_id = str(p.get('extension', {}).get('id', '')).strip()
-        slot_id = p.get('id')
-        if not _valid_id(ext_id) or (slot_id is not None and not _valid_id(slot_id)):
-            dropped.append(p)
-            continue
-        cleaned_records.append(p)
-    payload_records = cleaned_records
+    if unresolved:
+        results["errors"].append(
+            f"Ext {t_id}: skipped unresolved extension(s): {', '.join(unresolved)}"
+        )
 
     # Payload mirrors the full live list (locked lines re-sent verbatim), so
     # compare against the full live extension list to detect real changes.
@@ -266,20 +280,18 @@ def _process_row(manager, df, row, t_id, ext_map, results):
     payload_exts = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
 
     if current_exts != payload_exts:
-        sent = {"records": payload_records}
-        logging.info("Presence PUT ext=%s payload=%s", t_id, json.dumps(sent))
+        logging.info("Presence PUT ext=%s payload=%s", t_id, json.dumps(payload_records))
         try:
             manager.update_monitored_lines(t_id, payload_records)
             results["success"] += 1
         except RCPresenceError as e:
-            drop_note = f" | dropped {len(dropped)} invalid record(s)" if dropped else ""
             results["errors"].append(
-                f"Ext {t_id}: RC rejected ({e.status_code}): {e.body} | sent: {json.dumps(sent)}{drop_note}"
+                f"Ext {t_id}: RC rejected ({e.status_code}): {e.body} | sent: {json.dumps(payload_records)}"
             )
         return
     elif toggles_applied:
         results["success"] += 1
-    else:
+    elif not unresolved:
         results["errors"].append(f"Ext {t_id}: No changes detected.")
 
 
