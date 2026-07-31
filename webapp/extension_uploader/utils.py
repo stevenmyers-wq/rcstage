@@ -343,15 +343,37 @@ def create_extension(plan, token):
     if plan.get('department'):
         contact['department'] = plan['department']
 
-    payload = {
+    # `contact.firstName` and `contact.email` are the only contact fields the
+    # createExtension schema (ContactInfoCreationRequest) marks required; the
+    # site is optional and is the field most likely to trip an opaque 500.
+    base_payload = {
         'type': plan['api_type'],
         'extensionNumber': plan['ext'],
         'contact': contact,
     }
-    if plan.get('site_id'):
+    has_site = bool(plan.get('site_id'))
+    payload = dict(base_payload)
+    if has_site:
         payload['site'] = {'id': str(plan['site_id'])}
 
     ok, body, resp = _rc_write('/restapi/v1.0/account/~/extension', payload, token, method='POST')
+
+    # RingCentral can answer createExtension with a bare 500 when a site
+    # reference (e.g. {"id": "main-site"}) is sent to an account where the site
+    # can't be assigned this way -- single-site accounts, or a site the type
+    # can't live on. The number itself is fine here (it's in the type's
+    # free-number pool and validate passed), so retry once without the site;
+    # the extension then lands on the account's main site. The genuine "no
+    # numbers" condition (EXT-250) isn't a site problem, so don't retry it.
+    site_dropped = False
+    if not ok and has_site:
+        code, msg = _error_code_and_message(resp)
+        if not _looks_like_no_number(code, msg):
+            r_ok, r_body, r_resp = _rc_write(
+                '/restapi/v1.0/account/~/extension', base_payload, token, method='POST')
+            if r_ok:
+                ok, body, resp, site_dropped = True, r_body, r_resp, True
+
     if not ok:
         return False, f"Create failed — {_full_error(resp)}"
 
@@ -362,6 +384,8 @@ def create_extension(plan, token):
     # extension created, so it is reported as a partial success (a warning), not
     # a hard failure.
     warnings = []
+    if site_dropped:
+        warnings.append("created on the main site (RingCentral rejected the site assignment)")
 
     if plan.get('role_id') and new_id:
         r_ok, _r_body, r_resp = _rc_write(
