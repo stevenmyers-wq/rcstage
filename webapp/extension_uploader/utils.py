@@ -344,29 +344,33 @@ def create_extension(plan, token):
         contact['department'] = plan['department']
 
     # `contact.firstName` and `contact.email` are the only contact fields the
-    # createExtension schema (ContactInfoCreationRequest) marks required; the
-    # site is optional and is the field most likely to trip an opaque 500.
+    # createExtension schema (ContactInfoCreationRequest) marks required.
     base_payload = {
         'type': plan['api_type'],
         'extensionNumber': plan['ext'],
         'contact': contact,
     }
-    has_site = bool(plan.get('site_id'))
+    # The synthetic 'main-site' token is exactly what createExtension rejects
+    # with an opaque 500, and new extensions default to the main site when no
+    # site is sent -- so for main-site rows omit the site up front (this avoids
+    # a guaranteed-failing first POST). Real sites use a numeric id and are sent
+    # normally; the retry-without-site below is their safety net.
+    site_id = plan.get('site_id')
+    send_site = bool(site_id) and str(site_id) != 'main-site'
     payload = dict(base_payload)
-    if has_site:
-        payload['site'] = {'id': str(plan['site_id'])}
+    if send_site:
+        payload['site'] = {'id': str(site_id)}
 
     ok, body, resp = _rc_write('/restapi/v1.0/account/~/extension', payload, token, method='POST')
 
-    # RingCentral can answer createExtension with a bare 500 when a site
-    # reference (e.g. {"id": "main-site"}) is sent to an account where the site
-    # can't be assigned this way -- single-site accounts, or a site the type
-    # can't live on. The number itself is fine here (it's in the type's
-    # free-number pool and validate passed), so retry once without the site;
-    # the extension then lands on the account's main site. The genuine "no
-    # numbers" condition (EXT-250) isn't a site problem, so don't retry it.
+    # A real (numeric-id) site can still be rejected with a bare 500 -- e.g. a
+    # site the type can't live on. The number itself is fine (it's in the type's
+    # free-number pool and validate passed), so retry once without the site; the
+    # extension then lands on the account's main site, flagged with a warning.
+    # The genuine "no numbers" condition (EXT-250) isn't a site problem, so
+    # don't retry it.
     site_dropped = False
-    if not ok and has_site:
+    if not ok and send_site:
         code, msg = _error_code_and_message(resp)
         if not _looks_like_no_number(code, msg):
             r_ok, r_body, r_resp = _rc_write(
