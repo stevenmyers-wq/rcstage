@@ -353,6 +353,153 @@ def create_extension(plan, token):
 
 
 # ---------------------------------------------------------------------------
+# Preflight (review-time checks against the live account)
+# ---------------------------------------------------------------------------
+#
+# EXT-250 "There are no extension numbers available" is raised by createExtension
+# when the requested extension number isn't an assignable free number for that
+# type (empty pool, out-of-range, or reserved). These two Provisioning-API calls
+# surface that at review time instead of at Create:
+#   GET  extension/free-numbers?extensionType=<type>  -> is there ANY free number?
+#   POST extension/validate                            -> is THIS number creatable?
+# Both are public ReadAccounts/EditAccounts endpoints, so the tool's own token
+# can call them.
+
+# Sentinel so a cached "we couldn't determine capacity" (None) is distinct from
+# "not looked up yet".
+_UNSET = object()
+
+
+def _error_code_and_message(resp):
+    """(errorCode, message) from an RC error body, preserving RC's own values."""
+    if resp is None:
+        return None, 'No response from RingCentral'
+    try:
+        body = resp.json() or {}
+    except Exception:
+        body = {}
+    code = body.get('errorCode')
+    msg = body.get('message') or body.get('error')
+    errs = body.get('errors')
+    if isinstance(errs, list) and errs:
+        code = code or errs[0].get('errorCode')
+        msg = msg or errs[0].get('message')
+    if not msg:
+        msg = getattr(resp, 'text', '') or f"HTTP {getattr(resp, 'status_code', '?')}"
+    return code, str(msg)[:300]
+
+
+def _looks_like_no_number(code, msg):
+    """True if an RC error is the 'no available extension number' condition.
+
+    We match narrowly (by code/message) so unrelated validation quirks -- e.g.
+    the validate endpoint not recognising the 'Limited' type -- don't get
+    misreported as a capacity problem."""
+    c = (code or '').upper()
+    m = (msg or '').lower()
+    return (
+        c == 'EXT-250'
+        or 'no extension numbers available' in m
+        or ('extension number' in m and 'available' in m)
+    )
+
+
+def fetch_free_numbers(token, api_type, count=1):
+    """Available free extension numbers for a given extension type.
+
+    Returns a list (possibly empty) on success, or None if the endpoint could
+    not be queried (e.g. the type isn't supported by this endpoint, like
+    'Limited'), so the caller can degrade to 'unknown' rather than block."""
+    endpoint = (
+        f"/restapi/v1.0/account/~/extension/free-numbers"
+        f"?extensionType={api_type}&count={count}"
+    )
+    for _ in range(3):
+        resp = rc_api_call(endpoint, token=token, return_response=True)
+        code = getattr(resp, 'status_code', None)
+        if code == 429:
+            wait = int(resp.headers.get('Retry-After', 5)) + 1 if hasattr(resp, 'headers') else 5
+            time.sleep(wait)
+            continue
+        if resp is not None and getattr(resp, 'ok', False):
+            try:
+                body = resp.json() or {}
+            except Exception:
+                return None
+            nums = body.get('extensionNumbers')
+            return nums if isinstance(nums, list) else []
+        return None
+    return None
+
+
+def validate_new_extension(plan, token):
+    """Dry-run an extension via POST extension/validate (creates nothing).
+
+    Returns:
+      ('ok', None)           -- RingCentral accepts this extension
+      ('invalid', message)   -- rejected for a *number availability* reason
+                                (EXT-250 etc.) -- the thing we want to flag
+      ('unavailable', None)  -- couldn't validate, or the rejection was for an
+                                unrelated reason; caller should not block on it
+    """
+    contact = {'firstName': plan['first_name']}
+    if plan.get('last_name') and not plan['drop_last_name']:
+        contact['lastName'] = plan['last_name']
+    if plan.get('email'):
+        contact['email'] = plan['email']
+    if plan.get('department'):
+        contact['department'] = plan['department']
+    payload = {'type': plan['api_type'], 'extensionNumber': plan['ext'], 'contact': contact}
+    if plan.get('site_id'):
+        payload['site'] = {'id': str(plan['site_id'])}
+
+    for _ in range(3):
+        resp = rc_api_call('/restapi/v1.0/account/~/extension/validate', method='POST',
+                           json=payload, token=token, return_response=True)
+        code = getattr(resp, 'status_code', None)
+        if code == 429:
+            wait = int(resp.headers.get('Retry-After', 5)) + 1 if hasattr(resp, 'headers') else 5
+            time.sleep(wait)
+            continue
+        if resp is not None and getattr(resp, 'ok', False):
+            return 'ok', None
+        err_code, msg = _error_code_and_message(resp)
+        if _looks_like_no_number(err_code, msg):
+            return 'invalid', f"{err_code + ': ' if err_code else ''}{msg}"
+        return 'unavailable', None
+    return 'unavailable', None
+
+
+def preflight_row(plan, token, free_cache):
+    """Review-time check for one planned extension against the live account.
+
+    Returns (ok, message). ok=False means the row would be rejected on Create
+    (surfaced now instead). free_cache maps api_type -> free-number result and is
+    reused across rows so each type is polled at most once per batch."""
+    api_type = plan['api_type']
+    cap = free_cache.get(api_type, _UNSET)
+    if cap is _UNSET:
+        cap = fetch_free_numbers(token, api_type, count=1)
+        free_cache[api_type] = cap
+
+    # Definitive empty pool for this type -> EXT-250 is certain.
+    if cap == []:
+        return False, (
+            f"No available extension numbers for this type on the account "
+            f"(RingCentral EXT-250). Check the account's extension-number range/capacity."
+        )
+
+    # Pool has room (or is unknown): confirm THIS specific number is creatable.
+    state, vmsg = validate_new_extension(plan, token)
+    if state == 'invalid':
+        return False, (
+            f"RingCentral won't create extension {plan['ext']} — {vmsg}. "
+            f"Try a different extension number within the account's range."
+        )
+    return True, None
+
+
+# ---------------------------------------------------------------------------
 # Validate / apply batch (streamed NDJSON)
 # ---------------------------------------------------------------------------
 
@@ -396,6 +543,10 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
     # claim the same extension or email are flagged rather than silently racing.
     seen_ext = {}
     seen_email = {}
+
+    # Free-number availability per extension type, polled once per type and
+    # reused across rows during the review-time preflight.
+    free_cache = {}
 
     for i, row in enumerate(records):
         # Cooperative stop (apply only -- preview writes nothing).
@@ -528,7 +679,15 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
         detail = f" ({'; '.join(note)})" if note else ""
 
         if is_preview:
+            # Preflight against the live account so a number that RingCentral
+            # would reject (EXT-250 etc.) is flagged here, at review time, rather
+            # than only when Create is clicked.
+            ok, pf_msg = preflight_row(plan, token, free_cache)
+            if not ok:
+                yield progress("error", pf_msg)
+                continue
             yield progress("success", f"Will create {user_type} ext {ext}{detail}")
+            time.sleep(0.05)
             continue
 
         # Apply mode -- create the extension.
