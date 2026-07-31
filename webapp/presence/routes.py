@@ -128,7 +128,12 @@ def update_blf():
         results = {"success": 0, "errors": []}
         cancelled = False
 
-        target_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
+        target_id_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
+        target_num_col = next((c for c in df.columns if "target extension number" in c.lower()), None)
+
+        def _clean(v):
+            s = str(v).split('.')[0].strip()
+            return "" if s.lower() in ("", "nan", "none") else s
 
         try:
             for _, row in df.iterrows():
@@ -136,10 +141,17 @@ def update_blf():
                 if task_control.is_stopped(task_id):
                     cancelled = True
                     break
-                if not target_col: continue
 
-                t_id = str(row.get(target_col, "")).split('.')[0].strip()
-                if not t_id or t_id.lower() == 'nan': continue
+                # Prefer Target Extension ID, but fall back to resolving the
+                # Target Extension Number so a sheet with only the number works.
+                t_id = _clean(row.get(target_id_col)) if target_id_col else ""
+                if not t_id and target_num_col:
+                    t_num = _clean(row.get(target_num_col))
+                    if t_num:
+                        t_id = ext_map.get(t_num) or manager.get_extension_by_number(t_num) or ""
+                        if not t_id:
+                            results["errors"].append(f"Target ext {t_num}: not found in this account.")
+                if not t_id: continue
 
                 try:
                     _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=additive)
