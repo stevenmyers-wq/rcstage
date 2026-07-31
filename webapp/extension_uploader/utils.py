@@ -432,6 +432,27 @@ def fetch_free_numbers(token, api_type, count=1):
     return None
 
 
+def probe_free_numbers(token, api_type, count=20):
+    """Like fetch_free_numbers, but returns the raw outcome for diagnostics:
+    {'ok', 'status', 'numbers' (list|None), 'errorCode', 'error'}."""
+    endpoint = (
+        f"/restapi/v1.0/account/~/extension/free-numbers"
+        f"?extensionType={api_type}&count={count}"
+    )
+    resp = rc_api_call(endpoint, token=token, return_response=True)
+    status = getattr(resp, 'status_code', None)
+    if resp is not None and getattr(resp, 'ok', False):
+        try:
+            nums = (resp.json() or {}).get('extensionNumbers')
+        except Exception:
+            nums = None
+        return {'ok': True, 'status': status,
+                'numbers': nums if isinstance(nums, list) else [],
+                'errorCode': None, 'error': None}
+    code, msg = _error_code_and_message(resp)
+    return {'ok': False, 'status': status, 'numbers': None, 'errorCode': code, 'error': msg}
+
+
 def validate_new_extension(plan, token):
     """Dry-run an extension via POST extension/validate (creates nothing).
 

@@ -39,13 +39,16 @@ def diagnostics():
         types = []
         for label in utils.USER_TYPES:
             api_type = utils.USER_TYPE_MAP[label]
-            nums = utils.fetch_free_numbers(token, api_type, count=20)
+            p = utils.probe_free_numbers(token, api_type, count=20)
             types.append({
                 "userType": label,
                 "apiType": api_type,
-                "queryable": nums is not None,
-                "available": None if nums is None else len(nums),
-                "sample": (nums or [])[:20],
+                "queryable": p["ok"],
+                "available": None if not p["ok"] else len(p["numbers"]),
+                "sample": (p["numbers"] or [])[:20],
+                "status": p["status"],
+                "errorCode": p["errorCode"],
+                "error": None if p["ok"] else p["error"],
             })
 
         result = {"success": True, "limits": limits, "types": types}
@@ -64,17 +67,20 @@ def diagnostics():
                 'site_id': None,
             }
             state, msg = utils.validate_new_extension(plan, token)
-            # Fetch a large slice of the free pool to test membership of the
+            # Probe a large slice of the free pool to test membership of the
             # specific number. If the returned size is below the requested count
             # the list is complete and membership is definitive.
-            free = utils.fetch_free_numbers(token, api_type, count=1000)
+            p = utils.probe_free_numbers(token, api_type, count=1000)
+            free = p["numbers"]
             result["test"] = {
                 "ext": ext,
                 "userType": user_type,
                 "apiType": api_type,
                 "validate": state,
                 "message": msg,
-                "freePoolQueryable": free is not None,
+                "freePoolQueryable": p["ok"],
+                "freePoolStatus": p["status"],
+                "freePoolError": None if p["ok"] else (p["errorCode"] or p["error"]),
                 "freePoolSize": None if free is None else len(free),
                 "inFreePool": (free is not None) and (ext in free),
             }
