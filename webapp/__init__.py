@@ -158,4 +158,8 @@ def create_app():
         from .site_allocation import routes as site_allocation_routes
         app.register_blueprint(site_allocation_routes.site_allocation_bp)
 
+        # Extension Uploader routes
+        from .extension_uploader import routes as extension_uploader_routes
+        app.register_blueprint(extension_uploader_routes.extension_uploader_bp)
+
     return app
