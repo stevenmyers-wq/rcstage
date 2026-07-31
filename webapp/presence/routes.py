@@ -204,18 +204,21 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, results):
     unresolved = []
 
     for i, record in enumerate(live_records):
+        real_slot_id = str(record.get('id'))
         is_locked = record.get('notEditableOnHud', False)
         current_ext_id = str(record.get('extension', {}).get('id', ''))
 
         sheet_col = f"Line {i + 1} Extension"
         val = row.get(sheet_col) if sheet_col in df.columns else None
 
-        # notEditableOnHud lines (the user's own presence on lines 1 & 2, plus
-        # any system-managed slot such as a monitored Department) cannot be
-        # changed; re-send them verbatim so the full-list replacement keeps them.
+        # Reserved slots (the user's own presence on lines 1 & 2, plus any
+        # system-managed slot such as a monitored Department) cannot be changed.
+        # They MUST be re-sent verbatim AT THEIR EXACT slot id and must NOT be
+        # deduped: both self-lines carry the same extension but occupy two
+        # distinct reserved slots. Tag with _lid so id assignment keeps them.
         if is_locked:
-            if current_ext_id and current_ext_id not in seen_extensions:
-                payload_records.append({"extension": {"id": current_ext_id}})
+            if current_ext_id:
+                payload_records.append({"extension": {"id": current_ext_id}, "_lid": real_slot_id})
                 seen_extensions.add(current_ext_id)
             continue
 
@@ -262,12 +265,22 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, results):
         payload_records.append({"extension": {"id": monitored_id}})
         seen_extensions.add(monitored_id)
 
-    # RC requires every record to carry a slot id, and a new line can't be sent
-    # without one. Assign contiguous 1-based ids by position: this matches the
-    # compacted id space RC returns from GET, and RC places these BLF/extension
-    # lines around any (API-invisible) speed-dial keys on the physical phone.
-    for idx, rec in enumerate(payload_records, start=1):
-        rec["id"] = str(idx)
+    # Assign slot ids. Reserved (locked) records keep their EXACT id so RC never
+    # sees a reserved line "modified" (BLF-101); every other record takes the
+    # next free contiguous id that isn't a reserved one. RC requires an id on
+    # every record and rejects a non-self extension on a reserved slot.
+    reserved_ids = {int(r["_lid"]) for r in payload_records if r.get("_lid")}
+    next_free = 1
+    for rec in payload_records:
+        lid = rec.pop("_lid", None)
+        if lid is not None:
+            rec["id"] = str(lid)
+        else:
+            while next_free in reserved_ids:
+                next_free += 1
+            rec["id"] = str(next_free)
+            next_free += 1
+    payload_records.sort(key=lambda r: int(r["id"]))
 
     if unresolved:
         results["errors"].append(
