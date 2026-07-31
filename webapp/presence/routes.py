@@ -116,6 +116,7 @@ def update_blf():
     try:
         file = request.files['file']
         task_id = request.form.get('task_id')
+        additive = request.form.get('additive', 'false').lower() == 'true'
         df = pd.read_excel(file, sheet_name=0)
         df.columns = df.columns.str.strip()
 
@@ -141,7 +142,7 @@ def update_blf():
                 if not t_id or t_id.lower() == 'nan': continue
 
                 try:
-                    _process_row(manager, df, row, t_id, ext_map, valid_ids, results)
+                    _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=additive)
                 except RCPresenceError as e:
                     results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
                     logging.error(f"RC API Error during update for {t_id}: {e}")
@@ -163,10 +164,16 @@ def update_blf():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _process_row(manager, df, row, t_id, ext_map, valid_ids, results):
+def _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=False):
     """Apply presence toggles + monitored-line changes for a single target
     extension. Raises RCPresenceError if RingCentral rejects a write so the
-    caller records a real failure instead of a false success."""
+    caller records a real failure instead of a false success.
+
+    additive=True: keep every current line (reserved + monitored) and only add
+    extensions listed in the sheet that aren't already monitored — never replace
+    or remove. This is position-agnostic: it trusts each live record's own
+    notEditableOnHud flag, so it is safe regardless of which/how many slots are
+    reserved (which cannot be predicted up front)."""
     toggles = {}
     for key, field in [("Ring on Monitored Call", "ringOnMonitoredCall"),
                        ("Enable Me to Pickup a Monitored Line", "pickUpCallsOnHold"),
@@ -203,67 +210,93 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, results):
     seen_extensions = set()
     unresolved = []
 
-    for i, record in enumerate(live_records):
-        real_slot_id = str(record.get('id'))
-        is_locked = record.get('notEditableOnHud', False)
+    def keep_line(record):
+        """Re-send an existing line verbatim. Reserved (notEditableOnHud) lines
+        keep their EXACT slot id via _lid so RC never sees them 'modified'."""
         current_ext_id = str(record.get('extension', {}).get('id', ''))
+        if not current_ext_id:
+            return
+        if record.get('notEditableOnHud', False):
+            payload_records.append({"extension": {"id": current_ext_id}, "_lid": str(record.get('id'))})
+            seen_extensions.add(current_ext_id)
+        elif current_ext_id not in seen_extensions:
+            payload_records.append({"extension": {"id": current_ext_id}})
+            seen_extensions.add(current_ext_id)
 
-        sheet_col = f"Line {i + 1} Extension"
-        val = row.get(sheet_col) if sheet_col in df.columns else None
+    if additive:
+        # Additive: preserve every current line (reserved + monitored), then add
+        # any sheet extension not already monitored. Position-agnostic — we never
+        # assume which slots are locked; we trust the live notEditableOnHud flags.
+        for record in live_records:
+            keep_line(record)
 
-        # Reserved slots (the user's own presence on lines 1 & 2, plus any
-        # system-managed slot such as a monitored Department) cannot be changed.
-        # They MUST be re-sent verbatim AT THEIR EXACT slot id and must NOT be
-        # deduped: both self-lines carry the same extension but occupy two
-        # distinct reserved slots. Tag with _lid so id assignment keeps them.
-        if is_locked:
-            if current_ext_id:
-                payload_records.append({"extension": {"id": current_ext_id}, "_lid": real_slot_id})
-                seen_extensions.add(current_ext_id)
-            continue
+        ext_cols = [c for c in df.columns
+                    if c.strip().lower().startswith("line ") and "extension" in c.strip().lower()]
+        for col in ext_cols:
+            val = row.get(col)
+            if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
+                continue
+            val_str = str(val).split('.')[0].strip()
+            monitored_id = resolve(val_str)
+            if not monitored_id:
+                unresolved.append(val_str)
+                continue
+            if monitored_id in seen_extensions:
+                continue
+            payload_records.append({"extension": {"id": monitored_id}})
+            seen_extensions.add(monitored_id)
+    else:
+        # Positional replacement: sheet "Line N" maps to slot N. Reserved slots
+        # are re-sent verbatim (sheet value ignored); editable slots take the
+        # sheet value or keep current when blank; CLEAR removes; extra lines add.
+        for i, record in enumerate(live_records):
+            is_locked = record.get('notEditableOnHud', False)
+            current_ext_id = str(record.get('extension', {}).get('id', ''))
 
-        if pd.isna(val) or str(val).strip() == "":
-            if current_ext_id and current_ext_id not in seen_extensions:
-                payload_records.append({"extension": {"id": current_ext_id}})
-                seen_extensions.add(current_ext_id)
-            continue
+            sheet_col = f"Line {i + 1} Extension"
+            val = row.get(sheet_col) if sheet_col in df.columns else None
 
-        val_str = str(val).split('.')[0].strip()
+            if is_locked:
+                keep_line(record)
+                continue
 
-        if val_str.upper() == "CLEAR":
-            continue
+            if pd.isna(val) or str(val).strip() == "":
+                keep_line(record)
+                continue
 
-        monitored_id = resolve(val_str)
-        if not monitored_id:
-            unresolved.append(val_str)
-            # Keep the line's current extension rather than dropping it.
-            if current_ext_id and current_ext_id not in seen_extensions:
-                payload_records.append({"extension": {"id": current_ext_id}})
-                seen_extensions.add(current_ext_id)
-            continue
-        if monitored_id in seen_extensions:
-            continue
+            val_str = str(val).split('.')[0].strip()
 
-        payload_records.append({"extension": {"id": monitored_id}})
-        seen_extensions.add(monitored_id)
+            if val_str.upper() == "CLEAR":
+                continue
 
-    for i in range(len(live_records), 100):
-        sheet_col = f"Line {i + 1} Extension"
-        val = row.get(sheet_col) if sheet_col in df.columns else None
+            monitored_id = resolve(val_str)
+            if not monitored_id:
+                unresolved.append(val_str)
+                keep_line(record)   # keep current rather than dropping on a bad cell
+                continue
+            if monitored_id in seen_extensions:
+                continue
 
-        if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
-            continue
+            payload_records.append({"extension": {"id": monitored_id}})
+            seen_extensions.add(monitored_id)
 
-        val_str = str(val).split('.')[0].strip()
-        monitored_id = resolve(val_str)
-        if not monitored_id:
-            unresolved.append(val_str)
-            continue
-        if monitored_id in seen_extensions:
-            continue
+        for i in range(len(live_records), 100):
+            sheet_col = f"Line {i + 1} Extension"
+            val = row.get(sheet_col) if sheet_col in df.columns else None
 
-        payload_records.append({"extension": {"id": monitored_id}})
-        seen_extensions.add(monitored_id)
+            if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
+                continue
+
+            val_str = str(val).split('.')[0].strip()
+            monitored_id = resolve(val_str)
+            if not monitored_id:
+                unresolved.append(val_str)
+                continue
+            if monitored_id in seen_extensions:
+                continue
+
+            payload_records.append({"extension": {"id": monitored_id}})
+            seen_extensions.add(monitored_id)
 
     # Assign slot ids. Reserved (locked) records keep their EXACT id so RC never
     # sees a reserved line "modified" (BLF-101); every other record takes the

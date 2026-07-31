@@ -33,6 +33,10 @@
                 <label id="upload-btn-label" class="w-full btn-secondary !text-purple-600 dark:!text-purple-400 hover:!bg-purple-50 dark:hover:!bg-purple-900/20 border-purple-200 dark:border-purple-800 cursor-pointer text-center mt-auto block">
                     Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">
                 </label>
+                <label class="flex items-center justify-center gap-2 mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400 cursor-pointer" title="Keep all existing lines (reserved + monitored) and only add extensions from the sheet that aren't already monitored. Never replaces or removes.">
+                    <input type="checkbox" id="additive-mode" checked class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                    Additive (add only, keep existing)
+                </label>
             </div>
         </div>
 
@@ -319,7 +323,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('excel-file').onchange = async (e) => {
         presenceTaskId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const fd = new FormData(); fd.append('file', e.target.files[0]); fd.append('task_id', presenceTaskId);
+        const additive = document.getElementById('additive-mode');
+        const fd = new FormData();
+        fd.append('file', e.target.files[0]);
+        fd.append('task_id', presenceTaskId);
+        fd.append('additive', additive && additive.checked ? 'true' : 'false');
         const status = document.getElementById('upload-status');
         const label = document.getElementById('upload-btn-label');
         label.innerText = "Updating...";
