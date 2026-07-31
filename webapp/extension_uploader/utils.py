@@ -31,9 +31,12 @@ USER_TYPES = ['User', 'Virtual User', 'Message Only', 'Announcement Only', 'Limi
 FIRST_NAME_ONLY_TYPES = {'Message Only', 'Announcement Only', 'Limited Extension'}
 
 # The spreadsheet column order (also the sheet header row).
+# 'Email' is the extension's contact email (set at create time). 'Notification
+# Email' is the address that receives voicemail/missed-call notifications and can
+# differ from the contact email; it is applied in a second pass after create.
 TEMPLATE_HEADERS = [
     'Site Name', 'Extension', 'First Name', 'Last Name',
-    'Email', 'User Type', 'Department', 'Role',
+    'Email', 'User Type', 'Department', 'Role', 'Notification Email',
 ]
 
 TEMPLATE_SHEET = 'Extension Upload'
@@ -226,7 +229,7 @@ def generate_template(token):
         role_dv.add(f"H2:H{last}")
 
     # Column widths for readability.
-    widths = {'A': 22, 'B': 12, 'C': 16, 'D': 16, 'E': 30, 'F': 20, 'G': 18, 'H': 22}
+    widths = {'A': 22, 'B': 12, 'C': 16, 'D': 16, 'E': 30, 'F': 20, 'G': 18, 'H': 22, 'I': 30}
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
     ref.column_dimensions['A'].width = 20
@@ -297,7 +300,7 @@ def create_extension(plan, token):
     """Creates one extension from a validated plan dict, then assigns its role if
     one was resolved. Returns (ok, message)."""
     contact = {'firstName': plan['first_name']}
-    if plan.get('last_name') and not plan['first_name_only']:
+    if plan.get('last_name') and not plan['drop_last_name']:
         contact['lastName'] = plan['last_name']
     if plan.get('email'):
         contact['email'] = plan['email']
@@ -318,9 +321,12 @@ def create_extension(plan, token):
 
     new_id = (body or {}).get('id')
 
-    # Assign the role in a second call (RC does not accept a role on the create
-    # payload). A failed role assignment is reported but the extension still
-    # exists, so it is a partial success, not a hard failure.
+    # The role and the notification email cannot be set on the create payload, so
+    # they are applied in follow-up passes. A failure in either leaves the
+    # extension created, so it is reported as a partial success (a warning), not
+    # a hard failure.
+    warnings = []
+
     if plan.get('role_id') and new_id:
         r_ok, _r_body, r_resp = _rc_write(
             f'/restapi/v1.0/account/~/extension/{new_id}/assigned-role',
@@ -328,8 +334,21 @@ def create_extension(plan, token):
             token, method='PUT',
         )
         if not r_ok:
-            return True, f"Created, but role assignment failed — {_error_message(r_resp)}"
+            warnings.append(f"role assignment failed ({_error_message(r_resp)})")
 
+    # Second pass: set the notification email (voicemail / missed-call notices).
+    # This is independent of the contact email set at create time and may differ.
+    if plan.get('notif_email') and new_id:
+        n_ok, _n_body, n_resp = _rc_write(
+            f'/restapi/v1.0/account/~/extension/{new_id}/notification-settings',
+            {'emailAddresses': [plan['notif_email']]},
+            token, method='PUT',
+        )
+        if not n_ok:
+            warnings.append(f"notification email update failed ({_error_message(n_resp)})")
+
+    if warnings:
+        return True, 'Created, but ' + '; '.join(warnings)
     return True, 'Created'
 
 
@@ -394,8 +413,11 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
         user_type = _clean(row.get('User Type', ''))
         department = _clean(row.get('Department', ''))
         role_name = _clean(row.get('Role', ''))
+        notif_email = _clean(row.get('Notification Email', ''))
 
-        first_name_only = user_type in FIRST_NAME_ONLY_TYPES
+        # These types are single-name extensions: the Last Name column is
+        # ignored. Email is still used for every type (e.g. voicemail notices).
+        drop_last = user_type in FIRST_NAME_ONLY_TYPES
 
         def progress(status, message):
             return {
@@ -405,8 +427,9 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
                 "result": {
                     "row": i + 2,  # 1-based sheet row (header is row 1)
                     "ext": ext or "N/A",
-                    "name": (first_name if first_name_only else f"{first_name} {last_name}").strip() or "—",
-                    "email": "" if first_name_only else email,
+                    "name": (first_name if drop_last else f"{first_name} {last_name}").strip() or "—",
+                    "email": email,
+                    "notif_email": notif_email,
                     "type": user_type or "—",
                     "site": site_name,
                     "role": role_name,
@@ -417,7 +440,7 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
             }
 
         # Fully blank row -> skip silently.
-        if not any([site_name, ext, first_name, last_name, email, user_type, department, role_name]):
+        if not any([site_name, ext, first_name, last_name, email, user_type, department, role_name, notif_email]):
             yield progress("info", "Skipped empty row")
             continue
 
@@ -435,8 +458,8 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
             yield progress("error", "Missing First Name")
             continue
         # Full users need an email; single-name types (message/announce/limited)
-        # do not use one.
-        if not first_name_only and not email:
+        # may have one but don't require it.
+        if not drop_last and not email:
             yield progress("error", "Missing Email")
             continue
 
@@ -448,9 +471,9 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
             yield progress("duplicate", f"Extension {ext} appears more than once in this file (row {seen_ext[ext]})")
             continue
 
-        # --- Duplicate email (account or within-file), full users only ---
+        # --- Duplicate email (account or within-file), whenever one is given ---
         email_l = email.lower()
-        if not first_name_only and email_l:
+        if email_l:
             if email_l in existing_emails:
                 yield progress("duplicate", f"Email {email} already in use on this account ({existing_emails[email_l]})")
                 continue
@@ -476,20 +499,21 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
 
         # Row is valid -- reserve its extension / email so later rows collide.
         seen_ext[ext] = i + 2
-        if not first_name_only and email_l:
+        if email_l:
             seen_email[email_l] = i + 2
 
         plan = {
             'ext': ext,
             'first_name': first_name,
             'last_name': last_name,
-            'first_name_only': first_name_only,
-            'email': '' if first_name_only else email,
+            'drop_last_name': drop_last,
+            'email': email,
             'department': department,
             'user_type': user_type,
             'api_type': USER_TYPE_MAP[user_type],
             'site_id': site_id,
             'role_id': role_id,
+            'notif_email': notif_email,
         }
 
         note = []
@@ -497,7 +521,9 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
             note.append(f"site → {site_name}")
         if role_id:
             note.append(f"role → {role_name}")
-        if first_name_only and last_name:
+        if notif_email:
+            note.append(f"notification → {notif_email}")
+        if drop_last and last_name:
             note.append("last name ignored for this type")
         detail = f" ({'; '.join(note)})" if note else ""
 

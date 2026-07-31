@@ -2,31 +2,7 @@
 
     <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <h2 class="text-heading mb-1">Extension Uploader</h2>
-        <p class="text-subheading">Bulk-create extensions from a simple template — <span class="font-semibold">Site Name, Extension, First Name, Last Name, Email, User Type, Department, Role</span>. Site and Role dropdowns are polled from the connected account. Nothing is created until you review the proposed changes; any email or extension already in use is flagged first.</p>
-    </div>
-
-    <!-- Reference: valid User Types / Sites / Roles -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 w-full">
-        <div class="card w-full">
-            <div class="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">
-                <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">User Types</h3>
-            </div>
-            <div id="eu-types-list" class="flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400"></div>
-        </div>
-        <div class="card w-full">
-            <div class="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">
-                <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">Valid Sites</h3>
-                <span id="eu-sites-badge" class="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1 rounded-full text-xs font-bold shadow-sm">Loading…</span>
-            </div>
-            <div id="eu-sites-list" class="flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400">Fetching account sites…</div>
-        </div>
-        <div class="card w-full">
-            <div class="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">
-                <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">Valid Roles</h3>
-                <span id="eu-roles-badge" class="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1 rounded-full text-xs font-bold shadow-sm">Loading…</span>
-            </div>
-            <div id="eu-roles-list" class="flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400">Fetching account roles…</div>
-        </div>
+        <p class="text-subheading">Bulk-create extensions from a simple template — <span class="font-semibold">Site Name, Extension, First Name, Last Name, Email, User Type, Department, Role, Notification Email</span>. Site and Role dropdowns are polled from the connected account. <span class="font-semibold">Email</span> is the extension's contact email; <span class="font-semibold">Notification Email</span> (optional) is where voicemail/missed-call notices go, can differ, and is applied right after the extension is created. Nothing is created until you review the proposed changes; any email or extension already in use is flagged first.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
@@ -88,6 +64,7 @@
                         <th class="py-2 pr-4">Ext</th>
                         <th class="py-2 pr-4">Name</th>
                         <th class="py-2 pr-4">Email</th>
+                        <th class="py-2 pr-4">Notif. Email</th>
                         <th class="py-2 pr-4">Type</th>
                         <th class="py-2 pr-4">Site</th>
                         <th class="py-2 pr-4">Role</th>
@@ -123,7 +100,6 @@
     let euTaskId = null;
 
     document.addEventListener('DOMContentLoaded', () => {
-        loadEuReference();
         UCResults.attachButton(
             document.getElementById('eu-results-download'),
             () => euResultRows, 'Extension_Uploader_Results', 'Results'
@@ -155,39 +131,6 @@
         entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
         box.appendChild(entry);
         box.scrollTop = box.scrollHeight;
-    }
-
-    function renderChips(listEl, badgeEl, names, emptyMsg) {
-        listEl.innerHTML = '';
-        (names || []).forEach(name => {
-            const chip = document.createElement('span');
-            chip.className = 'px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium';
-            chip.innerText = name;
-            listEl.appendChild(chip);
-        });
-        if (!names || !names.length) listEl.innerText = emptyMsg;
-        if (badgeEl) {
-            badgeEl.innerText = `${(names || []).length}`;
-            badgeEl.className = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 px-3 py-1 rounded-full text-[10px] uppercase tracking-wide font-bold shadow-sm';
-        }
-    }
-
-    async function loadEuReference() {
-        try {
-            const res = await fetch('/api/extension_uploader/reference');
-            const data = await res.json();
-            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load reference data');
-            renderChips(document.getElementById('eu-types-list'), null, data.user_types, 'None');
-            renderChips(document.getElementById('eu-sites-list'), document.getElementById('eu-sites-badge'), data.sites, 'No sites found on this account.');
-            renderChips(document.getElementById('eu-roles-list'), document.getElementById('eu-roles-badge'), data.roles, 'No roles found on this account.');
-        } catch (e) {
-            ['eu-sites-badge', 'eu-roles-badge'].forEach(id => {
-                const b = document.getElementById(id);
-                if (b) { b.innerText = 'Error'; b.className = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 rounded-full text-[10px] uppercase tracking-wide font-bold shadow-sm'; }
-            });
-            document.getElementById('eu-sites-list').innerText = 'Could not load — bridge the connection and reopen this tab.';
-            document.getElementById('eu-roles-list').innerText = 'Could not load — bridge the connection and reopen this tab.';
-        }
     }
 
     window.downloadExtTemplate = async function () {
@@ -324,7 +267,6 @@
                 applyBtn.disabled = true;
                 euFile = null;
                 document.getElementById('euFileName').innerText = '';
-                loadEuReference();
             }
 
             euResultRows = collectResultRows(tableBody);
@@ -361,6 +303,7 @@
             <td class="py-2 pr-4 font-mono text-slate-700 dark:text-slate-300">${escapeHtml(r.ext)}</td>
             <td class="py-2 pr-4 text-slate-700 dark:text-slate-200">${escapeHtml(r.name)}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.email || '—')}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.notif_email || '—')}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.type)}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.site || '—')}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.role || '—')}</td>
@@ -378,10 +321,11 @@
                 Extension: c[0].innerText,
                 Name: c[1].innerText,
                 Email: c[2].innerText,
-                'User Type': c[3].innerText,
-                Site: c[4].innerText,
-                Role: c[5].innerText,
-                Status: c[6].innerText,
+                'Notification Email': c[3].innerText,
+                'User Type': c[4].innerText,
+                Site: c[5].innerText,
+                Role: c[6].innerText,
+                Status: c[7].innerText,
             };
         });
     }

@@ -20,27 +20,6 @@ def _token():
     return session.get('sm_isolated_token') or session.get('rc_access_token')
 
 
-@extension_uploader_bp.route('/reference', methods=['GET'])
-@require_rc_token
-def get_reference():
-    """Returns the Site and Role lists polled from the connected account, for the
-    on-screen reference chips."""
-    token = _token()
-    try:
-        sites = utils.fetch_sites(token)
-        roles = utils.fetch_roles(token)
-        site_names = sorted({(s.get('name') or '').strip() for s in sites if s.get('name')})
-        role_names = sorted({(r.get('name') or '').strip() for r in roles if r.get('name')})
-        return jsonify({
-            "success": True,
-            "sites": site_names,
-            "roles": role_names,
-            "user_types": utils.USER_TYPES,
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
 @extension_uploader_bp.route('/template', methods=['GET'])
 @require_rc_token
 @track_usage('Extension Uploader - Template')
