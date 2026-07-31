@@ -180,6 +180,13 @@
                 + (L.siteCodeLength != null ? ` · site-code length <span class="font-mono">${escapeHtml(L.siteCodeLength)}</span>` : '')
                 + `</div>`;
         }
+        if (Array.isArray(data.sites)) {
+            html += `<div class="mb-2"><span class="font-semibold">Sites (${data.sites.length}):</span> `
+                + (data.sites.length
+                    ? data.sites.map(s => `<span class="font-mono text-xs">${escapeHtml(s.name || '—')} = ${escapeHtml(s.id ?? '?')}${s.code ? ' · code ' + escapeHtml(s.code) : ''}${s.extensionNumber ? ' · ext ' + escapeHtml(s.extensionNumber) : ''}</span>`).join('&nbsp; | &nbsp;')
+                    : `<span class="text-amber-600 dark:text-amber-400 text-xs">/sites returned none — "Main Site" resolves to the synthetic 'main-site' token</span>`)
+                + `</div>`;
+        }
         if (Array.isArray(data.types)) {
             html += `<div class="overflow-x-auto"><table class="min-w-full text-sm mb-1">`
                 + `<thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200 dark:border-slate-700">`

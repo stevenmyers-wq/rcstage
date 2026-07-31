@@ -51,7 +51,8 @@ def diagnostics():
                 "error": None if p["ok"] else p["error"],
             })
 
-        result = {"success": True, "limits": limits, "types": types}
+        sites = utils.probe_sites(token)
+        result = {"success": True, "limits": limits, "types": types, "sites": sites}
 
         ext = (request.args.get('ext') or '').strip()
         user_type = (request.args.get('userType') or '').strip()

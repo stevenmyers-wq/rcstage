@@ -551,6 +551,26 @@ def validate_new_extension(plan, token):
     return 'unavailable', None
 
 
+def probe_sites(token):
+    """Raw account sites for diagnostics: the actual GET /sites records, so we
+    can see the real site ids / names / codes. On a multi-site account
+    createExtension needs a site, and the number may be scoped to a specific
+    site's code range -- this surfaces which sites exist and whether the account
+    even returns a main site with a real id (vs only the synthetic 'main-site'
+    token the uploader falls back to)."""
+    resp = rc_api_call('/restapi/v1.0/account/~/sites?perPage=1000', token=token, raise_error=False)
+    records = resp.get('records') if isinstance(resp, dict) else None
+    out = []
+    for s in (records or []):
+        out.append({
+            'id': s.get('id'),
+            'name': s.get('name'),
+            'code': s.get('code'),
+            'extensionNumber': s.get('extensionNumber'),
+        })
+    return out
+
+
 def fetch_account_limits(token):
     """Returns the account's extension-number limits (maxExtensionNumberLength,
     siteCodeLength, shortExtensionNumberLength, ...), or {} if unavailable."""
