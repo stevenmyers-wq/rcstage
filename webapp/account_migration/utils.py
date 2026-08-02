@@ -176,7 +176,10 @@ def run_account_export(task_id, unbind_devices=False, token=None):
     templates = fetch_all_pages('/restapi/v1.0/account/~/templates', token, task_id)
     custom_roles = fetch_all_pages('/restapi/v1.0/account/~/custom-roles', token, task_id)
     call_recording = safe_rc_api_call('/restapi/v1.0/account/~/call-recording', task_id=task_id, method='GET', token=token, raise_error=False)
-    
+    company_business_hours = safe_rc_api_call('/restapi/v1.0/account/~/business-hours', task_id=task_id, method='GET', token=token, raise_error=False)
+    business_address = safe_rc_api_call('/restapi/v1.0/account/~/business-address', task_id=task_id, method='GET', token=token, raise_error=False)
+    company_answering_rules = fetch_all_pages('/restapi/v1.0/account/~/answering-rule?view=Detailed', token, task_id)
+
     update_progress(task_id, 8, 100, "Fetching Paging & Park Locations...")
     paging_groups = fetch_all_pages('/restapi/v1.0/account/~/paging-only-groups', token, task_id)
     park_locations = fetch_all_pages('/restapi/v1.0/account/~/park-locations', token, task_id)
@@ -191,6 +194,9 @@ def run_account_export(task_id, unbind_devices=False, token=None):
         "custom_roles": custom_roles,
         "templates": templates,
         "call_recording": call_recording,
+        "company_business_hours": company_business_hours,
+        "business_address": business_address,
+        "company_answering_rules": company_answering_rules,
         "paging_groups": paging_groups,
         "park_locations": park_locations,
         "phone_numbers": phone_numbers,
@@ -224,6 +230,14 @@ def run_account_export(task_id, unbind_devices=False, token=None):
                 ext_details["business_hours"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours', task_id=task_id, method='GET', token=token, raise_error=False)
                 ext_details["forwarding_numbers"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/forwarding-number', token, task_id)
                 ext_details["caller_id"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-id', task_id=task_id, method='GET', token=token, raise_error=False)
+                ext_details["notification_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings', task_id=task_id, method='GET', token=token, raise_error=False)
+                ext_details["caller_blocking"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-blocking', task_id=task_id, method='GET', token=token, raise_error=False)
+                ext_details["caller_blocking_numbers"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-blocking/phone-numbers', token, task_id)
+
+                # User-only surfaces: BLF/monitored lines and the assigned role.
+                if ext_type == 'User':
+                    ext_details["presence_line"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/presence/line', token, task_id)
+                    ext_details["assigned_role"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/assigned-role', task_id=task_id, method='GET', token=token, raise_error=False)
                 
                 rules_resp = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed', task_id=task_id, method='GET', token=token, raise_error=False)
                 answering_rules = rules_resp.get('records', []) if rules_resp else []
@@ -332,6 +346,38 @@ def run_account_export(task_id, unbind_devices=False, token=None):
     zip_buffer.seek(0)
     return zip_buffer
 
+# --- IMPORT HELPERS ---
+
+# Server-assigned / account-scoped fields that must never be POSTed/PUT back onto
+# a different tenant. Stripped from every round-tripped object before it is sent.
+_READONLY_KEYS = ('id', 'uri', 'extensionNumber', 'status', 'creationTime',
+                  'lastModifiedTime', 'serviceFeatures', 'permissions', 'account')
+
+# Default answering-rule identifiers are constant strings across every account,
+# so they pass through a migration unchanged; only Custom rule ids are account
+# -specific and need remapping.
+_DEFAULT_RULE_IDS = ('business-hours-rule', 'after-hours-rule')
+
+
+def _clean(obj, drop=_READONLY_KEYS):
+    """Return a shallow copy of a dict with server-assigned keys removed, so the
+    captured object can be re-created on the destination tenant."""
+    if not isinstance(obj, dict):
+        return {}
+    return {k: v for k, v in obj.items() if k not in drop and v is not None}
+
+
+def _mapped_ref(ref, mapping):
+    """Remap a {'id': old} reference through mapping. Returns {'id': new} if the
+    id is known on the destination, else None so the caller can drop it."""
+    if not isinstance(ref, dict):
+        return None
+    old = str(ref.get('id'))
+    if old in mapping:
+        return {"id": mapping[old]}
+    return None
+
+
 # --- IMPORT LOGIC ---
 def run_account_import(task_id, zip_bytes, token=None):
     try:
@@ -340,23 +386,47 @@ def run_account_import(task_id, zip_bytes, token=None):
             if "config.json" not in zip_ref.namelist():
                 update_progress(task_id, 0, 100, "Invalid ZIP: Missing config.json", status='error')
                 return
-                
+
             config = json.loads(zip_ref.read("config.json"))
             audio_map = config.get("custom_audio_map", [])
-            
+            detailed_exts = config.get("detailed_extensions", {})
+
             old_to_new_sites = {}
             old_to_new_cost_centers = {}
+            old_to_new_roles = {}
             old_to_new_exts = {}
+            # (old_ext_id, old_rule_id) -> new_rule_id, so migrated custom greetings
+            # attach to the rule that actually exists on the destination.
+            old_to_new_rules = {}
 
-            # Pass 0: Account Level Settings & Cost Centers
-            update_progress(task_id, 2, 100, "Applying Account Configs & Cost Centers...")
+            # ============================================================
+            # Pass 0: Account-level settings
+            # ============================================================
+            update_progress(task_id, 2, 100, "Applying account-level settings...")
             if config.get("call_recording"):
                 try:
-                    cr_payload = {k: v for k, v in config["call_recording"].items() if k not in ['id', 'uri']}
-                    safe_rc_api_call('/restapi/v1.0/account/~/call-recording', task_id=task_id, method='PUT', json_payload=cr_payload, token=token, raise_error=False)
-                except Exception:
-                    pass
+                    safe_rc_api_call('/restapi/v1.0/account/~/call-recording', task_id=task_id, method='PUT', json_payload=_clean(config["call_recording"]), token=token, raise_error=False)
+                    add_result(task_id, 'Account', 'Call recording settings', 'Applied')
+                except Exception as e:
+                    add_result(task_id, 'Account', 'Call recording settings', 'Failed', str(e))
 
+            if config.get("company_business_hours", {}).get("schedule"):
+                try:
+                    safe_rc_api_call('/restapi/v1.0/account/~/business-hours', task_id=task_id, method='PUT', json_payload={"schedule": config["company_business_hours"]["schedule"]}, token=token, raise_error=False)
+                    add_result(task_id, 'Account', 'Company business hours', 'Applied')
+                except Exception as e:
+                    add_result(task_id, 'Account', 'Company business hours', 'Failed', str(e))
+
+            if config.get("business_address", {}).get("business"):
+                try:
+                    safe_rc_api_call('/restapi/v1.0/account/~/business-address', task_id=task_id, method='PUT', json_payload=_clean(config["business_address"]), token=token, raise_error=False)
+                    add_result(task_id, 'Account', 'Business address', 'Applied')
+                except Exception as e:
+                    add_result(task_id, 'Account', 'Business address', 'Failed', str(e))
+
+            # ============================================================
+            # Pass 1: Cost centers
+            # ============================================================
             for cc in config.get("cost_centers", []):
                 if _stopped_and_marked(task_id):
                     return
@@ -368,8 +438,25 @@ def run_account_import(task_id, zip_bytes, token=None):
                 except Exception as e:
                     add_result(task_id, 'Cost Center', cc.get('name', ''), 'Failed', str(e))
 
-            # Pass 1: Sites
-            update_progress(task_id, 10, 100, "Recreating Sites...")
+            # ============================================================
+            # Pass 2: Custom roles
+            # ============================================================
+            update_progress(task_id, 6, 100, "Recreating custom roles...")
+            for role in config.get("custom_roles", []):
+                if _stopped_and_marked(task_id):
+                    return
+                try:
+                    payload = _clean(role, drop=('id', 'uri', 'lastUpdated', 'default', 'assignable'))
+                    new_role = safe_rc_api_call('/restapi/v1.0/account/~/custom-roles', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
+                    old_to_new_roles[str(role['id'])] = str(new_role['id'])
+                    add_result(task_id, 'Custom Role', role.get('displayName', role.get('id', '')), 'Created')
+                except Exception as e:
+                    add_result(task_id, 'Custom Role', role.get('displayName', role.get('id', '')), 'Failed', str(e))
+
+            # ============================================================
+            # Pass 3: Sites
+            # ============================================================
+            update_progress(task_id, 10, 100, "Recreating sites...")
             for site in config.get("sites", []):
                 if _stopped_and_marked(task_id):
                     return
@@ -378,27 +465,37 @@ def run_account_import(task_id, zip_bytes, token=None):
                     continue
                 try:
                     payload = {"name": site['name'], "extensionNumber": site.get('extensionNumber')}
+                    if site.get('businessHours', {}).get('schedule'):
+                        payload['businessHours'] = {"schedule": site['businessHours']['schedule']}
+                    if site.get('regionalSettings'):
+                        payload['regionalSettings'] = site['regionalSettings']
                     new_site = safe_rc_api_call('/restapi/v1.0/account/~/sites', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
                     old_to_new_sites[site['id']] = str(new_site['id'])
                     add_result(task_id, 'Site', site.get('name', ''), 'Created')
                 except Exception as e:
                     add_result(task_id, 'Site', site.get('name', ''), 'Failed', str(e))
 
-            # Pass 2: Groups (Park, Paging, Queues, IVR, Announce, Message-Only)
-            update_progress(task_id, 20, 100, "Recreating Extension Structures...")
-            detailed_exts = config.get("detailed_extensions", {})
-            
+            # ============================================================
+            # Pass 4: Group / structure extensions
+            # (Park, Paging, Queue, IVR, Announcement, Message-Only)
+            # ============================================================
+            update_progress(task_id, 16, 100, "Recreating extension structures...")
             for old_id, details in detailed_exts.items():
                 if _stopped_and_marked(task_id):
                     return
                 ext_type = details['base_info'].get('type')
+                if ext_type in ('User', 'Limited'):
+                    continue  # handled in Pass 5
+
                 payload = {"extensionNumber": details['base_info'].get('extensionNumber')}
-                
-                if 'name' in details['base_info']: payload['name'] = details['base_info']['name']
-                if 'site' in details['base_info'] and details['base_info']['site'].get('id') in old_to_new_sites:
-                    payload['site'] = {"id": old_to_new_sites[details['base_info']['site']['id']]}
-                if 'costCenter' in details['base_info'] and str(details['base_info']['costCenter'].get('id')) in old_to_new_cost_centers:
-                    payload['costCenter'] = {"id": old_to_new_cost_centers[str(details['base_info']['costCenter']['id'])]}
+                if 'name' in details['base_info']:
+                    payload['name'] = details['base_info']['name']
+                site_ref = _mapped_ref(details['base_info'].get('site'), old_to_new_sites)
+                if site_ref:
+                    payload['site'] = site_ref
+                cc_ref = _mapped_ref(details['base_info'].get('costCenter'), old_to_new_cost_centers)
+                if cc_ref:
+                    payload['costCenter'] = cc_ref
 
                 try:
                     if ext_type == 'ParkLocation':
@@ -413,23 +510,238 @@ def run_account_import(task_id, zip_bytes, token=None):
                         new_ext = safe_rc_api_call('/restapi/v1.0/account/~/extension', task_id=task_id, method='POST', json_payload={"extensionNumber": payload.get("extensionNumber"), "type": ext_type, "contact": {"firstName": payload.get("name", ext_type)}}, token=token, raise_error=True)
                     else:
                         continue
-
                     old_to_new_exts[str(old_id)] = str(new_ext['id'])
                     add_result(task_id, ext_type or 'Extension', payload.get('name', payload.get('extensionNumber', old_id)), 'Created')
                 except Exception as e:
                     add_result(task_id, ext_type or 'Extension', payload.get('name', payload.get('extensionNumber', old_id)), 'Failed', str(e))
 
-            # Pass 3: Audio Uploads
-            total_audio = len(audio_map)
+            # ============================================================
+            # Pass 5: User & Limited extensions
+            # Prefer mapping config onto UNASSIGNED extensions pre-provisioned on
+            # the winning account (the documented workflow); fall back to POST
+            # create only if a spare licensed slot is available.
+            # ============================================================
+            update_progress(task_id, 30, 100, "Migrating users onto the winning account...")
+            target_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token, task_id)
+            used_numbers = {str(e.get('extensionNumber')) for e in target_exts if e.get('extensionNumber')}
+            pools = {
+                'User': [e for e in target_exts if e.get('type') == 'User' and e.get('status') in ('Unassigned', 'NotActivated')],
+                'Limited': [e for e in target_exts if e.get('type') == 'Limited' and e.get('status') in ('Unassigned', 'NotActivated')],
+            }
+
+            for old_id, details in detailed_exts.items():
+                if _stopped_and_marked(task_id):
+                    return
+                base = details['base_info']
+                ext_type = base.get('type')
+                if ext_type not in ('User', 'Limited'):
+                    continue
+
+                label = base.get('name') or base.get('extensionNumber') or old_id
+                contact = _clean(base.get('contact', {}), drop=('id', 'uri'))
+                src_number = str(base.get('extensionNumber')) if base.get('extensionNumber') else None
+
+                put_payload = {}
+                if contact:
+                    put_payload['contact'] = contact
+                if src_number and src_number not in used_numbers:
+                    put_payload['extensionNumber'] = src_number
+                site_ref = _mapped_ref(base.get('site'), old_to_new_sites)
+                if site_ref:
+                    put_payload['site'] = site_ref
+                cc_ref = _mapped_ref(base.get('costCenter'), old_to_new_cost_centers)
+                if cc_ref:
+                    put_payload['costCenter'] = cc_ref
+                if base.get('regionalSettings'):
+                    put_payload['regionalSettings'] = base['regionalSettings']
+
+                try:
+                    pool = pools.get(ext_type, [])
+                    if pool:
+                        target = pool.pop(0)
+                        new_id = str(target['id'])
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}', task_id=task_id, method='PUT', json_payload=put_payload, token=token, raise_error=True)
+                        old_to_new_exts[str(old_id)] = new_id
+                        if src_number and src_number not in used_numbers:
+                            used_numbers.add(src_number)
+                        add_result(task_id, ext_type, label, 'Assigned', 'Mapped onto a pre-provisioned extension')
+                    else:
+                        create_payload = {"type": ext_type, "contact": contact or {"firstName": str(label)}}
+                        if src_number and src_number not in used_numbers:
+                            create_payload['extensionNumber'] = src_number
+                        new_ext = safe_rc_api_call('/restapi/v1.0/account/~/extension', task_id=task_id, method='POST', json_payload=create_payload, token=token, raise_error=True)
+                        new_id = str(new_ext['id'])
+                        old_to_new_exts[str(old_id)] = new_id
+                        if src_number and src_number not in used_numbers:
+                            used_numbers.add(src_number)
+                        add_result(task_id, ext_type, label, 'Created', 'No spare extension in pool — created new (needs a free license)')
+                except Exception as e:
+                    add_result(task_id, ext_type, label, 'Failed', f"No pre-provisioned extension available and create failed: {e}")
+
+            # ============================================================
+            # Pass 6: Per-extension configuration (needs the ext to exist)
+            # ============================================================
+            update_progress(task_id, 45, 100, "Applying per-extension configuration...")
+            cfg_items = list(detailed_exts.items())
+            total_cfg = max(len(cfg_items), 1)
+            for i, (old_id, details) in enumerate(cfg_items):
+                if _stopped_and_marked(task_id):
+                    return
+                new_id = old_to_new_exts.get(str(old_id))
+                if not new_id:
+                    continue
+                base = details['base_info']
+                label = base.get('name') or base.get('extensionNumber') or old_id
+                update_progress(task_id, 45 + int((i / total_cfg) * 20), 100, f"Configuring {label}...")
+
+                # Business hours
+                bh = details.get('business_hours') or {}
+                if bh.get('schedule'):
+                    try:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/business-hours', task_id=task_id, method='PUT', json_payload={"schedule": bh['schedule']}, token=token, raise_error=False)
+                    except Exception:
+                        pass
+
+                # Custom answering rules (default rules already exist on the ext)
+                for rule in details.get('answering_rules', []):
+                    if rule.get('type') != 'Custom':
+                        continue
+                    try:
+                        # Drop objects that reference source-account devices/queues
+                        # (they would 400 the whole rule). External unconditional
+                        # forwarding and remapped transfer/voicemail are kept below.
+                        rp = _clean(rule, drop=('id', 'uri', 'greetings', 'sharedLines', 'forwarding', 'queue'))
+                        tref = _mapped_ref(rule.get('transfer', {}).get('extension'), old_to_new_exts)
+                        if tref and 'transfer' in rp:
+                            rp['transfer'] = {**rp['transfer'], 'extension': tref}
+                        vref = _mapped_ref(rule.get('voicemail', {}).get('recipient'), old_to_new_exts)
+                        if vref and 'voicemail' in rp:
+                            rp['voicemail'] = {**rp['voicemail'], 'recipient': vref}
+                        new_rule = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/answering-rule', task_id=task_id, method='POST', json_payload=rp, token=token, raise_error=True)
+                        old_to_new_rules[(str(old_id), str(rule.get('id')))] = str(new_rule['id'])
+                        add_result(task_id, 'Answering Rule', f"{label}: {rule.get('name', '')}", 'Created')
+                    except Exception as e:
+                        add_result(task_id, 'Answering Rule', f"{label}: {rule.get('name', '')}", 'Failed', str(e))
+
+                # Forwarding numbers
+                for fwd in details.get('forwarding_numbers', []):
+                    try:
+                        fp = _clean(fwd, drop=('id', 'uri'))
+                        if fp.get('phoneNumber'):
+                            safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/forwarding-number', task_id=task_id, method='POST', json_payload=fp, token=token, raise_error=False)
+                    except Exception:
+                        pass
+
+                # Notification settings
+                ns = details.get('notification_settings')
+                if ns:
+                    try:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/notification-settings', task_id=task_id, method='PUT', json_payload=_clean(ns), token=token, raise_error=False)
+                    except Exception:
+                        pass
+
+                # Caller blocking (settings + explicit numbers)
+                cb = details.get('caller_blocking')
+                if cb:
+                    try:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/caller-blocking', task_id=task_id, method='PUT', json_payload=_clean(cb), token=token, raise_error=False)
+                    except Exception:
+                        pass
+                for num in details.get('caller_blocking_numbers', []):
+                    try:
+                        np = _clean(num, drop=('id', 'uri'))
+                        if np.get('phoneNumber'):
+                            safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/caller-blocking/phone-numbers', task_id=task_id, method='POST', json_payload=np, token=token, raise_error=False)
+                    except Exception:
+                        pass
+
+                # Assigned role (remap custom-role ids; predefined ids pass through)
+                ar = details.get('assigned_role')
+                if ar and ar.get('records'):
+                    recs = []
+                    for r in ar['records']:
+                        rid = str(r.get('id'))
+                        recs.append({"id": old_to_new_roles.get(rid, rid)})
+                    try:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/assigned-role', task_id=task_id, method='PUT', json_payload={"records": recs}, token=token, raise_error=False)
+                    except Exception:
+                        pass
+
+                # Presence / BLF monitored lines (remap; drop unmapped)
+                pl = details.get('presence_line') or []
+                mon = []
+                for line in pl:
+                    ref = _mapped_ref(line.get('extension'), old_to_new_exts)
+                    if ref:
+                        mon.append({"extension": ref})
+                if mon:
+                    try:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/presence/line', task_id=task_id, method='PUT', json_payload={"records": mon}, token=token, raise_error=False)
+                    except Exception:
+                        pass
+
+            # ============================================================
+            # Pass 7: Call queue settings, members & managers
+            # ============================================================
+            update_progress(task_id, 66, 100, "Applying queue settings and members...")
+            for old_id, details in detailed_exts.items():
+                if _stopped_and_marked(task_id):
+                    return
+                if details['base_info'].get('type') != 'Department':
+                    continue
+                new_id = old_to_new_exts.get(str(old_id))
+                if not new_id:
+                    continue
+                label = details['base_info'].get('name', old_id)
+
+                qs = details.get('queue_settings')
+                if qs:
+                    try:
+                        qp = _clean(qs, drop=_READONLY_KEYS + ('site', 'serviceLevelSettings', 'name'))
+                        if qp:
+                            safe_rc_api_call(f'/restapi/v1.0/account/~/call-queues/{new_id}', task_id=task_id, method='PUT', json_payload=qp, token=token, raise_error=False)
+                            add_result(task_id, 'Queue Settings', label, 'Applied')
+                    except Exception as e:
+                        add_result(task_id, 'Queue Settings', label, 'Failed', str(e))
+
+                member_ids = []
+                for m in details.get('queue_members', []):
+                    mid = old_to_new_exts.get(str(m.get('id')))
+                    if mid:
+                        member_ids.append(mid)
+                if member_ids:
+                    try:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/call-queues/{new_id}/bulk-assign', task_id=task_id, method='POST', json_payload={"addedExtensionIds": member_ids}, token=token, raise_error=True)
+                        add_result(task_id, 'Queue Members', label, 'Assigned', f"{len(member_ids)} member(s)")
+                    except Exception as e:
+                        add_result(task_id, 'Queue Members', label, 'Failed', str(e))
+
+            # ============================================================
+            # Pass 8: Templates
+            # ============================================================
+            update_progress(task_id, 72, 100, "Recreating user templates...")
+            for tpl in config.get("templates", []):
+                if _stopped_and_marked(task_id):
+                    return
+                try:
+                    tp = _clean(tpl, drop=('id', 'uri', 'creationTime', 'lastModifiedTime'))
+                    safe_rc_api_call('/restapi/v1.0/account/~/templates', task_id=task_id, method='POST', json_payload=tp, token=token, raise_error=True)
+                    add_result(task_id, 'Template', tpl.get('name', ''), 'Created')
+                except Exception as e:
+                    add_result(task_id, 'Template', tpl.get('name', ''), 'Failed', str(e))
+
+            # ============================================================
+            # Pass 9: Audio uploads (custom greetings now bound to NEW rule ids)
+            # ============================================================
+            total_audio = max(len(audio_map), 1)
             for i, a_map in enumerate(audio_map):
                 if _stopped_and_marked(task_id):
                     return
-                update_progress(task_id, 60 + int((i/total_audio)*35), 100, f"Uploading Audio: {a_map['filename']}")
+                update_progress(task_id, 78 + int((i / total_audio) * 14), 100, f"Uploading audio: {a_map['filename']}")
                 new_ext_id = old_to_new_exts.get(str(a_map['ext_id']))
                 if not new_ext_id:
                     add_result(task_id, 'Audio', a_map.get('filename', ''), 'Skipped', 'Target extension was not recreated')
                     continue
-
                 try:
                     audio_bytes = zip_ref.read(a_map['filename'])
                     filename_clean = a_map['filename'].split('/')[-1]
@@ -438,14 +750,32 @@ def run_account_import(task_id, zip_bytes, token=None):
                         prompt_res = safe_rc_api_call('/restapi/v1.0/account/~/ivr-prompts', task_id=task_id, method='POST', data={'name': filename_clean}, files=files, token=token, raise_error=True)
                         safe_rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{new_ext_id}', task_id=task_id, method='PUT', json_payload={"prompt": {"mode": "Audio", "audio": {"id": prompt_res['id']}}}, token=token, raise_error=True)
                     else:
-                        metadata = {"type": a_map['greeting_type'], "answeringRule": {"id": a_map['rule_id']}}
+                        # Resolve the rule id on the DESTINATION: constant default
+                        # rule ids pass through; custom rules use the remap built
+                        # in Pass 6. Without a match the source id would 404, so skip.
+                        src_rule = str(a_map.get('rule_id'))
+                        if src_rule in _DEFAULT_RULE_IDS:
+                            dest_rule = src_rule
+                        else:
+                            dest_rule = old_to_new_rules.get((str(a_map['ext_id']), src_rule))
+                        if not dest_rule:
+                            add_result(task_id, 'Audio', a_map.get('filename', ''), 'Skipped', 'Matching answering rule was not recreated on target')
+                            continue
+                        metadata = {"type": a_map['greeting_type'], "answeringRule": {"id": dest_rule}}
                         files = {'json': ('request.json', json.dumps(metadata), 'application/json'), 'attachment': (filename_clean, audio_bytes, 'audio/mpeg')}
                         safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_ext_id}/greeting', task_id=task_id, method='POST', files=files, token=token, raise_error=True)
                     add_result(task_id, 'Audio', a_map.get('filename', ''), 'Uploaded', f"{a_map.get('ext_name', '')} / {a_map.get('greeting_type', '')}")
                 except Exception as e:
                     add_result(task_id, 'Audio', a_map.get('filename', ''), 'Failed', str(e))
 
-            update_progress(task_id, 100, 100, "Migration Import Completed! Check portal for mapping details.", status='completed')
+            # ============================================================
+            # Pass 10: Manual worklist — things the platform won't let us copy.
+            # Surfaced as result rows so the engineer has a concrete checklist.
+            # ============================================================
+            update_progress(task_id, 94, 100, "Compiling manual-steps worklist...")
+            _emit_manual_worklist(task_id, config, detailed_exts, old_to_new_exts)
+
+            update_progress(task_id, 100, 100, "Migration import completed. Review results and complete the manual worklist.", status='completed')
 
     except Exception as e:
         update_progress(task_id, 0, 100, f"Import Error: {str(e)}", status='error')
@@ -453,3 +783,35 @@ def run_account_import(task_id, zip_bytes, token=None):
         # Clear the stop flag whatever the outcome so a later import that reuses
         # this task_id doesn't inherit a stale cancel.
         task_control.clear(task_id)
+
+
+def _emit_manual_worklist(task_id, config, detailed_exts, old_to_new_exts):
+    """Record the config that cannot be migrated by API — carrier-owned numbers,
+    devices, licenses, E911 — as explicit 'Manual' result rows so nothing is
+    silently dropped and the engineer gets a post-migration checklist."""
+    # Phone numbers: carrier/billing-owned, cannot move between tenants.
+    numbers = config.get("phone_numbers", [])
+    dids = [n for n in numbers if n.get('usageType') in ('DirectNumber', 'MainCompanyNumber', 'CompanyNumber', 'AdditionalCompanyNumber')]
+    if dids:
+        add_result(task_id, 'Manual — Numbers', f"{len(dids)} phone number(s)", 'Manual',
+                   'Carrier-owned — cannot copy. Assign temporary ALNs at cutover, then port the real numbers and re-map with the Phone Number Assignment tool.')
+
+    # Devices: MAC re-provisioning worklist (freed MAC -> matching user).
+    dev_count = 0
+    for dev in config.get("devices", []):
+        serial = dev.get('serial') or dev.get('mac')
+        if not serial:
+            continue
+        dev_count += 1
+        model = (dev.get('model') or {}).get('name', 'Unknown model')
+        add_result(task_id, 'Manual — Device', f"{dev.get('name', 'Device')} ({serial})", 'Manual',
+                   f"{model}: release the MAC on the losing tenant, then add it to the matching user's 'Existing Phone' device on the target.")
+    if not dev_count and config.get("devices"):
+        add_result(task_id, 'Manual — Device', f"{len(config['devices'])} device(s)", 'Manual',
+                   'Re-provision on the target account (no MAC captured for automated assignment).')
+
+    # Licenses & E911: provisioning / regulated — flag as pre/post-flight checks.
+    add_result(task_id, 'Manual — Licenses', 'License & add-on parity', 'Manual',
+               'Confirm the winning account has matching licenses and add-on features (e.g. Call Queue Routing Options) enabled.')
+    add_result(task_id, 'Manual — E911', 'Emergency response locations', 'Manual',
+               'Emergency addresses are regulated and must be re-registered/validated per number & device on the target.')
