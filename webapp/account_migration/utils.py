@@ -305,13 +305,21 @@ def run_account_export(task_id, unbind_devices=False, token=None):
             time.sleep(0.05)
 
         if unbind_devices:
+            # Free physical MACs on the LOSING account so they can be pushed to
+            # the winning tenant on import. A MAC can only live on one tenant, so
+            # unbinding the line isn't enough — the device is unbound then deleted.
+            # Device details were already captured in config_data["devices"] above.
             for i, dev in enumerate(devices):
-                update_progress(task_id, 90, 100, f"Unbinding device {dev.get('name', 'Unknown')}...")
-                if 'phoneLines' in dev and len(dev['phoneLines']) > 0:
-                    try:
-                        safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev["id"]}', task_id=task_id, method='PUT', json_payload={"phoneLines": []}, token=token, raise_error=False)
-                    except Exception:
-                        pass
+                if dev.get('type') not in ('HardPhone', 'OtherPhone') or not dev.get('serial'):
+                    continue
+                update_progress(task_id, 90, 100, f"Releasing device {dev.get('name', 'Unknown')} to free its MAC...")
+                dev_id = dev.get('id')
+                try:
+                    if dev.get('phoneLines'):
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev_id}', task_id=task_id, method='PUT', json_payload={"phoneLines": []}, token=token, raise_error=False)
+                    safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev_id}', task_id=task_id, method='DELETE', token=token, raise_error=False)
+                except Exception:
+                    pass
         
         update_progress(task_id, 95, 100, "Compiling Configuration Files...")
         zip_file.writestr("config.json", json.dumps(config_data, indent=4))
@@ -376,6 +384,12 @@ def _mapped_ref(ref, mapping):
     if old in mapping:
         return {"id": mapping[old]}
     return None
+
+
+def _norm_mac(value):
+    """Normalise a MAC/serial to lowercase hex only (strip : - . spaces),
+    matching the Device Swap tool's expectation for /device/bulk-update."""
+    return ''.join(c for c in str(value or '') if c in '0123456789abcdefABCDEF').lower()
 
 
 # --- IMPORT LOGIC ---
@@ -769,7 +783,77 @@ def run_account_import(task_id, zip_bytes, token=None):
                     add_result(task_id, 'Audio', a_map.get('filename', ''), 'Failed', str(e))
 
             # ============================================================
-            # Pass 10: Manual worklist — things the platform won't let us copy.
+            # Pass 10: Devices — push the source MAC/model onto each migrated
+            # user's pre-provisioned device slot, via the same
+            # /device/bulk-update path the Device Swap tool uses. Assumes the
+            # MAC was freed on the losing account (see the export "Release &
+            # Delete Devices" option) and the winning user has an Existing Phone
+            # slot from the license/device prerequisite.
+            # ============================================================
+            update_progress(task_id, 90, 100, "Pushing devices onto the winning account...")
+            device_updates = []
+            device_labels = {}
+            for dev in config.get("devices", []):
+                if _stopped_and_marked(task_id):
+                    return
+                serial = _norm_mac(dev.get('serial'))
+                dev_type = dev.get('type')
+                model_id = str((dev.get('model') or {}).get('id') or '')
+                src_ext_id = str((dev.get('extension') or {}).get('id') or '')
+                dev_name = dev.get('name', '') or 'Device'
+                lbl = f"{dev_name} ({serial or 'no-MAC'})"
+
+                # Only physical phones carry a MAC that can be moved between tenants.
+                if not serial or dev_type not in ('HardPhone', 'OtherPhone'):
+                    continue
+                if not src_ext_id:
+                    add_result(task_id, 'Device', lbl, 'Skipped', 'Device was unassigned on the source (no owning user)')
+                    continue
+                new_ext_id = old_to_new_exts.get(src_ext_id)
+                if not new_ext_id:
+                    add_result(task_id, 'Device', lbl, 'Skipped', 'Owning user was not migrated')
+                    continue
+
+                slot_resp = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_ext_id}/device', task_id=task_id, method='GET', token=token, raise_error=False)
+                slots = (slot_resp or {}).get('records', [])
+                # Prefer a physical slot, then softphone — matches Device Swap ordering.
+                target = (next((d for d in slots if d.get('type') == 'HardPhone'), None)
+                          or next((d for d in slots if d.get('type') == 'OtherPhone'), None)
+                          or next((d for d in slots if d.get('type') == 'SoftPhone'), None))
+                if not target:
+                    add_result(task_id, 'Device', lbl, 'Manual', "Target user has no device slot — add an 'Existing Phone' device, then re-run import")
+                    continue
+
+                rec = {"deviceId": str(target['id']), "serial": serial}
+                if model_id:
+                    rec["model"] = {"id": model_id}
+                if dev.get('name'):
+                    rec["name"] = dev['name']
+                device_updates.append(rec)
+                device_labels[str(target['id'])] = lbl
+
+            # Fire in chunks; /device/bulk-update returns a per-device result set.
+            for chunk_start in range(0, len(device_updates), 50):
+                if _stopped_and_marked(task_id):
+                    return
+                chunk = device_updates[chunk_start:chunk_start + 50]
+                resp = safe_rc_api_call('/restapi/v1.0/account/~/device/bulk-update', task_id=task_id, method='POST', json_payload={"records": chunk}, token=token, raise_error=False)
+                returned = (resp or {}).get('records', []) if isinstance(resp, dict) else []
+                if returned:
+                    for idx, api_rec in enumerate(returned):
+                        did = str(api_rec.get('deviceId') or api_rec.get('id') or '')
+                        rlbl = device_labels.get(did) or (device_labels.get(chunk[idx]['deviceId']) if idx < len(chunk) else did)
+                        if api_rec.get('successful'):
+                            add_result(task_id, 'Device', rlbl, 'Pushed', 'MAC/model assigned to the user device')
+                        else:
+                            err = api_rec.get('error') or {}
+                            add_result(task_id, 'Device', rlbl, 'Failed', err.get('message') or err.get('description') or 'Rejected by RingCentral')
+                else:
+                    for rec in chunk:
+                        add_result(task_id, 'Device', device_labels.get(rec['deviceId'], rec['deviceId']), 'Failed', 'No response from RingCentral for this device')
+
+            # ============================================================
+            # Pass 11: Manual worklist — things the platform won't let us copy.
             # Surfaced as result rows so the engineer has a concrete checklist.
             # ============================================================
             update_progress(task_id, 94, 100, "Compiling manual-steps worklist...")
@@ -787,28 +871,15 @@ def run_account_import(task_id, zip_bytes, token=None):
 
 def _emit_manual_worklist(task_id, config, detailed_exts, old_to_new_exts):
     """Record the config that cannot be migrated by API — carrier-owned numbers,
-    devices, licenses, E911 — as explicit 'Manual' result rows so nothing is
-    silently dropped and the engineer gets a post-migration checklist."""
+    licenses, E911 — as explicit 'Manual' result rows so nothing is silently
+    dropped and the engineer gets a post-migration checklist. (Devices are now
+    pushed automatically in Pass 10; only their per-device outcomes are logged.)"""
     # Phone numbers: carrier/billing-owned, cannot move between tenants.
     numbers = config.get("phone_numbers", [])
     dids = [n for n in numbers if n.get('usageType') in ('DirectNumber', 'MainCompanyNumber', 'CompanyNumber', 'AdditionalCompanyNumber')]
     if dids:
         add_result(task_id, 'Manual — Numbers', f"{len(dids)} phone number(s)", 'Manual',
                    'Carrier-owned — cannot copy. Assign temporary ALNs at cutover, then port the real numbers and re-map with the Phone Number Assignment tool.')
-
-    # Devices: MAC re-provisioning worklist (freed MAC -> matching user).
-    dev_count = 0
-    for dev in config.get("devices", []):
-        serial = dev.get('serial') or dev.get('mac')
-        if not serial:
-            continue
-        dev_count += 1
-        model = (dev.get('model') or {}).get('name', 'Unknown model')
-        add_result(task_id, 'Manual — Device', f"{dev.get('name', 'Device')} ({serial})", 'Manual',
-                   f"{model}: release the MAC on the losing tenant, then add it to the matching user's 'Existing Phone' device on the target.")
-    if not dev_count and config.get("devices"):
-        add_result(task_id, 'Manual — Device', f"{len(config['devices'])} device(s)", 'Manual',
-                   'Re-provision on the target account (no MAC captured for automated assignment).')
 
     # Licenses & E911: provisioning / regulated — flag as pre/post-flight checks.
     add_result(task_id, 'Manual — Licenses', 'License & add-on parity', 'Manual',
