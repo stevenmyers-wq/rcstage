@@ -93,8 +93,15 @@ def audit_single_extension():
     settings = resp.json()
 
     def get_emails(obj, key):
-        if not obj or key not in obj: return ""
-        return "; ".join(obj[key].get('emailAddresses', []))
+        # Per-category recipients live under 'advancedEmailAddresses' (used when
+        # advancedMode is true). There is no 'emailAddresses' inside a category
+        # object; the older read of that key always came back empty, so advanced
+        # mode extensions reported no per-category emails. Fall back to the
+        # legacy key only defensively.
+        cat = obj.get(key) if obj else None
+        if not cat: return ""
+        emails = cat.get('advancedEmailAddresses') or cat.get('emailAddresses') or []
+        return "; ".join(emails)
 
     def get_flag(obj, key):
         if not obj or key not in obj: return "FALSE"
@@ -157,18 +164,22 @@ def update_single_extension():
         if cat in original:
             payload[cat] = original[cat] 
             
+            # Per-category recipients must be written to 'advancedEmailAddresses'
+            # (the field the API uses in advanced mode). Writing 'emailAddresses'
+            # inside a category is ignored by the API, so advanced-mode email
+            # updates previously had no effect.
             if cat == 'voicemails':
                 if 'enable_vm' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
-                if 'vm_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('vm_emails'))
+                if 'vm_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('vm_emails'))
             elif cat == 'missedCalls':
                 if 'enable_missed' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
-                if 'missed_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('missed_emails'))
+                if 'missed_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('missed_emails'))
             elif cat == 'inboundFaxes':
                 if 'enable_fax' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_fax'))
-                if 'fax_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('fax_emails'))
+                if 'fax_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('fax_emails'))
             elif cat == 'inboundTexts':
                 if 'enable_sms' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_sms'))
-                if 'sms_emails' in data: payload[cat]["emailAddresses"] = parse_list(data.get('sms_emails'))
+                if 'sms_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('sms_emails'))
 
     put_resp = rc_api_call(endpoint, method='PUT', json=payload, return_response=True)
     
