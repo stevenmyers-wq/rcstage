@@ -154,7 +154,7 @@ RCAU/
     ├── sip_fetcher/                 # Fetch SIP credentials
     ├── account_migration/           # Export account programming/settings/audio
     ├── cq_hours/                    # Call Queue Manager — hours/routing/timers/limits
-    ├── site_allocation/             # Bulk re-allocate users to a Site
+    ├── site_allocation/             # Bulk re-allocate any extension to a Site
     ├── user_templates/              # Bulk apply User Templates via Excel
     │
     ├── static/js/
@@ -234,7 +234,7 @@ Layer 2b) · `L3` JWT · `L4` RingCX token exchange.
 | `sip_fetcher` | SIP Credentials | SM | Fetch SIP credentials |
 | `account_migration` | Account Migration | SM | Export account programming/settings/audio |
 | `cq_hours` | Call Queue Manager | SM | Bulk hours/routing/timers/limits for Call Queues |
-| `site_allocation` | Site Allocation | SM | Bulk re-allocate users to a Site |
+| `site_allocation` | Site Allocation | SM | Bulk re-allocate any extension to a Site |
 | `user_templates` | User Templates | SM | Bulk apply User Templates via Excel |
 
 Admins additionally see an **Admin Dashboard** tab (`admin_dashboard`).

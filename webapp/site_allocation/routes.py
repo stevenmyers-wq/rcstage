@@ -33,8 +33,9 @@ def get_sites():
 @require_rc_token
 @track_usage('Site Allocation - Template')
 def download_template():
-    """Builds an Extension | Site template pre-filled with current user
-    extensions and their present Site, plus a reference sheet of valid Sites."""
+    """Builds an Extension | Extension Name | Type | Site template pre-filled
+    with every site-assignable extension and its present Site, plus a reference
+    sheet of valid Sites."""
     token = _token()
     try:
         extensions = utils.fetch_all_extensions(token)
@@ -42,10 +43,11 @@ def download_template():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    columns = ['Extension', 'Extension Name', 'Type', 'Site']
     rows = utils.build_template_rows(extensions)
     if not rows:
-        rows = [{'Extension': '', 'Site': ''}]
-    df = pd.DataFrame(rows, columns=['Extension', 'Site'])
+        rows = [{c: '' for c in columns}]
+    df = pd.DataFrame(rows, columns=columns)
 
     site_names = sorted({(s.get('name') or '').strip() for s in sites if s.get('name')})
     sites_df = pd.DataFrame({'Valid Site Names': site_names or ['Main Site']})

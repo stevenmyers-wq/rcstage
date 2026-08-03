@@ -56,6 +56,54 @@ def fetch_sites(token):
 
 
 # ---------------------------------------------------------------------------
+# Site-assignable extension types
+# ---------------------------------------------------------------------------
+# A Site can be assigned to nearly every kind of extension — not just Users.
+# This covers park zones, call queues, message-only, announcement-only, virtual
+# extensions, IVR menus, paging/shared-line groups and the various user
+# sub-types. A `Site` extension is deliberately excluded: it *is* a site and
+# cannot be re-allocated to another one. Every row is still validated live
+# against the account during preview, so any type the API rejects surfaces
+# before anything is written.
+SITE_ASSIGNABLE_TYPES = {
+    'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited',
+    'Department',          # Call Queue
+    'IvrMenu',             # IVR menu / auto-receptionist
+    'Announcement', 'AnnouncementOnly',   # Announcement-only
+    'Voicemail', 'MessageOnly',           # Message-only
+    'ParkLocation',        # Park zone / location
+    'SharedLinesGroup',    # Shared lines group
+    'PagingOnly',          # Paging group
+}
+
+# Friendly label shown in the template's Type column so the operator can tell
+# at a glance what each extension is. Unknown types fall back to the raw API
+# type string.
+TYPE_LABELS = {
+    'User': 'User',
+    'DigitalUser': 'User',
+    'VirtualUser': 'Virtual Extension',
+    'FlexibleUser': 'User',
+    'Limited': 'Limited Extension',
+    'Department': 'Call Queue',
+    'IvrMenu': 'IVR Menu',
+    'Announcement': 'Announcement Only',
+    'AnnouncementOnly': 'Announcement Only',
+    'Voicemail': 'Message Only',
+    'MessageOnly': 'Message Only',
+    'ParkLocation': 'Park Location',
+    'SharedLinesGroup': 'Shared Lines Group',
+    'PagingOnly': 'Paging Group',
+}
+
+
+def _friendly_type(ext):
+    """Human-readable extension type for the template Type column."""
+    raw = ext.get('type') or ''
+    return TYPE_LABELS.get(raw, raw or 'Unknown')
+
+
+# ---------------------------------------------------------------------------
 # Friendly <-> id translation helpers
 # ---------------------------------------------------------------------------
 
@@ -97,20 +145,27 @@ def build_extension_lookup(extensions):
 
 
 def build_template_rows(extensions):
-    """Builds the Extension | Site rows for the downloadable template.
+    """Builds the Extension | Extension Name | Type | Site rows for the template.
 
-    Only User-type extensions are listed, since Site allocation is a per-user
-    setting. Each row is pre-filled with the extension's current Site so the
-    operator only edits the values that need to change."""
+    Every site-assignable extension is listed — users, virtual extensions, park
+    zones, call queues, message-only, announcement-only, IVR menus and paging /
+    shared-line groups — since a Site can be assigned to any of them. `Site`
+    extensions are excluded because a Site cannot be re-allocated to itself.
+
+    Each row is pre-filled with the extension's name, type and current Site so
+    the operator only edits the Site values that need to change. The Extension
+    Name and Type columns are informational and ignored on upload."""
     rows = []
     for ext in extensions:
-        if 'User' not in (ext.get('type') or ''):
+        if (ext.get('type') or '') not in SITE_ASSIGNABLE_TYPES:
             continue
         ext_num = ext.get('extensionNumber')
         if not ext_num:
             continue
         rows.append({
             'Extension': str(ext_num),
+            'Extension Name': ext.get('name', ''),
+            'Type': _friendly_type(ext),
             'Site': _extension_site_name(ext),
         })
     rows.sort(key=lambda r: (len(r['Extension']), r['Extension']))
@@ -210,6 +265,9 @@ def process_site_batch(records, token, is_preview=True, task_id=None):
 
         ext_num = _clean(row.get('Extension', ''))
         site_name = _clean(row.get('Site', ''))
+        # Name is looked up from the live directory once the extension resolves;
+        # it starts blank so invalid rows still render a Name cell.
+        ext_name = ''
 
         def progress(status, message, changes=None):
             return {
@@ -218,6 +276,7 @@ def process_site_batch(records, token, is_preview=True, task_id=None):
                 "total": total,
                 "result": {
                     "ext": ext_num or "N/A",
+                    "name": ext_name,
                     "site": site_name,
                     "status": status,
                     "message": message,
@@ -241,6 +300,7 @@ def process_site_batch(records, token, is_preview=True, task_id=None):
         if not ext:
             yield progress("error", f"Extension {ext_num} not found on this account")
             continue
+        ext_name = ext.get('name', '')
         if ext.get('type') == 'Site':
             yield progress("error", f"Extension {ext_num} is a Site and cannot be re-allocated")
             continue

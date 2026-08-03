@@ -2,7 +2,7 @@
 
     <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <h2 class="text-heading mb-1">Site Allocation</h2>
-        <p class="text-subheading">Bulk re-allocate users to a Site from a simple <span class="font-semibold">Extension | Site</span> sheet. You work with friendly Extension numbers and Site names — the tool translates them to RingCentral IDs in the background.</p>
+        <p class="text-subheading">Bulk re-allocate any site-assignable extension — users, virtual extensions, park zones, call queues, message-only, announcement-only, IVR menus and more — to a Site from a simple <span class="font-semibold">Extension | Site</span> sheet. You work with friendly Extension numbers and Site names — the tool translates them to RingCentral IDs in the background.</p>
     </div>
 
     <!-- Valid site reference -->
@@ -25,7 +25,7 @@
             </div>
             <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">1. Download Template</h3>
             <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
-                Generates an <span class="font-semibold">Extension | Site</span> sheet pre-filled with your current users and their present Site. Edit the <span class="font-semibold">Site</span> column for anyone who needs moving.
+                Generates an <span class="font-semibold">Extension&nbsp;|&nbsp;Extension&nbsp;Name&nbsp;|&nbsp;Type&nbsp;|&nbsp;Site</span> sheet pre-filled with every site-assignable extension and its present Site. Edit the <span class="font-semibold">Site</span> column for anything that needs moving.
             </p>
             <button onclick="downloadSiteTemplate()" id="saTemplateBtn" class="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
                 Download Template
@@ -73,6 +73,7 @@
                 <thead>
                     <tr class="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200 dark:border-slate-700">
                         <th class="py-2 pr-4">Extension</th>
+                        <th class="py-2 pr-4">Extension Name</th>
                         <th class="py-2 pr-4">Current Site</th>
                         <th class="py-2 pr-4">New Site</th>
                         <th class="py-2 pr-4">Status</th>
@@ -333,6 +334,7 @@
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="py-2 pr-4 font-mono text-slate-700 dark:text-slate-300">${escapeHtml(r.ext)}</td>
+            <td class="py-2 pr-4 text-slate-600 dark:text-slate-300">${escapeHtml(r.name || '')}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(change.from || (r.status === 'error' ? '—' : ''))}</td>
             <td class="py-2 pr-4 text-slate-700 dark:text-slate-200">${escapeHtml(change.to || (r.status === 'error' ? (r.site || '—') : ''))}</td>
             <td class="py-2 pr-4 ${label.cls}">${escapeHtml(label.text)}</td>`;
@@ -347,9 +349,10 @@
             const c = tr.children;
             return {
                 Extension: c[0].innerText,
-                'Current Site': c[1].innerText,
-                'New Site': c[2].innerText,
-                Status: c[3].innerText,
+                'Extension Name': c[1].innerText,
+                'Current Site': c[2].innerText,
+                'New Site': c[3].innerText,
+                Status: c[4].innerText,
             };
         });
     }
