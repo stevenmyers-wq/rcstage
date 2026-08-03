@@ -5,6 +5,53 @@
         <p class="text-subheading">Audit, template, and bulk update advanced notification settings for Users and Queues.</p>
     </div>
 
+    <!-- Filters -->
+    <div class="card !p-6 flex flex-wrap gap-6 items-end w-full">
+        <div class="input-wrapper w-full sm:w-64" id="notif-filter-type">
+            <label class="input-label">Extension Type</label>
+            <div class="relative">
+                <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
+                    <span class="ms-label truncate">All Types</span>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
+                    <div class="p-3 border-b border-slate-100 dark:border-slate-700">
+                        <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search types...">
+                    </div>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-wrapper w-full sm:w-64" id="notif-filter-site">
+            <label class="input-label">Site</label>
+            <div class="relative">
+                <button class="ms-btn input-field !flex justify-between items-center cursor-pointer text-left">
+                    <span class="ms-label truncate">All Sites</span>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div class="ms-dropdown hidden absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl">
+                    <div class="p-3 border-b border-slate-100 dark:border-slate-700">
+                        <input type="text" class="ms-search input-field !py-2 !px-3 !text-sm" placeholder="Search sites...">
+                    </div>
+                    <ul class="ms-list max-h-48 overflow-y-auto p-2 text-sm text-slate-700 dark:text-slate-300"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-grow min-w-[200px] flex items-center h-[52px]">
+            <p id="notif-filter-summary" class="text-sm font-bold text-slate-500 dark:text-slate-400">
+                <span class="spinner border-slate-400 w-4 h-4 inline-block align-middle mr-2"></span> Loading extensions...
+            </p>
+        </div>
+
+        <div class="w-full sm:w-auto">
+            <button id="notif-refresh-targets" class="btn-secondary w-full h-[52px] text-sm px-6">
+                Refresh List
+            </button>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
         
         <div class="card flex flex-col h-full hover:-translate-y-1">
@@ -12,7 +59,7 @@
                 <div class="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-xl shadow-sm">1</div>
                 <h3 class="text-heading text-lg">Audit Notifications</h3>
             </div>
-            <p class="text-subheading mb-8 flex-grow">Generate a comprehensive CSV report. Separates global queue emails from specific user setting emails.</p>
+            <p class="text-subheading mb-8 flex-grow">Generate a comprehensive CSV report for the extensions matching the filters above. Separates global queue emails from specific user setting emails.</p>
             <button id="btn-audit-start" class="btn-primary w-full !py-3.5">
                 Generate Report
             </button>
@@ -75,6 +122,124 @@
     const statusText = document.getElementById('status-text');
     const progressBar = document.getElementById('progress-bar');
 
+    // --- Filter state (Extension Type + Site), inline with other modules ---
+    let allTargets = [];
+    const selectedTypes = new Set();
+    const selectedSites = new Set();
+    const TYPE_LABELS = {
+        'User': 'User',
+        'Department': 'Call Queue',
+        'Voicemail': 'Message-Only',
+        'Limited': 'Limited Extension'
+    };
+
+    const filterSummary = document.getElementById('notif-filter-summary');
+
+    // Generic multi-select dropdown, matching the .ms-* markup used across modules.
+    function renderMultiSelectList(containerId, items, selectedSet, defaultLabel, onChange) {
+        const container = document.getElementById(containerId);
+        const list = container.querySelector('.ms-list');
+        const search = container.querySelector('.ms-search');
+        const label = container.querySelector('.ms-label');
+
+        const updateLabel = () => {
+            if (selectedSet.size === 0) label.textContent = defaultLabel;
+            else if (selectedSet.size === 1) {
+                const selectedItem = items.find(i => i.val === Array.from(selectedSet)[0]);
+                label.textContent = selectedItem ? selectedItem.label : '1 Selected';
+            } else label.textContent = `${selectedSet.size} Selected`;
+        };
+
+        const draw = (filterText = '') => {
+            list.innerHTML = '';
+            items.filter(item => item.label.toLowerCase().includes(filterText.toLowerCase())).forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-3 rounded-lg transition-colors font-medium';
+                const checked = selectedSet.has(item.val) ? 'checked' : '';
+                li.innerHTML = `<input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" ${checked}> <span class="pointer-events-none">${item.label}</span>`;
+                li.onclick = (e) => {
+                    e.stopPropagation();
+                    if (selectedSet.has(item.val)) selectedSet.delete(item.val);
+                    else selectedSet.add(item.val);
+                    li.querySelector('input').checked = selectedSet.has(item.val);
+                    updateLabel();
+                    onChange();
+                };
+                list.appendChild(li);
+            });
+        };
+
+        if (!container.dataset.initialized) {
+            const btn = container.querySelector('.ms-btn');
+            const dropdown = container.querySelector('.ms-dropdown');
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const isHidden = dropdown.classList.contains('hidden');
+                document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+                if (isHidden) { dropdown.classList.remove('hidden'); search.focus(); }
+            };
+            search.oninput = (e) => draw(e.target.value);
+            search.onclick = (e) => e.stopPropagation();
+            dropdown.onclick = (e) => e.stopPropagation();
+            container.dataset.initialized = 'true';
+        }
+
+        draw(search.value);
+        updateLabel();
+    }
+
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.add('hidden'));
+    });
+
+    function getFilteredTargets() {
+        return allTargets.filter(t => {
+            const matchType = selectedTypes.size === 0 ? true : selectedTypes.has(t.type);
+            const matchSite = selectedSites.size === 0 ? true : selectedSites.has(t.site || 'Main Site');
+            return matchType && matchSite;
+        });
+    }
+
+    function updateFilterSummary() {
+        if (!allTargets.length) {
+            filterSummary.innerHTML = '<span class="text-rose-500">No extensions loaded.</span>';
+            return;
+        }
+        const count = getFilteredTargets().length;
+        filterSummary.textContent = `Auditing ${count} of ${allTargets.length} extension${allTargets.length === 1 ? '' : 's'}.`;
+    }
+
+    function buildFilters() {
+        const types = Array.from(new Set(allTargets.map(t => t.type))).sort();
+        const typeOptions = types.map(t => ({ val: t, label: TYPE_LABELS[t] || t }));
+        renderMultiSelectList('notif-filter-type', typeOptions, selectedTypes, 'All Types', updateFilterSummary);
+
+        const sites = Array.from(new Set(allTargets.map(t => t.site || 'Main Site'))).sort();
+        const siteOptions = sites.map(s => ({ val: s, label: s }));
+        renderMultiSelectList('notif-filter-site', siteOptions, selectedSites, 'All Sites', updateFilterSummary);
+    }
+
+    async function loadTargets() {
+        filterSummary.innerHTML = '<span class="spinner border-slate-400 w-4 h-4 inline-block align-middle mr-2"></span> Loading extensions...';
+        try {
+            const resp = await fetch('/api/notifications/get-targets');
+            const data = await resp.json();
+            allTargets = data.targets || [];
+            buildFilters();
+            updateFilterSummary();
+        } catch (e) {
+            filterSummary.innerHTML = `<span class="text-rose-500">Failed to load extensions: ${e.message}</span>`;
+        }
+    }
+
+    document.getElementById('notif-refresh-targets').addEventListener('click', () => {
+        selectedTypes.clear();
+        selectedSites.clear();
+        loadTargets();
+    });
+
+    loadTargets();
+
     // Downloadable result listing for the most recent bulk update.
     let notifResultRows = null;
     document.addEventListener('DOMContentLoaded', () => {
@@ -121,21 +286,32 @@
 
     // --- 1. AUDIT ---
     document.getElementById('btn-audit-start').addEventListener('click', async function() {
+        if (isRunning) return;
+
+        // Make sure we have a current list (in case the initial load failed).
+        if (!allTargets.length) {
+            log("Extension list not loaded yet. Fetching...", "info");
+            await loadTargets();
+        }
+
+        const targets = getFilteredTargets();
+        const total = targets.length;
+
+        if (total === 0) {
+            log("No extensions match the current Type/Site filters.", "error");
+            return;
+        }
+
         isRunning = true;
-        updateStatus(true, "Fetching extension list...", 0);
+        updateStatus(true, "Starting audit...", 0);
         log("Starting Audit...", "info");
-        
+
         try {
-            const listResp = await fetch('/api/notifications/get-targets');
-            const listData = await listResp.json();
-            
-            if (!listData.targets) throw new Error("Failed to get list");
-            
-            const targets = listData.targets;
-            const total = targets.length;
             let results = [];
-            
-            log(`Found ${total} extensions. Auditing...`);
+
+            const typeLabel = selectedTypes.size ? Array.from(selectedTypes).join(', ') : 'All Types';
+            const siteLabel = selectedSites.size ? Array.from(selectedSites).join(', ') : 'All Sites';
+            log(`Auditing ${total} extension(s). Filters — Type: ${typeLabel}; Site: ${siteLabel}.`);
 
             for (let i = 0; i < total; i++) {
                 if (!isRunning) break;
@@ -155,6 +331,7 @@
                         "Name": t.name,
                         "Extension": t.ext,
                         "Type": t.type,
+                        "Site": t.site || 'Main Site',
                         ...json.data
                     });
                 }
