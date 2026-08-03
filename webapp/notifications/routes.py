@@ -53,7 +53,8 @@ def get_targets():
                 "name": record.get('name', 'Unknown'),
                 "ext": record.get('extensionNumber', 'N/A'),
                 "email": record.get('contact', {}).get('email', ''),
-                "type": r_type
+                "type": r_type,
+                "site": (record.get('site') or {}).get('name', 'Main Site')
             })
         
         # Pagination Fix: Use paging.totalPages instead of navigation.nextPage
