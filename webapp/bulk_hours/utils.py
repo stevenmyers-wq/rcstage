@@ -85,78 +85,108 @@ def _lookup_ext_id(ext_number):
 # ===============================================================
 
 def fetch_operating_hours(entity_type):
-    """Fetches and processes operating hours for a given entity type ('Site' or 'Queue')."""
-    try:
-        list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
-        
-        # Use pagination helper instead of single API call
-        entities_records = _get_all_records(list_endpoint)
-        if not entities_records:
-            return []
+    """Streams operating hours for a given entity type ('Site' or 'Queue').
 
-        all_data = []
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    A generator yielding NDJSON-friendly progress chunks. Because the entity
+    count is only known after the (paginated) directory call, progress is
+    reported truthfully in two phases: an indeterminate 'loading directory'
+    phase, then a per-entity determinate phase driven by real completions.
 
-        for entity in entities_records:
-            entity_id = entity.get('id')
-            entity_name = entity.get('name', f'Unknown {entity_type}')
-            
-            hours_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/business-hours"
-            if entity_id == "main-site":
-                hours_endpoint = "/restapi/v1.0/account/~/business-hours"
+      {"type": "start", "message": ...}          # directory still loading
+      {"type": "total", "total": N}              # real entity count known
+      {"type": "progress", "current": i, "total": N, "name": ...}
+      {"type": "done", "data": [ ...rows... ]}
+    """
+    yield {"type": "start", "message": f"Loading {entity_type.lower()} directory…"}
 
-            hours_response = rc_api_call(hours_endpoint)
-            entity_row = {"EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name}
+    list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
 
-            if not hours_response or 'schedule' not in hours_response:
-                print(f"WARN: Could not retrieve hours for {entity_name} (ID: {entity_id})")
-                for day in days: entity_row[day] = "ERROR"
+    # Use pagination helper instead of single API call
+    entities_records = _get_all_records(list_endpoint)
+    total = len(entities_records)
+    yield {"type": "total", "total": total}
+
+    if not entities_records:
+        yield {"type": "done", "data": []}
+        return
+
+    all_data = []
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+    for i, entity in enumerate(entities_records):
+        entity_id = entity.get('id')
+        entity_name = entity.get('name', f'Unknown {entity_type}')
+
+        hours_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/business-hours"
+        if entity_id == "main-site":
+            hours_endpoint = "/restapi/v1.0/account/~/business-hours"
+
+        hours_response = rc_api_call(hours_endpoint)
+        entity_row = {"EntityType": entity_type, "EntityID": entity_id, "EntityName": entity_name}
+
+        if not hours_response or 'schedule' not in hours_response:
+            print(f"WARN: Could not retrieve hours for {entity_name} (ID: {entity_id})")
+            for day in days: entity_row[day] = "ERROR"
+        else:
+            schedule = hours_response.get('schedule', {})
+            weekly_ranges = schedule.get('weeklyRanges', {})
+            if not weekly_ranges:
+                for day in days: entity_row[day] = "00:00-23:59"
             else:
-                schedule = hours_response.get('schedule', {})
-                weekly_ranges = schedule.get('weeklyRanges', {})
-                if not weekly_ranges:
-                    for day in days: entity_row[day] = "00:00-23:59"
-                else:
-                    for day in days:
-                        day_schedule = weekly_ranges.get(day.lower())
-                        if day_schedule:
-                            entity_row[day] = f"{day_schedule[0].get('from', 'N/A')}-{day_schedule[0].get('to', 'N/A')}"
-                        else:
-                            entity_row[day] = "Closed"
-            all_data.append(entity_row)
-        return all_data
-    except Exception as e:
-        print(f"FATAL ERROR in fetch_operating_hours: {e}")
-        raise e
+                for day in days:
+                    day_schedule = weekly_ranges.get(day.lower())
+                    if day_schedule:
+                        entity_row[day] = f"{day_schedule[0].get('from', 'N/A')}-{day_schedule[0].get('to', 'N/A')}"
+                    else:
+                        entity_row[day] = "Closed"
+        all_data.append(entity_row)
+        yield {"type": "progress", "current": i + 1, "total": total, "name": entity_name}
+
+    yield {"type": "done", "data": all_data}
 
 def update_hours_from_records(records, task_id=None):
-    """Processes a list of records and updates RC business hours."""
+    """Streams RC business-hours updates, one chunk per record.
+
+    A generator yielding true per-record progress:
+      {"type": "start", "total": N, ...}
+      {"type": "progress", "current": i, "total": N, "result": {...}}
+      {"type": "done", "results": [ ...all result items... ]}
+    """
+    total = len(records)
+    yield {"type": "start", "total": total, "message": f"Applying hours to {total} entit{'y' if total == 1 else 'ies'}…"}
     results = []
-    for record in records:
+    for i, record in enumerate(records):
         # Cooperative stop: entities already updated stand; the rest are skipped.
         if task_control.is_stopped(task_id):
-            results.append({"name": "—", "status": "cancelled", "message": "Stopped by user — remaining entities were skipped."})
+            item = {"name": "—", "status": "cancelled", "message": "Stopped by user — remaining entities were skipped."}
+            results.append(item)
+            yield {"type": "progress", "current": i, "total": total, "result": item}
             break
         entity_id = record.get("EntityID")
         entity_name = record.get("EntityName")
-        if not entity_id or not entity_name: continue
+        if not entity_id or not entity_name:
+            # Advance the bar even for unusable rows so it tracks true position.
+            yield {"type": "progress", "current": i + 1, "total": total}
+            continue
 
         try:
             schedule_from_row = {day.lower(): record.get(day) for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]}
             api_body = _build_hours_api_body(schedule_from_row)
-            
+
             endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/business-hours"
             if entity_id == "main-site": endpoint = "/restapi/v1.0/account/~/business-hours"
 
             response = rc_api_call(endpoint, method="PUT", json=api_body)
             if response:
-                results.append({"name": entity_name, "status": "success", "message": "Updated successfully."})
+                item = {"name": entity_name, "status": "success", "message": "Updated successfully."}
             else:
-                results.append({"name": entity_name, "status": "error", "message": "API call failed. Check server logs."})
+                item = {"name": entity_name, "status": "error", "message": "API call failed. Check server logs."}
         except Exception as e:
             print(f"ERROR processing update for {entity_name}: {e}")
-            results.append({"name": entity_name, "status": "error", "message": str(e)})
-    return results
+            item = {"name": entity_name, "status": "error", "message": str(e)}
+        results.append(item)
+        yield {"type": "progress", "current": i + 1, "total": total, "result": item}
+    yield {"type": "done", "results": results}
 
 def _build_hours_api_body(schedule):
     """Helper to construct the business hours API body."""
@@ -177,26 +207,41 @@ def _build_hours_api_body(schedule):
 # ===============================================================
 
 def fetch_rules(entity_type, category='all'):
-    """Fetches base rules and/or custom rules depending on the category parameter."""
-    try:
-        list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
-        
-        # Use pagination helper instead of single API call
-        entities_records = _get_all_records(list_endpoint)
-        if not entities_records:
-            return []
+    """Streams base rules and/or custom rules depending on the category parameter.
 
-        all_rules_data = []
-        for entity in entities_records:
+    A generator yielding NDJSON-friendly progress chunks. Progress is driven by
+    real per-entity completions (each entity requires its own set of API calls):
+
+      {"type": "start", "message": ...}
+      {"type": "total", "total": N}
+      {"type": "progress", "current": i, "total": N, "name": ...}
+      {"type": "done", "data": [ ...rows... ]}
+    """
+    yield {"type": "start", "message": f"Loading {entity_type.lower()} directory…"}
+
+    list_endpoint = "/restapi/v1.0/account/~/sites" if entity_type == "Site" else "/restapi/v1.0/account/~/call-queues"
+
+    # Use pagination helper instead of single API call
+    entities_records = _get_all_records(list_endpoint)
+    total = len(entities_records)
+    yield {"type": "total", "total": total}
+
+    if not entities_records:
+        yield {"type": "done", "data": []}
+        return
+
+    all_rules_data = []
+    for i, entity in enumerate(entities_records):
             entity_id = entity.get('id')
             entity_name = entity.get('name')
-            
+
             rules_endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
             if entity_id == "main-site": rules_endpoint = "/restapi/v1.0/account/~/answering-rule"
 
             # Use pagination helper for rules as well
             all_ext_rules = _get_all_records(rules_endpoint)
             if not all_ext_rules:
+                yield {"type": "progress", "current": i + 1, "total": total, "name": entity_name}
                 continue
 
             # 1. Process Default Rules
@@ -245,18 +290,28 @@ def fetch_rules(entity_type, category='all'):
                             "ScheduleType": parsed['schedule_type'], "ScheduleDetails": parsed['schedule_details'],
                             "CallAction": parsed['call_action'], "ActionTarget": parsed['action_target'], "ActionTargetName": parsed['action_target_name']
                         })
-        return all_rules_data
-    except Exception as e:
-        print(f"FATAL ERROR in fetch_rules: {e}")
-        raise e
+
+            yield {"type": "progress", "current": i + 1, "total": total, "name": entity_name}
+
+    yield {"type": "done", "data": all_rules_data}
 
 def update_rules_from_records(records, task_id=None):
-    """Updates base routing rules or creates/updates custom rules from records."""
+    """Streams base/custom answering-rule updates, one chunk per record.
+
+    A generator yielding true per-record progress:
+      {"type": "start", "total": N, ...}
+      {"type": "progress", "current": i, "total": N, "result": {...}}
+      {"type": "done", "results": [ ...all result items... ]}
+    """
+    total = len(records)
+    yield {"type": "start", "total": total, "message": f"Applying {total} rule{'' if total == 1 else 's'}…"}
     results = []
-    for rule in records:
+    for i, rule in enumerate(records):
         # Cooperative stop: rules already written stand; the rest are skipped.
         if task_control.is_stopped(task_id):
-            results.append({"name": "—", "status": "cancelled", "message": "Stopped by user — remaining rules were skipped."})
+            item = {"name": "—", "status": "cancelled", "message": "Stopped by user — remaining rules were skipped."}
+            results.append(item)
+            yield {"type": "progress", "current": i, "total": total, "result": item}
             break
         action = rule.get("Action", "").upper()
         entity_id = rule.get("EntityID")
@@ -265,6 +320,8 @@ def update_rules_from_records(records, task_id=None):
         rule_id = rule.get("RuleID")
 
         if action not in ["NEW", "MODIFY"] or not entity_id:
+            # Advance the bar even for skipped rows so it tracks true position.
+            yield {"type": "progress", "current": i + 1, "total": total}
             continue
 
         try:
@@ -279,25 +336,27 @@ def update_rules_from_records(records, task_id=None):
                 api_body.pop("type", None)
                 api_body.pop("name", None)
                 response = rc_api_call(endpoint, method="PUT", json=api_body)
-                
+
             elif action == "MODIFY":
                 if not rule_id or rule_id == 'N/A': raise ValueError("RuleID is required for MODIFY action.")
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule/{rule_id}"
                 response = rc_api_call(endpoint, method="PUT", json=api_body)
-                
+
             elif action == "NEW":
                 endpoint = f"/restapi/v1.0/account/~/extension/{entity_id}/answering-rule"
                 response = rc_api_call(endpoint, method="POST", json=api_body)
-            
+
             if response:
-                results.append({"name": f"{entity_name} - {rule_name}", "status": "success", "message": f"Action '{action}' successful."})
+                item = {"name": f"{entity_name} - {rule_name}", "status": "success", "message": f"Action '{action}' successful."}
             else:
-                 results.append({"name": f"{entity_name} - {rule_name}", "status": "error", "message": "API call failed. Check server logs."})
+                item = {"name": f"{entity_name} - {rule_name}", "status": "error", "message": "API call failed. Check server logs."}
         except Exception as e:
             print(f"ERROR processing rule update for {entity_name}: {e}")
-            results.append({"name": f"{entity_name} - {rule_name}", "status": "error", "message": str(e)})
+            item = {"name": f"{entity_name} - {rule_name}", "status": "error", "message": str(e)}
+        results.append(item)
+        yield {"type": "progress", "current": i + 1, "total": total, "result": item}
 
-    return results
+    yield {"type": "done", "results": results}
 
 def _parse_rule_details(rule):
     """Parses a detailed rule object into simple, readable strings. Maps ActionTarget dynamically."""

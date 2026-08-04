@@ -460,6 +460,32 @@ document.addEventListener('DOMContentLoaded', () => {
         sortDirection = isAsc ? 'desc' : 'asc';
     };
 
+    // --- NDJSON stream reader ---
+    // Reads a newline-delimited JSON stream, invoking onChunk(obj) for each
+    // parsed line as soon as it arrives — this is what drives the real-time bar.
+    const readNdjson = async (response, onChunk) => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                let obj;
+                try { obj = JSON.parse(line); } catch (e) { continue; }
+                onChunk(obj);
+            }
+        }
+        // Flush any trailing partial line (shouldn't normally happen).
+        if (buffer.trim()) {
+            try { onChunk(JSON.parse(buffer)); } catch (e) {}
+        }
+    };
+
     // --- Core Operations ---
     const handleFetch = async (dataType, entityType, category = 'all') => {
         toggleLoading(true);
@@ -467,6 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const label = dataType === 'Rules'
             ? `Fetching ${entityType} ${category} rules…`
             : `Fetching ${entityType} hours…`;
+        // Indeterminate until the server reports the real entity count.
         AP.start(label);
         try {
             // Append category parameter for rules endpoint
@@ -481,11 +508,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 try { const errorJson = await response.json(); errorMsg = errorJson.error || errorMsg; } catch (e) {}
                 throw new Error(errorMsg);
             }
-            
-            const data = await response.json();
+
+            let finalData = null;
+            let streamError = null;
+            let total = 0;
+
+            await readNdjson(response, (chunk) => {
+                switch (chunk.type) {
+                    case 'start':
+                        if (chunk.message) AP.start(chunk.message);
+                        break;
+                    case 'total':
+                        total = chunk.total || 0;
+                        if (total === 0) {
+                            AP.set(100, 'No records found');
+                        } else {
+                            AP.set(0, `Processing 0 / ${total} ${entityType}…`);
+                        }
+                        break;
+                    case 'progress':
+                        if (chunk.total) {
+                            AP.set((chunk.current / chunk.total) * 100,
+                                   `Processing ${chunk.current} / ${chunk.total} ${entityType}…`);
+                        }
+                        break;
+                    case 'done':
+                        finalData = chunk.data || [];
+                        break;
+                    case 'error':
+                        streamError = chunk.message || 'Unknown error while fetching.';
+                        break;
+                }
+            });
+
+            if (streamError) throw new Error(streamError);
+
+            const data = finalData || [];
             currentData = data;
             renderTable(data, dataType);
-            
+
             downloadCsvBtn.disabled = data.length === 0;
             applyInAppChangesBtn.disabled = data.length === 0;
             AP.finish(`Loaded ${data.length} record${data.length === 1 ? '' : 's'}`);
@@ -509,13 +570,12 @@ document.addEventListener('DOMContentLoaded', () => {
         bulkHoursTaskId = `bh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         if (progressStopBtn) { progressStopBtn.classList.remove('hidden'); progressStopBtn.disabled = false; progressStopBtn.textContent = '■ Stop'; }
         setResultData(null);
-        progressBar.style.width = '10%';
+        progressBar.style.width = '0%';
         progressBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
         progressTitle.textContent = "Updating RingCentral...";
         logProgress(`Packaging ${records.length} records for ${currentDataType.toLowerCase()} update...`, 'info');
 
         try {
-            progressBar.style.width = '50%';
             logProgress(`Sending request to RingCentral API...`, 'info');
 
             const response = await fetch('/api/bulk_hours/upload', {
@@ -523,15 +583,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ dataType: currentDataType, records: records, task_id: bulkHoursTaskId })
             });
-            const results = await response.json();
-            if (!response.ok) throw new Error(results.error || 'Unknown upload error.');
+            if (!response.ok) {
+                let errMsg = 'Unknown upload error.';
+                try { errMsg = (await response.json()).error || errMsg; } catch (e) {}
+                throw new Error(errMsg);
+            }
+
+            // Consume the live NDJSON progress stream. Each per-record chunk moves
+            // the bar by its true position and logs the outcome as it happens.
+            let results = [];
+            let total = records.length;
+            let streamError = null;
+
+            await readNdjson(response, (chunk) => {
+                switch (chunk.type) {
+                    case 'start':
+                        total = chunk.total || total;
+                        progressTitle.textContent = `Updating RingCentral... (0 / ${total})`;
+                        if (chunk.message) logProgress(chunk.message, 'info');
+                        break;
+                    case 'progress': {
+                        if (chunk.total) {
+                            progressBar.style.width = `${(chunk.current / chunk.total) * 100}%`;
+                            progressTitle.textContent = `Updating RingCentral... (${chunk.current} / ${chunk.total})`;
+                        }
+                        const r = chunk.result;
+                        if (r) {
+                            logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`,
+                                        r.status === 'success' ? 'success' : (r.status === 'error' ? 'error' : 'info'));
+                        }
+                        break;
+                    }
+                    case 'done':
+                        results = chunk.results || results;
+                        break;
+                    case 'error':
+                        streamError = chunk.message || 'Unknown upload error.';
+                        break;
+                }
+            });
+
+            if (streamError) throw new Error(streamError);
 
             progressBar.style.width = '100%';
             const cancelled = results.some(r => r.status === 'cancelled');
             const success = results.filter(r => r.status === 'success').length;
             const errors = results.filter(r => r.status === 'error').length;
-
-            results.forEach(r => logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, r.status === 'success' ? 'success' : (r.status === 'error' ? 'error' : 'info')));
 
             setResultData(results.map(r => ({
                 'Data Type': currentDataType,
