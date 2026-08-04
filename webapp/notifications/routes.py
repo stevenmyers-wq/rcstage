@@ -7,11 +7,6 @@ from webapp.rc_api import rc_api_call
 
 notifications_bp = Blueprint('notifications_bp', __name__)
 
-# Top-level fields RingCentral returns on GET but rejects on PUT. They must be
-# stripped before echoing the settings object back (same list the CQ Hours
-# module uses for its answering-rule/notification writes).
-_NOTIF_READ_ONLY = ('uri', 'id', 'type', 'name', 'creationTime', 'lastModifiedTime')
-
 
 def _pop_param_path(obj, path):
     """Remove a dotted parameter path (e.g. 'voicemails.markAsRead' or
@@ -140,13 +135,12 @@ def audit_single_extension():
     settings = resp.json()
 
     def get_emails(obj, key):
-        # In advanced mode each category carries its own recipient list. On this
-        # account that list lives under the category's 'emailAddresses' (the same
-        # field the CQ Hours module reads and writes); 'advancedEmailAddresses'
-        # is checked only as a fallback for other API shapes.
+        # In advanced mode each category carries its own recipient list under
+        # 'advancedEmailAddresses' (confirmed against the live portal payload);
+        # 'emailAddresses' is only a defensive fallback.
         cat = obj.get(key) if obj else None
         if not cat: return ""
-        emails = cat.get('emailAddresses') or cat.get('advancedEmailAddresses') or []
+        emails = cat.get('advancedEmailAddresses') or cat.get('emailAddresses') or []
         return "; ".join(emails)
 
     def get_flag(obj, key):
@@ -214,42 +208,39 @@ def update_single_extension():
 
     original = original_resp.json()
 
-    # Full read-modify-write. Start from the current settings, change only what
-    # the row specifies, then PUT the whole object back — the same approach the
-    # CQ Hours module uses successfully.
-    #
-    # Echoing the complete resource (every category, including ones this tool
-    # does not manage such as outboundFaxes) is what keeps RingCentral from
-    # rejecting the write with "Parameter [outboundFaxes] value is invalid":
-    # the API validates the whole object and every required category is present.
-    # Read-only top-level fields are stripped first, because RingCentral returns
-    # them on GET but rejects them on PUT.
+    # Full read-modify-write, mirroring the RingCentral portal's own request:
+    # echo the whole settings object back and change only the fields this row
+    # touches. Sending the complete resource (every category, incl. ones this
+    # tool does not manage such as outboundFaxes/callNotes) is what keeps the
+    # API from rejecting the write for a missing/invalid category.
     new_notif = copy.deepcopy(original)
-    for field in _NOTIF_READ_ONLY:
-        new_notif.pop(field, None)
 
     if 'advancedMode' in new_notif:
         new_notif['advancedMode'] = requested_advanced
     advanced = bool(new_notif.get('advancedMode', False))
 
-    # Top-level 'emailAddresses' is the basic-mode global recipient list.
-    #  - Advanced mode: RingCentral rejects a non-empty top-level list (each
-    #    category carries its own recipients). The stored value is often a stale
-    #    non-empty list left over from basic mode, which RingCentral then rejects
-    #    on write with "Parameter [emailAddresses] value is invalid" — so clear it.
-    #  - Basic mode: set it from the Global Emails column when a value is given;
-    #    a blank column leaves the existing list untouched.
-    if advanced:
-        new_notif['emailAddresses'] = []
-    else:
+    # Queue managers vs advanced mode: RingCentral rejects advanced mode while
+    # queue managers are selected from the user list (EXT-465, "Advanced mode is
+    # not available when queue managers are selected from user list"). When we
+    # enable advanced mode, de-select the managers so our uploaded per-category
+    # addresses take effect instead.
+    if advanced and new_notif.get('emailRecipients'):
+        new_notif.pop('emailRecipients', None)
+        if 'includeManagers' in new_notif:
+            new_notif['includeManagers'] = False
+
+    # Top-level 'emailAddresses' is the basic-mode global recipient list. In
+    # advanced mode the portal leaves it as-is (it is harmless there), so we only
+    # touch it in basic mode, from the Global Emails column when a value is given.
+    if not advanced:
         global_emails = parse_list(data.get('global_emails'))
         if global_emails:
             new_notif['emailAddresses'] = global_emails
 
     # Per-category changes: notifyByEmail from the row's enable flag; per-category
-    # recipients (advanced mode) written to the category's own 'emailAddresses'
-    # list — how this account stores them and how CQ Hours writes them. A blank
-    # email column leaves the stored list untouched.
+    # recipients (advanced mode) written to the category's 'advancedEmailAddresses'
+    # list — the field the portal reads and writes. A blank email column leaves
+    # the stored list untouched.
     cat_fields = {
         'voicemails':   ('enable_vm',     'vm_emails'),
         'missedCalls':  ('enable_missed', 'missed_emails'),
@@ -263,9 +254,19 @@ def update_single_extension():
         enable_val = data.get(enable_key)
         if enable_val not in (None, ''):
             block['notifyByEmail'] = parse_bool(enable_val)
-        emails_val = data.get(emails_key)
-        if advanced and emails_val not in (None, ''):
-            block['emailAddresses'] = parse_list(emails_val)
+        if advanced:
+            emails_val = data.get(emails_key)
+            if emails_val not in (None, ''):
+                block['advancedEmailAddresses'] = parse_list(emails_val)
+
+    # When advanced mode is on, the portal sends an advancedEmailAddresses list
+    # on every notification category (empty where none is set). Ensure the same
+    # shape so a basic->advanced flip doesn't leave a category without the field.
+    if advanced:
+        for cat in ('voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts', 'outboundFaxes'):
+            block = new_notif.get(cat)
+            if isinstance(block, dict) and 'advancedEmailAddresses' not in block:
+                block['advancedEmailAddresses'] = []
 
     # PUT, then iteratively drop any field RingCentral reports as invalid and
     # retry. The GET returns fields (markAsRead, notifyBySms, includeTranscription,
