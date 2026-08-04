@@ -1,9 +1,56 @@
+import copy
+import re
 import time
 from flask import Blueprint, jsonify, request
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
 
 notifications_bp = Blueprint('notifications_bp', __name__)
+
+# Top-level fields RingCentral returns on GET but rejects on PUT. They must be
+# stripped before echoing the settings object back (same list the CQ Hours
+# module uses for its answering-rule/notification writes).
+_NOTIF_READ_ONLY = ('uri', 'id', 'type', 'name', 'creationTime', 'lastModifiedTime')
+
+
+def _pop_param_path(obj, path):
+    """Remove a dotted parameter path (e.g. 'voicemails.markAsRead' or
+    'outboundFaxes') from a nested settings dict. Returns True if something was
+    removed."""
+    parts = path.split('.')
+    cur = obj
+    for p in parts[:-1]:
+        if not isinstance(cur, dict) or p not in cur:
+            return False
+        cur = cur[p]
+    if isinstance(cur, dict) and parts[-1] in cur:
+        cur.pop(parts[-1], None)
+        return True
+    return False
+
+
+def _invalid_param_paths(resp):
+    """Extract the parameter path(s) RingCentral flagged as invalid from an
+    error response, e.g. 'Parameter [voicemails.markAsRead] value is invalid.'
+    Prefers the structured 'parameterName' when present."""
+    paths = []
+    try:
+        body = resp.json()
+    except Exception:
+        return paths
+    for err in (body.get('errors') or []):
+        name = err.get('parameterName')
+        if name:
+            paths.append(name)
+            continue
+        match = re.search(r'Parameter \[([^\]]+)\]', err.get('message', '') or '')
+        if match:
+            paths.append(match.group(1))
+    if not paths:
+        match = re.search(r'Parameter \[([^\]]+)\]', body.get('message', '') or '')
+        if match:
+            paths.append(match.group(1))
+    return paths
 
 def _call_with_retry(endpoint, method='GET', **kwargs):
     """Helper to handle 429 Rate Limits gracefully within the route (server-side pause)."""
@@ -93,14 +140,13 @@ def audit_single_extension():
     settings = resp.json()
 
     def get_emails(obj, key):
-        # Per-category recipients live under 'advancedEmailAddresses' (used when
-        # advancedMode is true). There is no 'emailAddresses' inside a category
-        # object; the older read of that key always came back empty, so advanced
-        # mode extensions reported no per-category emails. Fall back to the
-        # legacy key only defensively.
+        # In advanced mode each category carries its own recipient list. On this
+        # account that list lives under the category's 'emailAddresses' (the same
+        # field the CQ Hours module reads and writes); 'advancedEmailAddresses'
+        # is checked only as a fallback for other API shapes.
         cat = obj.get(key) if obj else None
         if not cat: return ""
-        emails = cat.get('advancedEmailAddresses') or cat.get('emailAddresses') or []
+        emails = cat.get('emailAddresses') or cat.get('advancedEmailAddresses') or []
         return "; ".join(emails)
 
     def get_flag(obj, key):
@@ -167,36 +213,36 @@ def update_single_extension():
         return jsonify({"status": "error", "message": "Failed to fetch original settings"})
 
     original = original_resp.json()
-    current_advanced = bool(original.get('advancedMode', False))
 
-    # The notification-settings PUT is a partial update. Only send fields we are
-    # actually changing.
+    # Full read-modify-write. Start from the current settings, change only what
+    # the row specifies, then PUT the whole object back — the same approach the
+    # CQ Hours module uses successfully.
     #
-    # advancedMode is the important one: including it in the body makes
-    # RingCentral re-validate EVERY notification category on the resource,
-    # including ones this tool never manages (e.g. outboundFaxes). If any of
-    # those was left in a state RingCentral rejects (notify-by-email on with no
-    # advanced email address), the whole request fails with
-    # "Parameter [outboundFaxes] value is invalid" — blocking the changes the
-    # user did request. So only send advancedMode when it genuinely changes.
-    changing_mode = ('advancedMode' in original) and (requested_advanced != current_advanced)
+    # Echoing the complete resource (every category, including ones this tool
+    # does not manage such as outboundFaxes) is what keeps RingCentral from
+    # rejecting the write with "Parameter [outboundFaxes] value is invalid":
+    # the API validates the whole object and every required category is present.
+    # Read-only top-level fields are stripped first, because RingCentral returns
+    # them on GET but rejects them on PUT.
+    new_notif = copy.deepcopy(original)
+    for field in _NOTIF_READ_ONLY:
+        new_notif.pop(field, None)
 
-    payload = {}
-    if changing_mode:
-        payload['advancedMode'] = requested_advanced
+    if 'advancedMode' in new_notif:
+        new_notif['advancedMode'] = requested_advanced
+    advanced = bool(new_notif.get('advancedMode', False))
 
-    # Global (basic-mode) recipient list — only send when a value is supplied so
-    # a blank column never clears existing recipients.
+    # Global (basic-mode) recipient list — only touch it when a value is given,
+    # so a blank column never clears existing recipients. In advanced mode this
+    # top-level list is ignored by RingCentral but harmless to carry.
     global_emails = parse_list(data.get('global_emails'))
     if global_emails:
-        payload['emailAddresses'] = global_emails
+        new_notif['emailAddresses'] = global_emails
 
-    # Per category, include only the fields the row actually defines. We do not
-    # echo the stored category object back, so untouched settings (attachments,
-    # mark-as-read, SMS recipients, ...) are preserved by the partial update
-    # instead of being re-sent — and an undefined category is omitted entirely.
-    # Per-category recipients use 'advancedEmailAddresses', the field the API
-    # reads in advanced mode.
+    # Per-category changes: notifyByEmail from the row's enable flag; per-category
+    # recipients (advanced mode) written to the category's own 'emailAddresses'
+    # list — how this account stores them and how CQ Hours writes them. A blank
+    # email column leaves the stored list untouched.
     cat_fields = {
         'voicemails':   ('enable_vm',     'vm_emails'),
         'missedCalls':  ('enable_missed', 'missed_emails'),
@@ -204,31 +250,45 @@ def update_single_extension():
         'inboundTexts': ('enable_sms',    'sms_emails'),
     }
     for cat, (enable_key, emails_key) in cat_fields.items():
-        if cat not in original:
+        block = new_notif.get(cat)
+        if not isinstance(block, dict):
             continue
-        obj = {}
         enable_val = data.get(enable_key)
         if enable_val not in (None, ''):
-            obj['notifyByEmail'] = parse_bool(enable_val)
+            block['notifyByEmail'] = parse_bool(enable_val)
         emails_val = data.get(emails_key)
-        if emails_val not in (None, ''):
-            obj['advancedEmailAddresses'] = parse_list(emails_val)
-        if obj:
-            payload[cat] = obj
+        if advanced and emails_val not in (None, ''):
+            block['emailAddresses'] = parse_list(emails_val)
 
-    if not payload:
-        return jsonify({"status": "success", "message": "No changes"})
+    # PUT, then iteratively drop any field RingCentral reports as invalid and
+    # retry. The GET returns fields (markAsRead, notifyBySms, includeTranscription,
+    # ...) that PUT rejects for some extension types; RingCentral names the
+    # offending parameter, so we pop exactly that one and resend. Bounded to
+    # avoid an unbounded loop.
+    put_resp = rc_api_call(endpoint, method='PUT', json=new_notif, return_response=True)
+    attempts = 0
+    while attempts < 8 and not (put_resp and getattr(put_resp, 'ok', False)):
+        if put_resp is not None and getattr(put_resp, 'status_code', None) == 429:
+            retry_after = int(put_resp.headers.get('Retry-After', 60)) if hasattr(put_resp, 'headers') else 60
+            return jsonify({"error": "Rate limit", "retry_after": retry_after}), 429
+        invalid_paths = _invalid_param_paths(put_resp)
+        if not invalid_paths:
+            break
+        removed = False
+        for path in invalid_paths:
+            if _pop_param_path(new_notif, path):
+                removed = True
+        if not removed:
+            break
+        attempts += 1
+        put_resp = rc_api_call(endpoint, method='PUT', json=new_notif, return_response=True)
 
-    put_resp = rc_api_call(endpoint, method='PUT', json=payload, return_response=True)
-    
-    if put_resp and getattr(put_resp, 'status_code', None) == 429:
-        retry_after = int(put_resp.headers.get('Retry-After', 60)) if hasattr(put_resp, 'headers') else 60
-        return jsonify({"error": "Rate limit", "retry_after": retry_after}), 429
-        
     if put_resp and getattr(put_resp, 'ok', False):
         return jsonify({"status": "success"})
-    else:
-        msg = "Update failed"
-        try: msg = put_resp.json().get('message', msg)
-        except: pass
-        return jsonify({"status": "error", "message": msg})
+
+    msg = "Update failed"
+    try:
+        msg = put_resp.json().get('message', msg)
+    except Exception:
+        pass
+    return jsonify({"status": "error", "message": msg})
