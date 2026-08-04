@@ -19,6 +19,9 @@
         <button id="btn-open-export" class="btn-success flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
             📥 Export Archive
         </button>
+        <button id="btn-download-template" class="btn-primary !bg-indigo-500 hover:!bg-indigo-600 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled title="Download a spreadsheet pre-filled with every possible greeting slot for the selected endpoints, ready for the Upload by XLSX workflow.">
+            ⬇ Download Template (Selected)
+        </button>
         <button id="btn-open-xlsx" class="btn-primary !bg-indigo-600 hover:!bg-indigo-700 flex-1 !py-3.5 text-base" title="Bulk-apply greetings from a spreadsheet and a Google Drive folder. Works independently of the table selection.">
             📄 Upload by XLSX
         </button>
@@ -221,6 +224,7 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                     Download template
                 </a>
+                <p class="text-xs !mt-1">Tip: select endpoints in the table and use <strong>⬇ Download Template (Selected)</strong> to get a sheet already filled with every greeting slot for those endpoints — just add the file names.</p>
             </div>
 
             <div class="input-wrapper">
@@ -287,6 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnOpenUpload = document.getElementById('btn-open-upload');
     const btnOpenTts = document.getElementById('btn-open-tts');
     const btnOpenExport = document.getElementById('btn-open-export');
+    const btnDownloadTemplate = document.getElementById('btn-download-template');
     const audioPlayer = document.getElementById('global-audio-player');
     let currentlyPlayingBtn = null;
 
@@ -553,6 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnOpenUpload.disabled = !hasSelection;
         btnOpenTts.disabled = !hasSelection;
         btnOpenExport.disabled = !hasSelection;
+        btnDownloadTemplate.disabled = !hasSelection;
         document.querySelectorAll('.selected-count-display').forEach(el => { el.textContent = `Action targets: ${count} selected endpoint(s).`; });
     }
 
@@ -825,6 +831,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // XLSX bulk upload works from the spreadsheet itself, so it is independent
     // of the table selection and stays enabled at all times.
     document.getElementById('btn-open-xlsx').addEventListener('click', () => openModal('modal-xlsx'));
+
+    // Download a spreadsheet pre-filled with every possible greeting slot for the
+    // currently selected endpoints — the input side of the Upload by XLSX flow.
+    btnDownloadTemplate.addEventListener('click', async () => {
+        if (selectedIds.size === 0) return;
+        const original = btnDownloadTemplate.innerHTML;
+        btnDownloadTemplate.disabled = true;
+        btnDownloadTemplate.innerHTML = '<span class="inline-flex items-center gap-2"><span class="spinner w-4 h-4 border-white border-t-transparent"></span> Building…</span>';
+        try {
+            const res = await fetch('/api/message_management/xlsx_template_selected', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ext_ids: Array.from(selectedIds) })
+            });
+            if (!res.ok) {
+                let msg = `HTTP ${res.status}`;
+                try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Selected_Greeting_Upload_Template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Could not build the template: ' + err.message);
+        } finally {
+            btnDownloadTemplate.innerHTML = original;
+            btnDownloadTemplate.disabled = selectedIds.size === 0;
+        }
+    });
 
     const progressLog = document.getElementById('progress-log');
     const progressBar = document.getElementById('progress-bar');

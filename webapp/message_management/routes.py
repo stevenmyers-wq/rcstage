@@ -158,6 +158,28 @@ def xlsx_template():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@message_management_bp.route('/xlsx_template_selected', methods=['POST'])
+@require_rc_token
+@track_usage('Message Management - Download Selected Template')
+def xlsx_template_selected():
+    """Download a spreadsheet pre-populated with every possible greeting slot for
+    the endpoints selected in the table, ready for the bulk XLSX upload workflow."""
+    try:
+        data = request.get_json(silent=True) or {}
+        ext_ids = data.get('ext_ids', [])
+        if not ext_ids:
+            return jsonify({'error': 'No endpoints selected'}), 400
+
+        buffer = utils.generate_selected_template(ext_ids)
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='Selected_Greeting_Upload_Template.xlsx'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @message_management_bp.route('/xlsx_upload', methods=['POST'])
 @require_rc_token
 @track_usage('Message Management - XLSX Bulk Upload')

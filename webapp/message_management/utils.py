@@ -1157,38 +1157,53 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
         'cancelled': cancelled,
     }
 
-def generate_upload_template():
-    """Build a downloadable .xlsx template: an Upload sheet with the required
-    columns and an example row, plus a reference sheet of accepted type labels."""
-    import pandas as pd
+# Every accepted friendly label, in the order used for the dropdown. Kept in
+# sync with resolve_greeting_type_label().
+ACCEPTED_TYPE_LABELS = [
+    'Business Hours — Voicemail',
+    'After Hours — Voicemail',
+    'Business Hours — Connecting Message',
+    'Business Hours — Connecting Audio',
+    'Business Hours — Hold Music',
+    'Business Hours — Introductory Greeting',
+    'Business Hours — Interrupt Prompt',
+    'After Hours — Announcement',
+    'IVR Audio Prompt',
+    'Voicemail Greeting',
+    'Announcement Greeting',
+]
 
-    # Every accepted friendly label, in the order used for the dropdown. Kept in
-    # sync with resolve_greeting_type_label().
-    accepted_type_labels = [
+# Every greeting slot each endpoint type exposes, expressed as the friendly
+# labels above so a generated sheet drops straight into the bulk-upload flow.
+# Kept in sync with the front-end GREETING_TYPE_MAP and resolve_greeting_type_label().
+TEMPLATE_SLOTS_BY_TYPE = {
+    'User': [
         'Business Hours — Voicemail',
         'After Hours — Voicemail',
         'Business Hours — Connecting Message',
         'Business Hours — Connecting Audio',
         'Business Hours — Hold Music',
+        'After Hours — Announcement',
+    ],
+    'Department': [
+        'Business Hours — Voicemail',
+        'After Hours — Voicemail',
         'Business Hours — Introductory Greeting',
+        'Business Hours — Connecting Audio',
+        'Business Hours — Hold Music',
         'Business Hours — Interrupt Prompt',
         'After Hours — Announcement',
-        'IVR Audio Prompt',
-        'Voicemail Greeting',
-        'Announcement Greeting',
-    ]
+    ],
+    'IvrMenu': ['IVR Audio Prompt'],
+    'Voicemail': ['Voicemail Greeting'],
+    'Announcement': ['Announcement Greeting'],
+}
 
-    buffer = io.BytesIO()
-    upload_df = pd.DataFrame(
-        [{
-            'EXT NUMBER': 10118,
-            'GREETING TYPE': 'Business Hours — Voicemail',
-            'GREETING NAME': 'Generic_Service_Submenu.wav',
-        }],
-        columns=['EXT NUMBER', 'GREETING TYPE', 'GREETING NAME'],
-    )
 
-    reference_df = pd.DataFrame([
+def _reference_sheet_df():
+    """The per-endpoint-type cheat sheet written to the 'Accepted Types' tab."""
+    import pandas as pd
+    return pd.DataFrame([
         {'Endpoint Type': 'User',
          'Accepted GREETING TYPE labels': 'Business Hours — Voicemail; After Hours — Voicemail; Business Hours — Connecting Message; Business Hours — Connecting Audio; Business Hours — Hold Music; After Hours — Announcement'},
         {'Endpoint Type': 'Call Queue (Department)',
@@ -1201,9 +1216,22 @@ def generate_upload_template():
          'Accepted GREETING TYPE labels': 'Announcement Greeting'},
     ])
 
+
+def _write_template_workbook(buffer, upload_df):
+    """Write a bulk-upload template workbook from ``upload_df`` (whose columns must
+    include GREETING TYPE): the Upload sheet, a reference cheat sheet, and a hidden
+    list backing a validated dropdown on the GREETING TYPE column. Shared by the
+    blank starter template and the selection-driven template."""
+    import pandas as pd
+
+    columns = list(upload_df.columns)
+    type_idx = columns.index('GREETING TYPE')
+    # Cover every pre-filled row plus generous headroom for manual additions.
+    last_data_row = max(len(upload_df) + 1, 1000)
+
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         upload_df.to_excel(writer, index=False, sheet_name='Upload')
-        reference_df.to_excel(writer, index=False, sheet_name='Accepted Types')
+        _reference_sheet_df().to_excel(writer, index=False, sheet_name='Accepted Types')
 
         workbook = writer.book
         upload_ws = writer.sheets['Upload']
@@ -1211,18 +1239,17 @@ def generate_upload_template():
         # A hidden sheet holds the flat label list so the dropdown can reference a
         # range (avoiding Excel's ~255 char limit on inline list sources).
         lists_ws = workbook.add_worksheet('Lists')
-        for i, label in enumerate(accepted_type_labels):
+        for i, label in enumerate(ACCEPTED_TYPE_LABELS):
             lists_ws.write(i, 0, label)
         lists_ws.hide()
 
         # Widen columns for readability.
-        upload_ws.set_column('A:A', 14)
-        upload_ws.set_column('B:B', 34)
-        upload_ws.set_column('C:C', 34)
+        for idx, col in enumerate(columns):
+            upload_ws.set_column(idx, idx, 14 if col == 'EXT NUMBER' else 34)
 
-        # Dropdown on the GREETING TYPE column (B), rows 2–1000.
-        last_row = len(accepted_type_labels)
-        upload_ws.data_validation(1, 1, 1000, 1, {
+        # Dropdown on the GREETING TYPE column, from the first data row down.
+        last_row = len(ACCEPTED_TYPE_LABELS)
+        upload_ws.data_validation(1, type_idx, last_data_row, type_idx, {
             'validate': 'list',
             'source': f'=Lists!$A$1:$A${last_row}',
             'input_title': 'Greeting Type',
@@ -1232,5 +1259,61 @@ def generate_upload_template():
             'error_message': 'Not one of the accepted labels. See the "Accepted Types" tab for what applies to each endpoint type.',
         })
 
+
+def generate_upload_template():
+    """Build a downloadable .xlsx template: an Upload sheet with the required
+    columns and an example row, plus a reference sheet of accepted type labels."""
+    import pandas as pd
+
+    buffer = io.BytesIO()
+    upload_df = pd.DataFrame(
+        [{
+            'EXT NUMBER': 10118,
+            'GREETING TYPE': 'Business Hours — Voicemail',
+            'GREETING NAME': 'Generic_Service_Submenu.wav',
+        }],
+        columns=['EXT NUMBER', 'GREETING TYPE', 'GREETING NAME'],
+    )
+    _write_template_workbook(buffer, upload_df)
+    buffer.seek(0)
+    return buffer
+
+
+def generate_selected_template(ext_ids):
+    """Build a downloadable .xlsx pre-populated with one row per possible greeting
+    slot for each selected endpoint, so the bulk-upload sheet arrives ready to fill
+    in just the GREETING NAME column. Slots are chosen from each endpoint's object
+    type (a Call Queue gets its seven slots, an IVR its single prompt, and so on).
+
+    ``ext_ids`` preserves the caller's order; unknown ids are skipped. The endpoint
+    number/type/name are resolved from a single account directory listing — the
+    same source the on-screen table is built from."""
+    import pandas as pd
+
+    directory = fetch_target_endpoints().get('records', [])
+    by_id = {str(rec.get('id')): rec for rec in directory}
+
+    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'GREETING TYPE', 'GREETING NAME']
+    rows = []
+    for ext_id in ext_ids:
+        rec = by_id.get(str(ext_id))
+        if not rec:
+            continue
+        ext_num = _cell_str(rec.get('extensionNumber'))
+        ext_name = rec.get('name', '')
+        for label in TEMPLATE_SLOTS_BY_TYPE.get(rec.get('type'), []):
+            rows.append({
+                'EXT NUMBER': ext_num,
+                'ENDPOINT NAME': ext_name,
+                'GREETING TYPE': label,
+                'GREETING NAME': '',
+            })
+
+    if not rows:
+        # Never hand back an empty sheet: leave a single blank row to fill in.
+        rows.append({c: '' for c in columns})
+
+    buffer = io.BytesIO()
+    _write_template_workbook(buffer, pd.DataFrame(rows, columns=columns))
     buffer.seek(0)
     return buffer
