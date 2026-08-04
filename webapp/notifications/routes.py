@@ -232,12 +232,19 @@ def update_single_extension():
         new_notif['advancedMode'] = requested_advanced
     advanced = bool(new_notif.get('advancedMode', False))
 
-    # Global (basic-mode) recipient list — only touch it when a value is given,
-    # so a blank column never clears existing recipients. In advanced mode this
-    # top-level list is ignored by RingCentral but harmless to carry.
-    global_emails = parse_list(data.get('global_emails'))
-    if global_emails:
-        new_notif['emailAddresses'] = global_emails
+    # Top-level 'emailAddresses' is the basic-mode global recipient list.
+    #  - Advanced mode: RingCentral rejects a non-empty top-level list (each
+    #    category carries its own recipients). The stored value is often a stale
+    #    non-empty list left over from basic mode, which RingCentral then rejects
+    #    on write with "Parameter [emailAddresses] value is invalid" — so clear it.
+    #  - Basic mode: set it from the Global Emails column when a value is given;
+    #    a blank column leaves the existing list untouched.
+    if advanced:
+        new_notif['emailAddresses'] = []
+    else:
+        global_emails = parse_list(data.get('global_emails'))
+        if global_emails:
+            new_notif['emailAddresses'] = global_emails
 
     # Per-category changes: notifyByEmail from the row's enable flag; per-category
     # recipients (advanced mode) written to the category's own 'emailAddresses'
