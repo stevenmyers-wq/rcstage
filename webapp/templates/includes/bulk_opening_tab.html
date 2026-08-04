@@ -1,5 +1,17 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 
+<style>
+    /* Indeterminate action progress bar (used for fetches where total progress is unknown) */
+    #action-progress-bar.indeterminate {
+        width: 40% !important;
+        animation: bh-indeterminate 1.1s ease-in-out infinite;
+    }
+    @keyframes bh-indeterminate {
+        0%   { left: -40%; }
+        100% { left: 100%; }
+    }
+</style>
+
 <div class="space-y-8 animate-fade-in w-full">
     
     <div class="mb-4">
@@ -34,6 +46,17 @@
             <button id="fetch-queues-custom-rules-btn" class="btn-primary !bg-purple-600 hover:!bg-purple-700 flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed text-sm">
                 🔀 Fetch Queue Custom Rules
             </button>
+        </div>
+    </div>
+
+    <!-- Inline Action Progress Bar (shown for fetches, downloads & bulk edits) -->
+    <div id="action-progress" class="w-full hidden -mt-2">
+        <div class="flex items-center justify-between mb-1.5">
+            <span id="action-progress-label" class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Working…</span>
+            <span id="action-progress-pct" class="text-xs font-semibold text-slate-400"></span>
+        </div>
+        <div class="relative w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden shadow-inner">
+            <div id="action-progress-bar" class="absolute top-0 left-0 h-full rounded-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
         </div>
     </div>
 
@@ -187,6 +210,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressCloseBtn = document.getElementById('progress-close-btn');
     const progressResultBtn = document.getElementById('progress-result-btn');
     const progressStopBtn = document.getElementById('progress-stop-btn');
+
+    // Inline action progress bar (fetches, downloads, bulk edits).
+    const actionProgress = document.getElementById('action-progress');
+    const actionProgressBar = document.getElementById('action-progress-bar');
+    const actionProgressLabel = document.getElementById('action-progress-label');
+    const actionProgressPct = document.getElementById('action-progress-pct');
+    let actionProgressTimer = null;
+    const AP = {
+        _reset() {
+            clearTimeout(actionProgressTimer);
+            actionProgressBar.className = 'absolute top-0 left-0 h-full rounded-full bg-blue-600 transition-all duration-300';
+            actionProgressBar.style.left = '0%';
+        },
+        // Indeterminate bar for operations whose total progress is unknown (e.g. a fetch).
+        start(label) {
+            this._reset();
+            actionProgress.classList.remove('hidden');
+            actionProgressLabel.textContent = label || 'Working…';
+            actionProgressPct.textContent = '';
+            actionProgressBar.classList.add('indeterminate');
+        },
+        // Determinate update (0-100).
+        set(pct, label) {
+            this._reset();
+            const v = Math.max(0, Math.min(100, pct));
+            actionProgress.classList.remove('hidden');
+            if (label) actionProgressLabel.textContent = label;
+            actionProgressBar.style.width = v + '%';
+            actionProgressPct.textContent = Math.round(v) + '%';
+        },
+        finish(label) {
+            this._reset();
+            actionProgress.classList.remove('hidden');
+            actionProgressBar.classList.remove('bg-blue-600');
+            actionProgressBar.classList.add('bg-emerald-500');
+            actionProgressBar.style.width = '100%';
+            actionProgressLabel.textContent = label || 'Done';
+            actionProgressPct.textContent = '100%';
+            actionProgressTimer = setTimeout(() => actionProgress.classList.add('hidden'), 1400);
+        },
+        error(label) {
+            this._reset();
+            actionProgress.classList.remove('hidden');
+            actionProgressBar.classList.remove('bg-blue-600');
+            actionProgressBar.classList.add('bg-rose-500');
+            actionProgressBar.style.width = '100%';
+            actionProgressLabel.textContent = label || 'Failed';
+            actionProgressPct.textContent = '';
+            actionProgressTimer = setTimeout(() => actionProgress.classList.add('hidden'), 3000);
+        }
+    };
+
     // Shared with the server during an apply so /cancel can flag this run.
     let bulkHoursTaskId = null;
     if (progressStopBtn) {
@@ -389,6 +464,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleFetch = async (dataType, entityType, category = 'all') => {
         toggleLoading(true);
         currentDataType = dataType;
+        const label = dataType === 'Rules'
+            ? `Fetching ${entityType} ${category} rules…`
+            : `Fetching ${entityType} hours…`;
+        AP.start(label);
         try {
             // Append category parameter for rules endpoint
             let endpoint = `/api/bulk_hours/${dataType.toLowerCase()}/${entityType}`;
@@ -409,8 +488,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             downloadCsvBtn.disabled = data.length === 0;
             applyInAppChangesBtn.disabled = data.length === 0;
+            AP.finish(`Loaded ${data.length} record${data.length === 1 ? '' : 's'}`);
         } catch (error) {
             tbody.innerHTML = `<tr><td colspan="15" class="py-20 text-center text-rose-500 font-bold">Failed to load: ${error.message}</td></tr>`;
+            AP.error(`Failed to load: ${error.message}`);
         } finally {
             toggleLoading(false);
         }
@@ -518,7 +599,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        selectedRows.forEach(checkbox => {
+        const total = selectedRows.length;
+        AP.start(`Updating ${total} row${total === 1 ? '' : 's'}…`);
+        selectedRows.forEach((checkbox, i) => {
+            AP.set(Math.round(((i + 1) / total) * 100), `Updating ${total} row${total === 1 ? '' : 's'}…`);
             const tr = checkbox.closest('tr');
             const rowIndex = tr.dataset.index;
             
@@ -541,10 +625,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset header checkbox
         const selectAll = document.getElementById('bulk-select-all');
         if (selectAll) selectAll.checked = false;
+
+        AP.finish(`Updated ${total} row${total === 1 ? '' : 's'}`);
     });
 
     downloadCsvBtn.addEventListener('click', () => {
         if (currentData.length === 0) return;
+        AP.set(40, 'Building CSV…');
         const csvContent = [
             headers.join(','),
             ...currentData.map(row => headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','))
@@ -554,6 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
         link.href = URL.createObjectURL(blob);
         link.download = `RC_${currentDataType}_${new Date().toISOString().slice(0,10)}.csv`;
         link.click();
+        AP.finish(`CSV downloaded (${currentData.length} rows)`);
     });
 
     csvFileInput.addEventListener('change', () => {
