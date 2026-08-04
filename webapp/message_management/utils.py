@@ -1286,14 +1286,16 @@ def generate_selected_template(ext_ids):
     type (a Call Queue gets its seven slots, an IVR its single prompt, and so on).
 
     ``ext_ids`` preserves the caller's order; unknown ids are skipped. The endpoint
-    number/type/name are resolved from a single account directory listing — the
-    same source the on-screen table is built from."""
+    number/name/site/type are resolved from a single account directory listing —
+    the same source the on-screen table is built from. EXT NUMBER, GREETING TYPE
+    and GREETING NAME drive the upload; ENDPOINT NAME and SITE are read-only
+    reference columns the parser ignores."""
     import pandas as pd
 
     directory = fetch_target_endpoints().get('records', [])
     by_id = {str(rec.get('id')): rec for rec in directory}
 
-    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'GREETING TYPE', 'GREETING NAME']
+    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'SITE', 'GREETING TYPE', 'GREETING NAME']
     rows = []
     for ext_id in ext_ids:
         rec = by_id.get(str(ext_id))
@@ -1301,10 +1303,14 @@ def generate_selected_template(ext_ids):
             continue
         ext_num = _cell_str(rec.get('extensionNumber'))
         ext_name = rec.get('name', '')
+        # Mirror the table's fallback: extensions without an explicit site sit on
+        # the account's Main Site.
+        site_name = (rec.get('site') or {}).get('name') or 'Main Site'
         for label in TEMPLATE_SLOTS_BY_TYPE.get(rec.get('type'), []):
             rows.append({
                 'EXT NUMBER': ext_num,
                 'ENDPOINT NAME': ext_name,
+                'SITE': site_name,
                 'GREETING TYPE': label,
                 'GREETING NAME': '',
             })
