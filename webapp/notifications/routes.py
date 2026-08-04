@@ -151,35 +151,58 @@ def update_single_extension():
         return jsonify({"status": "error", "message": "Failed to fetch original settings"})
 
     original = original_resp.json()
-    advanced_mode = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
+    requested_advanced = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
+    current_advanced = bool(original.get('advancedMode', False))
+
+    # The notification-settings PUT is a partial update. Only send fields we are
+    # actually changing.
+    #
+    # advancedMode is the important one: including it in the body makes
+    # RingCentral re-validate EVERY notification category on the resource,
+    # including ones this tool never manages (e.g. outboundFaxes). If any of
+    # those was left in a state RingCentral rejects (notify-by-email on with no
+    # advanced email address), the whole request fails with
+    # "Parameter [outboundFaxes] value is invalid" — blocking the changes the
+    # user did request. So only send advancedMode when it genuinely changes.
+    changing_mode = ('advancedMode' in original) and (requested_advanced != current_advanced)
+
     payload = {}
-    
-    if 'advancedMode' in original:
-        payload['advancedMode'] = advanced_mode
+    if changing_mode:
+        payload['advancedMode'] = requested_advanced
 
-    if 'global_emails' in data:
-        payload["emailAddresses"] = parse_list(data.get('global_emails'))
+    # Global (basic-mode) recipient list — only send when a value is supplied so
+    # a blank column never clears existing recipients.
+    global_emails = parse_list(data.get('global_emails'))
+    if global_emails:
+        payload['emailAddresses'] = global_emails
 
-    for cat in ['voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts']:
-        if cat in original:
-            payload[cat] = original[cat] 
-            
-            # Per-category recipients must be written to 'advancedEmailAddresses'
-            # (the field the API uses in advanced mode). Writing 'emailAddresses'
-            # inside a category is ignored by the API, so advanced-mode email
-            # updates previously had no effect.
-            if cat == 'voicemails':
-                if 'enable_vm' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_vm'))
-                if 'vm_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('vm_emails'))
-            elif cat == 'missedCalls':
-                if 'enable_missed' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_missed'))
-                if 'missed_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('missed_emails'))
-            elif cat == 'inboundFaxes':
-                if 'enable_fax' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_fax'))
-                if 'fax_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('fax_emails'))
-            elif cat == 'inboundTexts':
-                if 'enable_sms' in data: payload[cat]["notifyByEmail"] = parse_bool(data.get('enable_sms'))
-                if 'sms_emails' in data: payload[cat]["advancedEmailAddresses"] = parse_list(data.get('sms_emails'))
+    # Per category, include only the fields the row actually defines. We do not
+    # echo the stored category object back, so untouched settings (attachments,
+    # mark-as-read, SMS recipients, ...) are preserved by the partial update
+    # instead of being re-sent — and an undefined category is omitted entirely.
+    # Per-category recipients use 'advancedEmailAddresses', the field the API
+    # reads in advanced mode.
+    cat_fields = {
+        'voicemails':   ('enable_vm',     'vm_emails'),
+        'missedCalls':  ('enable_missed', 'missed_emails'),
+        'inboundFaxes': ('enable_fax',    'fax_emails'),
+        'inboundTexts': ('enable_sms',    'sms_emails'),
+    }
+    for cat, (enable_key, emails_key) in cat_fields.items():
+        if cat not in original:
+            continue
+        obj = {}
+        enable_val = data.get(enable_key)
+        if enable_val not in (None, ''):
+            obj['notifyByEmail'] = parse_bool(enable_val)
+        emails_val = data.get(emails_key)
+        if emails_val not in (None, ''):
+            obj['advancedEmailAddresses'] = parse_list(emails_val)
+        if obj:
+            payload[cat] = obj
+
+    if not payload:
+        return jsonify({"status": "success", "message": "No changes"})
 
     put_resp = rc_api_call(endpoint, method='PUT', json=payload, return_response=True)
     
