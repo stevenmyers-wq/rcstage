@@ -140,6 +140,22 @@ def update_single_extension():
         if not val: return []
         return [e.strip() for e in val.split(';') if e.strip()]
 
+    requested_advanced = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
+
+    # In advanced mode, notifications are driven entirely by the per-category
+    # advanced email addresses (the top-level global list is ignored). If
+    # Advanced Mode is TRUE but every advanced email field is blank, the row
+    # can't produce a valid, meaningful update — reject it up front with a
+    # clear message instead of sending it to RingCentral.
+    if requested_advanced:
+        advanced_email_fields = ('vm_emails', 'fax_emails', 'sms_emails', 'missed_emails')
+        if all(not str(data.get(f) or '').strip() for f in advanced_email_fields):
+            return jsonify({
+                "status": "error",
+                "message": "Advanced Mode is TRUE but all advanced email fields "
+                           "(Voicemail/Fax/SMS/MissedCall Emails) are blank."
+            })
+
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
     
     original_resp = rc_api_call(endpoint, return_response=True)
@@ -151,7 +167,6 @@ def update_single_extension():
         return jsonify({"status": "error", "message": "Failed to fetch original settings"})
 
     original = original_resp.json()
-    requested_advanced = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
     current_advanced = bool(original.get('advancedMode', False))
 
     # The notification-settings PUT is a partial update. Only send fields we are
