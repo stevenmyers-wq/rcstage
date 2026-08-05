@@ -3,11 +3,11 @@
     <!-- Header -->
     <div class="border-b border-slate-200 dark:border-slate-800 pb-4 w-full">
         <h2 class="text-display mb-2">User Status</h2>
-        <p class="text-subheading">Audit and update user availability. Reset users out of Do Not Disturb, and turn call-queue call acceptance back on — both overall and per queue.</p>
+        <p class="text-subheading">Audit and update user availability. Reset users out of Do Not Disturb, turn call-queue call acceptance back on (overall and per queue), or take a live snapshot of current status.</p>
     </div>
 
-    <!-- Two feature cards -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+    <!-- Feature cards -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
 
         <!-- Card 1: User DND Status -->
         <div class="card flex flex-col !p-6">
@@ -57,7 +57,7 @@
                 currently set to reject queue calls.
             </p>
 
-            <!-- Optional queue scoping -->
+            <!-- Optional queue scoping (shared with the live view) -->
             <div class="mb-4">
                 <label class="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 cursor-pointer select-none">
                     <input type="checkbox" id="us-scope-toggle" class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500">
@@ -84,9 +84,57 @@
                 </button>
             </div>
         </div>
+
+        <!-- Card 3: Live Status View -->
+        <div class="card flex flex-col !p-6">
+            <div class="flex items-center gap-4 mb-4">
+                <div class="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center shadow-sm flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                </div>
+                <div>
+                    <h3 class="text-heading text-lg">Live Status View</h3>
+                    <p class="text-subheading">On-demand snapshot, in-app.</p>
+                </div>
+            </div>
+            <p class="text-subheading mb-5">
+                RingCentral has no live push feed, so this is a point-in-time snapshot — it reflects the moment you fetch.
+                Hit <span class="font-bold text-slate-600 dark:text-slate-300">Refresh</span> to pull the latest.
+            </p>
+            <div class="input-wrapper mb-4">
+                <label class="input-label">View</label>
+                <select id="us-live-view" class="input-field">
+                    <option value="dnd/audit">User DND Status</option>
+                    <option value="cq/audit">Call Queue Status</option>
+                </select>
+            </div>
+            <button id="us-live-fetch"
+                    class="btn-primary mt-auto w-full !bg-indigo-600 hover:!bg-indigo-700">
+                Fetch Live Status
+            </button>
+        </div>
     </div>
 
-    <!-- Result summary + download -->
+    <!-- Live view panel (full width) -->
+    <div id="us-live-panel" class="hidden card !p-5 w-full">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+                <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1" id="us-live-heading">Live View</div>
+                <p class="text-xs text-slate-500 dark:text-slate-400" id="us-live-meta">—</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="text" id="us-live-search" class="input-field !py-2 !px-3 !text-sm !w-48 sm:!w-56" placeholder="Filter rows…">
+                <button id="us-live-refresh" class="btn-secondary !py-2 !px-4 text-sm whitespace-nowrap">↻ Refresh</button>
+            </div>
+        </div>
+        <div class="table-container max-h-[34rem] overflow-y-auto">
+            <table class="data-table">
+                <thead id="us-live-head"></thead>
+                <tbody id="us-live-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Result summary + download (action cards) -->
     <div id="us-result" class="hidden card !p-5 w-full">
         <div class="flex items-start justify-between gap-4">
             <div>
@@ -113,7 +161,11 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const runButtons = document.querySelectorAll('.us-run');
-    if (!runButtons.length) return;
+    const liveFetchBtn = document.getElementById('us-live-fetch');
+    const liveRefreshBtn = document.getElementById('us-live-refresh');
+    if (!runButtons.length && !liveFetchBtn) return;
+
+    const allButtons = [...runButtons, liveFetchBtn, liveRefreshBtn].filter(Boolean);
 
     const modal = document.getElementById('us-modal');
     const modalTitle = document.getElementById('us-modal-title');
@@ -125,6 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultSummary = document.getElementById('us-result-summary');
     const resultDownload = document.getElementById('us-result-download');
 
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
     function openModal() {
         modal.classList.remove('hidden');
         setTimeout(() => {
@@ -141,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modalBar.className = cls + ' h-full rounded-full transition-all duration-500';
     }
 
-    // --- Queue scoping (Call Queue card) ------------------------------------
+    // --- Queue scoping (shared by the CQ card + live view) ------------------
     const scopeToggle = document.getElementById('us-scope-toggle');
     const queuePicker = document.getElementById('us-queue-picker');
     const queueList = document.getElementById('us-queue-list');
@@ -164,10 +220,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('label');
             row.className = 'flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-white dark:hover:bg-slate-800/60';
             row.innerHTML = `
-                <input type="checkbox" class="us-q-cb w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="${q.id}" ${selectedQueues.has(q.id) ? 'checked' : ''}>
+                <input type="checkbox" class="us-q-cb w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="${esc(q.id)}" ${selectedQueues.has(q.id) ? 'checked' : ''}>
                 <span class="flex-1 min-w-0 truncate">
-                    <span class="font-bold text-slate-700 dark:text-slate-200">${q.name}</span>
-                    <span class="text-slate-400">(Ext. ${q.extensionNumber || '—'})</span>
+                    <span class="font-bold text-slate-700 dark:text-slate-200">${esc(q.name)}</span>
+                    <span class="text-slate-400">(Ext. ${esc(q.extensionNumber || '—')})</span>
                 </span>`;
             queueList.appendChild(row);
         });
@@ -184,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 queuesLoaded = true;
                 renderQueues();
             } else {
-                queueList.innerHTML = `<div class="py-2 text-center text-rose-500 italic">${data.error || 'Failed to load queues.'}</div>`;
+                queueList.innerHTML = `<div class="py-2 text-center text-rose-500 italic">${esc(data.error || 'Failed to load queues.')}</div>`;
             }
         } catch (e) {
             queueList.innerHTML = '<div class="py-2 text-center text-rose-500 italic">Network error loading queues.</div>';
@@ -207,8 +263,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Task runner --------------------------------------------------------
-    function pollStatus(taskId, label) {
+    // Build the request body for a cq/* op, applying the queue scope. Returns
+    // null if scoping is on but nothing is ticked (caller should abort).
+    function cqScopedBody() {
+        if (scopeToggle && scopeToggle.checked) {
+            if (selectedQueues.size === 0) {
+                alert('Tick at least one queue, or untick "Limit to specific queues" to run against all.');
+                return null;
+            }
+            return { queue_ids: [...selectedQueues] };
+        }
+        return {};
+    }
+
+    // --- Generic task runner ------------------------------------------------
+    // Starts an op, shows the modal, polls to completion, then hands the
+    // finished task_id to onComplete (download vs. render live table).
+    async function startTask(op, body, label, onComplete) {
+        allButtons.forEach(b => b.disabled = true);
+        resultBox.classList.add('hidden');
+        modalTitle.textContent = label + '…';
+        setBar('bg-blue-600');
+        modalBar.style.width = '0%';
+        modalPct.textContent = '0/0';
+        openModal();
+
+        try {
+            const res = await fetch(`/api/user_status/${op}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {}),
+            });
+            if (res.status === 401) { window.location.reload(); return; }
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Failed to start.');
+            pollStatus(data.task_id, onComplete);
+        } catch (e) {
+            closeModal();
+            alert('Error starting ' + label + ': ' + e.message);
+            allButtons.forEach(b => b.disabled = false);
+        }
+    }
+
+    function pollStatus(taskId, onComplete) {
         const interval = setInterval(async () => {
             let data;
             try {
@@ -227,75 +324,125 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalTitle.textContent = 'Done!';
                 setBar('bg-emerald-500');
                 modalBar.style.width = '100%';
-
-                resultOp.textContent = label;
-                resultSummary.textContent = data.summary || 'Completed.';
-                resultDownload.href = `/api/user_status/download?task_id=${taskId}`;
-                resultBox.classList.remove('hidden');
-
-                // Auto-download the report.
-                const link = document.createElement('a');
-                link.href = `/api/user_status/download?task_id=${taskId}`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-                setTimeout(closeModal, 1200);
-                runButtons.forEach(b => b.disabled = false);
+                Promise.resolve(onComplete(taskId, data)).finally(() => {
+                    setTimeout(closeModal, 1000);
+                    allButtons.forEach(b => b.disabled = false);
+                });
             } else if (data.status === 'error') {
                 clearInterval(interval);
                 modalTitle.textContent = 'Failed';
                 setBar('bg-rose-500');
                 setTimeout(closeModal, 400);
                 alert('Error: ' + (data.error || 'Unknown error.'));
-                runButtons.forEach(b => b.disabled = false);
+                allButtons.forEach(b => b.disabled = false);
             }
         }, 1000);
     }
 
+    // --- Action cards: audit/update -> download report ----------------------
     runButtons.forEach(btn => {
-        btn.addEventListener('click', async () => {
+        btn.addEventListener('click', () => {
             const op = btn.dataset.op;
             const label = btn.dataset.label;
-            const confirmMsg = btn.dataset.confirm;
-            if (confirmMsg && !confirm(confirmMsg)) return;
+            if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
 
-            const body = {};
-            if (op.startsWith('cq/') && scopeToggle && scopeToggle.checked) {
-                if (selectedQueues.size === 0) {
-                    alert('Tick at least one queue, or untick "Limit to specific queues" to run against all.');
-                    return;
-                }
-                body.queue_ids = [...selectedQueues];
+            let body = {};
+            if (op.startsWith('cq/')) {
+                body = cqScopedBody();
+                if (body === null) return;
             }
 
-            runButtons.forEach(b => b.disabled = true);
-            resultBox.classList.add('hidden');
-            modalTitle.textContent = label + '…';
-            setBar('bg-blue-600');
-            modalBar.style.width = '0%';
-            modalPct.textContent = '0/0';
-            openModal();
-
-            try {
-                const res = await fetch(`/api/user_status/${op}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-                if (res.status === 401) { window.location.reload(); return; }
-                const data = await res.json();
-                if (data.success) {
-                    pollStatus(data.task_id, label);
-                } else {
-                    throw new Error(data.error || 'Failed to start.');
-                }
-            } catch (e) {
-                closeModal();
-                alert('Error starting ' + label + ': ' + e.message);
-                runButtons.forEach(b => b.disabled = false);
-            }
+            startTask(op, body, label, (taskId, data) => {
+                resultOp.textContent = label;
+                resultSummary.textContent = data.summary || 'Completed.';
+                resultDownload.href = `/api/user_status/download?task_id=${taskId}`;
+                resultBox.classList.remove('hidden');
+                const link = document.createElement('a');
+                link.href = `/api/user_status/download?task_id=${taskId}`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
         });
     });
+
+    // --- Live view: audit -> render in-app table ----------------------------
+    const liveViewSelect = document.getElementById('us-live-view');
+    const livePanel = document.getElementById('us-live-panel');
+    const liveHeading = document.getElementById('us-live-heading');
+    const liveMeta = document.getElementById('us-live-meta');
+    const liveHead = document.getElementById('us-live-head');
+    const liveBody = document.getElementById('us-live-body');
+    const liveSearch = document.getElementById('us-live-search');
+
+    let liveColumns = [];
+    let liveRows = [];
+    let liveOp = null;
+
+    // Colour-code the status-bearing cells for quick scanning.
+    const GOOD = new Set(['TakeAllCalls', 'On']);
+    const BAD = new Set(['DoNotAcceptAnyCalls', 'Off']);
+    const STATUS_COLS = new Set(['DND State', 'Overall Status', 'Queue Status']);
+
+    function cell(col, val) {
+        const v = val == null ? '' : String(val);
+        if (STATUS_COLS.has(col) && v) {
+            let cls = 'badge-info';
+            if (GOOD.has(v)) cls = 'badge-success';
+            else if (BAD.has(v)) cls = 'badge-danger';
+            else if (/^Error|Failed/i.test(v)) cls = 'badge-warning';
+            return `<span class="badge ${cls}">${esc(v)}</span>`;
+        }
+        return esc(v);
+    }
+
+    function renderLiveTable() {
+        const term = (liveSearch.value || '').toLowerCase().trim();
+        const cols = liveColumns.length ? liveColumns : (liveRows[0] ? Object.keys(liveRows[0]) : []);
+        liveHead.innerHTML = '<tr>' + cols.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
+
+        const visible = !term ? liveRows : liveRows.filter(r =>
+            cols.some(c => String(r[c] == null ? '' : r[c]).toLowerCase().includes(term)));
+
+        if (!visible.length) {
+            liveBody.innerHTML = `<tr><td colspan="${cols.length || 1}" class="text-center italic text-slate-400 py-6">${liveRows.length ? 'No rows match your filter.' : 'No records.'}</td></tr>`;
+            return;
+        }
+        liveBody.innerHTML = visible.map(r =>
+            '<tr>' + cols.map(c => `<td>${cell(c, r[c])}</td>`).join('') + '</tr>'
+        ).join('');
+    }
+
+    async function runLive(op) {
+        liveOp = op;
+        const label = op === 'cq/audit' ? 'Call Queue Live View' : 'DND Live View';
+        let body = {};
+        if (op.startsWith('cq/')) {
+            body = cqScopedBody();
+            if (body === null) return;
+        }
+        await startTask(op, body, label, async (taskId, statusData) => {
+            try {
+                const res = await fetch(`/api/user_status/results?task_id=${taskId}`);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Could not load results.');
+                liveColumns = data.columns || [];
+                liveRows = data.rows || [];
+                liveHeading.textContent = op === 'cq/audit' ? 'Call Queue Status — Live' : 'User DND Status — Live';
+                const scopeNote = (op.startsWith('cq/') && body.queue_ids) ? ` · ${body.queue_ids.length} queue(s)` : '';
+                liveMeta.textContent = `${liveRows.length} row(s)${scopeNote} · snapshot at ${new Date().toLocaleTimeString()}`;
+                liveSearch.value = '';
+                renderLiveTable();
+                livePanel.classList.remove('hidden');
+                livePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (e) {
+                alert('Live view error: ' + e.message);
+            }
+        });
+    }
+
+    if (liveFetchBtn) liveFetchBtn.addEventListener('click', () => runLive(liveViewSelect.value));
+    if (liveRefreshBtn) liveRefreshBtn.addEventListener('click', () => runLive(liveOp || liveViewSelect.value));
+    if (liveSearch) liveSearch.addEventListener('input', renderLiveTable);
 });
 </script>
