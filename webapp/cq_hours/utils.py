@@ -823,22 +823,37 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
             if get_succ and isinstance(old_basic, dict):
                 basic_payload = {}
                 b_needs_update = False
-                
+
+                # Rename a Call Queue the same way the proven extension_renamer module does
+                # for non-User extensions: the display name lives in contact.firstName (with
+                # lastName cleared so a stale last name can't concatenate), and the root `name`
+                # is set too for consistency. The previous code set only the root `name`, which
+                # RingCentral ignored for Department extensions, so the rename never applied.
+                # Editing name and/or email both mutate the shared contact object, so build it
+                # once from a copy of the current contact to avoid aliasing old_basic (which
+                # would make check_diff compare a value against itself). Drop pronouncedName —
+                # the renamer strips it because sending it back triggers CMN-101 errors.
+                old_contact = {k: v for k, v in (old_basic.get('contact') or {}).items()
+                               if k != 'pronouncedName'}
+
                 val_qn = get_val(row, 'Queue Name')
-                if val_qn is not None: 
+                if val_qn is not None:
+                    basic_payload.setdefault('contact', copy.deepcopy(old_contact))
+                    b_needs_update |= check_diff(changes, 'Queue Name', old_basic.get('name'), val_qn)
+                    basic_payload['contact']['firstName'] = val_qn
+                    basic_payload['contact']['lastName'] = ""
                     basic_payload['name'] = val_qn
-                    b_needs_update |= check_diff(changes, 'Queue Name', old_basic.get('name'), basic_payload['name'])
-                    
+
                 val_st = get_val(row, 'Status')
-                if val_st is not None: 
+                if val_st is not None:
                     basic_payload['status'] = val_st.capitalize()
                     b_needs_update |= check_diff(changes, 'Status', old_basic.get('status'), basic_payload['status'])
-                    
+
                 val_qe = get_val(row, 'Queue Email')
-                if val_qe is not None: 
-                    basic_payload['contact'] = old_basic.get('contact', {})
+                if val_qe is not None:
+                    basic_payload.setdefault('contact', copy.deepcopy(old_contact))
+                    b_needs_update |= check_diff(changes, 'Queue Email', old_contact.get('email'), val_qe)
                     basic_payload['contact']['email'] = val_qe
-                    b_needs_update |= check_diff(changes, 'Queue Email', old_basic.get('contact', {}).get('email'), basic_payload['contact']['email'])
 
                 val_site = get_val(row, 'Site')
                 if val_site is not None:
