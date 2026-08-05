@@ -824,18 +824,25 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 basic_payload = {}
                 b_needs_update = False
 
-                # A Department/Call Queue's display name lives in contact.firstName, not the
-                # top-level (read-only) `name` field — the same field the create path sets.
+                # Rename a Call Queue the same way the proven extension_renamer module does
+                # for non-User extensions: the display name lives in contact.firstName (with
+                # lastName cleared so a stale last name can't concatenate), and the root `name`
+                # is set too for consistency. The previous code set only the root `name`, which
+                # RingCentral ignored for Department extensions, so the rename never applied.
                 # Editing name and/or email both mutate the shared contact object, so build it
                 # once from a copy of the current contact to avoid aliasing old_basic (which
-                # would make check_diff compare a value against itself).
-                old_contact = old_basic.get('contact', {}) or {}
+                # would make check_diff compare a value against itself). Drop pronouncedName —
+                # the renamer strips it because sending it back triggers CMN-101 errors.
+                old_contact = {k: v for k, v in (old_basic.get('contact') or {}).items()
+                               if k != 'pronouncedName'}
 
                 val_qn = get_val(row, 'Queue Name')
                 if val_qn is not None:
                     basic_payload.setdefault('contact', copy.deepcopy(old_contact))
                     b_needs_update |= check_diff(changes, 'Queue Name', old_basic.get('name'), val_qn)
                     basic_payload['contact']['firstName'] = val_qn
+                    basic_payload['contact']['lastName'] = ""
+                    basic_payload['name'] = val_qn
 
                 val_st = get_val(row, 'Status')
                 if val_st is not None:
