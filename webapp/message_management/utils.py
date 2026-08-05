@@ -1199,6 +1199,16 @@ TEMPLATE_SLOTS_BY_TYPE = {
     'Announcement': ['Announcement Greeting'],
 }
 
+# Friendly object-type label for the generated sheet's read-only TYPE column.
+# Matches the on-screen table's display names.
+DISPLAY_TYPE_BY_TYPE = {
+    'User': 'User',
+    'Department': 'Call Queue',
+    'IvrMenu': 'IVR Menu',
+    'Voicemail': 'Message Only',
+    'Announcement': 'Announcement Only',
+}
+
 
 def _reference_sheet_df():
     """The per-endpoint-type cheat sheet written to the 'Accepted Types' tab."""
@@ -1288,28 +1298,34 @@ def generate_selected_template(ext_ids):
     ``ext_ids`` preserves the caller's order; unknown ids are skipped. The endpoint
     number/name/site/type are resolved from a single account directory listing —
     the same source the on-screen table is built from. EXT NUMBER, GREETING TYPE
-    and GREETING NAME drive the upload; ENDPOINT NAME and SITE are read-only
-    reference columns the parser ignores."""
+    and GREETING NAME drive the upload; ENDPOINT NAME, ENDPOINT TYPE and SITE are
+    read-only reference columns the parser ignores."""
     import pandas as pd
 
     directory = fetch_target_endpoints().get('records', [])
     by_id = {str(rec.get('id')): rec for rec in directory}
 
-    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'SITE', 'GREETING TYPE', 'GREETING NAME']
+    # ENDPOINT TYPE is purely informational and sits last: the upload parser binds
+    # only EXT NUMBER / GREETING TYPE / GREETING NAME by header, so it's ignored on
+    # re-upload regardless — trailing position just signals that at a glance.
+    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'SITE', 'GREETING TYPE', 'GREETING NAME', 'ENDPOINT TYPE']
     rows = []
     for ext_id in ext_ids:
         rec = by_id.get(str(ext_id))
         if not rec:
             continue
+        ext_type = rec.get('type')
         ext_num = _cell_str(rec.get('extensionNumber'))
         ext_name = rec.get('name', '')
+        display_type = DISPLAY_TYPE_BY_TYPE.get(ext_type, ext_type or '')
         # Mirror the table's fallback: extensions without an explicit site sit on
         # the account's Main Site.
         site_name = (rec.get('site') or {}).get('name') or 'Main Site'
-        for label in TEMPLATE_SLOTS_BY_TYPE.get(rec.get('type'), []):
+        for label in TEMPLATE_SLOTS_BY_TYPE.get(ext_type, []):
             rows.append({
                 'EXT NUMBER': ext_num,
                 'ENDPOINT NAME': ext_name,
+                'ENDPOINT TYPE': display_type,
                 'SITE': site_name,
                 'GREETING TYPE': label,
                 'GREETING NAME': '',
