@@ -162,4 +162,8 @@ def create_app():
         from .extension_uploader import routes as extension_uploader_routes
         app.register_blueprint(extension_uploader_routes.extension_uploader_bp)
 
+        # User Status (DND + Call Queue status) routes
+        from .user_status import routes as user_status_routes
+        app.register_blueprint(user_status_routes.user_status_bp)
+
     return app
