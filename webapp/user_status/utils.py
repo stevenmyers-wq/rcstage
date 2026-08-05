@@ -148,6 +148,10 @@ def _finish_task(task_id, rows, sheet_name, columns, summary):
     task['file_data'] = _build_report(rows, sheet_name, columns)
     task['file_ready'] = True
     task['summary'] = summary
+    # Keep the raw rows + column order so the in-app "live view" can render a
+    # table straight from the same fetch (no separate code path or extra calls).
+    task['rows'] = rows
+    task['columns'] = columns
     task['status'] = 'completed'
 
 

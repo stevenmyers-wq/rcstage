@@ -94,6 +94,23 @@ def task_status():
     })
 
 
+@user_status_bp.route('/results', methods=['GET'])
+def task_results():
+    """Raw rows for a completed task, for the in-app live view table."""
+    task_id = request.args.get('task_id')
+    data = utils.progress_store.get(task_id, {})
+    if data.get('status') == 'completed':
+        return jsonify({
+            "success": True,
+            "rows": data.get('rows', []),
+            "columns": data.get('columns', []),
+            "summary": data.get('summary', ''),
+        })
+    if data.get('status') == 'error':
+        return jsonify({"success": False, "error": data.get('error', 'Task failed.')}), 500
+    return jsonify({"success": False, "error": "Results not ready."}), 404
+
+
 @user_status_bp.route('/download', methods=['GET'])
 def task_download():
     task_id = request.args.get('task_id')
