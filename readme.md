@@ -155,6 +155,7 @@ RCAU/
     ├── account_migration/           # Export account programming/settings/audio
     ├── cq_hours/                    # Call Queue Manager — hours/routing/timers/limits
     ├── site_allocation/             # Bulk re-allocate any extension to a Site
+    ├── user_status/                 # User Status — audit/reset DND + Call Queue accept status
     ├── user_templates/              # Bulk apply User Templates via Excel
     │
     ├── static/js/
@@ -235,6 +236,7 @@ Layer 2b) · `L3` JWT · `L4` RingCX token exchange.
 | `account_migration` | Account Migration | SM | Export account programming/settings/audio |
 | `cq_hours` | Call Queue Manager | SM | Bulk hours/routing/timers/limits for Call Queues |
 | `site_allocation` | Site Allocation | SM | Bulk re-allocate any extension to a Site |
+| `user_status` | User Status | SM | Audit/reset user DND + audit/enable Call Queue accept status (overall & per queue) |
 | `user_templates` | User Templates | SM | Bulk apply User Templates via Excel |
 
 Admins additionally see an **Admin Dashboard** tab (`admin_dashboard`).
