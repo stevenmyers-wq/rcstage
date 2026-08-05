@@ -1157,47 +1157,41 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
         'cancelled': cancelled,
     }
 
-# Every accepted friendly label, in the order used for the dropdown. Kept in
-# sync with resolve_greeting_type_label().
-ACCEPTED_TYPE_LABELS = [
-    'Business Hours — Voicemail',
-    'After Hours — Voicemail',
-    'Business Hours — Connecting Message',
-    'Business Hours — Connecting Audio',
-    'Business Hours — Hold Music',
-    'Business Hours — Introductory Greeting',
-    'Business Hours — Interrupt Prompt',
-    'After Hours — Announcement',
-    'IVR Audio Prompt',
-    'Voicemail Greeting',
-    'Announcement Greeting',
-]
-
-# Every greeting slot each endpoint type exposes, expressed as the friendly
-# labels above so a generated sheet drops straight into the bulk-upload flow.
-# Kept in sync with the front-end GREETING_TYPE_MAP and resolve_greeting_type_label().
+# Every greeting slot each endpoint type exposes, as friendly labels prefixed by
+# the endpoint type (CQ, User, IVR, …) so a generated sheet reads unambiguously
+# and drops straight into the bulk-upload flow. resolve_greeting_type_label()
+# ignores the prefix and keys on the endpoint type plus the slot words, so these
+# labels stay purely cosmetic — rename freely as long as the slot words survive.
 TEMPLATE_SLOTS_BY_TYPE = {
     'User': [
-        'Business Hours — Voicemail',
-        'After Hours — Voicemail',
-        'Business Hours — Connecting Message',
-        'Business Hours — Connecting Audio',
-        'Business Hours — Hold Music',
-        'After Hours — Announcement',
+        'User - Business Hours - Voicemail',
+        'User - After Hours - Voicemail',
+        'User - Business Hours - Connecting Message',
+        'User - Business Hours - Connecting Audio',
+        'User - Business Hours - Hold Music',
+        'User - After Hours - Announcement',
     ],
     'Department': [
-        'Business Hours — Voicemail',
-        'After Hours — Voicemail',
-        'Business Hours — Introductory Greeting',
-        'Business Hours — Connecting Audio',
-        'Business Hours — Hold Music',
-        'Business Hours — Interrupt Prompt',
-        'After Hours — Announcement',
+        'CQ - Business Hours - Voicemail',
+        'CQ - After Hours - Voicemail',
+        'CQ - Business Hours - Introductory Greeting',
+        'CQ - Business Hours - Connecting Audio',
+        'CQ - Business Hours - Hold Music',
+        'CQ - Business Hours - Interrupt Prompt',
+        'CQ - After Hours - Announcement',
     ],
-    'IvrMenu': ['IVR Audio Prompt'],
-    'Voicemail': ['Voicemail Greeting'],
-    'Announcement': ['Announcement Greeting'],
+    'IvrMenu': ['IVR - Audio Prompt'],
+    'Voicemail': ['Message - Voicemail Greeting'],
+    'Announcement': ['Announcement - Greeting'],
 }
+
+# Flat dropdown list backing the GREETING TYPE column, derived from the slot map
+# above (in endpoint-type order) so the two never drift.
+ACCEPTED_TYPE_LABELS = [
+    label
+    for ext_type in ('User', 'Department', 'IvrMenu', 'Voicemail', 'Announcement')
+    for label in TEMPLATE_SLOTS_BY_TYPE[ext_type]
+]
 
 # Friendly object-type label for the generated sheet's read-only TYPE column.
 # Matches the on-screen table's display names.
@@ -1215,15 +1209,15 @@ def _reference_sheet_df():
     import pandas as pd
     return pd.DataFrame([
         {'Endpoint Type': 'User',
-         'Accepted GREETING TYPE labels': 'Business Hours — Voicemail; After Hours — Voicemail; Business Hours — Connecting Message; Business Hours — Connecting Audio; Business Hours — Hold Music; After Hours — Announcement'},
+         'Accepted GREETING TYPE labels': '; '.join(TEMPLATE_SLOTS_BY_TYPE['User'])},
         {'Endpoint Type': 'Call Queue (Department)',
-         'Accepted GREETING TYPE labels': 'Business Hours — Voicemail; After Hours — Voicemail; Business Hours — Introductory Greeting; Business Hours — Connecting Audio; Business Hours — Hold Music; Business Hours — Interrupt Prompt; After Hours — Announcement'},
+         'Accepted GREETING TYPE labels': '; '.join(TEMPLATE_SLOTS_BY_TYPE['Department'])},
         {'Endpoint Type': 'IVR Menu',
-         'Accepted GREETING TYPE labels': 'IVR Audio Prompt (label is flexible — IVR menus have a single prompt slot)'},
+         'Accepted GREETING TYPE labels': TEMPLATE_SLOTS_BY_TYPE['IvrMenu'][0] + ' (IVR menus have a single prompt slot)'},
         {'Endpoint Type': 'Message Only',
-         'Accepted GREETING TYPE labels': 'Voicemail Greeting'},
+         'Accepted GREETING TYPE labels': TEMPLATE_SLOTS_BY_TYPE['Voicemail'][0]},
         {'Endpoint Type': 'Announcement Only',
-         'Accepted GREETING TYPE labels': 'Announcement Greeting'},
+         'Accepted GREETING TYPE labels': TEMPLATE_SLOTS_BY_TYPE['Announcement'][0]},
     ])
 
 
@@ -1279,7 +1273,7 @@ def generate_upload_template():
     upload_df = pd.DataFrame(
         [{
             'EXT NUMBER': 10118,
-            'GREETING TYPE': 'Business Hours — Voicemail',
+            'GREETING TYPE': 'CQ - Business Hours - Voicemail',
             'GREETING NAME': 'Generic_Service_Submenu.wav',
         }],
         columns=['EXT NUMBER', 'GREETING TYPE', 'GREETING NAME'],
