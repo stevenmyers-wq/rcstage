@@ -127,8 +127,13 @@ def update_blf():
         all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
         ext_map = {str(e.get('extensionNumber')): str(e.get('id')) for e in all_exts if e.get('extensionNumber')}
         valid_ids = {str(e.get('id')) for e in all_exts if e.get('id')}
+        # id -> record, so per-target results can carry the friendly extension
+        # number/name alongside the internal id RC actually keys on.
+        id_to_ext = {str(e.get('id')): e for e in all_exts if e.get('id')}
 
-        results = {"success": 0, "errors": []}
+        # "details" is a structured, per-target log (name + friendly number +
+        # internal id + status + what happened) used for the downloadable report.
+        results = {"success": 0, "errors": [], "details": []}
         cancelled = False
 
         target_id_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
@@ -154,15 +159,22 @@ def update_blf():
                         t_id = ext_map.get(t_num) or manager.get_extension_by_number(t_num) or ""
                         if not t_id:
                             results["errors"].append(f"Target ext {t_num}: not found in this account.")
+                            _add_detail(results, "", t_num, "", "Error",
+                                        "Target extension not found in this account.")
                 if not t_id: continue
 
                 try:
-                    _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=additive)
+                    _process_row(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results, additive=additive)
                 except RCPresenceError as e:
                     results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
+                    name, number = _friendly(id_to_ext, t_id)
+                    _add_detail(results, name, number, t_id, "Error",
+                                f"RC rejected update ({e.status_code}): {e.body}")
                     logging.error(f"RC API Error during update for {t_id}: {e}")
                 except Exception as e:
                     results["errors"].append(f"Ext {t_id}: {str(e)}")
+                    name, number = _friendly(id_to_ext, t_id)
+                    _add_detail(results, name, number, t_id, "Error", str(e))
                     logging.exception(f"Unexpected error during update for {t_id}")
         finally:
             task_control.clear(task_id)
@@ -173,13 +185,60 @@ def update_blf():
         else:
             status = "completed" if results["success"] or not results["errors"] else "error"
             message = f"Updated {results['success']} users"
-        return jsonify({"status": status, "message": message, "cancelled": cancelled, "errors": results["errors"]})
+        return jsonify({"status": status, "message": message, "cancelled": cancelled,
+                        "errors": results["errors"], "details": results["details"]})
     except Exception as e:
         logging.exception("Upload Crash")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=False):
+@presence_bp.route('/api/presence/update/report', methods=['POST'])
+@require_rc_token
+def update_report():
+    """Turn the per-target results from an update run into a downloadable
+    Excel report. The client posts back the ``details`` array it received from
+    /api/presence/update so the report can be generated without re-running the
+    update (and without holding run state on the server)."""
+    try:
+        data = request.json or {}
+        details = data.get('details') or []
+        columns = ["Target Extension Name", "Target Extension Number",
+                   "Target Extension ID", "Status", "Detail"]
+        df = pd.DataFrame(details, columns=columns)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        output.seek(0)
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True, download_name='Presence_Update_Results.xlsx')
+    except Exception as e:
+        logging.exception("Results report crash")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _friendly(id_to_ext, t_id):
+    """Resolve an internal extension id to its friendly (name, number) pair for
+    the results report. Falls back to blanks when the id isn't in the account
+    cache (e.g. an id supplied directly in the sheet)."""
+    e = id_to_ext.get(str(t_id), {}) if id_to_ext else {}
+    return e.get('name', '') or '', str(e.get('extensionNumber', '') or '')
+
+
+def _add_detail(results, name, number, ext_id, status, detail):
+    """Append one per-target row to the downloadable results log. Carries both
+    the friendly extension number/name and the internal id RC keys on."""
+    results.setdefault("details", []).append({
+        "Target Extension Name": name,
+        "Target Extension Number": number,
+        "Target Extension ID": str(ext_id) if ext_id else "",
+        "Status": status,
+        "Detail": detail,
+    })
+
+
+def _process_row(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results, additive=False):
     """Apply presence toggles + monitored-line changes for a single target
     extension. Raises RCPresenceError if RingCentral rejects a write so the
     caller records a real failure instead of a false success.
@@ -330,6 +389,9 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=F
             next_free += 1
     payload_records.sort(key=lambda r: int(r["id"]))
 
+    name, number = _friendly(id_to_ext, t_id)
+    unresolved_note = f" Unresolved extension(s): {', '.join(unresolved)}." if unresolved else ""
+
     if unresolved:
         results["errors"].append(
             f"Ext {t_id}: skipped unresolved extension(s): {', '.join(unresolved)}"
@@ -345,15 +407,28 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, results, additive=F
         try:
             manager.update_monitored_lines(t_id, payload_records)
             results["success"] += 1
+            detail = f"Monitored lines updated ({len(current_exts)} -> {len(payload_exts)} line(s))."
+            if toggles_applied:
+                detail = "Presence settings updated; " + detail
+            _add_detail(results, name, number, t_id, "Updated", detail + unresolved_note)
         except RCPresenceError as e:
             results["errors"].append(
                 f"Ext {t_id}: RC rejected ({e.status_code}): {e.body} | sent: {json.dumps(payload_records)}"
             )
+            _add_detail(results, name, number, t_id, "Error",
+                        f"RC rejected ({e.status_code}): {e.body}")
         return
     elif toggles_applied:
         results["success"] += 1
-    elif not unresolved:
+        _add_detail(results, name, number, t_id, "Updated",
+                    "Presence settings updated; monitored lines unchanged." + unresolved_note)
+    elif unresolved:
+        # Nothing applied and the only sheet action was extensions we couldn't resolve.
+        _add_detail(results, name, number, t_id, "Error",
+                    "No changes applied." + unresolved_note)
+    else:
         results["errors"].append(f"Ext {t_id}: No changes detected.")
+        _add_detail(results, name, number, t_id, "No Change", "No changes detected.")
 
 
 # ==========================================
