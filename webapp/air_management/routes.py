@@ -1,4 +1,5 @@
 import io
+import json
 import time
 import threading
 import pandas as pd
@@ -199,6 +200,11 @@ def upload_air():
         name = row.get('Name')
         if pd.isna(name) or str(name).strip().lower() == 'nan': continue
 
+        # Diagnostics: track the last step + exact request body so an opaque
+        # IVA-101 500 shows which call failed and with what payload.
+        step = "building payload"
+        last_body = None
+
         try:
             payload = build_assistant_payload(row, dir_map)
             air_id = str(row.get('AIR ID (Leave blank for new)', '')).replace('.0', '').strip()
@@ -209,6 +215,8 @@ def upload_air():
                     results.append(f"Row {index+2} ({name}): ⚠️ Fallback Extension is required to update.")
                     continue
                 url = f"/ai/iva/v1/accounts/~/assistants/{air_id}"
+                step = f"updating base AIR (PUT {url})"
+                last_body = payload
                 rc_api_call(url, method="PUT", json=payload, token=token, raise_error=True)
                 results.append(f"✅ Updated Base AIR: {name}")
             else:
@@ -222,6 +230,8 @@ def upload_air():
                     )
                     continue
                 url = "/ai/iva/v1/accounts/~/assistants"
+                step = f"creating base AIR (POST {url})"
+                last_body = payload
                 new_air = rc_api_call(url, method="POST", json=payload, token=token, raise_error=True)
                 air_id = new_air.get('id')
                 # Register the new AIR so a later row can't re-create the same extension.
@@ -234,7 +244,7 @@ def upload_air():
                 if skills_to_sync:
                     existing_skills_resp = rc_api_call(f"/ai/iva/v1/accounts/~/assistants/{air_id}/skills", token=token, raise_error=False)
                     existing_skills = existing_skills_resp.get('records', []) if existing_skills_resp else []
-                    
+
                     skill_map = {}
                     for s in existing_skills:
                         if 'skill' in s and 'skillType' in s['skill']:
@@ -243,15 +253,26 @@ def upload_air():
                     for sk_type, sk_payload in skills_to_sync.items():
                         if sk_type in skill_map:
                             skill_id = skill_map[sk_type]
-                            rc_api_call(f"/ai/iva/v1/accounts/~/skills/{skill_id}", method="PUT", json={"disabled": False, "skill": sk_payload}, token=token, raise_error=True)
+                            step = f"updating skill {sk_type} (PUT /skills/{skill_id})"
+                            last_body = {"disabled": False, "skill": sk_payload}
+                            rc_api_call(f"/ai/iva/v1/accounts/~/skills/{skill_id}", method="PUT", json=last_body, token=token, raise_error=True)
                             results.append(f"   ↳ Updated Skill: {sk_type}")
                         else:
-                            rc_api_call(f"/ai/iva/v1/accounts/~/skills", method="POST", json={"assistantId": air_id, "skill": sk_payload}, token=token, raise_error=True)
+                            step = f"adding skill {sk_type} (POST /skills)"
+                            last_body = {"assistantId": air_id, "skill": sk_payload}
+                            rc_api_call(f"/ai/iva/v1/accounts/~/skills", method="POST", json=last_body, token=token, raise_error=True)
                             results.append(f"   ↳ Added New Skill: {sk_type}")
 
         except Exception as e:
-            results.append(f"❌ Error on '{name}': {extract_rc_error(e)}")
-            
+            results.append(f"❌ Error on '{name}' [step: {step}]: {extract_rc_error(e)}")
+            if last_body is not None:
+                try:
+                    dbg = json.dumps(last_body, ensure_ascii=False)
+                    if len(dbg) > 2000: dbg = dbg[:2000] + '…(truncated)'
+                    results.append(f"   ↳ Request body sent to RingCentral: {dbg}")
+                except Exception:
+                    pass
+
     return jsonify({"logs": results})
 
 @air_management_bp.route('/transcripts/export', methods=['POST'])
