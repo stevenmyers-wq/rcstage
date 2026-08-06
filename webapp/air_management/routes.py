@@ -151,6 +151,7 @@ def download_template():
 
     instructions_data = [
         {"Column": "AIR ID", "Notes": "Leave blank to CREATE. Provide ID to UPDATE."},
+        {"Column": "Extension Number", "Notes": "For a NEW AIR, this must be an EXISTING AIR-capable extension in the account (the AIR attaches to it). Create the extension in RingCentral admin first if it doesn't exist yet."},
         {"Column": "Fallback Extension", "Notes": "Required for updates. Provide the ID or Ext Number (e.g. '1001' or 'John Doe (Ext 1001)')."},
         {"Column": "Idle Action (BH/AH)", "Notes": "Must be exactly 'Disconnect' or 'Extension'."},
         {"Column": "Business Hours Schedule", "Notes": "Uses natural language e.g., '9:00AM-5:00PM Mon-Fri' or '24/7'."},
@@ -227,6 +228,18 @@ def upload_air():
                         f"❌ Skipped '{name}': extension {new_ext} already belongs to "
                         f"AIR '{existing.get('name', '')}' (ID {existing.get('id', '')}). "
                         f"To modify it, put that ID in the 'AIR ID' column instead of creating a duplicate."
+                    )
+                    continue
+                # An AIR attaches to an existing extension; RingCentral returns an
+                # opaque IVA-101 500 if the extension number doesn't exist. Catch it
+                # here with a clear message. (Only when the directory loaded, so we
+                # never block on an empty/failed lookup.)
+                if new_ext and dir_map and new_ext not in dir_map:
+                    results.append(
+                        f"❌ Cannot create '{name}': extension {new_ext} does not exist in this account. "
+                        f"An AI Receptionist must be created on an existing AIR-capable extension — "
+                        f"add the extension in RingCentral admin first (or use an existing extension "
+                        f"number), then re-upload."
                     )
                     continue
                 url = "/ai/iva/v1/accounts/~/assistants"
