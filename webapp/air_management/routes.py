@@ -8,7 +8,7 @@ from flask import Blueprint, request, jsonify, send_file
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
-from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory, get_air_graph, run_transcript_export, export_progress_store
+from .utils import fetch_all_assistants, parse_assistant_to_row, build_assistant_payload, build_skills_payloads, get_ext_directory, get_air_graph, run_transcript_export, export_progress_store, extract_rc_error, build_air_ext_index, clean_ext_num
 
 air_management_bp = Blueprint('air_management_bp', __name__, url_prefix='/api/air')
 
@@ -189,17 +189,21 @@ def upload_air():
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
     dir_map = get_ext_directory(token)
+    # Index existing AIRs by extension so blank-ID rows don't create duplicates.
+    # A create with an extension already owned by another AIR makes RingCentral
+    # return a generic IVA-101 500, and every retry spawns another duplicate.
+    ext_to_air = build_air_ext_index(fetch_all_assistants(token))
     results = []
 
     for index, row in df.iterrows():
         name = row.get('Name')
         if pd.isna(name) or str(name).strip().lower() == 'nan': continue
-        
+
         try:
             payload = build_assistant_payload(row, dir_map)
             air_id = str(row.get('AIR ID (Leave blank for new)', '')).replace('.0', '').strip()
             if air_id.lower() == 'nan': air_id = ''
-            
+
             if air_id:
                 if 'fallbackExtension' not in payload:
                     results.append(f"Row {index+2} ({name}): ⚠️ Fallback Extension is required to update.")
@@ -208,9 +212,21 @@ def upload_air():
                 rc_api_call(url, method="PUT", json=payload, token=token, raise_error=True)
                 results.append(f"✅ Updated Base AIR: {name}")
             else:
+                new_ext = clean_ext_num(row.get('Extension Number'))
+                existing = ext_to_air.get(new_ext) if new_ext else None
+                if existing:
+                    results.append(
+                        f"❌ Skipped '{name}': extension {new_ext} already belongs to "
+                        f"AIR '{existing.get('name', '')}' (ID {existing.get('id', '')}). "
+                        f"To modify it, put that ID in the 'AIR ID' column instead of creating a duplicate."
+                    )
+                    continue
                 url = "/ai/iva/v1/accounts/~/assistants"
                 new_air = rc_api_call(url, method="POST", json=payload, token=token, raise_error=True)
                 air_id = new_air.get('id')
+                # Register the new AIR so a later row can't re-create the same extension.
+                if new_ext:
+                    ext_to_air[new_ext] = new_air
                 results.append(f"✅ Created New Base AIR: {name}")
 
             if air_id:
@@ -234,11 +250,7 @@ def upload_air():
                             results.append(f"   ↳ Added New Skill: {sk_type}")
 
         except Exception as e:
-            err_str = str(e)
-            if hasattr(e, 'response') and e.response is not None:
-                try: err_str = e.response.json().get('message', err_str)
-                except: pass
-            results.append(f"❌ Error on '{name}': {err_str}")
+            results.append(f"❌ Error on '{name}': {extract_rc_error(e)}")
             
     return jsonify({"logs": results})
 
