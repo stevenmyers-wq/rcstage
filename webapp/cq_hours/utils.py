@@ -78,7 +78,8 @@ TEMPLATE_COLUMNS = [
     "Callers In Queue", "When Queue is Full", "Queue Full Destination", "When Max Time is Reached",
     "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients",
     "Voicemail Notifications", "Voicemail Notifications Email", "After Hours Behavior",
-    "After Hours Destination"
+    "After Hours Destination", "Voicemail to Text", "Missed Call Notifications",
+    "Inbound Fax Notifications", "Outbound Fax Notifications", "Text Notifications"
 ]
 
 GLOBAL_TIMEZONES = [
@@ -108,7 +109,12 @@ SCHEMA_VALIDATIONS = {
     "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
     "AB": '"Default,Custom,Off"',
     "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
-    "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"'
+    "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"',
+    "AH": '"On,Off"',
+    "AI": '"On,Off"',
+    "AJ": '"On,Off"',
+    "AK": '"On,Off"',
+    "AL": '"On,Off"'
 }
 
 
@@ -156,6 +162,16 @@ def build_config_workbook(df):
 def to_int(val):
     try: return int(float(val))
     except (TypeError, ValueError): return None
+
+def _parse_toggle(val):
+    """Interpret an on/off notification cell. Returns True or False for a recognized
+    value, or None when the cell is blank/unrecognized so the caller leaves the
+    corresponding setting untouched."""
+    if val is None: return None
+    v = str(val).strip().lower()
+    if v in ('on', 'enabled', 'enable', 'true', 'yes', '1', 'y'): return True
+    if v in ('off', 'disabled', 'disable', 'false', 'no', '0', 'n'): return False
+    return None
 
 def parse_time_to_seconds(val):
     if pd.isna(val) or val == '': return None
@@ -597,6 +613,14 @@ def run_cq_audit(task_id, queue_ids, token):
                               or notif.get('emailAddresses') or [])
                 emails = list(dict.fromkeys(emails))
                 if emails: row["Voicemail Notifications Email"] = ", ".join(emails)
+
+                # Per-type email toggles + voicemail-to-text, exported as On/Off so the
+                # sheet round-trips back through the upload path.
+                row["Voicemail to Text"] = "On" if vm_set.get('includeTranscription') else "Off"
+                row["Missed Call Notifications"] = "On" if notif.get('missedCalls', {}).get('notifyByEmail') else "Off"
+                row["Inbound Fax Notifications"] = "On" if notif.get('inboundFaxes', {}).get('notifyByEmail') else "Off"
+                row["Outbound Fax Notifications"] = "On" if notif.get('outboundFaxes', {}).get('notifyByEmail') else "Off"
+                row["Text Notifications"] = "On" if notif.get('inboundTexts', {}).get('notifyByEmail') else "Off"
 
             rows.append(row)
             time.sleep(0.35) 
@@ -1436,15 +1460,26 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                             logs.append(f"Ring Order Error: {format_api_error(err)}")
                             _debug_dump(logs, 'Fixed order PUT failed', payload=fo_rule.get('queue'), err=err)
 
-        # --- G. VOICEMAIL NOTIFICATIONS ---
-        vm_fields = ['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email']
+        # --- G. VOICEMAIL & EMAIL NOTIFICATIONS ---
+        # Per-type email toggles (missed calls, faxes, texts) plus the voicemail-to-text
+        # transcription switch, alongside the original voicemail-notification handling.
+        # Any one of these columns triggers a notification-settings PUT; untouched
+        # columns are left exactly as the queue already has them.
+        notif_toggle_cols = [
+            ('Missed Call Notifications', 'missedCalls'),
+            ('Inbound Fax Notifications', 'inboundFaxes'),
+            ('Outbound Fax Notifications', 'outboundFaxes'),
+            ('Text Notifications', 'inboundTexts'),
+        ]
+        vm_fields = (['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email',
+                      'Voicemail to Text'] + [c for c, _ in notif_toggle_cols])
         if any(get_val(row, f) is not None for f in vm_fields):
             get_succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='GET', token=token)
             if get_succ and isinstance(notif, dict):
                 orig_notif = copy.deepcopy(notif)
                 vm_set = notif.get('voicemails', {})
                 v_needs_update = False
-                
+
                 val_vn = get_val(row, 'Voicemail Notifications')
                 if val_vn is not None:
                     vm_val = val_vn.lower()
@@ -1456,12 +1491,12 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = False
                     else:
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
-                        
+
                 new_emails = []
                 val_vne = get_val(row, 'Voicemail Notifications Email')
                 if val_vne is not None:
                     new_emails = [e.strip() for e in val_vne.split(',') if e.strip()]
-                    
+
                 if vm_set.get('notifyByEmail'):
                     if not new_emails:
                         fallback = get_val(row, 'Queue Email')
@@ -1476,7 +1511,7 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                                 vm_set['notifyByEmail'] = False
                                 vm_set['includeAttachment'] = False
                                 vm_set['markAsRead'] = False
-                                
+
                 if not vm_set.get('notifyByEmail'):
                     vm_set['includeAttachment'] = False
                     vm_set['markAsRead'] = False
@@ -1488,31 +1523,60 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                     new_notif['voicemails'] = {}
 
                 new_notif['voicemails']['notifyByEmail'] = vm_set.get('notifyByEmail', False)
-                
-                if new_notif.get('advancedMode'):
-                    new_notif['voicemails']['emailAddresses'] = new_emails
-                else:
-                    new_notif['emailAddresses'] = new_emails
 
+                # Only rewrite the shared address list when the sheet supplied one (or a
+                # fallback filled it). A blank email column must never wipe the queue's
+                # existing addresses -- which matters now that a fax/text toggle alone can
+                # trigger this PUT.
+                if new_emails:
+                    if new_notif.get('advancedMode'):
+                        new_notif['voicemails']['emailAddresses'] = new_emails
+                    else:
+                        new_notif['emailAddresses'] = new_emails
+
+                # Voicemail-to-text. An explicit column value wins; when it's blank we keep
+                # the long-standing default of transcription-on for rows that (re)set the
+                # voicemail notification, but leave transcription untouched for rows that
+                # only flip another notification type.
+                vm_to_text = _parse_toggle(get_val(row, 'Voicemail to Text'))
                 if vm_set.get('notifyByEmail'):
                     new_notif['voicemails']['includeAttachment'] = vm_set.get('includeAttachment', False)
                     new_notif['voicemails']['markAsRead'] = vm_set.get('markAsRead', False)
-                    new_notif['voicemails']['includeTranscription'] = True
+                    if vm_to_text is not None:
+                        want_trans = vm_to_text
+                    elif val_vn is not None:
+                        want_trans = True
+                    else:
+                        want_trans = bool(orig_notif.get('voicemails', {}).get('includeTranscription', False))
+                    new_notif['voicemails']['includeTranscription'] = want_trans
                 else:
                     new_notif['voicemails'].pop('includeAttachment', None)
                     new_notif['voicemails'].pop('markAsRead', None)
                     new_notif['voicemails'].pop('includeTranscription', None)
-                
+                    want_trans = False
+
                 old_email_on = str(orig_notif.get('voicemails', {}).get('notifyByEmail'))
                 new_email_on = str(vm_set.get('notifyByEmail'))
                 if val_vn is not None:
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
                     v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
-                    
+
+                if val_vn is not None or vm_to_text is not None:
                     old_trans = str(orig_notif.get('voicemails', {}).get('includeTranscription', False))
-                    new_trans = "True" if vm_set.get('notifyByEmail') else "False"
-                    v_needs_update |= check_diff(changes, 'VM Transcription', old_trans, new_trans)
-                
+                    v_needs_update |= check_diff(changes, 'VM Transcription', old_trans, str(want_trans))
+
+                # Per-type email notification toggles (missed calls, faxes, texts). Each
+                # column flips notifyByEmail for that notification type only.
+                for col_name, key in notif_toggle_cols:
+                    tog = _parse_toggle(get_val(row, col_name))
+                    if tog is None:
+                        continue
+                    if not isinstance(new_notif.get(key), dict):
+                        new_notif[key] = {}
+                    old_on = str(orig_notif.get(key, {}).get('notifyByEmail'))
+                    new_notif[key]['notifyByEmail'] = tog
+                    v_needs_update |= check_diff(changes, col_name, old_on, str(tog))
+
                 old_emails = orig_notif.get('voicemails', {}).get('emailAddresses', []) if orig_notif.get('advancedMode') else orig_notif.get('emailAddresses', [])
                 if val_vne is not None or get_val(row, 'Queue Email') is not None:
                     if set(old_emails) != set(new_emails):
