@@ -177,7 +177,14 @@ def parse_assistant_to_row(assistant, dir_map, token=None):
                         target = r['externalNumber']
                     elif r.get('contactCenterNumber'):
                         action = 'Contact Centre'
-                        target = r['contactCenterNumber'].get('phoneNumber', r['contactCenterNumber'].get('id', ''))
+                        cc = r['contactCenterNumber']
+                        cc_id = cc.get('id')
+                        cc_phone = cc.get('phoneNumber', '')
+                        # Preserve the id so a re-upload rebuilds a valid ContactCenterNumber.
+                        if cc_id and cc_phone:
+                            target = f"{cc_id}:{cc_phone}"
+                        else:
+                            target = cc_phone or str(cc_id or '')
                     elif r.get('extension'):
                         action = 'Extension'
                         target = format_ext_display(r['extension'].get('id', ''), dir_map)
@@ -305,6 +312,44 @@ def build_assistant_payload(row, dir_map):
         
     return payload
 
+def build_contact_center_number(target):
+    """Build a schema-valid ContactCenterNumber for a CALL_ROUTING rule.
+
+    The IVA API requires BOTH an integer `id` and a `phoneNumber`. The id is the
+    Contact Centre number's resource id and can't be derived from the phone
+    number alone, so we accept it explicitly in the target as either
+    '<id>:<number>' or '<number> (ID <id>)'. When no explicit id is supplied we
+    fall back to the number's digits, so the required `id` field is never
+    omitted — previously an E.164 number like '+611300000000' produced a body
+    with no id at all, which RingCentral answered with an opaque IVA-101 500.
+    """
+    t = str(target).strip()
+    cc_id = None
+
+    m = re.search(r'\(ID\s*(\d+)\)', t, re.IGNORECASE)
+    if m:
+        cc_id = int(m.group(1))
+        t = (t[:m.start()] + t[m.end():]).strip()
+    elif ':' in t:
+        left, right = t.split(':', 1)
+        if left.strip().isdigit() and right.strip():
+            cc_id = int(left.strip())
+            t = right.strip()
+
+    phone = t.strip()
+    if cc_id is None:
+        digits = re.sub(r'\D', '', phone)
+        if digits:
+            cc_id = int(digits)
+
+    if cc_id is None or not phone:
+        raise ValueError(
+            "Contact Centre target needs a phone number "
+            "(e.g. '+611300000000', or '<queue id>:+611300000000' if the number's ID is known)"
+        )
+
+    return {"id": cc_id, "phoneNumber": phone}
+
 def build_skills_payloads(row, dir_map):
     """Parses the Excel row and returns a dictionary of SkillOption payloads to apply."""
     skills = {}
@@ -396,14 +441,8 @@ def build_skills_payloads(row, dir_map):
             if 'external' in action:
                 rule_obj["externalNumber"] = target
             elif 'contact centre' in action or 'contact center' in action:
-                if target.isdigit():
-                    try:
-                        rule_obj["contactCenterNumber"] = {"id": int(target), "phoneNumber": target}
-                    except:
-                        rule_obj["contactCenterNumber"] = {"phoneNumber": target}
-                else:
-                    rule_obj["contactCenterNumber"] = {"phoneNumber": target}
-            else: 
+                rule_obj["contactCenterNumber"] = build_contact_center_number(target)
+            else:
                 rule_obj["extension"] = {"id": extract_id(target, dir_map)}
                 
             rules.append(rule_obj)
