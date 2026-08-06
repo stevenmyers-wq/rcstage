@@ -48,7 +48,12 @@ def download_template():
             "Voicemail Notifications": "Notify & Attach",
             "Voicemail Notifications Email": "manager@company.com",
             "After Hours Behavior": "TransferToExtension",
-            "After Hours Destination": "2004"
+            "After Hours Destination": "2004",
+            "Voicemail to Text": "On",
+            "Missed Call Notifications": "Off",
+            "Inbound Fax Notifications": "Off",
+            "Outbound Fax Notifications": "Off",
+            "Text Notifications": "Off"
         }
     ])
     df = df[utils.TEMPLATE_COLUMNS]
