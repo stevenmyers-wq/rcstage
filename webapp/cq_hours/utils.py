@@ -711,6 +711,29 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
         if clean_num in ext_map: return ext_map[clean_num]
         return clean_num
 
+    def _resolve_ext_id(num):
+        """Resolve a member extension NUMBER to its RingCentral extension id, or
+        None when no such extension exists. Members bulk-assign needs a real id --
+        passing the raw number gets the whole call rejected with CMN-101, which
+        drops every member in the request, so an unresolved number must be skipped
+        rather than sent through. Falls back to a targeted lookup when the number
+        isn't in the bulk directory (large accounts can page past the 1000-per-page
+        fetch, leaving some extensions out of ext_map), caching any hit."""
+        clean_num = str(num).split('.')[0].strip()
+        if not clean_num:
+            return None
+        if clean_num in ext_map:
+            return ext_map[clean_num]
+        succ, resp = safe_api_call(f'/restapi/v1.0/account/~/extension?extensionNumber={clean_num}', method='GET', token=token)
+        if succ and isinstance(resp, dict) and resp.get('records'):
+            for rec in resp['records']:
+                rid = str(rec.get('id', ''))
+                if rid:
+                    ext_map[clean_num] = rid
+                    ext_id_to_num[rid] = clean_num
+                    return rid
+        return None
+
     def _dest_unresolved(num):
         """A transfer destination was supplied but doesn't map to a known extension.
         Left unresolved, RingCentral rejects the transfer and the action silently
@@ -1345,8 +1368,25 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                     new_mems_str = ", ".join(target_list) if target_list else "None"
                     changes.append({"parameter": "Queue Members", "old": old_mems_str, "new": new_mems_str})
                     if not is_preview:
-                        added_ids = [rid for rid in (_resolve_ext(n) for n in add_nums) if rid]
+                        added_ids, unresolved_add = [], []
+                        for n in add_nums:
+                            rid = _resolve_ext_id(n)
+                            if rid:
+                                added_ids.append(rid)
+                            else:
+                                unresolved_add.append(str(n).split('.')[0].strip())
                         removed_ids = [old_id_by_num[n] for n in remove_nums if n in old_id_by_num]
+
+                        if unresolved_add:
+                            # A single member number that isn't a real extension makes
+                            # RingCentral reject the entire bulk-assign (CMN-101), which
+                            # silently drops every other member too. Skip the unknown
+                            # numbers, assign the ones that resolve, and flag the row so
+                            # the bad extension is noticed instead of the queue coming up
+                            # with no members.
+                            has_error = True
+                            logs.append(f"Members Warning: the following member(s) were removed as they do not exist: {', '.join(unresolved_add)}")
+
                         if added_ids or removed_ids:
                             # RingCentral's bulk-assign only applies reliably when BOTH keys are
                             # present. Sending addedExtensionIds alone (the additive case, where
@@ -1372,7 +1412,7 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
         # membership, so every listed agent is already a member when the sequence is set.
         mem_order_raw = get_val(row, 'Members (Ext)')
         if mem_order_raw:
-            ordered_ids = [rid for rid in (_resolve_ext(e.strip()) for e in mem_order_raw.split(',') if e.strip()) if rid]
+            ordered_ids = [rid for rid in (_resolve_ext_id(e.strip()) for e in mem_order_raw.split(',') if e.strip()) if rid]
             if members_changed and not is_preview:
                 time.sleep(2.0)  # let a just-changed membership settle before referencing it
             get_succ, fo_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/answering-rule/business-hours-rule', method='GET', token=token)
