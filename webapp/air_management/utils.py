@@ -187,6 +187,53 @@ def parse_assistant_to_row(assistant, dir_map, token=None):
 
     return row
 
+def extract_rc_error(e):
+    """Turn a raised RC API exception into a concise, human-readable message.
+
+    rc_api_call(raise_error=True) raises Exception("RingCentral API Error: <body>")
+    with no .response attribute, so the raw JSON body is embedded in str(e).
+    Parse it to surface the errorCode + message instead of the whole blob.
+    """
+    raw = str(e)
+    marker = 'RingCentral API Error:'
+    body = raw.split(marker, 1)[-1].strip() if marker in raw else raw
+
+    try:
+        data = json.loads(body)
+    except Exception:
+        return raw
+
+    msgs = []
+    for err in (data.get('errors') or []):
+        code = err.get('errorCode', '')
+        msg = err.get('message', '')
+        if code and msg: msgs.append(f"[{code}] {msg}")
+        elif msg: msgs.append(msg)
+        elif code: msgs.append(code)
+
+    if not msgs and data.get('message'):
+        msgs.append(data['message'])
+
+    friendly = '; '.join(msgs) if msgs else raw
+
+    # IVA-101 is RingCentral's generic internal error. It is commonly returned
+    # (instead of a clean 409) when a create collides with an existing AIR, or
+    # when a transfer target/extension in a skill is invalid.
+    if 'IVA-101' in body:
+        friendly += (" — RingCentral internal error. This usually means the "
+                     "extension is already used by another AIR, or a skill "
+                     "target (Extension/Contact Centre) is invalid.")
+    return friendly
+
+def build_air_ext_index(assistants):
+    """Map extension number -> assistant, to detect duplicate creates."""
+    index = {}
+    for a in (assistants or []):
+        ext = clean_ext_num(a.get('extensionNumber'))
+        if ext:
+            index[ext] = a
+    return index
+
 def safe_str(val, default=''):
     if pd.isna(val): return default
     s = str(val).strip()
