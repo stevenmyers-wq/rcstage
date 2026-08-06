@@ -156,7 +156,7 @@ def download_template():
         {"Column": "Knowledge Base IDs", "Notes": "Comma-separated context IDs for KB grounding."},
         {"Column": "FAQ Question / Answer", "Notes": "Hardcoded responses. You can dynamically create as many FAQ columns as needed (e.g. 'FAQ 4 Question')."},
         {"Column": "Context Action", "Notes": "Must be one of: 'Extension', 'External', or 'Contact Centre'."},
-        {"Column": "Context Target", "Notes": "The Extension ID/Number or E.164 external number to transfer the caller to."},
+        {"Column": "Context Target", "Notes": "Extension ID/Number, or E.164 number for External/Contact Centre. For Contact Centre, use '<queue id>:+61...' if you know the number's ID (recommended); a plain number is accepted too."},
         {"Column": "Context Disabled", "Notes": "'Yes' disables the routing rule without deleting it. Defaults to 'No'."}
     ]
     df_instructions = pd.DataFrame(instructions_data)
