@@ -166,4 +166,8 @@ def create_app():
         from .user_status import routes as user_status_routes
         app.register_blueprint(user_status_routes.user_status_bp)
 
+        # AI Note Manager routes
+        from .ai_note_manager import routes as ai_note_manager_routes
+        app.register_blueprint(ai_note_manager_routes.ai_note_manager_bp)
+
     return app
