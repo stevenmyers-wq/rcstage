@@ -1,0 +1,341 @@
+<div class="space-y-8 animate-fade-in w-full">
+
+    <!-- Header -->
+    <div class="border-b border-slate-200 dark:border-slate-800 pb-4 w-full">
+        <div class="flex items-center gap-3 mb-2">
+            <h2 class="text-display">AI Note Manager</h2>
+            <span class="badge badge-warning">Beta API</span>
+        </div>
+        <p class="text-subheading">
+            Pull AI-generated call notes for a chosen set of users over a date range. For each user we page their
+            call log to find every telephony session in the window, then look those sessions up against the
+            <span class="font-mono text-xs">ai-notes/search</span> metadata endpoint. Requires the
+            <span class="font-mono text-xs">AIGeneratedNotes</span> feature on the bridged account.
+        </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
+
+        <!-- Left: User picker -->
+        <div class="card !p-6 lg:col-span-2 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-heading text-lg">Select Users</h3>
+                    <p class="text-subheading">Tick the users whose AI notes you want to collect.</p>
+                </div>
+                <button id="anm-reload" class="btn-secondary !py-1.5 !px-3 text-xs">↻ Reload</button>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <input type="text" id="anm-user-search" class="input-field !py-2 !px-3 !text-sm flex-1 min-w-[12rem]" placeholder="Search by name, extension or email…">
+                <button id="anm-select-all" class="btn-secondary !py-2 !px-3 text-xs whitespace-nowrap">Select all</button>
+                <button id="anm-clear-all" class="btn-secondary !py-2 !px-3 text-xs whitespace-nowrap">Clear</button>
+            </div>
+
+            <div id="anm-user-list" class="border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-900/40 max-h-96 overflow-y-auto space-y-0.5 text-sm">
+                <div class="py-6 text-center text-slate-400 italic">Loading users…</div>
+            </div>
+            <div class="text-[11px] font-bold text-slate-400 mt-2" id="anm-user-count">0 selected</div>
+        </div>
+
+        <!-- Right: Range + run -->
+        <div class="card !p-6 flex flex-col">
+            <h3 class="text-heading text-lg mb-4">Time Range</h3>
+            <div class="input-wrapper mb-4">
+                <label class="input-label">From</label>
+                <input type="date" id="anm-date-from" class="input-field">
+            </div>
+            <div class="input-wrapper mb-4">
+                <label class="input-label">To</label>
+                <input type="date" id="anm-date-to" class="input-field">
+            </div>
+            <p class="text-[11px] text-slate-400 mb-6 leading-relaxed">
+                RingCentral call-log history is limited (typically the last few months). Very wide ranges across many
+                users take longer and are capped per user for safety.
+            </p>
+            <button id="anm-run" class="btn-primary w-full mt-auto">Collect AI Notes</button>
+        </div>
+    </div>
+
+    <!-- Result summary + download -->
+    <div id="anm-result" class="hidden card !p-5 w-full">
+        <div class="flex items-start justify-between gap-4 mb-4">
+            <div>
+                <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">AI Notes Collection</div>
+                <p class="font-semibold text-slate-800 dark:text-slate-100" id="anm-result-summary"></p>
+            </div>
+            <a id="anm-result-download" href="#" class="btn-primary whitespace-nowrap !py-2 !px-4 text-sm">Download XLSX</a>
+        </div>
+        <div class="flex items-center gap-2 mb-3">
+            <input type="text" id="anm-result-search" class="input-field !py-2 !px-3 !text-sm !w-56" placeholder="Filter notes…">
+        </div>
+        <div class="table-container max-h-[34rem] overflow-y-auto">
+            <table class="data-table">
+                <thead id="anm-result-head"></thead>
+                <tbody id="anm-result-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Progress modal -->
+    <div id="anm-modal" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+        <div class="card w-full max-w-md text-center transform scale-95 transition-transform duration-300 shadow-2xl">
+            <h3 class="text-heading mb-2" id="anm-modal-title">Collecting…</h3>
+            <p class="text-subheading mb-8">Scanning call logs and looking up AI notes. Please do not close this window.</p>
+            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-3 overflow-hidden shadow-inner">
+                <div id="anm-modal-bar" class="bg-blue-600 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div class="text-xs font-bold text-slate-500 text-right mb-6" id="anm-modal-pct">0/0 users</div>
+            <button id="anm-modal-cancel" class="btn-secondary !py-2 !px-4 text-sm">Stop</button>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const listEl = document.getElementById('anm-user-list');
+    if (!listEl) return;
+
+    const searchEl = document.getElementById('anm-user-search');
+    const countEl = document.getElementById('anm-user-count');
+    const reloadBtn = document.getElementById('anm-reload');
+    const selectAllBtn = document.getElementById('anm-select-all');
+    const clearAllBtn = document.getElementById('anm-clear-all');
+    const runBtn = document.getElementById('anm-run');
+    const dateFrom = document.getElementById('anm-date-from');
+    const dateTo = document.getElementById('anm-date-to');
+
+    const modal = document.getElementById('anm-modal');
+    const modalTitle = document.getElementById('anm-modal-title');
+    const modalBar = document.getElementById('anm-modal-bar');
+    const modalPct = document.getElementById('anm-modal-pct');
+    const modalCancel = document.getElementById('anm-modal-cancel');
+
+    const resultBox = document.getElementById('anm-result');
+    const resultSummary = document.getElementById('anm-result-summary');
+    const resultDownload = document.getElementById('anm-result-download');
+    const resultSearch = document.getElementById('anm-result-search');
+    const resultHead = document.getElementById('anm-result-head');
+    const resultBody = document.getElementById('anm-result-body');
+
+    let allUsers = [];
+    const selected = new Set();
+    let activeTaskId = null;
+    let resultColumns = [];
+    let resultRows = [];
+
+    // Default range: last 30 days.
+    const today = new Date();
+    const monthAgo = new Date(); monthAgo.setDate(today.getDate() - 30);
+    const iso = d => d.toISOString().slice(0, 10);
+    dateTo.value = iso(today);
+    dateFrom.value = iso(monthAgo);
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function openModal() {
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.card').classList.remove('scale-95');
+        }, 10);
+    }
+    function closeModal() {
+        modal.classList.add('opacity-0');
+        modal.querySelector('.card').classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+    function setBar(cls) {
+        modalBar.className = cls + ' h-full rounded-full transition-all duration-500';
+    }
+    function updateCount() { countEl.textContent = `${selected.size} selected`; }
+
+    // --- User picker --------------------------------------------------------
+    function renderUsers() {
+        const term = (searchEl.value || '').toLowerCase().trim();
+        const visible = allUsers.filter(u =>
+            !term ||
+            (u.name || '').toLowerCase().includes(term) ||
+            (u.extensionNumber || '').includes(term) ||
+            (u.email || '').toLowerCase().includes(term));
+        listEl.innerHTML = '';
+        if (!visible.length) {
+            listEl.innerHTML = '<div class="py-6 text-center text-slate-400 italic">No users match.</div>';
+            return;
+        }
+        visible.forEach(u => {
+            const row = document.createElement('label');
+            row.className = 'flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-white dark:hover:bg-slate-800/60';
+            row.innerHTML = `
+                <input type="checkbox" class="anm-cb w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" value="${esc(u.id)}" ${selected.has(u.id) ? 'checked' : ''}>
+                <span class="flex-1 min-w-0 truncate">
+                    <span class="font-bold text-slate-700 dark:text-slate-200">${esc(u.name)}</span>
+                    <span class="text-slate-400">(Ext. ${esc(u.extensionNumber || '—')})</span>
+                    ${u.email ? `<span class="text-slate-400 text-xs ml-1">${esc(u.email)}</span>` : ''}
+                </span>`;
+            listEl.appendChild(row);
+        });
+    }
+
+    async function loadUsers() {
+        listEl.innerHTML = '<div class="py-6 text-center text-slate-400 italic">Loading users…</div>';
+        try {
+            const res = await fetch('/api/ai_note_manager/users');
+            if (res.status === 401) { window.location.reload(); return; }
+            const data = await res.json();
+            if (data.success) {
+                allUsers = data.users || [];
+                renderUsers();
+            } else {
+                listEl.innerHTML = `<div class="py-6 text-center text-rose-500 italic">${esc(data.error || 'Failed to load users.')}</div>`;
+            }
+        } catch (e) {
+            listEl.innerHTML = '<div class="py-6 text-center text-rose-500 italic">Network error loading users.</div>';
+        }
+    }
+
+    listEl.addEventListener('change', (e) => {
+        if (!e.target.classList.contains('anm-cb')) return;
+        if (e.target.checked) selected.add(e.target.value);
+        else selected.delete(e.target.value);
+        updateCount();
+    });
+    searchEl.addEventListener('input', renderUsers);
+    reloadBtn.addEventListener('click', loadUsers);
+    selectAllBtn.addEventListener('click', () => {
+        // Select all currently-visible (filtered) users.
+        const term = (searchEl.value || '').toLowerCase().trim();
+        allUsers.filter(u =>
+            !term ||
+            (u.name || '').toLowerCase().includes(term) ||
+            (u.extensionNumber || '').includes(term) ||
+            (u.email || '').toLowerCase().includes(term)
+        ).forEach(u => selected.add(u.id));
+        renderUsers(); updateCount();
+    });
+    clearAllBtn.addEventListener('click', () => { selected.clear(); renderUsers(); updateCount(); });
+
+    // --- Run + poll ---------------------------------------------------------
+    async function run() {
+        if (selected.size === 0) return alert('Select at least one user.');
+        if (!dateFrom.value || !dateTo.value) return alert('Pick a start and end date.');
+        if (dateFrom.value > dateTo.value) return alert('Start date must be on or before the end date.');
+
+        runBtn.disabled = true;
+        resultBox.classList.add('hidden');
+        modalTitle.textContent = 'Collecting…';
+        setBar('bg-blue-600');
+        modalBar.style.width = '0%';
+        modalPct.textContent = `0/${selected.size} users`;
+        openModal();
+
+        try {
+            const res = await fetch('/api/ai_note_manager/collect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    extension_ids: [...selected],
+                    date_from: dateFrom.value,
+                    date_to: dateTo.value,
+                }),
+            });
+            if (res.status === 401) { window.location.reload(); return; }
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Failed to start.');
+            activeTaskId = data.task_id;
+            pollStatus(data.task_id);
+        } catch (e) {
+            closeModal();
+            alert('Error: ' + e.message);
+            runBtn.disabled = false;
+        }
+    }
+
+    function pollStatus(taskId) {
+        const interval = setInterval(async () => {
+            let data;
+            try {
+                const res = await fetch(`/api/ai_note_manager/status?task_id=${taskId}`);
+                data = await res.json();
+            } catch (e) { return; }
+
+            if (data.total > 0) {
+                const pct = Math.round((data.current / data.total) * 100);
+                modalBar.style.width = `${pct}%`;
+                modalPct.textContent = `${data.current}/${data.total} users`;
+            }
+
+            if (data.status === 'completed') {
+                clearInterval(interval);
+                modalTitle.textContent = 'Done!';
+                setBar('bg-emerald-500');
+                modalBar.style.width = '100%';
+                await loadResults(taskId, data);
+                setTimeout(closeModal, 900);
+                runBtn.disabled = false;
+            } else if (data.status === 'error') {
+                clearInterval(interval);
+                modalTitle.textContent = 'Failed';
+                setBar('bg-rose-500');
+                setTimeout(closeModal, 400);
+                alert('Error: ' + (data.error || 'Unknown error.'));
+                runBtn.disabled = false;
+            }
+        }, 1200);
+    }
+
+    modalCancel.addEventListener('click', async () => {
+        if (!activeTaskId) return;
+        modalCancel.disabled = true;
+        try {
+            await fetch('/api/ai_note_manager/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: activeTaskId }),
+            });
+        } catch (e) {}
+        setTimeout(() => { modalCancel.disabled = false; }, 1500);
+    });
+
+    // --- Results table ------------------------------------------------------
+    async function loadResults(taskId, statusData) {
+        resultSummary.textContent = statusData.summary || 'Completed.';
+        resultDownload.href = `/api/ai_note_manager/download?task_id=${taskId}`;
+        try {
+            const res = await fetch(`/api/ai_note_manager/results?task_id=${taskId}`);
+            const data = await res.json();
+            if (data.success) {
+                resultColumns = data.columns || [];
+                resultRows = data.rows || [];
+                resultSearch.value = '';
+                renderResults();
+            }
+        } catch (e) { /* table is a bonus; download still works */ }
+        resultBox.classList.remove('hidden');
+        resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderResults() {
+        const term = (resultSearch.value || '').toLowerCase().trim();
+        const cols = resultColumns.length ? resultColumns : (resultRows[0] ? Object.keys(resultRows[0]) : []);
+        resultHead.innerHTML = '<tr>' + cols.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
+        const visible = !term ? resultRows : resultRows.filter(r =>
+            cols.some(c => String(r[c] == null ? '' : r[c]).toLowerCase().includes(term)));
+        if (!visible.length) {
+            resultBody.innerHTML = `<tr><td colspan="${cols.length || 1}" class="text-center italic text-slate-400 py-6">${resultRows.length ? 'No rows match your filter.' : 'No AI notes found for the selected users and range.'}</td></tr>`;
+            return;
+        }
+        resultBody.innerHTML = visible.map(r =>
+            '<tr>' + cols.map(c => `<td class="max-w-md whitespace-normal align-top">${esc(r[c])}</td>`).join('') + '</tr>'
+        ).join('');
+    }
+
+    resultSearch.addEventListener('input', renderResults);
+    runBtn.addEventListener('click', run);
+
+    loadUsers();
+    updateCount();
+});
+</script>
