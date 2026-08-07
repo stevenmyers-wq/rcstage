@@ -575,7 +575,11 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
             raise_error=True
         )
 
-    # Attempt 1: Atomic Upload + Bind
+    # Attempt 1: Atomic Upload + Bind.
+    # The answeringRule id is what actually assigns the audio to the rule, so it
+    # MUST be present in the JSON body for a rule-scoped greeting (Voicemail,
+    # Announcement, Connecting*, Introductory, InterruptPrompt). RingCentral
+    # rejects e.g. a User Voicemail greeting that is posted without it.
     metadata = {
         "type": greeting_type,
         "answeringRule": {"id": rule_id}
@@ -593,45 +597,56 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
             raise_error=True
         )
         return greeting_result
-        
+
     except Exception as e:
         err_str = str(e)
         # Suppress atomic error log if it's the expected API limitation format
         if not (greeting_type == 'HoldMusic' and 'invalid' in err_str):
             print(f"[DEBUG UPLOAD ATOMIC ERROR] failed for ext={ext_id} type={greeting_type}: {err_str}")
-        
-        # Attempt 2: Fall back to separate upload and manual bind
-        files_fallback = {
-            'json': ('request.json', json.dumps({"type": greeting_type}), 'application/json'),
-            'attachment': (filename, file_data, content_type)
-        }
-        greeting_result = rc_api_call(
+
+        if greeting_type == 'HoldMusic':
+            # Hold music is not a rule "greeting"; it lives in the rule's holdMusic
+            # object. Upload the media to the pool, then bind it separately. CMN-101
+            # here just means the account manages hold music elsewhere, so it's
+            # swallowed and the pooled upload is still returned.
+            files_fallback = {
+                'json': ('request.json', json.dumps({"type": greeting_type}), 'application/json'),
+                'attachment': (filename, file_data, content_type)
+            }
+            greeting_result = rc_api_call(
+                f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
+                method='POST',
+                files=files_fallback,
+                raise_error=True
+            )
+            audio_id = greeting_result.get('id')
+            if audio_id:
+                try:
+                    v1_payload = {"holdMusic": {"effectiveGreetingType": "Custom", "custom": {"id": audio_id}}}
+                    rc_api_call(
+                        f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
+                        method='PUT',
+                        json=v1_payload,
+                        raise_error=True
+                    )
+                except Exception as e1:
+                    # Completely suppress CMN-101 printout
+                    if 'CMN-101' not in str(e1):
+                        print(f"[DEBUG V1 BIND ERROR] ext={ext_id}: {str(e1)}")
+            return greeting_result
+
+        # Attempt 2: some accounts reject the apply=true flag on this endpoint;
+        # retry the identical create+apply POST without it. The answeringRule
+        # binding stays in the body so the greeting is still assigned to the rule
+        # in a single call. This matches the proven upload path in account_migration
+        # and fixes the "upload user VM greeting" API error, where the old fallback
+        # dropped answeringRule and RingCentral rejected the rule-scoped greeting.
+        return rc_api_call(
             f'/restapi/v1.0/account/~/extension/{ext_id}/greeting',
             method='POST',
-            files=files_fallback,
+            files=files,
             raise_error=True
         )
-        
-        audio_id = greeting_result.get('id')
-        if audio_id:
-            try:
-                if greeting_type == 'HoldMusic':
-                    v1_payload = { "holdMusic": { "effectiveGreetingType": "Custom", "custom": { "id": audio_id } } }
-                else:
-                    v1_payload = { "greetings": [ { "type": greeting_type, "custom": { "id": audio_id } } ] }
-                    
-                rc_api_call(
-                    f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
-                    method='PUT',
-                    json=v1_payload,
-                    raise_error=True
-                )
-            except Exception as e1:
-                # Completely suppress CMN-101 printout
-                if 'CMN-101' not in str(e1):
-                    print(f"[DEBUG V1 BIND ERROR] ext={ext_id}: {str(e1)}")
-
-        return greeting_result
 
 def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and clear"):
     api_key = os.environ.get("GEMINI_API_KEY")
