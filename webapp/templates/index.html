@@ -302,7 +302,7 @@
           <!-- Main Content Area -->
           <div class="flex-1 w-full min-w-0">
             
-            {% set sm_auth_tabs = ['ai_note_manager', 'air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'device_audit', 'device_ringing_audit', 'device_swap', 'extension_number_changer', 'extension_uploader', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'site_allocation', 'port_mapping', 'user_status', 'user_templates'] %}
+            {% set sm_auth_tabs = ['air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'device_audit', 'device_ringing_audit', 'device_swap', 'extension_number_changer', 'extension_uploader', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'site_allocation', 'port_mapping', 'user_status', 'user_templates'] %}
             
             {% if current_tab in sm_auth_tabs %}
                 {% if not session.get('sm_employee_token') %}
@@ -363,8 +363,7 @@
                     </div>
                     
                     <div class="w-full">
-                        {% if current_tab == 'ai_note_manager' %} {% include 'includes/ai_note_manager_tab.html' %}
-                        {% elif current_tab == 'air_management' %} {% include 'includes/air_management_tab.html' %}
+                        {% if current_tab == 'air_management' %} {% include 'includes/air_management_tab.html' %}
                         {% elif current_tab == 'presence' %} {% include 'includes/presence_tab.html' %}
                         {% elif current_tab == 'bulk_opening' %} {% include 'includes/bulk_opening_tab.html' %}
                         {% elif current_tab == 'call_flow' %} {% include 'includes/call_flow_tab.html' %}
@@ -396,6 +395,7 @@
             {% else %}
                 <div class="w-full">
                     {% if current_tab == 'auth_rex' %} {% include 'includes/auth_rex_tab.html' %}
+                    {% elif current_tab == 'ai_note_manager' %} {% include 'includes/ai_note_manager_tab.html' %}
                     {% elif current_tab == 'auth_cxone' %} {% include 'includes/auth_cxone_tab.html' %}
                     {% elif current_tab == 'analytics' %} {% include 'includes/analytics_tab.html' %}
                     {% elif current_tab == 'account_discovery' %} {% include 'includes/account_health_tab.html' %} 

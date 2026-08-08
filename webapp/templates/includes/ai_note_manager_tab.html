@@ -10,7 +10,12 @@
             Pull AI-generated call notes for a chosen set of users over a date range. For each user we page their
             call log to find every telephony session in the window, then look those sessions up against the
             <span class="font-mono text-xs">ai-notes/search</span> metadata endpoint. Requires the
-            <span class="font-mono text-xs">AIGeneratedNotes</span> feature on the bridged account.
+            <span class="font-mono text-xs">AIGeneratedNotes</span> feature on the account.
+        </p>
+        <p class="text-[11px] text-amber-600 dark:text-amber-400 mt-2 font-semibold">
+            This tool authenticates via <strong>RingEX (REX) directly</strong> — not the partner bridge — because the
+            <span class="font-mono">ai-notes/search</span> endpoint needs the <span class="font-mono">AllInternal</span>
+            scope. Connect on the <a href="{{ url_for('core.index', tab='auth_rex') }}" class="underline">REX Authentication</a> tab first.
         </p>
     </div>
 
@@ -179,12 +184,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function renderAuthPrompt(msg) {
+        listEl.innerHTML =
+            `<div class="py-8 text-center space-y-3">
+                <p class="text-rose-500 font-semibold text-sm">${esc(msg || 'RingEX authentication required.')}</p>
+                <a href="/?tab=auth_rex" class="btn-primary !py-2 !px-4 text-xs inline-flex">Go to REX Authentication</a>
+            </div>`;
+    }
+
     async function loadUsers() {
         listEl.innerHTML = '<div class="py-6 text-center text-slate-400 italic">Loading users…</div>';
         try {
             const res = await fetch('/api/ai_note_manager/users');
-            if (res.status === 401) { window.location.reload(); return; }
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 401) { renderAuthPrompt(data.error); return; }
             if (data.success) {
                 allUsers = data.users || [];
                 renderUsers();
@@ -241,8 +254,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     date_to: dateTo.value,
                 }),
             });
-            if (res.status === 401) { window.location.reload(); return; }
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 401) { throw new Error(data.error || 'RingEX authentication required. Connect on the REX Authentication tab.'); }
             if (!data.success) throw new Error(data.error || 'Failed to start.');
             activeTaskId = data.task_id;
             pollStatus(data.task_id);

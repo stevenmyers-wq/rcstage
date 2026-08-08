@@ -11,12 +11,20 @@ from . import utils
 ai_note_manager_bp = Blueprint('ai_note_manager', __name__, url_prefix='/api/ai_note_manager')
 ai_note_manager_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, methods=['POST'])
 
+# Unlike the other UC tools, AI Note Manager does NOT use the SM impersonation
+# bridge. The ai-notes/search endpoint requires the AllInternal permission
+# scope, which the bridged partner token does not carry. So this module reads
+# the standard RingEX PKCE token (`rc_access_token`) directly — the user must
+# connect via the "REX Authentication" tab with a client ID that holds the
+# AllInternal scope. We deliberately do NOT fall back to `sm_isolated_token`.
+AUTH_HINT = "RingEX authentication required. Connect on the REX Authentication tab (the client must hold the AllInternal scope)."
+
 
 @ai_note_manager_bp.route('/users', methods=['GET'])
 def get_users():
-    token = session.get('sm_isolated_token')
+    token = session.get('rc_access_token')
     if not token:
-        return jsonify({"success": False, "error": "Unauthorized. Please bridge connection."}), 401
+        return jsonify({"success": False, "error": AUTH_HINT}), 401
     try:
         users = utils.fetch_all_users(token)
         return jsonify({"success": True, "users": users})
@@ -27,9 +35,9 @@ def get_users():
 @ai_note_manager_bp.route('/collect', methods=['POST'])
 @track_usage('AI Note Manager Collect')
 def collect():
-    token = session.get('sm_isolated_token')
+    token = session.get('rc_access_token')
     if not token:
-        return jsonify({"success": False, "error": "Unauthorized"}), 401
+        return jsonify({"success": False, "error": AUTH_HINT}), 401
 
     data = request.json or {}
     ext_ids = data.get('extension_ids', [])
