@@ -478,3 +478,72 @@ def _error_row(uname, unum, ext_id, message):
         "Raw AI Notes": "",
         "Version": "",
     }
+
+
+# ---------------------------------------------------------------------------
+# Debug probe — returns raw RingCentral responses straight to the browser so we
+# can see the actual call-log record + ai-notes/search response shapes without
+# depending on Cloud Run log levels. Runs against the CALLER'S OWN extension.
+# ---------------------------------------------------------------------------
+def debug_probe(token, date_from=None, date_to=None, max_sessions=10):
+    from datetime import datetime, timezone, timedelta
+    if not date_from or not date_to:
+        now = datetime.now(timezone.utc)
+        date_from = (now - timedelta(days=30)).strftime('%Y-%m-%dT00:00:00.000Z')
+        date_to = now.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    else:
+        date_from, date_to = to_range_bounds(date_from, date_to)
+
+    out = {"range": [date_from, date_to]}
+
+    # Who am I (own extension id + number)?
+    ok_ext, me = safe_api_call('/restapi/v1.0/account/~/extension/~', token=token)
+    own_ext_id = str(me.get('id', '')) if ok_ext and isinstance(me, dict) else ''
+    out["ownExtension"] = {"ok": ok_ext, "id": own_ext_id,
+                           "extensionNumber": me.get('extensionNumber') if isinstance(me, dict) else None}
+
+    # Own call log (Detailed view) so we can see every identifier available.
+    ok_cl, cl = safe_api_call(
+        f'/restapi/v1.0/account/~/extension/~/call-log'
+        f'?type=Voice&view=Detailed&dateFrom={date_from}&dateTo={date_to}&perPage=50',
+        token=token)
+    cl_records = cl.get('records', []) if (ok_cl and isinstance(cl, dict)) else []
+    session_ids = []
+    for r in cl_records:
+        sid = r.get('telephonySessionId')
+        if sid and sid not in session_ids:
+            session_ids.append(sid)
+    out["callLog"] = {
+        "ok": ok_cl,
+        "count": len(cl_records),
+        "sampleRawRecord": cl_records[0] if cl_records else None,
+        "sessionIdsFound": session_ids[:max_sessions],
+        "error": None if ok_cl else cl,
+    }
+
+    probe_ids = session_ids[:max_sessions]
+
+    # Probe the search endpoint a few ways so we can see which (if any) returns
+    # data and what the raw body looks like.
+    def _post(path, body):
+        ok, resp = safe_api_call(path, method='POST', json_payload=body, token=token)
+        return {"ok": ok, "raw": resp}
+
+    out["searchProbes"] = {}
+    if probe_ids:
+        out["searchProbes"]["ext_tilde__telephonySessionIds"] = _post(
+            '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search',
+            {"telephonySessionIds": probe_ids})
+        if own_ext_id:
+            out["searchProbes"]["ext_own__telephonySessionIds"] = _post(
+                f'/restapi/v1.0/account/~/extension/{own_ext_id}/telephony/metadata/ai-notes/search',
+                {"telephonySessionIds": probe_ids})
+        # Single-session variants (some search endpoints only honour one id, or
+        # a differently-named field).
+        out["searchProbes"]["ext_tilde__single_sessionId_key"] = _post(
+            '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search',
+            {"sessionIds": probe_ids})
+    else:
+        out["searchProbes"]["note"] = "No telephonySessionIds found in own call log for this range."
+
+    return out
