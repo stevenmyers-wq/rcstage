@@ -223,6 +223,21 @@ def _record_session_id(rec):
             or rec.get('telephonySessionID') or '')
 
 
+def _extract_records(resp):
+    """Pull the list of note records out of a search response, tolerating the
+    container-shape variations this internal endpoint has used: a dict under
+    ``records`` (per the published spec), a dict under an alternate key, or a
+    bare list. Returns [] when nothing note-like is present."""
+    if isinstance(resp, list):
+        return resp
+    if isinstance(resp, dict):
+        for key in ('records', 'data', 'results', 'aiNotes', 'metadata', 'items'):
+            val = resp.get(key)
+            if isinstance(val, list):
+                return val
+    return []
+
+
 def search_ai_notes(session_ids, token):
     """POST the AI-notes search for a chunked list of session IDs. Returns the
     flat list of raw metadata records the endpoint hands back (one per note).
@@ -252,18 +267,25 @@ def search_ai_notes(session_ids, token):
             # Propagate so the caller can mark this user's notes as unavailable
             # (e.g. feature flag off, 403/404) without killing the whole run.
             raise Exception(format_api_error(resp))
-        recs = resp.get('records', []) if isinstance(resp, dict) else []
-        # One-time diagnostic: log the raw shape so we can see how notes are
-        # actually keyed if a search comes back non-empty but nothing renders.
+        recs = _extract_records(resp)
+        # Diagnostic: log the raw shape so we can see how notes are actually
+        # keyed. On a non-empty search, log one sample record; on a 200-but-
+        # empty search, log the whole (truncated) body so we can tell whether
+        # the endpoint really returned nothing or used a shape we don't parse.
         if recs and not logged_sample:
             try:
-                logger.info("AI Notes sample record: %s", json.dumps(recs[0])[:1500])
+                logger.info("AI Notes sample record: %s", json.dumps(recs[0])[:2000])
             except Exception:
                 pass
             logged_sample = True
-        elif isinstance(resp, dict) and not recs:
-            logger.info("AI Notes search: 200 but empty for %s session(s). Keys: %s",
-                        len(chunk), list(resp.keys()))
+        elif not recs and not logged_sample:
+            try:
+                logger.info("AI Notes search 200-but-empty for %s session(s). Raw: %s",
+                            len(chunk), json.dumps(resp)[:2000])
+            except Exception:
+                logger.info("AI Notes search 200-but-empty for %s session(s). Type: %s",
+                            len(chunk), type(resp).__name__)
+            logged_sample = True
         records.extend(recs)
     return records
 
