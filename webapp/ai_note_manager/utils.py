@@ -213,21 +213,34 @@ def fetch_session_ids(ext_id, date_from, date_to, token, task_id=None):
 # ---------------------------------------------------------------------------
 # AI Notes search for a batch of session IDs
 # ---------------------------------------------------------------------------
+def _record_session_id(rec):
+    """Best-effort telephony-session id for a returned metadata record. The
+    field name has varied across revisions of this internal endpoint, so try a
+    few before giving up."""
+    if not isinstance(rec, dict):
+        return ''
+    return (rec.get('telephonySessionId') or rec.get('sessionId')
+            or rec.get('telephonySessionID') or '')
+
+
 def search_ai_notes(session_ids, token):
-    """POST the AI-notes search for a chunked list of session IDs. Returns
-    { sessionId: record } for every note found.
+    """POST the AI-notes search for a chunked list of session IDs. Returns the
+    flat list of raw metadata records the endpoint hands back (one per note).
 
     IMPORTANT — the search runs under ``extension/~`` (the authenticated
     caller's own identity), NOT under each target user's extension. The
     endpoint enforces same-extension access on the *path* extension: putting a
     different user's extension ID there returns "Attempt to access another
     extension" even for an account admin. Scoping is done instead by the
-    ``telephonySessionIds`` in the body (harvested per-user from the call log),
-    so results still attribute back to the right user. With an ``AllInternal``-
-    scoped token this searches across the account by session ID.
+    ``telephonySessionIds`` in the body (harvested per-user from the call log).
+    With an ``AllInternal``-scoped token this searches across the account by
+    session ID.
 
-    The metadata field is a oneOf; we defensively reach for callSummary."""
-    found = {}
+    We return every record verbatim (rather than a {sessionId: rec} map that
+    silently drops anything without a top-level session id), so the caller can
+    surface whatever the API returns and match on a best-effort basis."""
+    records = []
+    logged_sample = False
     for i in range(0, len(session_ids), SEARCH_CHUNK):
         chunk = session_ids[i:i + SEARCH_CHUNK]
         endpoint = ('/restapi/v1.0/account/~/extension/~'
@@ -239,21 +252,52 @@ def search_ai_notes(session_ids, token):
             # Propagate so the caller can mark this user's notes as unavailable
             # (e.g. feature flag off, 403/404) without killing the whole run.
             raise Exception(format_api_error(resp))
-        for rec in (resp.get('records', []) if isinstance(resp, dict) else []):
-            sid = rec.get('telephonySessionId')
-            if sid:
-                found[sid] = rec
-    return found
+        recs = resp.get('records', []) if isinstance(resp, dict) else []
+        # One-time diagnostic: log the raw shape so we can see how notes are
+        # actually keyed if a search comes back non-empty but nothing renders.
+        if recs and not logged_sample:
+            try:
+                logger.info("AI Notes sample record: %s", json.dumps(recs[0])[:1500])
+            except Exception:
+                pass
+            logged_sample = True
+        elif isinstance(resp, dict) and not recs:
+            logger.info("AI Notes search: 200 but empty for %s session(s). Keys: %s",
+                        len(chunk), list(resp.keys()))
+        records.extend(recs)
+    return records
 
 
 def _extract_note_fields(rec):
-    """Flatten a metadata record's AI-note payload into display fields."""
-    meta = rec.get('metadata') if isinstance(rec, dict) else None
-    summary = {}
-    if isinstance(meta, dict):
-        cs = meta.get('callSummary')
-        if isinstance(cs, dict):
-            summary = cs
+    """Flatten a metadata record's AI-note payload into display fields.
+
+    The note payload's location has varied: sometimes under
+    ``metadata.callSummary``, sometimes ``metadata`` is itself the summary, or
+    the fields sit at the record's top level. Check each."""
+    candidates = []
+    if isinstance(rec, dict):
+        meta = rec.get('metadata')
+        if isinstance(meta, dict):
+            cs = meta.get('callSummary')
+            if isinstance(cs, dict):
+                candidates.append(cs)
+            candidates.append(meta)      # metadata may itself hold the fields
+        candidates.append(rec)           # or the fields sit at the top level
+
+    def pick(*keys):
+        for src in candidates:
+            for k in keys:
+                v = src.get(k)
+                if v not in (None, ''):
+                    return v
+        return ''
+
+    summary = {
+        "digest": pick('digest'),
+        "notes": pick('notes'),
+        "rawAiNotes": pick('rawAiNotes'),
+        "version": pick('version'),
+    }
     return {
         "category": rec.get('metadataCategory', '') if isinstance(rec, dict) else '',
         "digest": summary.get('digest', ''),
@@ -323,6 +367,7 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
         rows = []
         users_with_notes = 0
         notes_total = 0
+        sessions_searched = 0
 
         for idx, ext_id in enumerate(ext_ids):
             if task_control.is_stopped(task_id):
@@ -346,17 +391,19 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
 
             # 2. AI notes for those sessions
             session_ids = [c['sessionId'] for c in calls]
+            sessions_searched += len(session_ids)
             try:
-                notes_map = search_ai_notes(session_ids, token)
+                note_records = search_ai_notes(session_ids, token)
             except Exception as e:
                 rows.append(_error_row(uname, unum, ext_id,
                                        f"AI notes lookup error: {e}"))
                 continue
 
-            if notes_map:
+            if note_records:
                 users_with_notes += 1
             calls_by_sid = {c['sessionId']: c for c in calls}
-            for sid, rec in notes_map.items():
+            for rec in note_records:
+                sid = _record_session_id(rec)
                 call = calls_by_sid.get(sid, {})
                 fields = _extract_note_fields(rec)
                 notes_total += 1
@@ -365,8 +412,10 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
                     "Extension": unum,
                     "Extension ID": str(ext_id),
                     "Telephony Session ID": sid,
-                    "Party ID": call.get('partyId', ''),
-                    "Call Time": call.get('startTime', ''),
+                    "Party ID": (rec.get('partyId') if isinstance(rec, dict) else '')
+                                or call.get('partyId', ''),
+                    "Call Time": call.get('startTime', '')
+                                 or (rec.get('creationTime') if isinstance(rec, dict) else ''),
                     "Direction": call.get('direction', ''),
                     "From": call.get('from', ''),
                     "To": call.get('to', ''),
@@ -380,7 +429,8 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
         stopped = task_control.is_stopped(task_id)
         prefix = "Stopped early. " if stopped else ""
         summary = (f"{prefix}{notes_total} AI note(s) found across "
-                   f"{users_with_notes} user(s) of {len(ext_ids)} selected.")
+                   f"{users_with_notes} user(s) of {len(ext_ids)} selected "
+                   f"({sessions_searched} session(s) searched).")
         _finish_task(task_id, rows, summary)
     except Exception as e:
         logger.exception("AI Notes collection failed")
