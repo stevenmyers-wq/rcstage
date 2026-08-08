@@ -491,6 +491,27 @@ def _error_row(uname, unum, ext_id, message):
 # can see the actual call-log record + ai-notes/search response shapes without
 # depending on Cloud Run log levels. Runs against the CALLER'S OWN extension.
 # ---------------------------------------------------------------------------
+def _decode_jwt_scope(token):
+    """RingCentral access tokens are JWTs. Decode the (unverified) payload just
+    to read the granted `scope`/permission claims — the decisive check for
+    whether this token carries AllInternal. Returns a small dict; never raises."""
+    try:
+        import base64
+        parts = (token or '').split('.')
+        if len(parts) < 2:
+            return {"note": "access token is not a JWT (no scope claim to read)"}
+        seg = parts[1] + '=' * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(seg))
+        keep = {}
+        for k in ('scope', 'scopes', 'permissions', 'clientId', 'aud', 'sub', 'exp'):
+            if k in payload:
+                keep[k] = payload[k]
+        keep["hasAllInternal"] = 'AllInternal' in json.dumps(payload)
+        return keep
+    except Exception as e:
+        return {"error": f"could not decode token: {e}"}
+
+
 def debug_probe(token, date_from=None, date_to=None, max_sessions=10):
     from datetime import datetime, timezone, timedelta
     if not date_from or not date_to:
@@ -502,11 +523,24 @@ def debug_probe(token, date_from=None, date_to=None, max_sessions=10):
 
     out = {"range": [date_from, date_to]}
 
+    # Decisive check: does the connected token actually carry AllInternal?
+    out["tokenScope"] = _decode_jwt_scope(token)
+
     # Who am I (own extension id + number)?
     ok_ext, me = safe_api_call('/restapi/v1.0/account/~/extension/~', token=token)
     own_ext_id = str(me.get('id', '')) if ok_ext and isinstance(me, dict) else ''
     out["ownExtension"] = {"ok": ok_ext, "id": own_ext_id,
                            "extensionNumber": me.get('extensionNumber') if isinstance(me, dict) else None}
+
+    # Is the AI-notes feature actually on for this extension? Surface any
+    # feature whose id/name hints at AI / notes / transcription.
+    ok_feat, feat = safe_api_call('/restapi/v1.0/account/~/extension/~/features', token=token)
+    if ok_feat and isinstance(feat, dict):
+        hits = [f for f in feat.get('records', [])
+                if any(t in json.dumps(f).lower() for t in ('note', 'ai', 'transcri', 'intellig'))]
+        out["aiFeatureFlags"] = hits or "no matching feature entries"
+    else:
+        out["aiFeatureFlags"] = {"ok": ok_feat, "raw": feat}
 
     # Own call log (Detailed view) so we can see every identifier available.
     ok_cl, cl = safe_api_call(
