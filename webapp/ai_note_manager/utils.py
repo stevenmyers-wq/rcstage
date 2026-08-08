@@ -211,18 +211,27 @@ def fetch_session_ids(ext_id, date_from, date_to, token, task_id=None):
 
 
 # ---------------------------------------------------------------------------
-# AI Notes search for a batch of session IDs on one extension
+# AI Notes search for a batch of session IDs
 # ---------------------------------------------------------------------------
-def search_ai_notes(ext_id, session_ids, token):
-    """POST the AI-notes search for a chunked list of session IDs on one
-    extension. Returns { sessionId: record } for every note found.
+def search_ai_notes(session_ids, token):
+    """POST the AI-notes search for a chunked list of session IDs. Returns
+    { sessionId: record } for every note found.
+
+    IMPORTANT — the search runs under ``extension/~`` (the authenticated
+    caller's own identity), NOT under each target user's extension. The
+    endpoint enforces same-extension access on the *path* extension: putting a
+    different user's extension ID there returns "Attempt to access another
+    extension" even for an account admin. Scoping is done instead by the
+    ``telephonySessionIds`` in the body (harvested per-user from the call log),
+    so results still attribute back to the right user. With an ``AllInternal``-
+    scoped token this searches across the account by session ID.
 
     The metadata field is a oneOf; we defensively reach for callSummary."""
     found = {}
     for i in range(0, len(session_ids), SEARCH_CHUNK):
         chunk = session_ids[i:i + SEARCH_CHUNK]
-        endpoint = (f'/restapi/v1.0/account/~/extension/{ext_id}'
-                    f'/telephony/metadata/ai-notes/search')
+        endpoint = ('/restapi/v1.0/account/~/extension/~'
+                    '/telephony/metadata/ai-notes/search')
         succ, resp = safe_api_call(
             endpoint, method='POST',
             json_payload={"telephonySessionIds": chunk}, token=token)
@@ -338,7 +347,7 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
             # 2. AI notes for those sessions
             session_ids = [c['sessionId'] for c in calls]
             try:
-                notes_map = search_ai_notes(ext_id, session_ids, token)
+                notes_map = search_ai_notes(session_ids, token)
             except Exception as e:
                 rows.append(_error_row(uname, unum, ext_id,
                                        f"AI notes lookup error: {e}"))
