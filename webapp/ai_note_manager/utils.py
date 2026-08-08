@@ -148,6 +148,30 @@ def fetch_all_users(token):
 
 
 # ---------------------------------------------------------------------------
+# Preflight: is the AI-notes metadata API actually enabled for this account?
+# ---------------------------------------------------------------------------
+def metadata_service_status(token):
+    """The ai-notes/search endpoint is powered by the ``MetadataServiceForAINotes``
+    account feature. When that feature is off, the search returns 200 with empty
+    records for every call — even though ``AIGeneratedNotes`` may be on and notes
+    are visible in the app. Check the extension feature list so we can tell the
+    user plainly instead of silently reporting "no notes".
+
+    Returns { available: bool, reason: str } or None if the check itself fails
+    (in which case we proceed and let the search speak for itself)."""
+    ok, feat = safe_api_call('/restapi/v1.0/account/~/extension/~/features', token=token)
+    if not ok or not isinstance(feat, dict):
+        return None
+    for f in feat.get('records', []):
+        if f.get('id') == 'MetadataServiceForAINotes':
+            return {"available": bool(f.get('available')),
+                    "reason": (f.get('reason') or {}).get('message', '')}
+    # Feature not listed at all — treat as unavailable but say so distinctly.
+    return {"available": False,
+            "reason": "Feature 'MetadataServiceForAINotes' is not present on this account."}
+
+
+# ---------------------------------------------------------------------------
 # Date helpers
 # ---------------------------------------------------------------------------
 def to_range_bounds(date_from, date_to):
@@ -386,11 +410,24 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
     try:
         df_bound, dt_bound = to_range_bounds(date_from, date_to)
 
+        _init_task(task_id, len(ext_ids))
+
+        # Preflight: if the AI-notes metadata API isn't enabled for this account,
+        # every search returns empty — say so plainly instead of "0 notes".
+        status = metadata_service_status(token)
+        if status and not status['available']:
+            _finish_task(task_id, [], (
+                "AI Notes metadata API is not enabled for this account "
+                f"(MetadataServiceForAINotes: {status['reason'] or 'unavailable'}). "
+                "AI Notes are still generated and visible in the app, but cannot be "
+                "retrieved through this API until the feature is enabled on the "
+                "account's service plan. No code change will surface them until then."))
+            return
+
         # Resolve names/extension numbers for the selected IDs up front so the
         # report is readable even for users with no notes.
         all_users = {u['id']: u for u in fetch_all_users(token)}
 
-        _init_task(task_id, len(ext_ids))
         rows = []
         users_with_notes = 0
         notes_total = 0
