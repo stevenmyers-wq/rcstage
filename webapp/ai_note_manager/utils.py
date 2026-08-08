@@ -514,8 +514,7 @@ def debug_probe(token, date_from=None, date_to=None, max_sessions=10):
         f'?type=Voice&view=Detailed&dateFrom={date_from}&dateTo={date_to}&perPage=50',
         token=token)
     cl_records = cl.get('records', []) if (ok_cl and isinstance(cl, dict)) else []
-    session_ids = []
-    party_ids = []
+    session_ids, party_ids, recording_ids = [], [], []
     for r in cl_records:
         sid = r.get('telephonySessionId')
         if sid and sid not in session_ids:
@@ -523,30 +522,51 @@ def debug_probe(token, date_from=None, date_to=None, max_sessions=10):
         pid = r.get('partyId')
         if pid and pid not in party_ids:
             party_ids.append(pid)
+        for src in [r] + (r.get('legs') or []):
+            rid = (src.get('recording') or {}).get('id')
+            if rid and rid not in recording_ids:
+                recording_ids.append(rid)
     out["callLog"] = {
         "ok": ok_cl,
         "count": len(cl_records),
         "sampleRawRecord": cl_records[0] if cl_records else None,
         "sessionIdsFound": session_ids[:max_sessions],
         "partyIdsFound": party_ids[:max_sessions],
+        "recordingIdsFound": recording_ids[:max_sessions],
         "error": None if ok_cl else cl,
     }
 
-    # Probe the search endpoint a few ways so we can see which returns data.
     def _post(path, body):
         ok, resp = safe_api_call(path, method='POST', json_payload=body, token=token)
-        return {"ok": ok, "raw": resp}
+        return {"ok": ok, "raw": resp, "body": body, "path": path}
 
-    endpoint = '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search'
+    def _get(path):
+        ok, resp = safe_api_call(path, token=token)
+        return {"ok": ok, "raw": resp, "path": path}
+
+    p = party_ids[:max_sessions]
+    s = session_ids[:max_sessions]
+    r_ids = recording_ids[:max_sessions]
+    # The counterparty party is usually "-1"; swap the "-2" suffix in case notes
+    # are keyed against the other leg.
+    p_alt = [pid.rsplit('-', 1)[0] + '-1' for pid in p]
+
+    ext_search = '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search'
+    acct_search = '/restapi/v1.0/account/~/telephony/metadata/ai-notes/search'
+    ext_list = '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes?perPage=50'
+
     out["searchProbes"] = {}
-    if party_ids:
-        # The working key (notes are keyed by party).
-        out["searchProbes"]["ext_tilde__partyIds"] = _post(
-            endpoint, {"partyIds": party_ids[:max_sessions]})
-    if session_ids:
-        out["searchProbes"]["ext_tilde__telephonySessionIds"] = _post(
-            endpoint, {"telephonySessionIds": session_ids[:max_sessions]})
-    if not party_ids and not session_ids:
-        out["searchProbes"]["note"] = "No partyIds/telephonySessionIds in own call log for this range."
+    if p:
+        out["searchProbes"]["ext__partyIds"] = _post(ext_search, {"partyIds": p})
+        out["searchProbes"]["ext__partyIds_dash1"] = _post(ext_search, {"partyIds": p_alt})
+        out["searchProbes"]["account__partyIds"] = _post(acct_search, {"partyIds": p})
+    if s:
+        out["searchProbes"]["ext__telephonySessionIds"] = _post(ext_search, {"telephonySessionIds": s})
+    if r_ids:
+        out["searchProbes"]["ext__recordingIds"] = _post(ext_search, {"recordingIds": r_ids})
+    # List everything the endpoint has for this extension, ignoring any filter —
+    # tells us whether the store simply has nothing for us (scope/feature) vs a
+    # filter/key mismatch.
+    out["searchProbes"]["ext__list_all_GET"] = _get(ext_list)
 
     return out
