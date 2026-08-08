@@ -20,6 +20,27 @@ ai_note_manager_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, m
 AUTH_HINT = "RingEX authentication required. Connect on the REX Authentication tab (the client must hold the AllInternal scope)."
 
 
+@ai_note_manager_bp.route('/debug', methods=['GET'])
+def debug():
+    """Diagnostic: returns raw RingCentral call-log + ai-notes/search responses
+    for the CALLER'S OWN extension, straight to the browser. Visit
+    /api/ai_note_manager/debug while REX-connected to inspect the real response
+    shapes (bypasses Cloud Run app-logger level). Optional ?date_from&date_to
+    (YYYY-MM-DD)."""
+    token = session.get('rc_access_token')
+    if not token:
+        return jsonify({"error": AUTH_HINT}), 401
+    try:
+        out = utils.debug_probe(
+            token,
+            date_from=request.args.get('date_from'),
+            date_to=request.args.get('date_to'),
+        )
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @ai_note_manager_bp.route('/users', methods=['GET'])
 def get_users():
     token = session.get('rc_access_token')
