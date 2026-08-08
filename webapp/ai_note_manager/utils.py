@@ -160,14 +160,16 @@ def to_range_bounds(date_from, date_to):
 
 
 # ---------------------------------------------------------------------------
-# Call log -> telephony session IDs for one extension
+# Call log -> telephony parties for one extension
 # ---------------------------------------------------------------------------
-def fetch_session_ids(ext_id, date_from, date_to, token, task_id=None):
+def fetch_call_parties(ext_id, date_from, date_to, token, task_id=None):
     """Page a single extension's Voice call log across the range and return a
     list of dicts: { sessionId, partyId, startTime, direction, from, to }.
 
-    De-duplicated by telephonySessionId (a call can produce multiple legs that
-    share one session). Records with no telephonySessionId are skipped."""
+    AI notes are keyed by *party*, not session — the ai-notes/search endpoint
+    returns nothing for a telephonySessionId but matches on partyId — so we use
+    the Detailed view (which carries a record-level ``partyId``) and search by
+    those party IDs downstream. De-duplicated by partyId."""
     seen = set()
     calls = []
     page = 1
@@ -175,7 +177,7 @@ def fetch_session_ids(ext_id, date_from, date_to, token, task_id=None):
         if task_id and task_control.is_stopped(task_id):
             break
         endpoint = (f'/restapi/v1.0/account/~/extension/{ext_id}/call-log'
-                    f'?type=Voice&view=Simple&dateFrom={date_from}&dateTo={date_to}'
+                    f'?type=Voice&view=Detailed&dateFrom={date_from}&dateTo={date_to}'
                     f'&perPage=250&page={page}')
         succ, resp = safe_api_call(endpoint, token=token)
         if not succ:
@@ -185,13 +187,13 @@ def fetch_session_ids(ext_id, date_from, date_to, token, task_id=None):
 
         batch = resp.get('records', []) if isinstance(resp, dict) else []
         for rec in batch:
-            sid = rec.get('telephonySessionId')
-            if not sid or sid in seen:
+            pid = rec.get('partyId', '')
+            if not pid or pid in seen:
                 continue
-            seen.add(sid)
+            seen.add(pid)
             calls.append({
-                "sessionId": sid,
-                "partyId": rec.get('id', ''),
+                "sessionId": rec.get('telephonySessionId', ''),
+                "partyId": pid,
                 "startTime": rec.get('startTime', ''),
                 "direction": rec.get('direction', ''),
                 "from": (rec.get('from') or {}).get('phoneNumber')
@@ -238,31 +240,34 @@ def _extract_records(resp):
     return []
 
 
-def search_ai_notes(session_ids, token):
-    """POST the AI-notes search for a chunked list of session IDs. Returns the
+def search_ai_notes(party_ids, token):
+    """POST the AI-notes search for a chunked list of *party* IDs. Returns the
     flat list of raw metadata records the endpoint hands back (one per note).
+
+    Why party IDs and not session IDs: the endpoint accepts ``partyIds`` OR
+    ``telephonySessionIds``, but in practice a telephonySessionId search comes
+    back empty even for calls that have notes — the notes are keyed by party.
+    So we harvest the record-level ``partyId`` from the Detailed call log and
+    search on that.
 
     IMPORTANT — the search runs under ``extension/~`` (the authenticated
     caller's own identity), NOT under each target user's extension. The
     endpoint enforces same-extension access on the *path* extension: putting a
     different user's extension ID there returns "Attempt to access another
-    extension" even for an account admin. Scoping is done instead by the
-    ``telephonySessionIds`` in the body (harvested per-user from the call log).
-    With an ``AllInternal``-scoped token this searches across the account by
-    session ID.
+    extension" even for an account admin. With an ``AllInternal``-scoped token
+    the party IDs in the body do the scoping across the account.
 
-    We return every record verbatim (rather than a {sessionId: rec} map that
-    silently drops anything without a top-level session id), so the caller can
-    surface whatever the API returns and match on a best-effort basis."""
+    We return every record verbatim so the caller can surface whatever the API
+    returns and match on a best-effort basis."""
     records = []
     logged_sample = False
-    for i in range(0, len(session_ids), SEARCH_CHUNK):
-        chunk = session_ids[i:i + SEARCH_CHUNK]
+    for i in range(0, len(party_ids), SEARCH_CHUNK):
+        chunk = party_ids[i:i + SEARCH_CHUNK]
         endpoint = ('/restapi/v1.0/account/~/extension/~'
                     '/telephony/metadata/ai-notes/search')
         succ, resp = safe_api_call(
             endpoint, method='POST',
-            json_payload={"telephonySessionIds": chunk}, token=token)
+            json_payload={"partyIds": chunk}, token=token)
         if not succ:
             # Propagate so the caller can mark this user's notes as unavailable
             # (e.g. feature flag off, 403/404) without killing the whole run.
@@ -389,7 +394,7 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
         rows = []
         users_with_notes = 0
         notes_total = 0
-        sessions_searched = 0
+        parties_searched = 0
 
         for idx, ext_id in enumerate(ext_ids):
             if task_control.is_stopped(task_id):
@@ -400,9 +405,9 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
             uname = u.get('name', str(ext_id))
             unum = u.get('extensionNumber', '')
 
-            # 1. Session IDs from the call log
+            # 1. Party IDs from the (Detailed) call log
             try:
-                calls = fetch_session_ids(ext_id, df_bound, dt_bound, token, task_id=task_id)
+                calls = fetch_call_parties(ext_id, df_bound, dt_bound, token, task_id=task_id)
             except Exception as e:
                 rows.append(_error_row(uname, unum, ext_id,
                                        f"Call log error: {e}"))
@@ -411,11 +416,11 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
             if not calls:
                 continue
 
-            # 2. AI notes for those sessions
-            session_ids = [c['sessionId'] for c in calls]
-            sessions_searched += len(session_ids)
+            # 2. AI notes, searched by party ID (session-ID search returns empty)
+            party_ids = [c['partyId'] for c in calls if c['partyId']]
+            parties_searched += len(party_ids)
             try:
-                note_records = search_ai_notes(session_ids, token)
+                note_records = search_ai_notes(party_ids, token)
             except Exception as e:
                 rows.append(_error_row(uname, unum, ext_id,
                                        f"AI notes lookup error: {e}"))
@@ -423,19 +428,20 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
 
             if note_records:
                 users_with_notes += 1
-            calls_by_sid = {c['sessionId']: c for c in calls}
+            calls_by_pid = {c['partyId']: c for c in calls}
+            calls_by_sid = {c['sessionId']: c for c in calls if c['sessionId']}
             for rec in note_records:
+                pid = rec.get('partyId', '') if isinstance(rec, dict) else ''
                 sid = _record_session_id(rec)
-                call = calls_by_sid.get(sid, {})
+                call = calls_by_pid.get(pid) or calls_by_sid.get(sid) or {}
                 fields = _extract_note_fields(rec)
                 notes_total += 1
                 rows.append({
                     "User": uname,
                     "Extension": unum,
                     "Extension ID": str(ext_id),
-                    "Telephony Session ID": sid,
-                    "Party ID": (rec.get('partyId') if isinstance(rec, dict) else '')
-                                or call.get('partyId', ''),
+                    "Telephony Session ID": sid or call.get('sessionId', ''),
+                    "Party ID": pid or call.get('partyId', ''),
                     "Call Time": call.get('startTime', '')
                                  or (rec.get('creationTime') if isinstance(rec, dict) else ''),
                     "Direction": call.get('direction', ''),
@@ -452,7 +458,7 @@ def run_collection(task_id, ext_ids, date_from, date_to, token):
         prefix = "Stopped early. " if stopped else ""
         summary = (f"{prefix}{notes_total} AI note(s) found across "
                    f"{users_with_notes} user(s) of {len(ext_ids)} selected "
-                   f"({sessions_searched} session(s) searched).")
+                   f"({parties_searched} call(s) searched).")
         _finish_task(task_id, rows, summary)
     except Exception as e:
         logger.exception("AI Notes collection failed")
@@ -509,41 +515,38 @@ def debug_probe(token, date_from=None, date_to=None, max_sessions=10):
         token=token)
     cl_records = cl.get('records', []) if (ok_cl and isinstance(cl, dict)) else []
     session_ids = []
+    party_ids = []
     for r in cl_records:
         sid = r.get('telephonySessionId')
         if sid and sid not in session_ids:
             session_ids.append(sid)
+        pid = r.get('partyId')
+        if pid and pid not in party_ids:
+            party_ids.append(pid)
     out["callLog"] = {
         "ok": ok_cl,
         "count": len(cl_records),
         "sampleRawRecord": cl_records[0] if cl_records else None,
         "sessionIdsFound": session_ids[:max_sessions],
+        "partyIdsFound": party_ids[:max_sessions],
         "error": None if ok_cl else cl,
     }
 
-    probe_ids = session_ids[:max_sessions]
-
-    # Probe the search endpoint a few ways so we can see which (if any) returns
-    # data and what the raw body looks like.
+    # Probe the search endpoint a few ways so we can see which returns data.
     def _post(path, body):
         ok, resp = safe_api_call(path, method='POST', json_payload=body, token=token)
         return {"ok": ok, "raw": resp}
 
+    endpoint = '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search'
     out["searchProbes"] = {}
-    if probe_ids:
+    if party_ids:
+        # The working key (notes are keyed by party).
+        out["searchProbes"]["ext_tilde__partyIds"] = _post(
+            endpoint, {"partyIds": party_ids[:max_sessions]})
+    if session_ids:
         out["searchProbes"]["ext_tilde__telephonySessionIds"] = _post(
-            '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search',
-            {"telephonySessionIds": probe_ids})
-        if own_ext_id:
-            out["searchProbes"]["ext_own__telephonySessionIds"] = _post(
-                f'/restapi/v1.0/account/~/extension/{own_ext_id}/telephony/metadata/ai-notes/search',
-                {"telephonySessionIds": probe_ids})
-        # Single-session variants (some search endpoints only honour one id, or
-        # a differently-named field).
-        out["searchProbes"]["ext_tilde__single_sessionId_key"] = _post(
-            '/restapi/v1.0/account/~/extension/~/telephony/metadata/ai-notes/search',
-            {"sessionIds": probe_ids})
-    else:
-        out["searchProbes"]["note"] = "No telephonySessionIds found in own call log for this range."
+            endpoint, {"telephonySessionIds": session_ids[:max_sessions]})
+    if not party_ids and not session_ids:
+        out["searchProbes"]["note"] = "No partyIds/telephonySessionIds in own call log for this range."
 
     return out
