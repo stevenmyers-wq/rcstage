@@ -37,6 +37,17 @@
             </div>
         </div>
 
+        <div id="presence-progress" class="hidden card !py-5">
+            <div class="flex items-center justify-between mb-2">
+                <h3 id="presence-progress-title" class="text-heading text-base">Processing…</h3>
+                <span id="presence-progress-pct" class="text-sm font-bold text-slate-600 dark:text-slate-300">0%</span>
+            </div>
+            <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner">
+                <div id="presence-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div id="presence-progress-msg" class="text-xs font-mono text-blue-600 dark:text-blue-400 mt-3 truncate">Initializing…</div>
+        </div>
+
         <div id="upload-status" class="hidden card !py-4 text-center text-sm font-medium"></div>
         <button id="presence-stop-btn" class="hidden w-full btn-secondary mt-3 !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
             ■ Stop
@@ -124,6 +135,61 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('main-ui').classList.toggle('hidden');
         document.getElementById('sandbox-ui').classList.toggle('hidden');
     };
+
+    // ------------------------------------------------------------------
+    // Shared progress bar + NDJSON stream reader (used by audit & upload).
+    // ------------------------------------------------------------------
+    const progBox = document.getElementById('presence-progress');
+    const progBar = document.getElementById('presence-progress-bar');
+    const progPct = document.getElementById('presence-progress-pct');
+    const progMsg = document.getElementById('presence-progress-msg');
+    const progTitle = document.getElementById('presence-progress-title');
+
+    function resetProgress(title) {
+        progBox.classList.remove('hidden');
+        progTitle.textContent = title || 'Processing…';
+        progPct.textContent = '0%';
+        progBar.style.width = '0%';
+        progBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
+        progMsg.textContent = 'Initializing…';
+    }
+    function setProgress(current, total) {
+        if (!total) return;
+        const pct = Math.min(100, Math.round((current / total) * 100));
+        progBar.style.width = `${pct}%`;
+        progPct.textContent = `${pct}%`;
+    }
+    function completeProgress(kind) {
+        progBar.style.width = '100%';
+        progPct.textContent = '100%';
+        const cls = kind === 'error' ? 'bg-rose-500' : kind === 'warn' ? 'bg-amber-500' : 'bg-emerald-500';
+        progBar.className = `${cls} h-full rounded-full transition-all duration-300`;
+    }
+    async function readNdjson(resp, onChunk) {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                let data;
+                try { data = JSON.parse(line); } catch (e) { continue; }
+                onChunk(data);
+            }
+        }
+        if (buffer.trim()) { try { onChunk(JSON.parse(buffer)); } catch (e) {} }
+    }
+    function downloadBlob(blob, name) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.click();
+        URL.revokeObjectURL(url);
+    }
 
     document.getElementById('sb-send').onclick = async () => {
         const extId = document.getElementById('sb-ext-id').value;
@@ -301,11 +367,65 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('refresh-users-btn').onclick = fetchUsers;
 
-    document.getElementById('generate-audit-btn').onclick = async () => {
+    const auditBtn = document.getElementById('generate-audit-btn');
+    auditBtn.onclick = async () => {
         const sel = Array.from(selectedUsers.values());
         if (!sel.length) return alert("Select users first.");
-        const resp = await fetch('/api/presence/audit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({users: sel})});
-        if (resp.ok) { const b = await resp.blob(); const url = URL.createObjectURL(b); const a = document.createElement('a'); a.href = url; a.download = 'Presence_Audit.xlsx'; a.click(); }
+
+        presenceTaskId = `pa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const rows = [];
+        let cancelled = false, streamError = null;
+
+        auditBtn.disabled = true;
+        const auditLabel = auditBtn.textContent;
+        auditBtn.textContent = 'Auditing…';
+        resetProgress('Auditing users…');
+        if (presenceStopBtn) { presenceStopBtn.classList.remove('hidden'); presenceStopBtn.disabled = false; presenceStopBtn.textContent = '■ Stop'; }
+
+        try {
+            const resp = await fetch('/api/presence/audit', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({users: sel, task_id: presenceTaskId})
+            });
+            if (!resp.ok) {
+                let msg = 'Audit failed.';
+                try { msg = (await resp.json()).message || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            await readNdjson(resp, (chunk) => {
+                if (chunk.type === 'start') { progTitle.textContent = `Auditing 0 / ${chunk.total}`; progMsg.textContent = chunk.message || ''; }
+                else if (chunk.type === 'progress') {
+                    setProgress(chunk.current, chunk.total);
+                    progTitle.textContent = `Auditing ${chunk.current} / ${chunk.total}`;
+                    if (chunk.row) rows.push(chunk.row);
+                    if (chunk.result) progMsg.textContent = `${chunk.result.name}: ${chunk.result.message}`;
+                }
+                else if (chunk.type === 'cancelled') { cancelled = true; progMsg.textContent = chunk.message || 'Stopped by user.'; }
+                else if (chunk.type === 'error') { streamError = chunk.message || 'Audit failed.'; }
+            });
+            if (streamError) throw new Error(streamError);
+
+            completeProgress(cancelled ? 'warn' : 'success');
+            if (rows.length) {
+                progMsg.textContent = `Building workbook for ${rows.length} user(s)…`;
+                const rep = await fetch('/api/presence/audit/report', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({rows})
+                });
+                if (rep.ok) { downloadBlob(await rep.blob(), 'BLF_Audit_Detailed.xlsx'); progMsg.textContent = `Done — ${rows.length} user(s) audited. Report downloaded.`; }
+                else { progMsg.textContent = 'Audit finished but the report could not be built.'; }
+            } else {
+                progMsg.textContent = 'Nothing to report.';
+            }
+        } catch (e) {
+            completeProgress('error');
+            progMsg.textContent = 'Error: ' + e.message;
+        } finally {
+            presenceTaskId = null;
+            if (presenceStopBtn) presenceStopBtn.classList.add('hidden');
+            auditBtn.disabled = false;
+            auditBtn.textContent = auditLabel;
+        }
     };
 
     // Holds the per-target results from the most recent update run so they can
@@ -356,6 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('excel-file').onchange = async (e) => {
+        if (!e.target.files[0]) return;
         presenceTaskId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const fd = new FormData();
         fd.append('file', e.target.files[0]);
@@ -363,29 +484,54 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = document.getElementById('upload-status');
         const label = document.getElementById('upload-btn-label');
         label.innerText = "Updating...";
-        status.classList.remove('hidden');
-        status.className = "card !py-4 text-center bg-blue-50/60 dark:bg-blue-900/10 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm block";
-        status.innerText = "Processing batch templates...";
+        status.classList.add('hidden');
         lastResultDetails = [];
         if (downloadResultsBtn) downloadResultsBtn.classList.add('hidden');
+        resetProgress('Updating BLF lines…');
         if (presenceStopBtn) { presenceStopBtn.classList.remove('hidden'); presenceStopBtn.disabled = false; presenceStopBtn.textContent = '■ Stop'; }
-        let data;
+
+        // Final state assembled from the stream's terminal chunk(s).
+        let final = {status: 'error', message: 'No response from server.', errors: [], details: []};
+        let streamError = null;
         try {
             const resp = await fetch('/api/presence/update', {method: 'POST', body: fd});
-            data = await resp.json();
+            if (!resp.ok) {
+                let msg = 'Update failed.';
+                try { msg = (await resp.json()).message || msg; } catch (err) {}
+                throw new Error(msg);
+            }
+            await readNdjson(resp, (chunk) => {
+                if (chunk.type === 'start') { progTitle.textContent = `Updating 0 / ${chunk.total}`; progMsg.textContent = chunk.message || ''; }
+                else if (chunk.type === 'progress') {
+                    setProgress(chunk.current, chunk.total);
+                    progTitle.textContent = `Updating ${chunk.current} / ${chunk.total}`;
+                    const r = chunk.result;
+                    if (r) progMsg.textContent = r.name ? `${r.name}: ${r.message}` : r.message;
+                }
+                else if (chunk.type === 'cancelled') { progMsg.textContent = chunk.message || 'Stopped by user.'; }
+                else if (chunk.type === 'error') { streamError = chunk.message || 'Update failed.'; }
+                else if (chunk.type === 'done') { final = chunk; }
+            });
+            if (streamError) throw new Error(streamError);
+            completeProgress(final.status === 'completed' ? 'success' : (final.status === 'cancelled' ? 'warn' : 'error'));
+        } catch (err) {
+            completeProgress('error');
+            final = {status: 'error', message: err.message, errors: [], details: []};
         } finally {
             presenceTaskId = null;
             if (presenceStopBtn) presenceStopBtn.classList.add('hidden');
         }
+
         label.innerHTML = 'Upload Excel <input type="file" id="excel-file" class="hidden" accept=".xlsx">';
-        const tone = data.status === 'completed'
+        const tone = final.status === 'completed'
             ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
-            : (data.status === 'cancelled'
+            : (final.status === 'cancelled'
                 ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
                 : 'bg-rose-50 dark:bg-rose-900/10 text-rose-800 dark:text-rose-400 border-rose-200 dark:border-rose-800');
+        status.classList.remove('hidden');
         status.className = `card !py-4 text-center block ${tone}`;
-        status.innerHTML = `<strong>${data.message}</strong>` + (data.errors?.length ? `<ul class="list-disc pl-5 mt-2 text-left inline-block"><li>${data.errors.join('</li><li>')}</li></ul>` : '');
-        lastResultDetails = data.details || [];
+        status.innerHTML = `<strong>${final.message}</strong>` + (final.errors?.length ? `<ul class="list-disc pl-5 mt-2 text-left inline-block"><li>${final.errors.join('</li><li>')}</li></ul>` : '');
+        lastResultDetails = final.details || [];
         if (downloadResultsBtn) downloadResultsBtn.classList.toggle('hidden', !lastResultDetails.length);
     };
 });
