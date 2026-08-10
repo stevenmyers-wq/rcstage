@@ -849,39 +849,72 @@
             '<mxCell id="0"/>',
             '<mxCell id="1" parent="0"/>',
         ];
-        const useCy = !!cy;
-        if (useCy) {
+        if (cy) {
+            // Pass 1: collect real (non-descriptor) node geometry so we can
+            // normalise coordinates. draw.io opens at the origin and does not
+            // auto-fit, so raw cytoscape positions can leave most nodes off
+            // screen — shifting everything to a small top-left margin fixes it.
+            const defs = [];
+            let minX = Infinity, minY = Infinity;
             cy.nodes().forEach(n => {
                 const d = n.data();
                 if (d.type === 'descriptor') return;
                 const c = COLOURS[d.type] || COLOURS.unknown;
-                const w = Math.max(120, Math.round(n.width()));
-                const h = Math.max(40, Math.round(n.height()));
+                const isEntry = entryIdSet.has(d.id);
+
+                // Reproduce the full on-screen label (name + members / detail
+                // lines), plus the type.
+                const labelLines = (d.label || '').split('\n')
+                    .map(s => s.trim()).filter(Boolean);
+                const nameLine = labelLines[0] || '';
+                const bodyLines = labelLines.slice(1)
+                    .filter(l => l !== '─────────────');
+                const typeLbl = TYPE_LABEL[d.type] || '';
+
+                // Raw HTML with real tags; the whole string is entity-escaped
+                // into the value attribute and draw.io renders it (html=1).
+                let html = '<b>' + (isEntry ? '★ ' : '') + nameLine + '</b>';
+                bodyLines.forEach(l => { html += '<br>' + l; });
+                if (d.sublabel) html += '<br>' + d.sublabel;
+                if (typeLbl) html += '<br><i>(' + typeLbl + ')</i>';
+
+                const lineCount = 1 + bodyLines.length + (d.sublabel ? 1 : 0) + (typeLbl ? 1 : 0);
+                const w = Math.max(180, Math.round(n.width()));
+                const h = Math.max(Math.round(n.height()), 26 + lineCount * 16);
                 const p = n.position();
                 const x = Math.round(p.x - w / 2);
                 const y = Math.round(p.y - h / 2);
-                const entryTag = entryIdSet.has(d.id) ? '📍 ' : '';
-                const name = (d.label || '').split('\n')[0];
-                const typeLbl = TYPE_LABEL[d.type] || '';
-                const val = entryTag + name + (typeLbl ? '\n(' + typeLbl + ')' : '');
-                const stroke = entryIdSet.has(d.id) ? '#facc15' : c.border;
-                const sw = entryIdSet.has(d.id) ? 4 : 2;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+
+                const stroke = isEntry ? '#facc15' : c.border;
+                const sw = isEntry ? 4 : 2;
                 const style = `rounded=1;whiteSpace=wrap;html=1;fillColor=${c.bg};` +
                               `strokeColor=${stroke};strokeWidth=${sw};fontColor=#ffffff;` +
-                              `fontStyle=1;fontSize=12;`;
+                              `fontSize=12;verticalAlign=middle;spacing=6;`;
+                defs.push({ id: d.id, html, style, w, h, x, y });
+            });
+
+            if (!isFinite(minX)) { minX = 0; minY = 0; }
+            const MARGIN = 40;
+            defs.forEach(nd => {
+                const gx = nd.x - minX + MARGIN;
+                const gy = nd.y - minY + MARGIN;
                 cells.push(
-                    `<mxCell id="${xmlEsc(d.id)}" value="${xmlEsc(val)}" ` +
-                    `style="${style}" vertex="1" parent="1">` +
-                    `<mxGeometry x="${x}" y="${y}" width="${w}" height="${h}" as="geometry"/></mxCell>`
+                    `<mxCell id="${xmlEsc(nd.id)}" value="${xmlEsc(nd.html)}" ` +
+                    `style="${nd.style}" vertex="1" parent="1">` +
+                    `<mxGeometry x="${gx}" y="${gy}" width="${nd.w}" height="${nd.h}" as="geometry"/></mxCell>`
                 );
             });
-            cy.edges().forEach((e, i) => {
+
+            let ei = 0;
+            cy.edges().forEach(e => {
                 const d = e.data();
                 if (d.type === 'descriptor-edge') return;
                 const style = 'edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;' +
-                              'endArrow=block;strokeColor=#94a3b8;fontSize=10;';
+                              'endArrow=block;strokeColor=#64748b;fontSize=10;fontColor=#334155;';
                 cells.push(
-                    `<mxCell id="edge_${i}" value="${xmlEsc(d.label)}" style="${style}" ` +
+                    `<mxCell id="edge_${ei++}" value="${xmlEsc(d.label)}" style="${style}" ` +
                     `edge="1" parent="1" source="${xmlEsc(d.source)}" target="${xmlEsc(d.target)}">` +
                     `<mxGeometry relative="1" as="geometry"/></mxCell>`
                 );
