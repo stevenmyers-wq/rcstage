@@ -135,9 +135,12 @@ def build_vsdx(graph_data):
         w = min(360, max(200, longest * 7 + 24))
         h = max(56, 24 + len(lines) * 16)
         desc = _descriptor_lines(n)
-        dim[n['id']] = {'w': w, 'h': h, 'lines': lines, 'desc': desc}
+        desc_h = max(56, 20 + len(desc) * 14) if desc else 0
+        dim[n['id']] = {'w': w, 'h': h, 'lines': lines, 'desc': desc, 'desc_h': desc_h}
 
-    # Group by layer, lay out left→right reserving room for descriptor cards
+    # Group by layer, lay out left→right reserving room for descriptor cards.
+    # Row height must account for the (often taller) descriptor cards so they
+    # don't spill into the next row of nodes.
     layers = {}
     for n in nodes:
         layers.setdefault(layer[n['id']], []).append(n)
@@ -147,7 +150,7 @@ def build_vsdx(graph_data):
     max_x = 0
     for k in sorted(layers):
         row = layers[k]
-        row_h = max(dim[n['id']]['h'] for n in row)
+        row_h = max(max(dim[n['id']]['h'], dim[n['id']]['desc_h']) for n in row)
         x = MARGIN
         for n in row:
             d = dim[n['id']]
@@ -249,7 +252,20 @@ def build_vsdx(graph_data):
             c['bg'], stroke, lw, _esc('\n'.join(d['lines']))))
         sid += 1
 
-    # Descriptor cards (dark) + dashed connectors
+    # Whole-shape glue records so Lucid treats connectors as *attached* to the
+    # boxes (they move/re-route with the shape). FromPart 9 = begin, 12 = end;
+    # ToPart 3 = glue to the whole target shape.
+    connects = []
+
+    def glue(conn_id, src_id, tgt_id):
+        connects.append(
+            f'<Connect FromSheet="{conn_id}" FromCell="BeginX" FromPart="9" '
+            f'ToSheet="{src_id}" ToPart="3"/>'
+            f'<Connect FromSheet="{conn_id}" FromCell="EndX" FromPart="12" '
+            f'ToSheet="{tgt_id}" ToPart="3"/>'
+        )
+
+    # Descriptor cards (dark) + dashed connectors (glued node → card)
     for n in nodes:
         d = dim[n['id']]
         if not d['desc']:
@@ -259,19 +275,20 @@ def build_vsdx(graph_data):
         dh = max(56, 20 + len(d['desc']) * 14)
         dx = nx + d['w'] + DESC_GAP
         dy = ny + (d['h'] - dh) / 2.0
-        # dashed connector: node right edge → descriptor left edge
-        sy = ny + d['h'] / 2.0
-        dsy = dy + dh / 2.0
-        shapes.append(line_shape(sid, nx + d['w'], sy, dx, dsy,
-                                 color='#f59e0b', lw=0.01, dash=True))
-        sid += 1
+        desc_id = sid
         shapes.append(rect_shape(
             sid, dx, dy, DESC_W, dh, '#0f172a', '#334155', 0.01,
             _esc('\n'.join(d['desc'])), font_color='#E2E8F0',
             font_size=0.075, bold=False, font_lines_left=True))
         sid += 1
+        sy = ny + d['h'] / 2.0
+        dsy = dy + dh / 2.0
+        shapes.append(line_shape(sid, nx + d['w'], sy, dx, dsy,
+                                 color='#f59e0b', lw=0.01, dash=True))
+        glue(sid, id_of[n['id']], desc_id)
+        sid += 1
 
-    # Edges: border-clipped lines + mid-line labels
+    # Edges: dynamic connector lines (glued) + mid-line labels
     for e in edges:
         s, t = e.get('source'), e.get('target')
         if s not in id_of or t not in id_of:
@@ -282,6 +299,7 @@ def build_vsdx(graph_data):
         bx, by = _clip_to_border(scx, scy, ds['w'] / 2.0, ds['h'] / 2.0, tcx, tcy)
         ex, ey = _clip_to_border(tcx, tcy, dt['w'] / 2.0, dt['h'] / 2.0, scx, scy)
         shapes.append(line_shape(sid, bx, by, ex, ey))
+        glue(sid, id_of[s], id_of[t])
         sid += 1
         lbl = e.get('label', '') or ''
         if str(lbl).strip():
@@ -292,7 +310,9 @@ def build_vsdx(graph_data):
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<PageContents xmlns="http://schemas.microsoft.com/office/visio/2012/main" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
-        'xml:space="preserve"><Shapes>' + ''.join(shapes) + '</Shapes></PageContents>'
+        'xml:space="preserve"><Shapes>' + ''.join(shapes) + '</Shapes>'
+        + ('<Connects>' + ''.join(connects) + '</Connects>' if connects else '')
+        + '</PageContents>'
     )
 
     pages = (

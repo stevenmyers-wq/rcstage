@@ -40,7 +40,7 @@
         </p>
     </div>
 
-    <div class="card !p-0 overflow-hidden w-full flex flex-col border-0 shadow-lg z-10">
+    <div id="single-diagram-card" class="card !p-0 overflow-hidden w-full flex flex-col border-0 shadow-lg z-10">
         <div class="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="flex items-center gap-3 flex-wrap">
                 <h4 class="text-heading text-lg">2. Call Flow Diagram</h4>
@@ -110,6 +110,23 @@
         <div class="p-4 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-800 dark:text-blue-300 border-t border-blue-100 dark:border-blue-800/50 print:hidden font-medium">
             💡 <strong>Hover</strong> a node to preview details &amp; highlight its path · <strong>Click</strong> to pin a card · <strong>Drag</strong> pinned cards · Pinned cards appear in print
         </div>
+    </div>
+
+    <!-- Separate-canvas view for multiple selected flows -->
+    <div id="separate-flows" class="hidden w-full space-y-5">
+        <div class="card !p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sticky top-2 z-30">
+            <div class="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                <span id="sf-count">0</span> separate flows · tick the ones you want, then export
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <button id="sf-tick-all" class="btn-secondary !py-2 !px-3 text-xs font-bold">Tick all</button>
+                <button id="sf-tick-none" class="btn-secondary !py-2 !px-3 text-xs font-bold">Clear</button>
+                <button id="sf-download-visio" class="btn-primary !py-2 !px-4 text-xs font-bold" title="Download the ticked flows as separate Visio files inside one .zip">
+                    ⬇ Download ticked as Visio (.zip)
+                </button>
+            </div>
+        </div>
+        <div id="sf-list" class="space-y-6"></div>
     </div>
 
     <div class="card !p-0 overflow-hidden w-full print:hidden border-slate-800 shadow-xl bg-slate-900 dark:bg-[#0b1120]">
@@ -297,7 +314,7 @@
             const lab = document.createElement('span');
             lab.textContent = TYPE_LABEL[nodeData.type];
             badge.appendChild(lab);
-            if (entryIdSet.has(nodeData.id)) {
+            if (nodeData.isEntry || entryIdSet.has(nodeData.id)) {
                 const ent = document.createElement('span');
                 ent.className = 'tip-entry-flag';
                 ent.textContent = '📍 Entry point';
@@ -348,22 +365,24 @@
     }
 
     // ── Hover preview ────────────────────────────────────────────────
-    function showHoverPreview(nodeData, clientX, clientY) {
+    let hoverWrap = null;
+    function showHoverPreview(nodeData, clientX, clientY, wrap) {
         removeHoverPreview();
+        hoverWrap = wrap || wrapper;
         hoverPreview = document.createElement('div');
         hoverPreview.className = 'detail-panel hover-preview absolute z-[999] pointer-events-none';
         hoverPreview.appendChild(buildPanelContent(nodeData));
-        wrapper.appendChild(hoverPreview);
-        positionNearCursor(hoverPreview, clientX, clientY);
+        hoverWrap.appendChild(hoverPreview);
+        positionNearCursor(hoverPreview, clientX, clientY, hoverWrap);
     }
     function moveHoverPreview(clientX, clientY) {
-        if (hoverPreview) positionNearCursor(hoverPreview, clientX, clientY);
+        if (hoverPreview) positionNearCursor(hoverPreview, clientX, clientY, hoverWrap);
     }
     function removeHoverPreview() {
         if (hoverPreview) { hoverPreview.remove(); hoverPreview = null; }
     }
-    function positionNearCursor(el, clientX, clientY) {
-        const parentRect = wrapper.getBoundingClientRect();
+    function positionNearCursor(el, clientX, clientY, wrap) {
+        const parentRect = (wrap || wrapper).getBoundingClientRect();
         const W = el.offsetWidth  || 280;
         const H = el.offsetHeight || 180;
         let x = clientX - parentRect.left + 16;
@@ -375,7 +394,8 @@
     }
 
     // ── Pinned panels ────────────────────────────────────────────────
-    function createPinnedPanel(nodeData, clientX, clientY) {
+    function createPinnedPanel(nodeData, clientX, clientY, wrap) {
+        const host = wrap || wrapper;
         const panel = document.createElement('div');
         panel.className = 'detail-panel pinned-panel absolute z-50 flex flex-col';
 
@@ -402,10 +422,10 @@
         body.appendChild(buildPanelContent(nodeData));
         panel.appendChild(body);
 
-        wrapper.appendChild(panel);
+        host.appendChild(panel);
         pinnedPanels.push(panel);
 
-        const parentRect = wrapper.getBoundingClientRect();
+        const parentRect = host.getBoundingClientRect();
         const offset = pinnedPanels.length * 20;
         let x = clientX - parentRect.left + 16 + offset;
         let y = clientY - parentRect.top  + 16 + offset;
@@ -419,14 +439,14 @@
         header.addEventListener('mousedown', e => {
             dragging = true;
             const r = panel.getBoundingClientRect();
-            const pr = wrapper.getBoundingClientRect();
+            const pr = host.getBoundingClientRect();
             ox = e.clientX - (r.left - pr.left);
             oy = e.clientY - (r.top  - pr.top);
             e.preventDefault();
         });
         document.addEventListener('mousemove', e => {
             if (!dragging) return;
-            const pr = wrapper.getBoundingClientRect();
+            const pr = host.getBoundingClientRect();
             let nx = e.clientX - pr.left - ox;
             let ny = e.clientY - pr.top  - oy;
             nx = Math.max(0, Math.min(nx, pr.width  - panel.offsetWidth));
@@ -446,22 +466,25 @@
     // ── Print ─────────────────────────────────────────────────────────
     printBtn.addEventListener('click', () => window.print());
 
-    // ── Toggle Descriptors ────────────────────────────────────────────
-    toggleDesc.addEventListener('change', () => {
-        if (currentGraphData) {
+    // Re-render whichever view is currently active (single or separate).
+    function reRenderActive() {
+        if (separateWrap && !separateWrap.classList.contains('hidden') && separateCtxs.length) {
+            const flows = separateCtxs.map(c => ({ id: c.id, graph_data: c.graphData }));
+            renderSeparateFlows(flows);
+        } else if (currentGraphData) {
             clearPanels();
             renderGraph(currentGraphData);
         }
-    });
+    }
+
+    // ── Toggle Descriptors ────────────────────────────────────────────
+    toggleDesc.addEventListener('change', reRenderActive);
 
     // ── Layout direction toggle ───────────────────────────────────────
     layoutBtn.addEventListener('click', () => {
         layoutDir = layoutDir === 'TB' ? 'LR' : 'TB';
         layoutBtn.textContent = layoutDir === 'TB' ? '⇅ Vertical' : '⇄ Horizontal';
-        if (currentGraphData) {
-            clearPanels();
-            renderGraph(currentGraphData);
-        }
+        reRenderActive();
     });
 
     // ── In-graph search highlight ─────────────────────────────────────
@@ -490,154 +513,137 @@
         clearPanels();
 
         const count = selectedEntries.length;
-        diagramDiv.innerHTML = `
-            <div class="flex flex-col items-center gap-4 text-slate-500 dark:text-slate-400 font-medium">
-                <div class="spinner w-10 h-10 border-4 border-blue-600 dark:border-blue-400"></div>
-                <p>Tracing ${count} call flow${count > 1 ? 's' : ''} — may take 15–30s for large accounts…</p>
-            </div>`;
+        const separate = count > 1;
         logDiv.innerHTML = '<div class="text-slate-500 italic">Running API calls…</div>';
 
+        if (separate) {
+            // Multiple entries → one canvas per flow.
+            showSeparate(true);
+            sfList.innerHTML = `
+                <div class="flex flex-col items-center gap-4 text-slate-500 dark:text-slate-400 font-medium py-16">
+                    <div class="spinner w-10 h-10 border-4 border-blue-600 dark:border-blue-400"></div>
+                    <p>Tracing ${count} call flows separately — may take a while for large accounts…</p>
+                </div>`;
+        } else {
+            showSeparate(false);
+            diagramDiv.innerHTML = `
+                <div class="flex flex-col items-center gap-4 text-slate-500 dark:text-slate-400 font-medium">
+                    <div class="spinner w-10 h-10 border-4 border-blue-600 dark:border-blue-400"></div>
+                    <p>Tracing call flow — may take 15–30s for large accounts…</p>
+                </div>`;
+        }
+
         try {
-            const res = await fetch('/api/rc/trace-flow-multi', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: selectedEntries.map(e => e.id) }),
-            });
-            const data = await res.json();
-            renderLog(data.api_log || []);
-            if (data.status === 'success' && data.graph_data) {
-                currentGraphData = data.graph_data;
-                renderGraph(data.graph_data);
+            if (separate) {
+                const res = await fetch('/api/rc/trace-flow-separate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: selectedEntries.map(e => e.id) }),
+                });
+                const data = await res.json();
+                if (data.status === 'success' && Array.isArray(data.flows)) {
+                    // Merge the per-flow logs for the debug panel.
+                    const allLogs = [];
+                    data.flows.forEach(f => (f.api_log || []).forEach(l => allLogs.push(l)));
+                    renderLog(allLogs);
+                    currentGraphData = null;
+                    renderSeparateFlows(data.flows);
+                } else {
+                    throw new Error(data.message || 'Failed to generate flows.');
+                }
             } else {
-                throw new Error(data.message || 'Failed to generate flow.');
+                const res = await fetch('/api/rc/trace-flow-multi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: selectedEntries.map(e => e.id) }),
+                });
+                const data = await res.json();
+                renderLog(data.api_log || []);
+                if (data.status === 'success' && data.graph_data) {
+                    currentGraphData = data.graph_data;
+                    renderGraph(data.graph_data);
+                } else {
+                    throw new Error(data.message || 'Failed to generate flow.');
+                }
             }
         } catch (err) {
-            diagramDiv.innerHTML = `<div class="p-8 text-rose-500 font-bold bg-rose-50 dark:bg-rose-900/20 rounded-xl">${err.message}</div>`;
+            const box = `<div class="p-8 text-rose-500 font-bold bg-rose-50 dark:bg-rose-900/20 rounded-xl">${err.message}</div>`;
+            if (separate) { sfList.innerHTML = box; } else { diagramDiv.innerHTML = box; }
         } finally {
             vizBtn.disabled = false;
         }
     });
 
     // ── Neighbourhood highlight (scalability aid) ─────────────────────
-    function applyHighlight(node) {
-        cy.elements().addClass('dim');
+    function applyHighlight(node, cyInst) {
+        const c = cyInst || cy;
+        if (!c) return;
+        c.elements().addClass('dim');
         const nhood = node.closedNeighborhood();
         nhood.removeClass('dim');
         nhood.addClass('hl');
     }
-    function clearHighlight() {
-        if (cy) cy.elements().removeClass('dim hl');
+    function clearHighlight(cyInst) {
+        const c = cyInst || cy;
+        if (c) c.elements().removeClass('dim hl');
     }
 
-    // ── Cytoscape renderer ───────────────────────────────────────────
-    function renderGraph(graphData) {
-        if (cy) { cy.destroy(); cy = null; }
-        diagramDiv.innerHTML = '';
-        diagramDiv.style.minHeight = '700px';
-        focusNode = null;
-
-        entryIdSet = new Set(graphData.entry_ids || []);
-
-        const showDescriptors = toggleDesc.checked;
-        const hintEl = document.getElementById('interaction-hint');
-        if (hintEl) hintEl.style.display = showDescriptors ? 'none' : 'block';
-
+    // ── Shared cytoscape builders ────────────────────────────────────
+    function buildStylesheet() {
         const typeStyles = Object.entries(COLOURS).map(([type, c]) => ({
             selector: `node[type="${type}"]`,
             style: { 'background-color': c.bg, 'border-color': c.border },
         }));
-
         const isDark = document.documentElement.classList.contains('dark');
         const edgeColor = isDark ? '#94a3b8' : '#475569';
         const edgeBgColor = isDark ? '#1e293b' : '#ffffff';
         const edgeBorderColor = isDark ? '#334155' : '#cbd5e1';
-
-        const stylesheet = [
+        return [
             {
                 selector: 'node',
                 style: {
-                    'shape':              'round-rectangle',
-                    'corner-radius':      8,
-                    'width':              220,
-                    'height':             'label',
-                    'padding':            '14px',
-                    'label':              'data(displayLabel)',
-                    'text-valign':        'center',
-                    'text-halign':        'center',
-                    'text-wrap':          'wrap',
-                    'text-max-width':     '190px',
-                    'font-size':          '11px',
-                    'font-weight':        '700',
-                    'font-family':        'Inter, system-ui, sans-serif',
-                    'color':              '#ffffff',
-                    'border-width':       '2px',
-                    'cursor':             'pointer',
-                    'text-justification': 'center',
-                    'transition-property':'opacity, border-width',
-                    'transition-duration':'0.15s',
+                    'shape': 'round-rectangle', 'corner-radius': 8, 'width': 220,
+                    'height': 'label', 'padding': '14px', 'label': 'data(displayLabel)',
+                    'text-valign': 'center', 'text-halign': 'center', 'text-wrap': 'wrap',
+                    'text-max-width': '190px', 'font-size': '11px', 'font-weight': '700',
+                    'font-family': 'Inter, system-ui, sans-serif', 'color': '#ffffff',
+                    'border-width': '2px', 'cursor': 'pointer', 'text-justification': 'center',
+                    'transition-property': 'opacity, border-width', 'transition-duration': '0.15s',
                 },
             },
             ...typeStyles,
-            {
-                selector: 'node.entry',
-                style: { 'border-width': '5px', 'border-color': '#facc15' },
-            },
+            { selector: 'node.entry', style: { 'border-width': '5px', 'border-color': '#facc15' } },
             {
                 selector: 'node[type="descriptor"]',
                 style: {
-                    'background-color':   '#1e293b',
-                    'border-color':       '#f59e0b',
-                    'border-width':       '1px',
-                    'color':              '#e2e8f0',
-                    'font-size':          '10px',
-                    'font-weight':        '500',
-                    'text-wrap':          'wrap',
-                    'text-max-width':     '240px',
-                    'text-justification': 'left',
-                    'text-halign':        'center',
-                    'text-valign':        'center',
-                    'width':              260,
-                    'padding':            '12px',
-                    'shape':              'round-rectangle',
-                    'cursor':             'default'
+                    'background-color': '#1e293b', 'border-color': '#f59e0b', 'border-width': '1px',
+                    'color': '#e2e8f0', 'font-size': '10px', 'font-weight': '500', 'text-wrap': 'wrap',
+                    'text-max-width': '240px', 'text-justification': 'left', 'text-halign': 'center',
+                    'text-valign': 'center', 'width': 260, 'padding': '12px',
+                    'shape': 'round-rectangle', 'cursor': 'default'
                 }
             },
             {
                 selector: 'edge[type="descriptor-edge"]',
                 style: {
-                    'width':              2,
-                    'line-color':         '#f59e0b',
-                    'target-arrow-color': '#f59e0b',
-                    'target-arrow-shape': 'triangle',
-                    'curve-style':        'unbundled-bezier',
-                    'line-style':         'dashed',
-                    'arrow-scale':        1
+                    'width': 2, 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b',
+                    'target-arrow-shape': 'triangle', 'curve-style': 'unbundled-bezier',
+                    'line-style': 'dashed', 'arrow-scale': 1
                 }
             },
             {
                 selector: 'edge:not([type="descriptor-edge"])',
                 style: {
-                    'width':                         2,
-                    'line-color':                    isDark ? '#334155' : '#cbd5e1',
-                    'target-arrow-color':            isDark ? '#334155' : '#cbd5e1',
-                    'target-arrow-shape':            'triangle',
-                    'curve-style':                   'unbundled-bezier',
-                    'control-point-distances':       'data(cpd)',
-                    'control-point-weights':         0.5,
-                    'label':                         'data(label)',
-                    'font-size':                     '10px',
-                    'font-family':                   'Inter, system-ui, sans-serif',
-                    'font-weight':                   '600',
-                    'color':                         edgeColor,
-                    'text-rotation':                 'none',
-                    'text-background-color':         edgeBgColor,
-                    'text-background-opacity':       1,
-                    'text-background-padding':       '4px 8px',
-                    'text-background-shape':         'round-rectangle',
-                    'text-border-color':             edgeBorderColor,
-                    'text-border-width':             1,
-                    'text-wrap':                     'wrap',
-                    'text-max-width':                '160px'
+                    'width': 2, 'line-color': isDark ? '#334155' : '#cbd5e1',
+                    'target-arrow-color': isDark ? '#334155' : '#cbd5e1',
+                    'target-arrow-shape': 'triangle', 'curve-style': 'unbundled-bezier',
+                    'control-point-distances': 'data(cpd)', 'control-point-weights': 0.5,
+                    'label': 'data(label)', 'font-size': '10px',
+                    'font-family': 'Inter, system-ui, sans-serif', 'font-weight': '600',
+                    'color': edgeColor, 'text-rotation': 'none', 'text-background-color': edgeBgColor,
+                    'text-background-opacity': 1, 'text-background-padding': '4px 8px',
+                    'text-background-shape': 'round-rectangle', 'text-border-color': edgeBorderColor,
+                    'text-border-width': 1, 'text-wrap': 'wrap', 'text-max-width': '160px'
                 },
             },
             { selector: '.dim', style: { 'opacity': 0.15 } },
@@ -645,10 +651,11 @@
             { selector: 'edge.hl', style: { 'width': 4, 'line-color': '#3b82f6', 'target-arrow-color': '#3b82f6', 'z-index': 999 } },
             { selector: 'node.search-hit', style: { 'border-width': '5px', 'border-color': '#3b82f6' } },
         ];
+    }
 
+    function buildElements(graphData, showDescriptors, entrySet) {
         const nodeElements = [];
         const edgeElements = [];
-
         graphData.nodes.forEach(n => {
             const d = n.data;
             const nameLine  = d.label.split('\n')[0];
@@ -662,12 +669,11 @@
                 parts.push('─────────────');
                 parts.push(d.sublabel);
             }
-
+            const isEntry = entrySet.has(d.id);
             nodeElements.push({
-                data: { ...d, displayLabel: parts.join('\n') },
-                classes: entryIdSet.has(d.id) ? 'entry' : '',
+                data: { ...d, displayLabel: parts.join('\n'), isEntry },
+                classes: isEntry ? 'entry' : '',
             });
-
             if (showDescriptors && d.tooltip) {
                 let descText = "";
                 d.tooltip.split('\n\n').forEach(section => {
@@ -682,7 +688,6 @@
                 edgeElements.push({ data: { id: 'edge_' + d.id + '_desc', source: d.id, target: descId, type: 'descriptor-edge' } });
             }
         });
-
         const pairCount = {};
         graphData.edges.forEach(e => {
             const key = `${e.data.source}__${e.data.target}`;
@@ -698,63 +703,77 @@
             const offset = total === 1 ? 0 : (idx - (total - 1) / 2) * spread;
             edgeElements.push({ data: { ...e.data, cpd: offset } });
         });
+        return [...nodeElements, ...edgeElements];
+    }
 
-        const elements = [...nodeElements, ...edgeElements];
-
-        cy = cytoscape({
-            container: diagramDiv,
-            elements,
-            style: stylesheet,
+    function makeCy(container, graphData, showDescriptors, entrySet) {
+        return cytoscape({
+            container,
+            elements: buildElements(graphData, showDescriptors, entrySet),
+            style: buildStylesheet(),
             layout: {
-                name:    'dagre',
-                rankDir: layoutDir,
-                nodeSep: 80,
-                rankSep: 120,
-                edgeSep: 30,
-                padding: 60,
-                animate: false,
+                name: 'dagre', rankDir: layoutDir, nodeSep: 80, rankSep: 120,
+                edgeSep: 30, padding: 60, animate: false,
             },
-            wheelSensitivity: 0.25,
-            minZoom: 0.03,
-            maxZoom: 3,
+            wheelSensitivity: 0.25, minZoom: 0.03, maxZoom: 3,
         });
+    }
 
-        // Hover = preview + highlight
-        cy.on('mouseover', 'node', evt => {
+    // Wire hover/pin/highlight for a cytoscape instance scoped to `wrap`.
+    function wireInteractions(cyInst, wrap) {
+        let localFocus = null;
+        cyInst.on('mouseover', 'node', evt => {
             if (toggleDesc.checked) return;
             const nd = evt.target.data();
             if (nd.type === 'descriptor') return;
-            if (!focusNode) applyHighlight(evt.target);
+            if (!localFocus) applyHighlight(evt.target, cyInst);
             if (nd.tooltip || TYPE_LABEL[nd.type]) {
-                showHoverPreview(nd, evt.originalEvent.clientX, evt.originalEvent.clientY);
+                showHoverPreview(nd, evt.originalEvent.clientX, evt.originalEvent.clientY, wrap);
             }
         });
-        cy.on('mousemove', 'node', evt => {
+        cyInst.on('mousemove', 'node', evt => {
             if (toggleDesc.checked) return;
             moveHoverPreview(evt.originalEvent.clientX, evt.originalEvent.clientY);
         });
-        cy.on('mouseout', 'node', () => {
+        cyInst.on('mouseout', 'node', () => {
             removeHoverPreview();
-            if (!focusNode) clearHighlight();
+            if (!localFocus) clearHighlight(cyInst);
         });
-
-        // Click node = pin + lock highlight
-        cy.on('tap', 'node', evt => {
+        cyInst.on('tap', 'node', evt => {
             if (toggleDesc.checked) return;
             const nd = evt.target.data();
             if (nd.type === 'descriptor') return;
             removeHoverPreview();
-            focusNode = evt.target;
-            applyHighlight(evt.target);
-            createPinnedPanel(nd, evt.originalEvent.clientX, evt.originalEvent.clientY);
+            localFocus = evt.target;
+            applyHighlight(evt.target, cyInst);
+            createPinnedPanel(nd, evt.originalEvent.clientX, evt.originalEvent.clientY, wrap);
         });
-
-        // Click background = release lock
-        cy.on('tap', evt => {
-            if (evt.target === cy) { focusNode = null; clearHighlight(); }
+        cyInst.on('tap', evt => {
+            if (evt.target === cyInst) { localFocus = null; clearHighlight(cyInst); }
         });
+    }
 
-        // Controls
+    function flowFileSlug(text) {
+        return (text || 'call-flow').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 40) || 'call-flow';
+    }
+
+    // ── Single-canvas renderer ───────────────────────────────────────
+    function renderGraph(graphData) {
+        showSeparate(false);
+        if (cy) { cy.destroy(); cy = null; }
+        diagramDiv.innerHTML = '';
+        diagramDiv.style.minHeight = '700px';
+        focusNode = null;
+
+        entryIdSet = new Set(graphData.entry_ids || []);
+        const showDescriptors = toggleDesc.checked;
+        const hintEl = document.getElementById('interaction-hint');
+        if (hintEl) hintEl.style.display = showDescriptors ? 'none' : 'block';
+        const isDark = document.documentElement.classList.contains('dark');
+
+        cy = makeCy(diagramDiv, graphData, showDescriptors, entryIdSet);
+        wireInteractions(cy, wrapper);
+
         zoomControls.style.display = 'flex';
         printBtn.classList.remove('hidden');
         mermaidBtn.classList.remove('hidden');
@@ -763,7 +782,6 @@
         layoutBtn.classList.remove('hidden');
         graphSearch.classList.remove('hidden');
 
-        // Stats
         const realNodes = graphData.nodes.length;
         const entryCount = (graphData.entry_ids || []).length;
         statsEl.textContent = `${entryCount} entr${entryCount === 1 ? 'y' : 'ies'} · ${realNodes} nodes · ${graphData.edges.length} links`;
@@ -782,6 +800,109 @@
         };
 
         setTimeout(() => cy.fit(undefined, 50), 100);
+    }
+
+    // ── Separate-canvas renderer (one per selected flow) ─────────────
+    let separateCtxs = [];
+    const sfList        = document.getElementById('sf-list');
+    const separateWrap  = document.getElementById('separate-flows');
+    const sfCountEl     = document.getElementById('sf-count');
+    const singleCard    = document.getElementById('single-diagram-card');
+
+    function destroySeparate() {
+        separateCtxs.forEach(c => { try { c.cy && c.cy.destroy(); } catch (e) {} });
+        separateCtxs = [];
+        if (sfList) sfList.innerHTML = '';
+    }
+
+    function showSeparate(on) {
+        if (on) {
+            separateWrap.classList.remove('hidden');
+            singleCard.classList.add('hidden');
+        } else {
+            separateWrap.classList.add('hidden');
+            singleCard.classList.remove('hidden');
+            destroySeparate();
+        }
+    }
+
+    function renderSeparateFlows(flows) {
+        showSeparate(true);
+        destroySeparate();
+        clearPanels();
+        sfCountEl.textContent = flows.length;
+        const isDark = document.documentElement.classList.contains('dark');
+        const showDescriptors = toggleDesc.checked;
+        const titleById = {};
+        selectedEntries.forEach(e => { titleById[e.id] = e.text; });
+
+        flows.forEach((flow, idx) => {
+            const title = titleById[flow.id] || ('Flow ' + (idx + 1));
+            const gd = flow.graph_data || { nodes: [], edges: [], entry_ids: [] };
+            const entrySet = new Set(gd.entry_ids || []);
+
+            const card = document.createElement('div');
+            card.className = 'card !p-0 overflow-hidden w-full flex flex-col border-0 shadow-lg';
+
+            const header = document.createElement('div');
+            header.className = 'p-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 flex flex-wrap items-center gap-3';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            cb.className = 'sf-tick w-4 h-4 accent-blue-600 cursor-pointer';
+
+            const ttl = document.createElement('div');
+            ttl.className = 'font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[45%]';
+            ttl.textContent = title;
+
+            const stat = document.createElement('span');
+            stat.className = 'text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-3 py-1';
+            stat.textContent = `${gd.nodes.length} nodes · ${gd.edges.length} links`;
+
+            const btns = document.createElement('div');
+            btns.className = 'ml-auto flex items-center gap-2';
+            const fitB = document.createElement('button');
+            fitB.className = 'btn-secondary !py-1.5 !px-3 text-xs font-bold';
+            fitB.textContent = '⟲ Fit';
+            const pngB = document.createElement('button');
+            pngB.className = 'btn-secondary !py-1.5 !px-3 text-xs font-bold';
+            pngB.textContent = '💾 PNG';
+            const visB = document.createElement('button');
+            visB.className = 'btn-primary !py-1.5 !px-3 text-xs font-bold';
+            visB.textContent = '⬇ Visio';
+            btns.appendChild(fitB); btns.appendChild(pngB); btns.appendChild(visB);
+
+            header.appendChild(cb);
+            header.appendChild(ttl);
+            header.appendChild(stat);
+            header.appendChild(btns);
+            card.appendChild(header);
+
+            const wrap = document.createElement('div');
+            wrap.className = 'relative w-full bg-slate-50/50 dark:bg-slate-900/30';
+            wrap.style.height = '440px';
+            const diag = document.createElement('div');
+            diag.className = 'absolute inset-0';
+            wrap.appendChild(diag);
+            card.appendChild(wrap);
+
+            sfList.appendChild(card);
+
+            const cyInst = makeCy(diag, gd, showDescriptors, entrySet);
+            wireInteractions(cyInst, wrap);
+            setTimeout(() => cyInst.fit(undefined, 40), 60);
+
+            fitB.onclick = () => cyInst.fit(undefined, 40);
+            pngB.onclick = () => {
+                const png = cyInst.png({ scale: 2, bg: isDark ? '#0b1120' : '#f8fafc', full: true });
+                const a = document.createElement('a');
+                a.href = png; a.download = 'call-flow-' + flowFileSlug(title) + '.png'; a.click();
+            };
+            visB.onclick = () => downloadVisioSingle(gd, flowFileSlug(title), visB);
+
+            separateCtxs.push({ id: flow.id, title, graphData: gd, cy: cyInst, checkbox: cb });
+        });
     }
 
     function flowSlug() {
@@ -1009,18 +1130,60 @@
     });
 
     // ── Visio (.vsdx) export — high-fidelity Lucidchart import ────────
-    visioBtn.addEventListener('click', async () => {
-        if (!currentGraphData) return;
-        const orig = visioBtn.textContent;
-        visioBtn.disabled = true;
-        visioBtn.textContent = '… building';
+    async function downloadVisioSingle(graphData, slug, btn) {
+        const orig = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '… building'; }
         try {
             const res = await fetch('/api/rc/visualiser/export-visio', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ graph_data: graphData, filename: slug }),
+            });
+            if (!res.ok) {
+                let msg = 'Export failed.';
+                try { msg = (await res.json()).message || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = slug + '.vsdx';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            if (btn) btn.textContent = '✓ Imported via Lucid';
+        } catch (err) {
+            if (btn) btn.textContent = '✕ ' + err.message;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                setTimeout(() => { btn.textContent = orig; }, 2600);
+            }
+        }
+    }
+    visioBtn.addEventListener('click', () => {
+        if (!currentGraphData) return;
+        downloadVisioSingle(currentGraphData, 'call-flow-' + flowSlug(), visioBtn);
+    });
+
+    // ── Separate-flows controls ──────────────────────────────────────
+    document.getElementById('sf-tick-all').addEventListener('click', () => {
+        separateCtxs.forEach(c => { c.checkbox.checked = true; });
+    });
+    document.getElementById('sf-tick-none').addEventListener('click', () => {
+        separateCtxs.forEach(c => { c.checkbox.checked = false; });
+    });
+    document.getElementById('sf-download-visio').addEventListener('click', async () => {
+        const btn = document.getElementById('sf-download-visio');
+        const ticked = separateCtxs.filter(c => c.checkbox.checked);
+        if (!ticked.length) { const o = btn.textContent; btn.textContent = 'Tick at least one flow'; setTimeout(() => { btn.textContent = o; }, 1800); return; }
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = '… building ' + ticked.length + ' files';
+        try {
+            const res = await fetch('/api/rc/visualiser/export-visio-zip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    graph_data: currentGraphData,
-                    filename: 'call-flow-' + flowSlug(),
+                    flows: ticked.map(c => ({ filename: flowFileSlug(c.title), graph_data: c.graphData })),
                 }),
             });
             if (!res.ok) {
@@ -1031,15 +1194,15 @@
             const blob = await res.blob();
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = 'call-flow-' + flowSlug() + '.vsdx';
+            a.download = 'call-flows-visio.zip';
             a.click();
             URL.revokeObjectURL(a.href);
-            visioBtn.textContent = '✓ Lucid: Import documents';
+            btn.textContent = '✓ Downloaded ' + ticked.length + ' Visio files';
         } catch (err) {
-            visioBtn.textContent = '✕ ' + err.message;
+            btn.textContent = '✕ ' + err.message;
         } finally {
-            visioBtn.disabled = false;
-            setTimeout(() => { visioBtn.textContent = orig; }, 2600);
+            btn.disabled = false;
+            setTimeout(() => { btn.textContent = orig; }, 2600);
         }
     });
 
