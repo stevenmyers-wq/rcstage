@@ -424,9 +424,17 @@ def parse_rule_to_row(ext, rule, is_v2=False):
         term_action = next((a for a in actions if a.get('type') == 'TerminatingAction'), None)
         
         if term_action:
-            target_type = term_action.get('terminatingTargetType')
+            # The action carries its target under `targets[].type`; there is no
+            # reliable `terminatingTargetType` on the action itself, so derive
+            # the type from the terminating target directly.
             targets = term_action.get('targets', [])
-            main_target = next((t for t in targets if t.get('type') == target_type), None)
+            main_target = next(
+                (t for t in targets if str(t.get('type', '')).endswith('TerminatingTarget')),
+                None
+            )
+            if main_target is None and targets:
+                main_target = targets[0]
+            target_type = main_target.get('type') if main_target else None
 
             if target_type == 'PhoneNumberTerminatingTarget':
                 row['Action'] = 'Transfer to External'

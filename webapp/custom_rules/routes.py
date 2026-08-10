@@ -79,7 +79,10 @@ def audit_rules():
             try:
                 v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
                 v2_resp = rc_api_call(v2_url, raise_error=True)
-                if v2_resp and 'records' in v2_resp:
+                # Only treat V2 as authoritative when it actually returns rules.
+                # An empty `records` list must NOT suppress the V1 fallback, or
+                # extensions whose rules only exist under V1 show up as empty.
+                if v2_resp and v2_resp.get('records'):
                     for rule in v2_resp['records']:
                         row = parse_rule_to_row(ext, rule, is_v2=True)
                         audit_data.append(row)
