@@ -1,6 +1,135 @@
 import pandas as pd
 import re
 from datetime import datetime
+from webapp.rc_api import rc_api_call
+
+# --- 0. EXTENSION TYPE / SITE HELPERS ---
+#
+# Custom answering (interaction) rules are NOT a User-only feature. Call Queues
+# (Department), IVR menus, shared-line/paging groups and the announcement- and
+# message-only extensions all carry their own answering rules. Auditing only
+# `type=User` silently misses every one of those. The set below is the full
+# list of extension types that can own an answering rule.
+RULE_CAPABLE_TYPES = {
+    'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited',
+    'Department',          # Call Queue
+    'IvrMenu',             # IVR menu / auto-receptionist
+    'SharedLinesGroup',    # Shared lines group
+    'PagingOnly',          # Paging group
+    'Announcement', 'AnnouncementOnly',   # Announcement-only
+    'Voicemail', 'MessageOnly',           # Message-only
+    'ParkLocation',        # Park zone / location
+}
+
+# Human-readable label shown in the audit's Type column (and used to build the
+# friendly filter list). Unknown types fall back to the raw API type string.
+TYPE_LABELS = {
+    'User': 'User',
+    'DigitalUser': 'User',
+    'VirtualUser': 'Virtual Extension',
+    'FlexibleUser': 'User',
+    'Limited': 'Limited Extension',
+    'Department': 'Call Queue',
+    'IvrMenu': 'IVR Menu',
+    'SharedLinesGroup': 'Shared Lines Group',
+    'PagingOnly': 'Paging Group',
+    'Announcement': 'Announcement Only',
+    'AnnouncementOnly': 'Announcement Only',
+    'Voicemail': 'Message Only',
+    'MessageOnly': 'Message Only',
+    'ParkLocation': 'Park Location',
+}
+
+# Friendly filter label -> the raw API types it covers. Lets the UI offer a
+# short list of options (e.g. "Call Queue") that transparently expands to every
+# underlying API type ("Department"). Order here drives the order in the UI.
+FILTER_GROUPS = {
+    'User': {'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited'},
+    'Call Queue': {'Department'},
+    'IVR Menu': {'IvrMenu'},
+    'Shared Lines Group': {'SharedLinesGroup'},
+    'Paging Group': {'PagingOnly'},
+    'Announcement Only': {'Announcement', 'AnnouncementOnly'},
+    'Message Only': {'Voicemail', 'MessageOnly'},
+    'Park Location': {'ParkLocation'},
+}
+
+
+def fetch_all_extensions():
+    """Fetches every account extension across all pages (session token).
+
+    The audit previously requested a single page of 1000 with `type=User`, which
+    both capped large accounts at 1000 records and excluded every non-User
+    extension. This walks the full directory so nothing is missed."""
+    extensions = []
+    page = 1
+    while True:
+        resp = rc_api_call('/restapi/v1.0/account/~/extension',
+                           params={'perPage': 1000, 'page': page})
+        if not resp or 'records' not in resp:
+            break
+        extensions.extend(resp['records'])
+        if not resp.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+    return extensions
+
+
+def fetch_sites():
+    """Fetches every Site on the account (all pages) as {'id', 'name'} dicts."""
+    sites = []
+    page = 1
+    while True:
+        resp = rc_api_call('/restapi/v1.0/account/~/sites',
+                           params={'perPage': 1000, 'page': page})
+        if not resp or 'records' not in resp:
+            break
+        for s in resp['records']:
+            sites.append({'id': s.get('id'), 'name': s.get('name', '')})
+        if not resp.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+    return sites
+
+
+def extension_type_label(ext):
+    """Human-readable extension type for the audit Type column."""
+    raw = ext.get('type') or ''
+    return TYPE_LABELS.get(raw, raw or 'Unknown')
+
+
+def extension_site_name(ext):
+    """Friendly Site name for an extension (defaults to the primary site)."""
+    if ext.get('type') == 'Site':
+        return ext.get('name', 'Main Site')
+    return (ext.get('site') or {}).get('name') or 'Main Site'
+
+
+def extension_site_id(ext):
+    """Current Site id for an extension (defaults to the primary site)."""
+    if ext.get('type') == 'Site':
+        return ext.get('id')
+    return (ext.get('site') or {}).get('id') or 'main-site'
+
+
+def resolve_type_filter(filter_labels):
+    """Maps a list of friendly filter labels to the set of raw API types.
+
+    An empty/omitted selection means "everything that can own a rule". Unknown
+    labels are passed through untouched so a raw API type still works."""
+    if not filter_labels:
+        return set(RULE_CAPABLE_TYPES)
+    raw = set()
+    for label in filter_labels:
+        label = (label or '').strip()
+        if not label:
+            continue
+        if label in FILTER_GROUPS:
+            raw |= FILTER_GROUPS[label]
+        else:
+            raw.add(label)
+    return raw or set(RULE_CAPABLE_TYPES)
+
 
 # --- 1. BASIC FORMATTERS ---
 
@@ -241,6 +370,8 @@ def parse_rule_to_row(ext, rule, is_v2=False):
     row = {
         'Ext Number': ext.get('extensionNumber'),
         'Ext Name': ext.get('name'),
+        'Type': extension_type_label(ext),
+        'Site': extension_site_name(ext),
         'Rule ID': rule.get('id'),
         'Rule Name': rule.get('name') or rule.get('displayName'),
         'Enabled': 'Yes' if rule.get('enabled') else 'No',

@@ -9,7 +9,11 @@ from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
 from webapp import task_control
-from .utils import build_v1_payload, format_phone, parse_rule_to_row, transform_v1_to_v2
+from .utils import (
+    build_v1_payload, format_phone, parse_rule_to_row, transform_v1_to_v2,
+    fetch_all_extensions, fetch_sites, resolve_type_filter,
+    extension_site_id, FILTER_GROUPS,
+)
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 custom_rules_bp.add_url_rule('/api/custom_rules/cancel', 'custom_rules_cancel', task_control.cancel_view, methods=['POST'])
@@ -29,22 +33,45 @@ def get_user_devices(ext_id):
         return resp.get('records', []) if resp else []
     except: return []
 
+# --- FILTER OPTIONS ROUTE ---
+@custom_rules_bp.route('/api/custom_rules/filters', methods=['GET'])
+@require_rc_token
+def custom_rules_filters():
+    """Feeds the Audit scope UI: the available extension-type filters and the
+    account's Sites (so the operator can scope the crawl by type and/or site)."""
+    try:
+        sites = fetch_sites()
+        if not any(s.get('id') == 'main-site' for s in sites):
+            sites.insert(0, {'id': 'main-site', 'name': 'Main Site'})
+        return jsonify({'types': list(FILTER_GROUPS.keys()), 'sites': sites})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # --- AUDIT ROUTE ---
 @custom_rules_bp.route('/api/custom_rules/audit', methods=['GET'])
 @require_rc_token
 @track_usage('Custom Rules Audit')
 def audit_rules():
     try:
-        ext_resp = rc_api_call('/restapi/v1.0/account/~/extension', params={'perPage': 1000, 'type': 'User'})
-        if not ext_resp or 'records' not in ext_resp:
+        # Scope filters (all optional). `type` may be repeated; `site` is a
+        # Site id. With nothing selected we audit every rule-capable extension
+        # (Users, Call Queues, IVRs, groups, etc.) across every site.
+        allowed_types = resolve_type_filter(request.args.getlist('type'))
+        site_filter = (request.args.get('site') or '').strip()
+
+        extensions = fetch_all_extensions()
+        if not extensions:
             return jsonify({"error": "Failed to fetch extensions list"}), 500
-        
-        extensions = ext_resp['records']
+
+        extensions = [e for e in extensions if (e.get('type') or '') in allowed_types]
+        if site_filter:
+            extensions = [e for e in extensions if extension_site_id(e) == site_filter]
+
         audit_data = []
 
         for ext in extensions:
             ext_id = ext['id']
-            if ext['status'] == 'Disabled': continue
+            if ext.get('status') == 'Disabled': continue
 
             rules_found = False
 
@@ -77,8 +104,8 @@ def audit_rules():
 
         df = pd.DataFrame(audit_data)
         
-        cols = ['Ext Number', 'Ext Name', 'Rule ID', 'Rule Name', 'Enabled', 
-                'Caller ID', 'Called Number', 
+        cols = ['Ext Number', 'Ext Name', 'Type', 'Site', 'Rule ID', 'Rule Name', 'Enabled',
+                'Caller ID', 'Called Number',
                 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Specific Dates',
                 'Action', 'External Number', 'Transfer Extension', 'Voicemail Recipient']
         
