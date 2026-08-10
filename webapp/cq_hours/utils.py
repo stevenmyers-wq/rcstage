@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import datetime
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font
 from webapp.rc_api import rc_api_call
 from webapp import task_control
 
@@ -118,10 +119,16 @@ SCHEMA_VALIDATIONS = {
 }
 
 
-def build_config_workbook(df):
+def build_config_workbook(df, hyperlinks=None):
     """Render a Queue Config DataFrame to an .xlsx BytesIO with the timezone
     reference sheet, dropdown validations and text number-formatting applied.
-    Shared by the download-template and audit-export paths."""
+    Shared by the download-template and audit-export paths.
+
+    hyperlinks (optional): list of {"row": <0-based df row>, "col": <column name>,
+    "url": <href>} entries. Each turns the matching cell into a clickable link
+    (Excel makes the whole cell the link; the cell keeps its "Custom - Recording
+    Link" display text) so the audit can point at a recording without dumping the
+    raw URL into the grid."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Queue Config')
@@ -155,6 +162,18 @@ def build_config_workbook(df):
             config_ws.column_dimensions[col_letter].number_format = '@'
             for r in range(1, 1001):
                 config_ws.cell(row=r, column=c).number_format = '@'
+
+        if hyperlinks:
+            link_font = Font(color="0563C1", underline="single")
+            col_index = {name: i + 1 for i, name in enumerate(df.columns)}
+            for h in hyperlinks:
+                ci = col_index.get(h.get("col"))
+                url = h.get("url")
+                if not ci or not url:
+                    continue
+                cell = config_ws.cell(row=h.get("row", 0) + 2, column=ci)
+                cell.hyperlink = url
+                cell.font = link_font
 
     output.seek(0)
     return output
@@ -417,8 +436,10 @@ def run_cq_audit(task_id, queue_ids, token):
             for e in ext_records:
                 ext_id_to_num[str(e['id'])] = str(e.get('extensionNumber', ''))
 
-        succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
-        site_map = {str(s['id']): s['name'] for s in sites_resp.get('records', [])} if succ else {}
+        # Paginate: a single page misses sites on large accounts, leaving those
+        # queues to fall back to showing the raw internal site id instead of its name.
+        succ, site_records = fetch_directory('/restapi/v1.0/account/~/sites', token)
+        site_map = {str(s['id']): s['name'] for s in site_records} if succ else {}
 
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
@@ -443,10 +464,12 @@ def run_cq_audit(task_id, queue_ids, token):
                         preset_id_to_name[g_type][v] = str(rec.get('name', '')).title()
 
         rows = []
+        hyperlinks = []
         for idx, qid in enumerate(queue_ids):
             audit_progress_store[task_id]['current'] = idx + 1
             row = {}
             fixed_order_nums = []
+            link_urls = {}
 
             succ, base = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}', token=token)
             if not succ: continue
@@ -524,6 +547,7 @@ def run_cq_audit(task_id, queue_ids, token):
                     g_preset = g.get('preset', {}) or {}
                     g_id = str(g_preset.get('id', ''))
                     g_embedded = str(g_preset.get('name', '')).strip()
+                    g_url = ''
 
                     is_music = g_type in ['ConnectingAudio', 'ConnectingMessage', 'HoldMusic']
                     if g_id:
@@ -541,26 +565,40 @@ def run_cq_audit(task_id, queue_ids, token):
                             g_name = 'Default'
                     elif 'custom' in g:
                         # Browser-downloadable service-web link (works with a logged-in portal
-                        # session), built from the greeting id + owning extension id.
+                        # session), built from the greeting id + owning extension id. The URL is
+                        # attached to the cell as a hyperlink (see link_urls) rather than dumped
+                        # into the text, so the cell reads "Custom - Recording Link".
                         dl = _greeting_download_url(g.get('custom'))
-                        g_name = f"Custom - {dl}" if dl else 'Custom'
+                        if dl:
+                            g_name = "Custom - Recording Link"
+                            g_url = dl
+                        else:
+                            g_name = 'Custom'
                     else:
                         g_name = 'Default'
 
-                    if g_type == 'Introductory': row["Greeting"] = g_name
+                    target_col = None
+                    if g_type == 'Introductory':
+                        target_col = "Greeting"; row[target_col] = g_name
                     elif g_type == 'ConnectingAudio':
                         # The real "Audio While Connecting" genre (e.g. Acoustic). ConnectingMessage
                         # is a separate slot and is intentionally ignored here — it was overwriting
                         # this value with unrelated content (e.g. "No").
-                        row["Audio While Connecting"] = g_name
-                    elif g_type == 'HoldMusic': row["Hold Music"] = g_name
+                        target_col = "Audio While Connecting"; row[target_col] = g_name
+                    elif g_type == 'HoldMusic':
+                        target_col = "Hold Music"; row[target_col] = g_name
                     elif g_type == 'InterruptPrompt':
-                        if 'patience' in g_name.lower(): row["Interrupt Prompt"] = "Thank you for your patience"
-                        elif 'volume' in g_name.lower(): row["Interrupt Prompt"] = "Higher than normal volume"
-                        elif 'busy' in g_name.lower(): row["Interrupt Prompt"] = "Agents are currently busy"
-                        elif 'important' in g_name.lower(): row["Interrupt Prompt"] = "Call is very important to us"
-                        else: row["Interrupt Prompt"] = g_name
-                    elif g_type == 'Voicemail': row["Voicemail Greeting"] = g_name
+                        target_col = "Interrupt Prompt"
+                        if 'patience' in g_name.lower(): row[target_col] = "Thank you for your patience"
+                        elif 'volume' in g_name.lower(): row[target_col] = "Higher than normal volume"
+                        elif 'busy' in g_name.lower(): row[target_col] = "Agents are currently busy"
+                        elif 'important' in g_name.lower(): row[target_col] = "Call is very important to us"
+                        else: row[target_col] = g_name
+                    elif g_type == 'Voicemail':
+                        target_col = "Voicemail Greeting"; row[target_col] = g_name
+
+                    if target_col and g_url:
+                        link_urls[target_col] = g_url
 
             succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
             if succ:
@@ -634,7 +672,10 @@ def run_cq_audit(task_id, queue_ids, token):
                 row["Text Notifications"] = "On" if notif.get('inboundTexts', {}).get('notifyByEmail') else "Off"
 
             rows.append(row)
-            time.sleep(0.35) 
+            # Recording links resolve to this row's position (0-based df index).
+            for col, url in link_urls.items():
+                hyperlinks.append({"row": len(rows) - 1, "col": col, "url": url})
+            time.sleep(0.35)
 
         df = pd.DataFrame(rows)
         for col in TEMPLATE_COLUMNS:
@@ -642,7 +683,7 @@ def run_cq_audit(task_id, queue_ids, token):
                 df[col] = ""
         df = df[TEMPLATE_COLUMNS]
 
-        output = build_config_workbook(df)
+        output = build_config_workbook(df, hyperlinks=hyperlinks)
         audit_progress_store[task_id]['file_data'] = output.getvalue()
         audit_progress_store[task_id]['status'] = 'completed'
         audit_progress_store[task_id]['file_ready'] = True
