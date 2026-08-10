@@ -47,11 +47,14 @@
                 <span id="graph-stats" class="hidden text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-3 py-1"></span>
             </div>
             <div class="flex items-center gap-2 print:hidden">
-                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Copy Mermaid text, then in Lucidchart use Insert → Advanced → Mermaid and paste">
-                    ⧉ Copy for Lucidchart
+                <button id="btn-export-visio" class="hidden btn-primary !py-2 !px-4 text-xs font-bold" title="Download a Visio (.vsdx) file, then import it in Lucidchart via Import documents — keeps colours, layout &amp; detail">
+                    ⬇ Lucidchart (Visio)
                 </button>
-                <button id="btn-export-drawio" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Download a .drawio file for diagrams.net / draw.io (Lucid's .drawio import is unreliable — use Copy for Lucidchart instead)">
-                    ⬇ draw.io file
+                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Copy Mermaid text, then in Lucidchart use Insert → Advanced → Mermaid and paste (plain, uncoloured)">
+                    ⧉ Copy Mermaid
+                </button>
+                <button id="btn-export-drawio" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Download a .drawio file for diagrams.net / draw.io">
+                    ⬇ draw.io
                 </button>
                 <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold">
                     🖨 Print / Save PDF
@@ -165,6 +168,7 @@
     const printBtn      = document.getElementById('btn-print');
     const mermaidBtn    = document.getElementById('btn-export-mermaid');
     const drawioBtn     = document.getElementById('btn-export-drawio');
+    const visioBtn      = document.getElementById('btn-export-visio');
     const toggleDesc    = document.getElementById('toggle-descriptors');
     const chipsWrap     = document.getElementById('entry-chips');
     const clearBtn      = document.getElementById('clear-entries');
@@ -482,6 +486,7 @@
         printBtn.classList.add('hidden');
         mermaidBtn.classList.add('hidden');
         drawioBtn.classList.add('hidden');
+        visioBtn.classList.add('hidden');
         clearPanels();
 
         const count = selectedEntries.length;
@@ -754,6 +759,7 @@
         printBtn.classList.remove('hidden');
         mermaidBtn.classList.remove('hidden');
         drawioBtn.classList.remove('hidden');
+        visioBtn.classList.remove('hidden');
         layoutBtn.classList.remove('hidden');
         graphSearch.classList.remove('hidden');
 
@@ -1000,6 +1006,41 @@
         const orig = drawioBtn.textContent;
         drawioBtn.textContent = '✓ Downloaded .drawio';
         setTimeout(() => { drawioBtn.textContent = orig; }, 2200);
+    });
+
+    // ── Visio (.vsdx) export — high-fidelity Lucidchart import ────────
+    visioBtn.addEventListener('click', async () => {
+        if (!currentGraphData) return;
+        const orig = visioBtn.textContent;
+        visioBtn.disabled = true;
+        visioBtn.textContent = '… building';
+        try {
+            const res = await fetch('/api/rc/visualiser/export-visio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    graph_data: currentGraphData,
+                    filename: 'call-flow-' + flowSlug(),
+                }),
+            });
+            if (!res.ok) {
+                let msg = 'Export failed.';
+                try { msg = (await res.json()).message || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'call-flow-' + flowSlug() + '.vsdx';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            visioBtn.textContent = '✓ Lucid: Import documents';
+        } catch (err) {
+            visioBtn.textContent = '✕ ' + err.message;
+        } finally {
+            visioBtn.disabled = false;
+            setTimeout(() => { visioBtn.textContent = orig; }, 2600);
+        }
     });
 
     // ── API log ──────────────────────────────────────────────────────

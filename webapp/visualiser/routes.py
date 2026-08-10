@@ -1,11 +1,12 @@
 # webapp/visualiser/routes.py
 import sys
 import time
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from webapp.auth_utils import is_authenticated, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
 from webapp.visualiser.utils import generate_graph_flow, generate_graph_flow_multi
+from webapp.visualiser.vsdx_export import build_vsdx
 
 viz_bp = Blueprint('visualiser', __name__)
 
@@ -229,3 +230,37 @@ def visualize_call_flow_multi_api():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e), 'api_log': []}), 500
+
+
+@viz_bp.route('/api/rc/visualiser/export-visio', methods=['POST'])
+def export_visio():
+    """Build a Visio .vsdx from the already-traced graph data POSTed by the
+    client. Kept separate from tracing so the export uses exactly what's on
+    screen (respecting the current layout/entry points) without re-tracing."""
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    graph_data = payload.get('graph_data') or {}
+    if not graph_data.get('nodes'):
+        return jsonify({'status': 'error', 'message': 'No graph data supplied.'}), 400
+
+    filename = payload.get('filename') or 'call-flow'
+    # Sanitise the filename to a safe basename
+    safe = ''.join(c if c.isalnum() or c in ('-', '_') else '_'
+                   for c in str(filename))[:80] or 'call-flow'
+
+    try:
+        data = build_vsdx(graph_data)
+    except Exception as e:
+        print(f"[VISIO EXPORT] {e}", file=sys.stderr)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    return Response(
+        data,
+        mimetype='application/vnd.ms-visio.drawing',
+        headers={
+            'Content-Disposition': f'attachment; filename="{safe}.vsdx"',
+            'Content-Length': str(len(data)),
+        },
+    )
