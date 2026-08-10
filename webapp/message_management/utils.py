@@ -278,37 +278,65 @@ def fetch_custom_greetings(ext_id):
         pass
 
     # 5. LAYER 3: Custom Media Pool Workaround
+    #
+    # A greeting applied via POST /extension/{id}/greeting (the path this tool and
+    # account_migration use) lands in the extension's per-extension media pool. For
+    # Call Queues, several background-audio prompt slots applied this way are not
+    # reliably mirrored back into the v1 answering-rule `greetings` array, so LAYER 1
+    # misses them and the slot would fall through to a Default backfill even though a
+    # custom clip is applied. Reflect the pool's latest custom audio for any such
+    # slot the endpoint actually exposes that LAYER 1/2 didn't already resolve as
+    # custom. Previously this rescue existed for HoldMusic alone, which is why e.g. a
+    # custom Interrupt prompt on a queue showed as Default; the slot set below adds
+    # the sibling queue prompts (Interrupt, Connecting, Introductory).
+    #
+    # Voicemail and Announcement are intentionally excluded: they are rule-scoped,
+    # come back reliably in the answering-rule array (LAYER 1), and accumulate stale
+    # copies in the pool, so reading them from the pool risks surfacing a removed
+    # greeting as still-applied.
+    POOL_FALLBACK_TYPES = {
+        'HoldMusic', 'InterruptPrompt', 'ConnectingAudio',
+        'ConnectingMessage', 'Introductory',
+    }
     try:
         custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
-        if custom_pool_resp and 'records' in custom_pool_resp:
-            hm_candidates = [cg for cg in custom_pool_resp['records'] if cg.get('type') == 'HoldMusic']
-            
-            if hm_candidates:
-                hm_already_custom = any(
-                    g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic' and g['is_custom']
-                    for g in greetings_list
-                )
-                
-                if not hm_already_custom:
-                    safe_candidates = [cg for cg in hm_candidates if 'voicemail' not in cg.get('name', '').lower()]
-                    if not safe_candidates:
-                        safe_candidates = hm_candidates
-                    
-                    safe_candidates.sort(key=lambda x: int(x['id']) if str(x['id']).isdigit() else 0)
-                    latest_hm = safe_candidates[-1]
-                    
-                    greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == 'HoldMusic')]
-                    found_combinations.add(('business-hours-rule', 'HoldMusic'))
-                    
-                    greetings_list.append({
-                        'type': 'HoldMusic',
-                        'rule_id': 'business-hours-rule',
-                        'rule_name': 'Business Hours',
-                        'id': latest_hm['id'],
-                        'name': latest_hm.get('name', 'Custom Audio'),
-                        'is_custom': True,
-                        'preset_uri': latest_hm.get('contentUri', '')
-                    })
+        pool_records = custom_pool_resp.get('records', []) if custom_pool_resp else []
+        # Only rescue slots this endpoint type actually exposes on business hours,
+        # so the pool can never invent a greeting the endpoint doesn't have.
+        expected_bh_slots = set(baseline_types.get(ext_type, {}).get('business-hours-rule', []))
+
+        for slot_type in POOL_FALLBACK_TYPES & expected_bh_slots:
+            # Keep any custom already resolved from the answering rule (LAYER 1) or
+            # the V2 state (LAYER 2); only fill Default/preset slots from the pool.
+            already_custom = any(
+                g['rule_id'] == 'business-hours-rule' and g['type'] == slot_type and g['is_custom']
+                for g in greetings_list
+            )
+            if already_custom:
+                continue
+
+            candidates = [cg for cg in pool_records if cg.get('type') == slot_type and cg.get('id')]
+            if slot_type == 'HoldMusic':
+                # A voicemail-named clip is never genuine hold music (preserved guard).
+                safe = [cg for cg in candidates if 'voicemail' not in (cg.get('name') or '').lower()]
+                candidates = safe or candidates
+            if not candidates:
+                continue
+
+            candidates.sort(key=lambda x: int(x['id']) if str(x.get('id')).isdigit() else 0)
+            latest = candidates[-1]
+
+            greetings_list = [g for g in greetings_list if not (g['rule_id'] == 'business-hours-rule' and g['type'] == slot_type)]
+            found_combinations.add(('business-hours-rule', slot_type))
+            greetings_list.append({
+                'type': slot_type,
+                'rule_id': 'business-hours-rule',
+                'rule_name': 'Business Hours',
+                'id': latest['id'],
+                'name': latest.get('name', 'Custom Audio'),
+                'is_custom': True,
+                'preset_uri': latest.get('contentUri', '')
+            })
     except Exception:
         pass
 
@@ -1032,9 +1060,13 @@ def _prepare_xlsx_upload(file_storage, drive_url, access_token):
         raise ValueError("No files were found in that Drive folder.")
 
     rows = df.to_dict('records')
+    # Only rows that name an audio file are uploadable, so the progress total
+    # counts those alone. Rows with a blank GREETING NAME (e.g. the unfilled
+    # slots in a pre-populated "Download Selected" template) are not attempted
+    # and must not inflate the total or they would leave the bar short of 100%.
     total = sum(
         1 for row in rows
-        if _cell_str(row.get(ext_col)) or _cell_str(row.get(type_col)) or _cell_str(row.get(name_col))
+        if _cell_str(row.get(name_col))
     )
     return {
         'rows': rows,
@@ -1113,8 +1145,12 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
         type_label = _cell_str(row.get(type_col))
         greeting_name = _cell_str(row.get(name_col))
 
-        # Skip fully blank rows without counting them against the total.
-        if not ext_num and not type_label and not greeting_name:
+        # No GREETING NAME means there is no audio file to apply, so skip the row
+        # silently: don't attempt an upload and don't log a "'' not found" error.
+        # This covers fully blank rows as well as the pre-populated template slots
+        # a user intentionally left unfilled. Kept in sync with the `total` count
+        # in _prepare_xlsx_upload, which likewise keys off GREETING NAME.
+        if not greeting_name:
             continue
 
         row_label = f"Ext {ext_num or '?'} / {type_label or '?'}"
