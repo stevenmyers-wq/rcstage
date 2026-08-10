@@ -844,82 +844,128 @@
             .replace(/[\r\n]+/g, ' ');
     }
     function buildDrawio() {
-        // Prefer the live cytoscape layout so positions match what's on screen.
+        // Compute a self-contained layered layout straight from the graph data.
+        // (Reading positions back from the live cytoscape instance proved
+        // unreliable — nodes could collapse to one point and stack — so the
+        // export owns its own deterministic layout.)
         const cells = [
             '<mxCell id="0"/>',
             '<mxCell id="1" parent="0"/>',
         ];
-        if (cy) {
-            // Pass 1: collect real (non-descriptor) node geometry so we can
-            // normalise coordinates. draw.io opens at the origin and does not
-            // auto-fit, so raw cytoscape positions can leave most nodes off
-            // screen — shifting everything to a small top-left margin fixes it.
-            const defs = [];
-            let minX = Infinity, minY = Infinity;
-            cy.nodes().forEach(n => {
-                const d = n.data();
-                if (d.type === 'descriptor') return;
-                const c = COLOURS[d.type] || COLOURS.unknown;
-                const isEntry = entryIdSet.has(d.id);
 
-                // Reproduce the full on-screen label (name + members / detail
-                // lines), plus the type.
-                const labelLines = (d.label || '').split('\n')
+        const g = currentGraphData;
+        if (g && g.nodes && g.nodes.length) {
+            const nodes = g.nodes.map(n => n.data);
+            const edges = (g.edges || []).map(e => e.data);
+            const entrySet = new Set(g.entry_ids || []);
+            const byId = {};
+            nodes.forEach(n => { byId[n.id] = n; });
+
+            // Build adjacency + in-degree over real edges only.
+            const children = {}, indeg = {};
+            nodes.forEach(n => { children[n.id] = []; indeg[n.id] = 0; });
+            edges.forEach(e => {
+                if (byId[e.source] && byId[e.target] && e.source !== e.target) {
+                    children[e.source].push(e.target);
+                    indeg[e.target] = (indeg[e.target] || 0) + 1;
+                }
+            });
+
+            // Assign a layer (row) to each node via longest-path relaxation
+            // from the entry points / roots. Cycle-safe via an iteration cap.
+            const layer = {};
+            nodes.forEach(n => { layer[n.id] = 0; });
+            const roots = nodes
+                .filter(n => entrySet.has(n.id) || indeg[n.id] === 0)
+                .map(n => n.id);
+            let frontier = roots.length ? roots.slice() : [nodes[0].id];
+            const maxIter = nodes.length * (edges.length + 1) + 10;
+            let iter = 0;
+            while (frontier.length && iter++ < maxIter) {
+                const id = frontier.shift();
+                children[id].forEach(c => {
+                    if (layer[c] < layer[id] + 1) {
+                        layer[c] = layer[id] + 1;
+                        frontier.push(c);
+                    }
+                });
+            }
+
+            // Build the HTML label + measured size for each node.
+            const dim = {};
+            nodes.forEach(n => {
+                const isEntry = entrySet.has(n.id);
+                const labelLines = (n.label || '').split('\n')
                     .map(s => s.trim()).filter(Boolean);
                 const nameLine = labelLines[0] || '';
                 const bodyLines = labelLines.slice(1)
                     .filter(l => l !== '─────────────');
-                const typeLbl = TYPE_LABEL[d.type] || '';
-
-                // Raw HTML with real tags; the whole string is entity-escaped
-                // into the value attribute and draw.io renders it (html=1).
+                const typeLbl = TYPE_LABEL[n.type] || '';
                 let html = '<b>' + (isEntry ? '★ ' : '') + nameLine + '</b>';
                 bodyLines.forEach(l => { html += '<br>' + l; });
-                if (d.sublabel) html += '<br>' + d.sublabel;
+                if (n.sublabel) html += '<br>' + n.sublabel;
                 if (typeLbl) html += '<br><i>(' + typeLbl + ')</i>';
+                const lineCount = 1 + bodyLines.length + (n.sublabel ? 1 : 0) + (typeLbl ? 1 : 0);
+                const longest = Math.max(nameLine.length,
+                    ...bodyLines.map(l => l.length), (n.sublabel || '').length, 10);
+                dim[n.id] = {
+                    html,
+                    w: Math.min(360, Math.max(200, longest * 7 + 24)),
+                    h: Math.max(56, 24 + lineCount * 16),
+                };
+            });
 
-                const lineCount = 1 + bodyLines.length + (d.sublabel ? 1 : 0) + (typeLbl ? 1 : 0);
-                const w = Math.max(180, Math.round(n.width()));
-                const h = Math.max(Math.round(n.height()), 26 + lineCount * 16);
-                const p = n.position();
-                const x = Math.round(p.x - w / 2);
-                const y = Math.round(p.y - h / 2);
-                minX = Math.min(minX, x);
-                minY = Math.min(minY, y);
+            // Group nodes by layer, then lay each layer out left-to-right.
+            const layers = {};
+            nodes.forEach(n => {
+                (layers[layer[n.id]] = layers[layer[n.id]] || []).push(n);
+            });
+            const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
+            const H_GAP = 50, V_GAP = 70, MARGIN = 40;
+            const pos = {};
+            let y = MARGIN;
+            layerKeys.forEach(lk => {
+                const row = layers[lk];
+                const rowH = Math.max.apply(null, row.map(n => dim[n.id].h));
+                let x = MARGIN;
+                row.forEach(n => {
+                    pos[n.id] = { x, y };
+                    x += dim[n.id].w + H_GAP;
+                });
+                y += rowH + V_GAP;
+            });
 
+            // Emit vertices.
+            nodes.forEach(n => {
+                const c = COLOURS[n.type] || COLOURS.unknown;
+                const isEntry = entrySet.has(n.id);
                 const stroke = isEntry ? '#facc15' : c.border;
                 const sw = isEntry ? 4 : 2;
                 const style = `rounded=1;whiteSpace=wrap;html=1;fillColor=${c.bg};` +
                               `strokeColor=${stroke};strokeWidth=${sw};fontColor=#ffffff;` +
                               `fontSize=12;verticalAlign=middle;spacing=6;`;
-                defs.push({ id: d.id, html, style, w, h, x, y });
-            });
-
-            if (!isFinite(minX)) { minX = 0; minY = 0; }
-            const MARGIN = 40;
-            defs.forEach(nd => {
-                const gx = nd.x - minX + MARGIN;
-                const gy = nd.y - minY + MARGIN;
+                const p = pos[n.id], d = dim[n.id];
                 cells.push(
-                    `<mxCell id="${xmlEsc(nd.id)}" value="${xmlEsc(nd.html)}" ` +
-                    `style="${nd.style}" vertex="1" parent="1">` +
-                    `<mxGeometry x="${gx}" y="${gy}" width="${nd.w}" height="${nd.h}" as="geometry"/></mxCell>`
+                    `<mxCell id="${xmlEsc(n.id)}" value="${xmlEsc(d.html)}" ` +
+                    `style="${style}" vertex="1" parent="1">` +
+                    `<mxGeometry x="${p.x}" y="${p.y}" width="${d.w}" height="${d.h}" as="geometry"/></mxCell>`
                 );
             });
 
+            // Emit edges.
             let ei = 0;
-            cy.edges().forEach(e => {
-                const d = e.data();
-                if (d.type === 'descriptor-edge') return;
+            edges.forEach(e => {
+                if (!byId[e.source] || !byId[e.target]) return;
                 const style = 'edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;' +
                               'endArrow=block;strokeColor=#64748b;fontSize=10;fontColor=#334155;';
                 cells.push(
-                    `<mxCell id="edge_${ei++}" value="${xmlEsc(d.label)}" style="${style}" ` +
-                    `edge="1" parent="1" source="${xmlEsc(d.source)}" target="${xmlEsc(d.target)}">` +
+                    `<mxCell id="edge_${ei++}" value="${xmlEsc(e.label || '')}" style="${style}" ` +
+                    `edge="1" parent="1" source="${xmlEsc(e.source)}" target="${xmlEsc(e.target)}">` +
                     `<mxGeometry relative="1" as="geometry"/></mxCell>`
                 );
             });
         }
+
         const model = `<mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" ` +
                       `guides="1" tooltips="1" connect="1" arrows="1" fold="1" ` +
                       `page="1" pageScale="1" pageWidth="1600" pageHeight="1200" ` +
