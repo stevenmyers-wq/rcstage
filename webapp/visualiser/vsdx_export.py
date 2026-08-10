@@ -10,6 +10,7 @@ mid-line labels, and optional dark "descriptor" cards carrying the detail that
 otherwise only shows on hover in the tool.
 """
 import io
+import math
 import zipfile
 from xml.sax.saxutils import escape as _xml_escape
 
@@ -205,36 +206,45 @@ def build_vsdx(graph_data):
             f'<Text>{text}</Text></Shape>'
         )
 
-    def line_shape(_id, bx, by, ex, ey, color='#64748b', lw=0.013, dash=False):
+    def line_shape(_id, bx, by, ex, ey, color='#64748b', lw=0.013, dash=False, text=''):
+        # A proper Visio 1-D connector: positioned by its Begin/End points, with
+        # a local (0,0)->(Width,0) geometry and its own text block at the
+        # midpoint — so the label is part of the connector and moves with it.
         vbx, vby, vex, vey = to_vx(bx), to_vy(by), to_vx(ex), to_vy(ey)
+        length = math.hypot(vex - vbx, vey - vby) or 0.001
+        pinx, piny = (vbx + vex) / 2.0, (vby + vey) / 2.0
+        angle = math.atan2(vey - vby, vex - vbx)
         dash_cell = '<Cell N="LinePattern" V="2"/>' if dash else ''
+        txt_cells = ''
+        text_el = '<Text/>'
+        if str(text).strip():
+            # Text block placed at the line midpoint, lifted slightly off the
+            # line, on a small white background so it stays readable.
+            txt_cells = (
+                '<Cell N="TxtWidth" V="1.6"/><Cell N="TxtHeight" V="0.24"/>'
+                '<Cell N="TxtPinX" V="' + f'{length / 2:.4f}' + '" F="Width*0.5"/>'
+                '<Cell N="TxtPinY" V="0.14"/>'
+                '<Cell N="TxtLocPinX" V="0.8" F="TxtWidth*0.5"/>'
+                '<Cell N="TxtLocPinY" V="0.12" F="TxtHeight*0.5"/>'
+                '<Section N="Character"><Row IX="0"><Cell N="Color" V="#334155"/>'
+                '<Cell N="Size" V="0.085"/></Row></Section>'
+            )
+            text_el = f'<Text>{_esc(text)}</Text>'
         return (
             f'<Shape ID="{_id}" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
+            f'<Cell N="PinX" V="{pinx:.4f}"/><Cell N="PinY" V="{piny:.4f}"/>'
+            f'<Cell N="Width" V="{length:.4f}"/><Cell N="Height" V="0"/>'
+            f'<Cell N="LocPinX" V="{length / 2:.4f}" F="Width*0.5"/>'
+            f'<Cell N="LocPinY" V="0" F="Height*0.5"/>'
+            f'<Cell N="Angle" V="{angle:.6f}"/>'
             f'<Cell N="BeginX" V="{vbx:.4f}"/><Cell N="BeginY" V="{vby:.4f}"/>'
             f'<Cell N="EndX" V="{vex:.4f}"/><Cell N="EndY" V="{vey:.4f}"/>'
             f'<Cell N="LineColor" V="{color}"/><Cell N="LineWeight" V="{lw}"/>'
-            f'<Cell N="EndArrow" V="4"/>{dash_cell}'
+            f'<Cell N="EndArrow" V="4"/>{dash_cell}{txt_cells}'
             f'<Section N="Geometry" IX="0"><Cell N="NoFill" V="1"/>'
-            f'<Row T="MoveTo" IX="1"><Cell N="X" V="{vbx:.4f}"/><Cell N="Y" V="{vby:.4f}"/></Row>'
-            f'<Row T="LineTo" IX="2"><Cell N="X" V="{vex:.4f}"/><Cell N="Y" V="{vey:.4f}"/></Row>'
-            f'</Section></Shape>'
-        )
-
-    def label_shape(_id, mx, my, text):
-        # Small text-only shape centred on the line midpoint.
-        vw, vh = 1.6, 0.22
-        return (
-            f'<Shape ID="{_id}" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
-            f'<Cell N="PinX" V="{to_vx(mx):.4f}"/><Cell N="PinY" V="{to_vy(my):.4f}"/>'
-            f'<Cell N="Width" V="{vw}"/><Cell N="Height" V="{vh}"/>'
-            f'<Cell N="LocPinX" V="{vw / 2}" F="Width*0.5"/>'
-            f'<Cell N="LocPinY" V="{vh / 2}" F="Height*0.5"/>'
-            f'<Cell N="FillForegnd" V="#FFFFFF"/><Cell N="FillPattern" V="1"/>'
-            f'<Cell N="LineColor" V="#FFFFFF"/><Cell N="LineWeight" V="0"/>'
-            f'<Cell N="LinePattern" V="0"/>'
-            f'<Section N="Character"><Row IX="0"><Cell N="Color" V="#334155"/>'
-            f'<Cell N="Size" V="0.085"/></Row></Section>'
-            f'<Text>{_esc(text)}</Text></Shape>'
+            f'<Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+            f'<Row T="LineTo" IX="2" F="0"><Cell N="X" V="{length:.4f}" F="Width"/><Cell N="Y" V="0"/></Row>'
+            f'</Section>{text_el}</Shape>'
         )
 
     id_of = {}
@@ -298,13 +308,9 @@ def build_vsdx(graph_data):
         tcx, tcy = pos[t]['x'] + dt['w'] / 2.0, pos[t]['y'] + dt['h'] / 2.0
         bx, by = _clip_to_border(scx, scy, ds['w'] / 2.0, ds['h'] / 2.0, tcx, tcy)
         ex, ey = _clip_to_border(tcx, tcy, dt['w'] / 2.0, dt['h'] / 2.0, scx, scy)
-        shapes.append(line_shape(sid, bx, by, ex, ey))
+        shapes.append(line_shape(sid, bx, by, ex, ey, text=e.get('label', '') or ''))
         glue(sid, id_of[s], id_of[t])
         sid += 1
-        lbl = e.get('label', '') or ''
-        if str(lbl).strip():
-            shapes.append(label_shape(sid, (bx + ex) / 2.0, (by + ey) / 2.0, lbl))
-            sid += 1
 
     page_contents = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
