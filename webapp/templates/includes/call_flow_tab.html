@@ -47,11 +47,11 @@
                 <span id="graph-stats" class="hidden text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-3 py-1"></span>
             </div>
             <div class="flex items-center gap-2 print:hidden">
-                <button id="btn-export-drawio" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Download a .drawio file — drag it into Lucidchart's 'Import documents' dialog">
-                    ⬇ Lucidchart (.drawio)
+                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Copy Mermaid text, then in Lucidchart use Insert → Advanced → Mermaid and paste">
+                    ⧉ Copy for Lucidchart
                 </button>
-                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Copy Mermaid text — paste into Lucidchart via Insert → Mermaid">
-                    ⧉ Copy Mermaid
+                <button id="btn-export-drawio" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Download a .drawio file for diagrams.net / draw.io (Lucid's .drawio import is unreliable — use Copy for Lucidchart instead)">
+                    ⬇ draw.io file
                 </button>
                 <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold">
                     🖨 Print / Save PDF
@@ -801,19 +801,32 @@
             const d = n.data;
             const mid = 'N' + i;
             idMap[d.id] = mid;
-            const name = mmClean((d.label || '').split('\n')[0]);
+
+            // Reproduce the full on-screen label (name + members / detail
+            // lines) as multi-line text via <br/>, which Lucid's Mermaid
+            // import renders.
+            const labelLines = (d.label || '').split('\n')
+                .map(l => mmClean(l))
+                .filter(l => l && l !== '─────────────');
+            const name = labelLines[0] || '';
+            const body = labelLines.slice(1);
             const typeLbl = TYPE_LABEL[d.type] || '';
-            const entryTag = entryIdSet.has(d.id) ? '📍 ' : '';
+            const entryTag = entryIdSet.has(d.id) ? '★ ' : '';
+
+            const parts = [entryTag + name];
+            body.forEach(l => parts.push(l));
+            if (d.sublabel) parts.push(mmClean(d.sublabel));
+            if (typeLbl) parts.push('· ' + typeLbl);
+
             const wrap = MERMAID_SHAPE[d.type] || MERMAID_SHAPE.unknown;
-            const text = `${entryTag}${name}${typeLbl ? ' — ' + typeLbl : ''}`;
-            lines.push(`  ${mid}${wrap[0]}${text}${wrap[1]}`);
+            lines.push(`  ${mid}${wrap[0]}${parts.join('<br/>')}${wrap[1]}`);
         });
         graphData.edges.forEach(e => {
             const s = idMap[e.data.source];
             const t = idMap[e.data.target];
             if (!s || !t) return;
             const lbl = mmClean(e.data.label);
-            lines.push(lbl ? `  ${s} -->|${lbl}| ${t}` : `  ${s} --> ${t}`);
+            lines.push(lbl ? `  ${s} -->|"${lbl}"| ${t}` : `  ${s} --> ${t}`);
         });
         return lines.join('\n');
     }
@@ -828,7 +841,7 @@
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(mermaid)
-                .then(() => flash('✓ Copied — paste in Lucid'))
+                .then(() => flash('✓ Copied — Lucid: Insert → Advanced → Mermaid'))
                 .catch(() => downloadBlob(mermaid, 'call-flow-' + flowSlug() + '.mmd', 'text/plain'));
         } else {
             downloadBlob(mermaid, 'call-flow-' + flowSlug() + '.mmd', 'text/plain');
