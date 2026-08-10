@@ -47,8 +47,11 @@
                 <span id="graph-stats" class="hidden text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-3 py-1"></span>
             </div>
             <div class="flex items-center gap-2 print:hidden">
-                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Export a Mermaid diagram you can paste/import into Lucidchart">
-                    ⬇ Lucidchart (Mermaid)
+                <button id="btn-export-drawio" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Download a .drawio file — drag it into Lucidchart's 'Import documents' dialog">
+                    ⬇ Lucidchart (.drawio)
+                </button>
+                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Copy Mermaid text — paste into Lucidchart via Insert → Mermaid">
+                    ⧉ Copy Mermaid
                 </button>
                 <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold">
                     🖨 Print / Save PDF
@@ -161,6 +164,7 @@
     const loadingEl     = document.getElementById('loading-indicator');
     const printBtn      = document.getElementById('btn-print');
     const mermaidBtn    = document.getElementById('btn-export-mermaid');
+    const drawioBtn     = document.getElementById('btn-export-drawio');
     const toggleDesc    = document.getElementById('toggle-descriptors');
     const chipsWrap     = document.getElementById('entry-chips');
     const clearBtn      = document.getElementById('clear-entries');
@@ -477,6 +481,7 @@
         zoomControls.style.display = 'none';
         printBtn.classList.add('hidden');
         mermaidBtn.classList.add('hidden');
+        drawioBtn.classList.add('hidden');
         clearPanels();
 
         const count = selectedEntries.length;
@@ -748,6 +753,7 @@
         zoomControls.style.display = 'flex';
         printBtn.classList.remove('hidden');
         mermaidBtn.classList.remove('hidden');
+        drawioBtn.classList.remove('hidden');
         layoutBtn.classList.remove('hidden');
         graphSearch.classList.remove('hidden');
 
@@ -811,24 +817,97 @@
         });
         return lines.join('\n');
     }
+    // Mermaid → copy to clipboard (paste into Lucidchart via Insert → Mermaid)
     mermaidBtn.addEventListener('click', () => {
         if (!currentGraphData) return;
         const mermaid = buildMermaid(currentGraphData);
-        // Download .mmd
-        const blob = new Blob([mermaid], { type: 'text/plain' });
+        const flash = (msg) => {
+            const orig = mermaidBtn.textContent;
+            mermaidBtn.textContent = msg;
+            setTimeout(() => { mermaidBtn.textContent = orig; }, 2200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(mermaid)
+                .then(() => flash('✓ Copied — paste in Lucid'))
+                .catch(() => downloadBlob(mermaid, 'call-flow-' + flowSlug() + '.mmd', 'text/plain'));
+        } else {
+            downloadBlob(mermaid, 'call-flow-' + flowSlug() + '.mmd', 'text/plain');
+            flash('✓ Downloaded .mmd');
+        }
+    });
+
+    // ── Draw.io export (Lucidchart 'Import documents' accepts .drawio) ─
+    function xmlEsc(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            .replace(/[\r\n]+/g, ' ');
+    }
+    function buildDrawio() {
+        // Prefer the live cytoscape layout so positions match what's on screen.
+        const cells = [
+            '<mxCell id="0"/>',
+            '<mxCell id="1" parent="0"/>',
+        ];
+        const useCy = !!cy;
+        if (useCy) {
+            cy.nodes().forEach(n => {
+                const d = n.data();
+                if (d.type === 'descriptor') return;
+                const c = COLOURS[d.type] || COLOURS.unknown;
+                const w = Math.max(120, Math.round(n.width()));
+                const h = Math.max(40, Math.round(n.height()));
+                const p = n.position();
+                const x = Math.round(p.x - w / 2);
+                const y = Math.round(p.y - h / 2);
+                const entryTag = entryIdSet.has(d.id) ? '📍 ' : '';
+                const name = (d.label || '').split('\n')[0];
+                const typeLbl = TYPE_LABEL[d.type] || '';
+                const val = entryTag + name + (typeLbl ? '\n(' + typeLbl + ')' : '');
+                const stroke = entryIdSet.has(d.id) ? '#facc15' : c.border;
+                const sw = entryIdSet.has(d.id) ? 4 : 2;
+                const style = `rounded=1;whiteSpace=wrap;html=1;fillColor=${c.bg};` +
+                              `strokeColor=${stroke};strokeWidth=${sw};fontColor=#ffffff;` +
+                              `fontStyle=1;fontSize=12;`;
+                cells.push(
+                    `<mxCell id="${xmlEsc(d.id)}" value="${xmlEsc(val)}" ` +
+                    `style="${style}" vertex="1" parent="1">` +
+                    `<mxGeometry x="${x}" y="${y}" width="${w}" height="${h}" as="geometry"/></mxCell>`
+                );
+            });
+            cy.edges().forEach((e, i) => {
+                const d = e.data();
+                if (d.type === 'descriptor-edge') return;
+                const style = 'edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;' +
+                              'endArrow=block;strokeColor=#94a3b8;fontSize=10;';
+                cells.push(
+                    `<mxCell id="edge_${i}" value="${xmlEsc(d.label)}" style="${style}" ` +
+                    `edge="1" parent="1" source="${xmlEsc(d.source)}" target="${xmlEsc(d.target)}">` +
+                    `<mxGeometry relative="1" as="geometry"/></mxCell>`
+                );
+            });
+        }
+        const model = `<mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" ` +
+                      `guides="1" tooltips="1" connect="1" arrows="1" fold="1" ` +
+                      `page="1" pageScale="1" pageWidth="1600" pageHeight="1200" ` +
+                      `math="0" shadow="0"><root>${cells.join('')}</root></mxGraphModel>`;
+        return `<mxfile host="app.diagrams.net" type="device">` +
+               `<diagram id="callflow" name="Call Flow">${model}</diagram></mxfile>`;
+    }
+    function downloadBlob(text, filename, mime) {
+        const blob = new Blob([text], { type: mime || 'application/octet-stream' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'call-flow-' + flowSlug() + '.mmd';
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(a.href);
-        // Copy to clipboard for direct paste into Lucidchart's Mermaid import
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(mermaid).then(() => {
-                const orig = mermaidBtn.textContent;
-                mermaidBtn.textContent = '✓ Copied + downloaded';
-                setTimeout(() => { mermaidBtn.textContent = orig; }, 2200);
-            }).catch(() => {});
-        }
+    }
+    drawioBtn.addEventListener('click', () => {
+        if (!currentGraphData) return;
+        downloadBlob(buildDrawio(), 'call-flow-' + flowSlug() + '.drawio', 'application/xml');
+        const orig = drawioBtn.textContent;
+        drawioBtn.textContent = '✓ Downloaded .drawio';
+        setTimeout(() => { drawioBtn.textContent = orig; }, 2200);
     });
 
     // ── API log ──────────────────────────────────────────────────────
