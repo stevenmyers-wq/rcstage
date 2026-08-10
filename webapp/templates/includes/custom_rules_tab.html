@@ -79,6 +79,16 @@
 
     </div>
 
+    <div id="cr-progress-container" class="card hidden !py-4 mt-8">
+        <div class="flex justify-between text-sm mb-2 text-slate-600 dark:text-slate-300">
+            <span id="cr-progress-text">Working…</span>
+            <span id="cr-progress-percent" class="font-semibold">0%</span>
+        </div>
+        <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+            <div id="cr-progress-bar" class="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+        </div>
+    </div>
+
     <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg mt-8 !p-0 overflow-hidden border-slate-700">
         <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
             <span class="font-mono font-bold text-sm">SYSTEM LOGS</span>
@@ -102,6 +112,57 @@
         entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
         box.appendChild(entry);
         box.scrollTop = box.scrollHeight;
+    }
+
+    // --- Progress bar helpers ---
+    const crProgress = {
+        container: document.getElementById('cr-progress-container'),
+        bar: document.getElementById('cr-progress-bar'),
+        text: document.getElementById('cr-progress-text'),
+        percent: document.getElementById('cr-progress-percent'),
+    };
+
+    function crProgressShow(label) {
+        crProgress.container.classList.remove('hidden');
+        crProgress.bar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300 ease-out';
+        crProgress.bar.style.width = '0%';
+        crProgress.text.innerText = label || 'Working…';
+        crProgress.percent.innerText = '0%';
+    }
+
+    function crProgressUpdate(current, total, label) {
+        const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+        crProgress.bar.style.width = `${pct}%`;
+        crProgress.percent.innerText = `${pct}%`;
+        crProgress.text.innerText = label || `Processing ${current}/${total}…`;
+    }
+
+    function crProgressFinish(ok, label) {
+        crProgress.bar.style.width = '100%';
+        crProgress.percent.innerText = '100%';
+        crProgress.bar.className = `${ok ? 'bg-emerald-500' : 'bg-rose-500'} h-full rounded-full transition-all duration-300 ease-out`;
+        if (label) crProgress.text.innerText = label;
+        setTimeout(() => crProgress.container.classList.add('hidden'), 1500);
+    }
+
+    // Reads an NDJSON stream line-by-line and dispatches each JSON event to onEvent.
+    async function crConsumeStream(res, onEvent) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let nl;
+            while ((nl = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.slice(0, nl).trim();
+                buffer = buffer.slice(nl + 1);
+                if (line) onEvent(JSON.parse(line));
+            }
+        }
+        const tail = buffer.trim();
+        if (tail) onEvent(JSON.parse(tail));
     }
 
     async function initCrFilters() {
@@ -154,26 +215,49 @@
         const qs = params.toString();
 
         logRule("Starting Audit... this may take a while depending on account size.");
+        crProgressShow('Loading account directory…');
 
         try {
             const res = await fetch('/api/custom_rules/audit' + (qs ? `?${qs}` : ''));
             if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || "Audit failed");
+                let msg = "Audit failed";
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
             }
-            
-            // Trigger Download
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Rules_Audit_${new Date().toISOString().slice(0,10)}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            
-            logRule("Audit Complete! Downloading file...", "success");
+
+            let auditError = null;
+            await crConsumeStream(res, (evt) => {
+                if (evt.type === 'status') {
+                    crProgress.text.innerText = evt.message;
+                } else if (evt.type === 'start') {
+                    crProgressUpdate(0, evt.total, `Scanning 0/${evt.total} extensions…`);
+                    logRule(`Scanning ${evt.total} extension(s) for custom rules...`);
+                } else if (evt.type === 'progress') {
+                    crProgressUpdate(evt.current, evt.total, `Scanning ${evt.current}/${evt.total} extensions…`);
+                } else if (evt.type === 'error') {
+                    auditError = evt.message;
+                } else if (evt.type === 'complete') {
+                    // Decode the base64 workbook and trigger the download.
+                    const bin = atob(evt.file_b64);
+                    const bytes = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = evt.filename || `Rules_Audit_${new Date().toISOString().slice(0,10)}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    crProgressFinish(true, `Done — ${evt.rows} row(s)`);
+                    logRule(`Audit Complete! ${evt.rows} row(s). Downloading file...`, "success");
+                }
+            });
+
+            if (auditError) throw new Error(auditError);
         } catch (e) {
+            crProgressFinish(false, 'Failed');
             logRule(`Audit Failed: ${e.message}`, "error");
         } finally {
             btn.disabled = false;
@@ -206,21 +290,41 @@
 
         logRule(`Uploading ${file.name}...`);
         if (rulesStopBtn) { rulesStopBtn.classList.remove('hidden'); rulesStopBtn.disabled = false; rulesStopBtn.textContent = '■ Stop'; }
+        crProgressShow('Uploading file…');
 
         try {
             const res = await fetch('/api/update_rules', { method: 'POST', body: formData });
-            const data = await res.json();
 
-            if (data.logs) {
-                data.logs.forEach(l => {
-                    const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
-                    logRule(l, type);
-                });
-            } else if (data.error) {
-                logRule(data.error, 'error');
+            // A non-streaming error (bad file, no file) still comes back as JSON.
+            if (!res.ok || (res.headers.get('content-type') || '').includes('application/json')) {
+                const data = await res.json();
+                if (data.error) logRule(data.error, 'error');
+                crProgressFinish(false, 'Failed');
+                return;
+            }
+
+            let uploadError = null;
+            await crConsumeStream(res, (evt) => {
+                if (evt.type === 'start') {
+                    crProgressUpdate(0, evt.total, `Processing 0/${evt.total} rows…`);
+                    logRule(`Processing ${evt.total} row(s)...`);
+                } else if (evt.type === 'progress') {
+                    crProgressUpdate(evt.current, evt.total, `Processing ${evt.current}/${evt.total} rows…`);
+                    if (evt.message) logRule(evt.message, evt.level || 'info');
+                } else if (evt.type === 'error') {
+                    uploadError = evt.message;
+                } else if (evt.type === 'complete') {
+                    crProgressFinish(true, evt.cancelled ? 'Stopped' : 'Done');
+                }
+            });
+
+            if (uploadError) {
+                logRule(uploadError, 'error');
+                crProgressFinish(false, 'Failed');
             }
         } catch (e) {
             logRule(`Upload Failed: ${e.message}`, 'error');
+            crProgressFinish(false, 'Failed');
         } finally {
             rulesTaskId = null;
             if (rulesStopBtn) rulesStopBtn.classList.add('hidden');

@@ -365,8 +365,35 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
 
 # --- 4. AUDIT PARSER ---
 
-def parse_rule_to_row(ext, rule, is_v2=False):
-    """Converts a RingCentral Rule (V1 or V2) into a flat Excel row."""
+def _resolve_ext_display(ext_obj, ext_lookup):
+    """Turns a rule's target extension object into a readable extension number.
+
+    Answering-rule transfer/voicemail targets usually carry only an internal
+    `id` (and sometimes a `uri`) — not the extension number — so the audit
+    columns came back blank. Resolve the id against the account directory to
+    recover the extension number. We deliberately return the bare number (no
+    name) so the audit round-trips cleanly back through the Edit upload, whose
+    parser looks the value up by extension number. Falls back to the raw id if
+    the target isn't in the directory (e.g. an external/cross-account id)."""
+    if not ext_obj:
+        return ''
+    num = ext_obj.get('extensionNumber')
+    if num:
+        return str(num)
+    eid = ext_obj.get('id')
+    if eid is not None and ext_lookup:
+        rec = ext_lookup.get(str(eid))
+        if rec and rec.get('extensionNumber'):
+            return str(rec.get('extensionNumber'))
+    return str(eid) if eid is not None else ''
+
+
+def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
+    """Converts a RingCentral Rule (V1 or V2) into a flat Excel row.
+
+    `ext_lookup` maps an extension id (str) -> the extension record, so transfer
+    and voicemail targets that only expose an internal id can be shown as a
+    readable extension number."""
     row = {
         'Ext Number': ext.get('extensionNumber'),
         'Ext Name': ext.get('name'),
@@ -441,10 +468,10 @@ def parse_rule_to_row(ext, rule, is_v2=False):
                 if main_target: row['External Number'] = main_target.get('destination', {}).get('phoneNumber')
             elif target_type == 'ExtensionTerminatingTarget':
                 row['Action'] = 'Transfer to Extension'
-                if main_target: row['Transfer Extension'] = main_target.get('extension', {}).get('id')
+                if main_target: row['Transfer Extension'] = _resolve_ext_display(main_target.get('extension', {}), ext_lookup)
             elif target_type == 'VoiceMailTerminatingTarget':
                 row['Action'] = 'Send to Voicemail'
-                if main_target: row['Voicemail Recipient'] = main_target.get('mailbox', {}).get('id')
+                if main_target: row['Voicemail Recipient'] = _resolve_ext_display(main_target.get('mailbox', {}), ext_lookup)
             elif target_type == 'PlayAnnouncementTerminatingTarget':
                 row['Action'] = 'Play Message'
     else:
@@ -454,10 +481,10 @@ def parse_rule_to_row(ext, rule, is_v2=False):
             row['External Number'] = rule.get('unconditionalForwarding', {}).get('phoneNumber')
         elif action_type == 'TransferToExtension':
             row['Action'] = 'Transfer to Extension'
-            row['Transfer Extension'] = rule.get('transfer', {}).get('extension', {}).get('extensionNumber')
+            row['Transfer Extension'] = _resolve_ext_display(rule.get('transfer', {}).get('extension', {}), ext_lookup)
         elif action_type == 'TakeMessagesOnly':
             row['Action'] = 'Send to Voicemail'
-            row['Voicemail Recipient'] = rule.get('voicemail', {}).get('recipient', {}).get('id')
+            row['Voicemail Recipient'] = _resolve_ext_display(rule.get('voicemail', {}).get('recipient', {}), ext_lookup)
         elif action_type == 'PlayAnnouncementOnly':
             row['Action'] = 'Play Message'
 
