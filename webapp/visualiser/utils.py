@@ -25,6 +25,8 @@ class CallFlowTracer:
         self.node_counter = 0
         self.ext_num_map = {}
         self.visited = set()
+        self.phone_map = None          # ext_id -> [{"number", "usage"}]
+        self.entry_node_ids = []       # node ids that are graph entry points
 
     # ------------------------------------------------------------------
     # API helpers
@@ -170,6 +172,90 @@ class CallFlowTracer:
         result = self.parse_schedule(resp.get("schedule") if resp else None)
         self.schedule_cache[ext_id] = result
         return result
+
+    # ------------------------------------------------------------------
+    # Direct-number enrichment
+    # ------------------------------------------------------------------
+
+    def _load_phone_map(self):
+        """Lazily fetch the account phone-number inventory once and index it
+        by the extension id it's assigned to. Best-effort — a failure just
+        means nodes render without their direct numbers."""
+        if self.phone_map is not None:
+            return self.phone_map
+        self.phone_map = {}
+        page = 1
+        try:
+            while page <= 40:  # safety cap (~10k numbers)
+                resp = self.api(
+                    f"/restapi/v1.0/account/~/phone-number?perPage=250&page={page}"
+                )
+                if not resp or not resp.get("records"):
+                    break
+                for p in resp["records"]:
+                    ext_id = str((p.get("extension") or {}).get("id", "") or "")
+                    if not ext_id or ext_id == "None":
+                        continue
+                    self.phone_map.setdefault(ext_id, []).append({
+                        "number": p.get("phoneNumber", ""),
+                        "usage": p.get("usageType", ""),
+                    })
+                nav = resp.get("navigation", {}) or {}
+                if nav.get("nextPage"):
+                    page += 1
+                else:
+                    break
+        except Exception:
+            pass
+        return self.phone_map
+
+    def _direct_numbers(self, ext_id, limit=4):
+        pm = self._load_phone_map()
+        entries = pm.get(str(ext_id), [])
+        nums = [e["number"] for e in entries if e.get("number")]
+        if not nums:
+            return ""
+        shown = nums[:limit]
+        extra = len(nums) - len(shown)
+        line = ", ".join(shown)
+        if extra > 0:
+            line += f" +{extra} more"
+        return line
+
+    @staticmethod
+    def _fmt_secs(val):
+        if val is None or val == "":
+            return None
+        try:
+            s = int(val)
+        except (TypeError, ValueError):
+            return str(val)
+        if s < 60:
+            return f"{s}s"
+        m, sec = divmod(s, 60)
+        return f"{m}m {sec}s" if sec else f"{m}m"
+
+    _RING_TYPE_MAP = {
+        "FixedOrder": "Sequential (fixed order)",
+        "Rotating": "Rotating",
+        "Simultaneous": "Simultaneous",
+    }
+
+    _ACTION_LABELS = {
+        "TakeMessagesOnly": "Send to Voicemail",
+        "Voicemail": "Send to Voicemail",
+        "ForwardToExtension": "Forward to Extension",
+        "TransferToExtension": "Transfer to Extension",
+        "TransferToQueue": "Transfer to Queue",
+        "UnconditionalForwarding": "Unconditional Forward",
+        "Disconnect": "Disconnect",
+        "PlayAnnouncementOnly": "Play Announcement",
+    }
+
+    def _human_action(self, action):
+        if not action:
+            return None
+        return self._ACTION_LABELS.get(action, action)
 
     # ------------------------------------------------------------------
     # Graph helpers
@@ -492,10 +578,22 @@ class CallFlowTracer:
             )
             wait_time = None
             max_callers = None
+            ring_type = None
+            agent_ring = None
+            wrap_up = None
+            full_action = None
+            expire_action = None
             if bh_rule:
                 q_obj = bh_rule.get("queue") or {}
                 wait_time = q_obj.get("holdTime")
                 max_callers = q_obj.get("maxCallers")
+                ring_type = self._RING_TYPE_MAP.get(
+                    q_obj.get("transferMode"), q_obj.get("transferMode")
+                )
+                agent_ring = q_obj.get("agentTimeout")
+                wrap_up = q_obj.get("wrapUpTime")
+                full_action = self._human_action(q_obj.get("maxCallersAction"))
+                expire_action = self._human_action(q_obj.get("holdTimeExpirationAction"))
 
             overflow_targets = self._resolve_queue_overflow(ext_id, bh_rule, wait_time)
 
@@ -521,11 +619,43 @@ class CallFlowTracer:
                 member_label += "\n─────────────"
                 member_label += "\n↪ " + "\n↪ ".join(type2_overflow_names)
 
-            tooltip_parts.append(f"Ext {ext_num} · Call Queue")
+            q_status = self.clean(info.get("status", ""))
+            q_email = self.clean((info.get("contact") or {}).get("email", ""))
+            direct_nums = self._direct_numbers(ext_id)
+
+            # ── Overview section (key: value rows) ──
+            overview = ["Overview"]
+            overview.append(f"Extension: {ext_num}")
+            overview.append("Type: Call Queue")
+            if q_status:
+                overview.append(f"Status: {q_status}")
+            if ring_type:
+                overview.append(f"Ring type: {ring_type}")
+            if member_count:
+                overview.append(f"Members: {member_count}")
+            if direct_nums:
+                overview.append(f"Direct numbers: {direct_nums}")
+            if q_email:
+                overview.append(f"Email: {q_email}")
+            tooltip_parts.append("\n".join(overview))
+
+            # ── Routing behaviour section ──
+            routing = ["Routing"]
+            if agent_ring is not None:
+                routing.append(f"Agent ring time: {self._fmt_secs(agent_ring)}")
             if wait_time is not None:
-                tooltip_parts.append(f"Max wait: {wait_time}s")
+                routing.append(f"Max wait in queue: {self._fmt_secs(wait_time)}")
+            if wrap_up is not None:
+                routing.append(f"Wrap-up time: {self._fmt_secs(wrap_up)}")
             if max_callers is not None:
-                tooltip_parts.append(f"Max callers: {max_callers}")
+                routing.append(f"Max callers: {max_callers}")
+            if full_action:
+                routing.append(f"When full: {full_action}")
+            if expire_action:
+                routing.append(f"When wait exceeded: {expire_action}")
+            if len(routing) > 1:
+                tooltip_parts.append("\n".join(routing))
+
             if member_names:
                 tooltip_parts.append("Members:\n" + "\n".join(member_names))
             if type2_overflow_names:
@@ -581,8 +711,25 @@ class CallFlowTracer:
                 if default_t:
                     key_label += "\n[Timeout] →"
 
+            ivr_overview = ["Overview", f"Extension: {ext_num}", "Type: IVR Menu"]
+            if actions:
+                ivr_overview.append(f"Key options: {len(actions)}")
+            direct_nums = self._direct_numbers(ext_id)
+            if direct_nums:
+                ivr_overview.append(f"Direct numbers: {direct_nums}")
+            prompt_mode = None
+            if ivr and ivr.get("prompt"):
+                pr = ivr["prompt"]
+                prompt_mode = pr.get("mode") or ("Audio" if pr.get("audio") else None)
+            if prompt_mode:
+                ivr_overview.append(f"Greeting: {prompt_mode}")
+            ivr_tooltip_parts = ["\n".join(ivr_overview)]
+            if key_lines:
+                ivr_tooltip_parts.append("Key Press Options:\n" + "\n".join(key_lines))
+
             self.add_node(nid, name + key_label, node_type,
-                          sublabel=f"IVR · Ext {ext_num}", tooltip="")
+                          sublabel=f"IVR · Ext {ext_num}",
+                          tooltip="\n\n".join(ivr_tooltip_parts))
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label)
 
@@ -596,9 +743,17 @@ class CallFlowTracer:
         # ---------------------------------------------------------------
         elif e_type == "AnnouncementOnly":
             sched = self.get_biz_hours(ext_id)
+            ar_overview = ["Overview", f"Extension: {ext_num}",
+                           "Type: Auto Receptionist"]
+            direct_nums = self._direct_numbers(ext_id)
+            if direct_nums:
+                ar_overview.append(f"Direct numbers: {direct_nums}")
+            ar_parts = ["\n".join(ar_overview)]
+            if sched and sched != "24/7":
+                ar_parts.append(f"Hours:\n{sched}")
             self.add_node(nid, name, "autoreceptionist",
                           sublabel=f"Auto Receptionist · Ext {ext_num}",
-                          tooltip=f"Hours:\n{sched}" if sched != "24/7" else "")
+                          tooltip="\n\n".join(ar_parts))
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label)
             self._trace_rules(ext_id, nid, new_history,
@@ -608,7 +763,16 @@ class CallFlowTracer:
         # SITE
         # ---------------------------------------------------------------
         elif e_type == "Site":
-            self.add_node(nid, name, "site", sublabel=f"Site · Ext {ext_num}")
+            sched = self.get_biz_hours(ext_id)
+            site_overview = ["Overview", f"Extension: {ext_num}", "Type: Site"]
+            op_ext = (info.get("operator") or {}).get("extensionNumber")
+            if op_ext:
+                site_overview.append(f"Operator ext: {op_ext}")
+            site_parts = ["\n".join(site_overview)]
+            if sched and sched != "24/7":
+                site_parts.append(f"Hours:\n{sched}")
+            self.add_node(nid, name, "site", sublabel=f"Site · Ext {ext_num}",
+                          tooltip="\n\n".join(site_parts))
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label)
             self._trace_rules(ext_id, nid, new_history,
@@ -618,7 +782,27 @@ class CallFlowTracer:
         # USER / everything else
         # ---------------------------------------------------------------
         else:
-            self.add_node(nid, name, node_type, sublabel=f"Ext {ext_num}")
+            u_overview = ["Overview", f"Extension: {ext_num}",
+                          f"Type: {e_type}"]
+            u_status = self.clean(info.get("status", ""))
+            if u_status:
+                u_overview.append(f"Status: {u_status}")
+            contact = info.get("contact") or {}
+            u_email = self.clean(contact.get("email", ""))
+            if u_email:
+                u_overview.append(f"Email: {u_email}")
+            dept = self.clean(contact.get("department", ""))
+            if dept:
+                u_overview.append(f"Department: {dept}")
+            site_obj = info.get("site") or {}
+            site_name = self.clean(site_obj.get("name", ""))
+            if site_name:
+                u_overview.append(f"Site: {site_name}")
+            direct_nums = self._direct_numbers(ext_id)
+            if direct_nums:
+                u_overview.append(f"Direct numbers: {direct_nums}")
+            self.add_node(nid, name, node_type, sublabel=f"Ext {ext_num}",
+                          tooltip="\n".join(u_overview))
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label)
             self._trace_rules(ext_id, nid, new_history,
@@ -697,7 +881,11 @@ class CallFlowTracer:
     # Entry point
     # ------------------------------------------------------------------
 
-    def generate(self, start_ext_id):
+    def _trace_entry(self, start_ext_id):
+        """Trace a single entry point onto the shared graph and return the id
+        of the entry node created (for highlighting). Shared downstream nodes
+        are automatically merged via node_map, so tracing several entry points
+        on one tracer instance produces a single combined diagram."""
         start_ext_id = str(start_ext_id)
 
         # Company number — route via account-level answering rules
@@ -706,10 +894,11 @@ class CallFlowTracer:
             phone_nid = self._next_id()
             self.add_node(phone_nid, number, "phone",
                           sublabel="Company Number",
-                          tooltip="Routes via account-level answering rules")
+                          tooltip="Overview\nType: Company Number\n"
+                                  "Routing: Account-level answering rules")
+            self.entry_node_ids.append(phone_nid)
             self._trace_account_rules(phone_nid, called_number=number)
-            return ({"nodes": self.nodes, "edges": self.edges},
-                    self.request_logs)
+            return phone_nid
 
         # Direct number — look up assigned extension and trace
         if start_ext_id.startswith("ext_"):
@@ -724,19 +913,57 @@ class CallFlowTracer:
                         phone_nid = self._next_id()
                         self.add_node(phone_nid, number, "phone",
                                       sublabel="Inbound Number")
+                        self.entry_node_ids.append(phone_nid)
                         self.trace(str(assigned["id"]), phone_nid, "Routes to")
-                        return ({"nodes": self.nodes, "edges": self.edges},
-                                self.request_logs)
+                        return phone_nid
 
             nid = self._next_id()
             self.add_node(nid, number, "phone", sublabel="Unassigned / Not Found")
-            return {"nodes": self.nodes, "edges": self.edges}, self.request_logs
+            self.entry_node_ids.append(nid)
+            return nid
 
         # Normal extension trace
-        self.trace(start_ext_id)
-        return {"nodes": self.nodes, "edges": self.edges}, self.request_logs
+        nid = self.trace(start_ext_id)
+        if nid:
+            self.entry_node_ids.append(nid)
+        return nid
+
+    def generate(self, start_ext_id):
+        self._trace_entry(start_ext_id)
+        return (
+            {"nodes": self.nodes, "edges": self.edges,
+             "entry_ids": self.entry_node_ids},
+            self.request_logs,
+        )
+
+    def generate_many(self, start_ext_ids):
+        """Trace several entry points into one merged graph."""
+        for sid in start_ext_ids:
+            if sid is None or str(sid).strip() == "":
+                continue
+            try:
+                self._trace_entry(str(sid).strip())
+            except Exception as e:
+                self.request_logs.append({
+                    "method": "GET",
+                    "endpoint": f"trace-entry:{sid}",
+                    "status": "EXCEPTION",
+                    "code": "0",
+                    "duration": "0ms",
+                    "detail": str(e),
+                })
+        return (
+            {"nodes": self.nodes, "edges": self.edges,
+             "entry_ids": self.entry_node_ids},
+            self.request_logs,
+        )
 
 
 def generate_graph_flow(start_ext_id):
     tracer = CallFlowTracer()
     return tracer.generate(start_ext_id)
+
+
+def generate_graph_flow_multi(start_ext_ids):
+    tracer = CallFlowTracer()
+    return tracer.generate_many(start_ext_ids)

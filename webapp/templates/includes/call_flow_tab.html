@@ -7,12 +7,12 @@
 <div class="space-y-8 animate-fade-in w-full">
     <div class="mb-4">
         <h2 class="text-display mb-2">Call Flow Visualiser</h2>
-        <p class="text-subheading">Enter a phone number to trace and visualize its complete routing path natively.</p>
+        <p class="text-subheading">Trace one or many entry points and visualise their complete routing paths on a single, combined diagram.</p>
     </div>
 
     <div class="card w-full z-20">
-        <h4 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">1. Select Entry Point</h4>
-        <div class="flex flex-col md:flex-row gap-4 items-center">
+        <h4 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">1. Select Entry Point(s)</h4>
+        <div class="flex flex-col md:flex-row gap-4 items-start">
             <div class="relative w-full flex-1 input-wrapper">
                 <input type="text" id="visualiser-search-input"
                     class="input-field"
@@ -22,9 +22,19 @@
                 </div>
             </div>
             <button type="button" id="visualize-button" disabled class="btn-primary w-full md:w-auto px-10 !py-3.5">
-                Visualize
+                Visualise
             </button>
         </div>
+
+        <!-- Multi-select chips -->
+        <div id="entry-chips" class="hidden flex flex-wrap gap-2 mt-4"></div>
+        <div class="flex items-center gap-3 mt-3">
+            <p id="entry-hint" class="text-xs font-medium text-slate-500 dark:text-slate-400">
+                Add multiple entry points to overlay their flows — shared queues, IVRs &amp; users are merged automatically.
+            </p>
+            <button type="button" id="clear-entries" class="hidden text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline ml-auto">Clear all</button>
+        </div>
+
         <p id="loading-indicator" class="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-3 flex items-center gap-2">
             <span class="spinner w-4 h-4 border-blue-600 dark:border-blue-400"></span> Loading account data…
         </p>
@@ -32,10 +42,18 @@
 
     <div class="card !p-0 overflow-hidden w-full flex flex-col border-0 shadow-lg z-10">
         <div class="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h4 class="text-heading text-lg">2. Call Flow Diagram</h4>
-            <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold print:hidden">
-                🖨 Print / Save PDF
-            </button>
+            <div class="flex items-center gap-3 flex-wrap">
+                <h4 class="text-heading text-lg">2. Call Flow Diagram</h4>
+                <span id="graph-stats" class="hidden text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 rounded-full px-3 py-1"></span>
+            </div>
+            <div class="flex items-center gap-2 print:hidden">
+                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Export a Mermaid diagram you can paste/import into Lucidchart">
+                    ⬇ Lucidchart (Mermaid)
+                </button>
+                <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold">
+                    🖨 Print / Save PDF
+                </button>
+            </div>
         </div>
 
         <div class="flex flex-wrap gap-x-5 gap-y-3 p-5 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 print:hidden items-center">
@@ -46,11 +64,21 @@
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-emerald-500"></div>User / Agent</div>
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-slate-500"></div>Voicemail</div>
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded shadow-sm bg-rose-500"></div>External Transfer</div>
-            
-            <div class="ml-auto flex items-center gap-4">
-                <div class="text-slate-400 dark:text-slate-500 normal-case font-medium tracking-normal italic" id="interaction-hint">Hover node to preview · Click to pin</div>
-                
-                <!-- NEW TOGGLE -->
+
+            <div class="ml-auto flex items-center gap-4 flex-wrap">
+                <!-- In-graph search (scalability aid) -->
+                <div class="relative print:hidden">
+                    <input type="text" id="graph-search" placeholder="Find node in diagram…"
+                        class="hidden text-xs font-medium normal-case tracking-normal rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+
+                <!-- Layout direction toggle -->
+                <button id="btn-layout-dir" class="hidden text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 print:hidden" title="Toggle vertical / horizontal layout">
+                    ⇅ Vertical
+                </button>
+
+                <div class="text-slate-400 dark:text-slate-500 normal-case font-medium tracking-normal italic" id="interaction-hint">Hover to preview &amp; highlight · Click to pin</div>
+
                 <label class="relative inline-flex items-center cursor-pointer print:hidden">
                     <input type="checkbox" id="toggle-descriptors" class="sr-only peer">
                     <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
@@ -61,7 +89,7 @@
 
         <div id="diagram-wrapper" class="relative w-full bg-slate-50/50 dark:bg-slate-900/30" style="min-height: 700px;">
             <div id="call-flow-diagram" class="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium italic">
-                <span>Select an entry point above and click Visualize.</span>
+                <span>Select one or more entry points above and click Visualise.</span>
             </div>
 
             <div id="zoom-controls" class="absolute bottom-5 right-5 z-10 bg-white/90 dark:bg-slate-800/90 p-2 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex gap-1.5 hidden backdrop-blur-md print:hidden">
@@ -74,7 +102,7 @@
         </div>
 
         <div class="p-4 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-800 dark:text-blue-300 border-t border-blue-100 dark:border-blue-800/50 print:hidden font-medium">
-            💡 <strong>Hover</strong> a node to preview details · <strong>Click</strong> to pin a detail panel · <strong>Drag</strong> pinned panels to reposition · Pinned panels appear in print
+            💡 <strong>Hover</strong> a node to preview details &amp; highlight its path · <strong>Click</strong> to pin a card · <strong>Drag</strong> pinned cards · Pinned cards appear in print
         </div>
     </div>
 
@@ -106,13 +134,22 @@
         unknown:          { bg: '#94a3b8', border: '#475569' },
     };
 
-    let selectedId   = null;
+    const TYPE_LABEL = {
+        phone: 'Phone Number', autoreceptionist: 'Auto Receptionist', ivr: 'IVR Menu',
+        queue: 'Call Queue', user: 'User / Agent', voicemail: 'Voicemail',
+        external: 'External Transfer', site: 'Site', unknown: 'Unknown',
+    };
+
+    let selectedEntries = [];       // [{id, text}]
     let searchTimer  = null;
     let cy           = null;
     let allResults   = [];
-    let hoverPreview = null; 
-    let pinnedPanels = [];   
-    let currentGraphData = null; // NEW: Store data for instant re-rendering
+    let hoverPreview = null;
+    let pinnedPanels = [];
+    let currentGraphData = null;
+    let entryIdSet   = new Set();
+    let focusNode    = null;
+    let layoutDir    = 'TB';
 
     const searchInput   = document.getElementById('visualiser-search-input');
     const resultsList   = document.getElementById('search-results-container');
@@ -123,7 +160,13 @@
     const logDiv        = document.getElementById('api-log-container');
     const loadingEl     = document.getElementById('loading-indicator');
     const printBtn      = document.getElementById('btn-print');
-    const toggleDesc    = document.getElementById('toggle-descriptors'); // NEW
+    const mermaidBtn    = document.getElementById('btn-export-mermaid');
+    const toggleDesc    = document.getElementById('toggle-descriptors');
+    const chipsWrap     = document.getElementById('entry-chips');
+    const clearBtn      = document.getElementById('clear-entries');
+    const statsEl       = document.getElementById('graph-stats');
+    const layoutBtn     = document.getElementById('btn-layout-dir');
+    const graphSearch   = document.getElementById('graph-search');
 
     // ── Load extensions ──────────────────────────────────────────────
     fetch('/api/rc/visualiser/search')
@@ -148,11 +191,11 @@
     searchInput.addEventListener('input', () => {
         clearTimeout(searchTimer);
         const q = searchInput.value.toLowerCase().trim();
-        selectedId = null;
-        vizBtn.disabled = true;
         if (q.length < 2) { resultsList.classList.add('hidden'); return; }
         searchTimer = setTimeout(() => {
+            const chosen = new Set(selectedEntries.map(e => e.id));
             const hits = allResults
+                .filter(r => r.id !== 'err' && !chosen.has(r.id))
                 .filter(r => r.text.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q))
                 .slice(0, 50);
             renderDropdown(hits);
@@ -168,13 +211,19 @@
         }
         results.forEach(item => {
             const div = document.createElement('div');
-            div.className = 'px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm font-medium text-slate-800 dark:text-slate-200 transition-colors';
-            div.textContent = item.text;
+            div.className = 'px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm font-medium text-slate-800 dark:text-slate-200 transition-colors flex items-center justify-between gap-3';
+            const span = document.createElement('span');
+            span.textContent = item.text;
+            div.appendChild(span);
+            const add = document.createElement('span');
+            add.className = 'text-blue-600 dark:text-blue-400 font-bold text-lg leading-none';
+            add.textContent = '+';
+            div.appendChild(add);
             div.addEventListener('click', () => {
-                searchInput.value = item.text;
-                selectedId = item.id;
-                vizBtn.disabled = false;
+                addEntry(item);
+                searchInput.value = '';
                 resultsList.classList.add('hidden');
+                searchInput.focus();
             });
             resultsList.appendChild(div);
         });
@@ -186,9 +235,69 @@
             resultsList.classList.add('hidden');
     });
 
-    // ── Detail panel builder ─────────────────────────────────────────
+    // ── Entry chips (multi-select) ───────────────────────────────────
+    function addEntry(item) {
+        if (selectedEntries.some(e => e.id === item.id)) return;
+        selectedEntries.push({ id: item.id, text: item.text });
+        renderChips();
+    }
+    function removeEntry(id) {
+        selectedEntries = selectedEntries.filter(e => e.id !== id);
+        renderChips();
+    }
+    function renderChips() {
+        chipsWrap.innerHTML = '';
+        if (!selectedEntries.length) {
+            chipsWrap.classList.add('hidden');
+            clearBtn.classList.add('hidden');
+            vizBtn.disabled = true;
+            return;
+        }
+        chipsWrap.classList.remove('hidden');
+        clearBtn.classList.remove('hidden');
+        vizBtn.disabled = false;
+        selectedEntries.forEach(e => {
+            const chip = document.createElement('span');
+            chip.className = 'entry-chip inline-flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200 text-xs font-semibold rounded-full pl-3 pr-2 py-1.5 max-w-full';
+            const txt = document.createElement('span');
+            txt.className = 'truncate max-w-[260px]';
+            txt.textContent = e.text;
+            chip.appendChild(txt);
+            const x = document.createElement('button');
+            x.className = 'text-blue-500 hover:text-rose-500 font-bold leading-none';
+            x.textContent = '✕';
+            x.addEventListener('click', () => removeEntry(e.id));
+            chip.appendChild(x);
+            chipsWrap.appendChild(chip);
+        });
+    }
+    clearBtn.addEventListener('click', () => { selectedEntries = []; renderChips(); });
+
+    // ── Detail panel builder (enriched key:value cards) ──────────────
     function buildPanelContent(nodeData) {
         const frag = document.createDocumentFragment();
+
+        // Type badge row (derived from node type)
+        if (nodeData.type && TYPE_LABEL[nodeData.type]) {
+            const badge = document.createElement('div');
+            badge.className = 'tip-badge';
+            const dot = document.createElement('span');
+            dot.className = 'tip-badge-dot';
+            const c = COLOURS[nodeData.type];
+            if (c) dot.style.background = c.bg;
+            badge.appendChild(dot);
+            const lab = document.createElement('span');
+            lab.textContent = TYPE_LABEL[nodeData.type];
+            badge.appendChild(lab);
+            if (entryIdSet.has(nodeData.id)) {
+                const ent = document.createElement('span');
+                ent.className = 'tip-entry-flag';
+                ent.textContent = '📍 Entry point';
+                badge.appendChild(ent);
+            }
+            frag.appendChild(badge);
+        }
+
         const raw = nodeData.tooltip || '';
         if (!raw) {
             const p = document.createElement('p');
@@ -201,39 +310,50 @@
             const lines = section.split('\n').filter(l => l.trim());
             if (!lines.length) return;
             const h = document.createElement('div');
-            h.className = 'tip-header font-bold text-white mb-1 mt-3 first:mt-0';
+            h.className = 'tip-header';
             h.textContent = lines[0];
             frag.appendChild(h);
             lines.slice(1).forEach(line => {
-                const d = document.createElement('div');
-                d.className = 'tip-item text-slate-300 ml-2 mb-0.5';
-                d.textContent = '· ' + line.trim();
-                frag.appendChild(d);
+                const t = line.trim();
+                const m = t.match(/^([^:]{1,26}):\s+(.+)$/);
+                if (m) {
+                    const row = document.createElement('div');
+                    row.className = 'tip-kv';
+                    const k = document.createElement('span');
+                    k.className = 'tip-kv-key';
+                    k.textContent = m[1];
+                    const v = document.createElement('span');
+                    v.className = 'tip-kv-val';
+                    v.textContent = m[2];
+                    row.appendChild(k);
+                    row.appendChild(v);
+                    frag.appendChild(row);
+                } else {
+                    const d = document.createElement('div');
+                    d.className = 'tip-item';
+                    d.textContent = '· ' + t;
+                    frag.appendChild(d);
+                }
             });
         });
         return frag;
     }
 
-    // ── Hover preview (ephemeral, near cursor) ───────────────────────
+    // ── Hover preview ────────────────────────────────────────────────
     function showHoverPreview(nodeData, clientX, clientY) {
         removeHoverPreview();
-        if (!nodeData.tooltip) return;
-
         hoverPreview = document.createElement('div');
-        hoverPreview.className = 'detail-panel hover-preview absolute bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-xl p-4 text-xs z-[999] pointer-events-none opacity-100 max-w-sm max-h-80 overflow-y-auto whitespace-pre-wrap leading-relaxed';
+        hoverPreview.className = 'detail-panel hover-preview absolute z-[999] pointer-events-none';
         hoverPreview.appendChild(buildPanelContent(nodeData));
         wrapper.appendChild(hoverPreview);
         positionNearCursor(hoverPreview, clientX, clientY);
     }
-
     function moveHoverPreview(clientX, clientY) {
         if (hoverPreview) positionNearCursor(hoverPreview, clientX, clientY);
     }
-
     function removeHoverPreview() {
         if (hoverPreview) { hoverPreview.remove(); hoverPreview = null; }
     }
-
     function positionNearCursor(el, clientX, clientY) {
         const parentRect = wrapper.getBoundingClientRect();
         const W = el.offsetWidth  || 280;
@@ -246,22 +366,21 @@
         el.style.top  = Math.max(0, y) + 'px';
     }
 
-    // ── Pinned panels (persistent, draggable, multiple allowed) ──────
+    // ── Pinned panels ────────────────────────────────────────────────
     function createPinnedPanel(nodeData, clientX, clientY) {
         const panel = document.createElement('div');
-        panel.className = 'detail-panel pinned-panel absolute bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-xl z-50 flex flex-col text-white max-w-sm';
+        panel.className = 'detail-panel pinned-panel absolute z-50 flex flex-col';
 
-        // Header
         const header = document.createElement('div');
-        header.className = 'detail-panel-header bg-slate-800/80 border-b border-slate-700 flex justify-between items-center px-4 py-3 cursor-grab select-none rounded-t-xl';
+        header.className = 'detail-panel-header';
 
         const title = document.createElement('span');
-        title.className = 'detail-panel-title font-bold text-xs truncate max-w-[200px] text-white tracking-wide';
+        title.className = 'detail-panel-title';
         title.textContent = (nodeData.label || '').split('\n')[0].replace('─────────────', '').trim();
         header.appendChild(title);
 
         const closeBtn = document.createElement('button');
-        closeBtn.className = 'detail-panel-close text-slate-400 hover:text-white transition font-bold text-lg leading-none';
+        closeBtn.className = 'detail-panel-close';
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', () => {
             panel.remove();
@@ -270,18 +389,16 @@
         header.appendChild(closeBtn);
         panel.appendChild(header);
 
-        // Body
         const body = document.createElement('div');
-        body.className = 'detail-panel-body p-4 overflow-y-auto max-h-[40vh] text-xs leading-relaxed';
+        body.className = 'detail-panel-body';
         body.appendChild(buildPanelContent(nodeData));
         panel.appendChild(body);
 
         wrapper.appendChild(panel);
         pinnedPanels.push(panel);
 
-        // Position near where the node was clicked, offset slightly
         const parentRect = wrapper.getBoundingClientRect();
-        const offset = pinnedPanels.length * 20; 
+        const offset = pinnedPanels.length * 20;
         let x = clientX - parentRect.left + 16 + offset;
         let y = clientY - parentRect.top  + 16 + offset;
         const W = 280;
@@ -290,7 +407,6 @@
         panel.style.left = Math.max(0, x) + 'px';
         panel.style.top  = Math.max(0, y) + 'px';
 
-        // Drag support
         let dragging = false, ox = 0, oy = 0;
         header.addEventListener('mousedown', e => {
             dragging = true;
@@ -313,44 +429,74 @@
         document.addEventListener('mouseup', () => { dragging = false; });
     }
 
+    function clearPanels() {
+        pinnedPanels.forEach(p => p.remove());
+        pinnedPanels = [];
+        removeHoverPreview();
+    }
+
     // ── Print ─────────────────────────────────────────────────────────
     printBtn.addEventListener('click', () => window.print());
 
-    // ── Toggle Descriptors Event ──────────────────────────────────────
+    // ── Toggle Descriptors ────────────────────────────────────────────
     toggleDesc.addEventListener('change', () => {
         if (currentGraphData) {
-            // Clear any active HTML panels before redrawing
-            pinnedPanels.forEach(p => p.remove());
-            pinnedPanels = [];
-            removeHoverPreview();
+            clearPanels();
             renderGraph(currentGraphData);
         }
     });
 
-    // ── Visualize ────────────────────────────────────────────────────
+    // ── Layout direction toggle ───────────────────────────────────────
+    layoutBtn.addEventListener('click', () => {
+        layoutDir = layoutDir === 'TB' ? 'LR' : 'TB';
+        layoutBtn.textContent = layoutDir === 'TB' ? '⇅ Vertical' : '⇄ Horizontal';
+        if (currentGraphData) {
+            clearPanels();
+            renderGraph(currentGraphData);
+        }
+    });
+
+    // ── In-graph search highlight ─────────────────────────────────────
+    graphSearch.addEventListener('input', () => {
+        if (!cy) return;
+        const q = graphSearch.value.toLowerCase().trim();
+        cy.nodes().removeClass('search-hit');
+        if (!q) { return; }
+        const matches = cy.nodes().filter(n => {
+            const d = n.data();
+            return (d.displayLabel || '').toLowerCase().includes(q);
+        });
+        matches.addClass('search-hit');
+        if (matches.length) cy.animate({ fit: { eles: matches, padding: 80 } }, { duration: 300 });
+    });
+
+    // ── Visualise ─────────────────────────────────────────────────────
     vizBtn.addEventListener('click', async () => {
-        if (!selectedId) return;
+        if (!selectedEntries.length) return;
         vizBtn.disabled = true;
         zoomControls.style.display = 'none';
         printBtn.classList.add('hidden');
-        // Clear all pinned panels
-        pinnedPanels.forEach(p => p.remove());
-        pinnedPanels = [];
-        removeHoverPreview();
+        mermaidBtn.classList.add('hidden');
+        clearPanels();
 
+        const count = selectedEntries.length;
         diagramDiv.innerHTML = `
             <div class="flex flex-col items-center gap-4 text-slate-500 dark:text-slate-400 font-medium">
                 <div class="spinner w-10 h-10 border-4 border-blue-600 dark:border-blue-400"></div>
-                <p>Tracing call flow — may take 15–30s for large accounts…</p>
+                <p>Tracing ${count} call flow${count > 1 ? 's' : ''} — may take 15–30s for large accounts…</p>
             </div>`;
         logDiv.innerHTML = '<div class="text-slate-500 italic">Running API calls…</div>';
 
         try {
-            const res  = await fetch(`/api/rc/trace-flow/${selectedId}`);
+            const res = await fetch('/api/rc/trace-flow-multi', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedEntries.map(e => e.id) }),
+            });
             const data = await res.json();
             renderLog(data.api_log || []);
             if (data.status === 'success' && data.graph_data) {
-                currentGraphData = data.graph_data; // Store for the toggle
+                currentGraphData = data.graph_data;
                 renderGraph(data.graph_data);
             } else {
                 throw new Error(data.message || 'Failed to generate flow.');
@@ -362,14 +508,27 @@
         }
     });
 
+    // ── Neighbourhood highlight (scalability aid) ─────────────────────
+    function applyHighlight(node) {
+        cy.elements().addClass('dim');
+        const nhood = node.closedNeighborhood();
+        nhood.removeClass('dim');
+        nhood.addClass('hl');
+    }
+    function clearHighlight() {
+        if (cy) cy.elements().removeClass('dim hl');
+    }
+
     // ── Cytoscape renderer ───────────────────────────────────────────
     function renderGraph(graphData) {
         if (cy) { cy.destroy(); cy = null; }
         diagramDiv.innerHTML = '';
         diagramDiv.style.minHeight = '700px';
+        focusNode = null;
+
+        entryIdSet = new Set(graphData.entry_ids || []);
 
         const showDescriptors = toggleDesc.checked;
-
         const hintEl = document.getElementById('interaction-hint');
         if (hintEl) hintEl.style.display = showDescriptors ? 'none' : 'block';
 
@@ -404,15 +563,20 @@
                     'border-width':       '2px',
                     'cursor':             'pointer',
                     'text-justification': 'center',
+                    'transition-property':'opacity, border-width',
+                    'transition-duration':'0.15s',
                 },
             },
             ...typeStyles,
-            // --- NEW: Styles for descriptor nodes and edges ---
+            {
+                selector: 'node.entry',
+                style: { 'border-width': '5px', 'border-color': '#facc15' },
+            },
             {
                 selector: 'node[type="descriptor"]',
                 style: {
-                    'background-color':   '#1e293b', 
-                    'border-color':       '#f59e0b', 
+                    'background-color':   '#1e293b',
+                    'border-color':       '#f59e0b',
                     'border-width':       '1px',
                     'color':              '#e2e8f0',
                     'font-size':          '10px',
@@ -432,7 +596,7 @@
                 selector: 'edge[type="descriptor-edge"]',
                 style: {
                     'width':              2,
-                    'line-color':         '#f59e0b', 
+                    'line-color':         '#f59e0b',
                     'target-arrow-color': '#f59e0b',
                     'target-arrow-shape': 'triangle',
                     'curve-style':        'unbundled-bezier',
@@ -440,7 +604,6 @@
                     'arrow-scale':        1
                 }
             },
-            // --- END NEW STYLES ---
             {
                 selector: 'edge:not([type="descriptor-edge"])',
                 style: {
@@ -467,12 +630,15 @@
                     'text-max-width':                '160px'
                 },
             },
+            { selector: '.dim', style: { 'opacity': 0.15 } },
+            { selector: 'node.hl', style: { 'border-width': '4px' } },
+            { selector: 'edge.hl', style: { 'width': 4, 'line-color': '#3b82f6', 'target-arrow-color': '#3b82f6', 'z-index': 999 } },
+            { selector: 'node.search-hit', style: { 'border-width': '5px', 'border-color': '#3b82f6' } },
         ];
 
         const nodeElements = [];
         const edgeElements = [];
 
-        // Build node elements
         graphData.nodes.forEach(n => {
             const d = n.data;
             const nameLine  = d.label.split('\n')[0];
@@ -486,40 +652,24 @@
                 parts.push('─────────────');
                 parts.push(d.sublabel);
             }
-            
-            nodeElements.push({ data: { ...d, displayLabel: parts.join('\n') } });
 
-            // Generate descriptor nodes if toggle is enabled
+            nodeElements.push({
+                data: { ...d, displayLabel: parts.join('\n') },
+                classes: entryIdSet.has(d.id) ? 'entry' : '',
+            });
+
             if (showDescriptors && d.tooltip) {
                 let descText = "";
                 d.tooltip.split('\n\n').forEach(section => {
                     const lines = section.split('\n').filter(l => l.trim());
                     if (!lines.length) return;
-                    descText += lines[0].toUpperCase() + '\n'; 
-                    lines.slice(1).forEach(l => {
-                        descText += '· ' + l.trim() + '\n';
-                    });
-                    descText += '\n'; 
+                    descText += lines[0].toUpperCase() + '\n';
+                    lines.slice(1).forEach(l => { descText += '· ' + l.trim() + '\n'; });
+                    descText += '\n';
                 });
-
                 const descId = d.id + '_desc';
-                
-                nodeElements.push({
-                    data: {
-                        id: descId,
-                        type: 'descriptor',
-                        displayLabel: descText.trim()
-                    }
-                });
-
-                edgeElements.push({
-                    data: {
-                        id: 'edge_' + d.id + '_desc',
-                        source: d.id,
-                        target: descId,
-                        type: 'descriptor-edge'
-                    }
-                });
+                nodeElements.push({ data: { id: descId, type: 'descriptor', displayLabel: descText.trim() } });
+                edgeElements.push({ data: { id: 'edge_' + d.id + '_desc', source: d.id, target: descId, type: 'descriptor-edge' } });
             }
         });
 
@@ -528,17 +678,14 @@
             const key = `${e.data.source}__${e.data.target}`;
             pairCount[key] = (pairCount[key] || 0) + 1;
         });
-        
         const pairIndex = {};
         graphData.edges.forEach(e => {
             const key = `${e.data.source}__${e.data.target}`;
             const total = pairCount[key];
             const idx   = pairIndex[key] = (pairIndex[key] || 0);
             pairIndex[key]++;
-
             const spread = 60;
             const offset = total === 1 ? 0 : (idx - (total - 1) / 2) * spread;
-
             edgeElements.push({ data: { ...e.data, cpd: offset } });
         });
 
@@ -550,7 +697,7 @@
             style: stylesheet,
             layout: {
                 name:    'dagre',
-                rankDir: 'TB',
+                rankDir: layoutDir,
                 nodeSep: 80,
                 rankSep: 120,
                 edgeSep: 30,
@@ -558,60 +705,131 @@
                 animate: false,
             },
             wheelSensitivity: 0.25,
-            minZoom: 0.05,
+            minZoom: 0.03,
             maxZoom: 3,
         });
 
-        // ── Hover = ephemeral preview near cursor ────────────────────
+        // Hover = preview + highlight
         cy.on('mouseover', 'node', evt => {
-            if (toggleDesc.checked) return; 
+            if (toggleDesc.checked) return;
             const nd = evt.target.data();
-            if (nd.tooltip && nd.type !== 'descriptor') {
-                showHoverPreview(nd,
-                    evt.originalEvent.clientX,
-                    evt.originalEvent.clientY);
+            if (nd.type === 'descriptor') return;
+            if (!focusNode) applyHighlight(evt.target);
+            if (nd.tooltip || TYPE_LABEL[nd.type]) {
+                showHoverPreview(nd, evt.originalEvent.clientX, evt.originalEvent.clientY);
             }
         });
-
         cy.on('mousemove', 'node', evt => {
             if (toggleDesc.checked) return;
             moveHoverPreview(evt.originalEvent.clientX, evt.originalEvent.clientY);
         });
-
         cy.on('mouseout', 'node', () => {
             removeHoverPreview();
+            if (!focusNode) clearHighlight();
         });
 
-        // ── Click = spawn a new pinned panel ────────────────────────
+        // Click node = pin + lock highlight
         cy.on('tap', 'node', evt => {
             if (toggleDesc.checked) return;
             const nd = evt.target.data();
-            if (!nd.tooltip || nd.type === 'descriptor') return;
+            if (nd.type === 'descriptor') return;
             removeHoverPreview();
-            createPinnedPanel(nd,
-                evt.originalEvent.clientX,
-                evt.originalEvent.clientY);
+            focusNode = evt.target;
+            applyHighlight(evt.target);
+            createPinnedPanel(nd, evt.originalEvent.clientX, evt.originalEvent.clientY);
         });
 
-        // ── Zoom controls ────────────────────────────────────────────
+        // Click background = release lock
+        cy.on('tap', evt => {
+            if (evt.target === cy) { focusNode = null; clearHighlight(); }
+        });
+
+        // Controls
         zoomControls.style.display = 'flex';
         printBtn.classList.remove('hidden');
+        mermaidBtn.classList.remove('hidden');
+        layoutBtn.classList.remove('hidden');
+        graphSearch.classList.remove('hidden');
+
+        // Stats
+        const realNodes = graphData.nodes.length;
+        const entryCount = (graphData.entry_ids || []).length;
+        statsEl.textContent = `${entryCount} entr${entryCount === 1 ? 'y' : 'ies'} · ${realNodes} nodes · ${graphData.edges.length} links`;
+        statsEl.classList.remove('hidden');
 
         const mid = () => ({ x: diagramDiv.offsetWidth / 2, y: diagramDiv.offsetHeight / 2 });
         document.getElementById('btn-zoom-in').onclick  = () => cy.zoom({ level: cy.zoom() * 1.25, renderedPosition: mid() });
         document.getElementById('btn-zoom-out').onclick = () => cy.zoom({ level: cy.zoom() * 0.8,  renderedPosition: mid() });
         document.getElementById('btn-reset').onclick    = () => cy.fit(undefined, 50);
-
         document.getElementById('btn-save-png').onclick = () => {
             const png = cy.png({ scale: 2, bg: isDark ? '#0b1120' : '#f8fafc', full: true });
             const a = document.createElement('a');
             a.href = png;
-            a.download = 'call-flow-' + searchInput.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.png';
+            a.download = 'call-flow-' + flowSlug() + '.png';
             a.click();
         };
 
         setTimeout(() => cy.fit(undefined, 50), 100);
     }
+
+    function flowSlug() {
+        if (selectedEntries.length === 1)
+            return selectedEntries[0].text.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 40);
+        return `combined_${selectedEntries.length}_flows`;
+    }
+
+    // ── Mermaid / Lucidchart export ──────────────────────────────────
+    const MERMAID_SHAPE = {
+        phone: ['(["', '"])'], autoreceptionist: ['{{"', '"}}'], ivr: ['{"', '"}'],
+        queue: ['[["', '"]]'], user: ['("', '")'], voicemail: ['[/"', '"/]'],
+        external: ['[/"', '"\\]'], site: ['[["', '"]]'], unknown: ['["', '"]'],
+    };
+    function mmClean(s) {
+        return String(s || '').replace(/"/g, "'").replace(/[\n\r]+/g, ' ').replace(/[[\]{}()]/g, '').trim();
+    }
+    function buildMermaid(graphData) {
+        const dir = layoutDir === 'LR' ? 'LR' : 'TD';
+        const lines = ['flowchart ' + dir];
+        const idMap = {};
+        graphData.nodes.forEach((n, i) => {
+            const d = n.data;
+            const mid = 'N' + i;
+            idMap[d.id] = mid;
+            const name = mmClean((d.label || '').split('\n')[0]);
+            const typeLbl = TYPE_LABEL[d.type] || '';
+            const entryTag = entryIdSet.has(d.id) ? '📍 ' : '';
+            const wrap = MERMAID_SHAPE[d.type] || MERMAID_SHAPE.unknown;
+            const text = `${entryTag}${name}${typeLbl ? ' — ' + typeLbl : ''}`;
+            lines.push(`  ${mid}${wrap[0]}${text}${wrap[1]}`);
+        });
+        graphData.edges.forEach(e => {
+            const s = idMap[e.data.source];
+            const t = idMap[e.data.target];
+            if (!s || !t) return;
+            const lbl = mmClean(e.data.label);
+            lines.push(lbl ? `  ${s} -->|${lbl}| ${t}` : `  ${s} --> ${t}`);
+        });
+        return lines.join('\n');
+    }
+    mermaidBtn.addEventListener('click', () => {
+        if (!currentGraphData) return;
+        const mermaid = buildMermaid(currentGraphData);
+        // Download .mmd
+        const blob = new Blob([mermaid], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'call-flow-' + flowSlug() + '.mmd';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        // Copy to clipboard for direct paste into Lucidchart's Mermaid import
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(mermaid).then(() => {
+                const orig = mermaidBtn.textContent;
+                mermaidBtn.textContent = '✓ Copied + downloaded';
+                setTimeout(() => { mermaidBtn.textContent = orig; }, 2200);
+            }).catch(() => {});
+        }
+    });
 
     // ── API log ──────────────────────────────────────────────────────
     function renderLog(logs) {
