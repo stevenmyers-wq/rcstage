@@ -967,3 +967,16 @@ def generate_graph_flow(start_ext_id):
 def generate_graph_flow_multi(start_ext_ids):
     tracer = CallFlowTracer()
     return tracer.generate_many(start_ext_ids)
+
+
+def generate_graph_flow_separate(start_ext_ids):
+    """Trace each entry point on its own fresh tracer so the flows stay
+    independent (no shared/merged nodes). Returns a list of per-flow dicts."""
+    flows = []
+    for sid in start_ext_ids:
+        if sid is None or str(sid).strip() == "":
+            continue
+        tracer = CallFlowTracer()
+        graph, logs = tracer.generate_many([str(sid).strip()])
+        flows.append({"id": str(sid).strip(), "graph_data": graph, "api_log": logs})
+    return flows

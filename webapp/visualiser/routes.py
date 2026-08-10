@@ -5,7 +5,11 @@ from flask import Blueprint, jsonify, request, Response
 from webapp.auth_utils import is_authenticated, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
-from webapp.visualiser.utils import generate_graph_flow, generate_graph_flow_multi
+import io
+import zipfile
+from webapp.visualiser.utils import (
+    generate_graph_flow, generate_graph_flow_multi, generate_graph_flow_separate,
+)
 from webapp.visualiser.vsdx_export import build_vsdx
 
 viz_bp = Blueprint('visualiser', __name__)
@@ -232,6 +236,27 @@ def visualize_call_flow_multi_api():
         return jsonify({'status': 'error', 'message': str(e), 'api_log': []}), 500
 
 
+@viz_bp.route('/api/rc/trace-flow-separate', methods=['POST'])
+@track_usage('Call Flow Visualiser')
+def visualize_call_flow_separate_api():
+    """Trace several entry points but keep each flow independent — one graph
+    per entry — for the separate-canvas view."""
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get('ids') or []
+    ids = [str(i).strip() for i in ids if str(i).strip()][:15]
+    if not ids:
+        return jsonify({'status': 'error', 'message': 'No entry points supplied.'}), 400
+
+    try:
+        flows = generate_graph_flow_separate(ids)
+        return jsonify({'status': 'success', 'flows': flows})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @viz_bp.route('/api/rc/visualiser/export-visio', methods=['POST'])
 def export_visio():
     """Build a Visio .vsdx from the already-traced graph data POSTed by the
@@ -261,6 +286,55 @@ def export_visio():
         mimetype='application/vnd.ms-visio.drawing',
         headers={
             'Content-Disposition': f'attachment; filename="{safe}.vsdx"',
+            'Content-Length': str(len(data)),
+        },
+    )
+
+
+def _safe_name(name, fallback='call-flow'):
+    safe = ''.join(c if c.isalnum() or c in ('-', '_') else '_'
+                   for c in str(name))[:80]
+    return safe or fallback
+
+
+@viz_bp.route('/api/rc/visualiser/export-visio-zip', methods=['POST'])
+def export_visio_zip():
+    """Build one .vsdx per supplied flow and return them as separate files
+    inside a single .zip (for the 'download ticked flows' action)."""
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    flows = payload.get('flows') or []
+    if not flows:
+        return jsonify({'status': 'error', 'message': 'No flows supplied.'}), 400
+
+    try:
+        buf = io.BytesIO()
+        used = set()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            for i, flow in enumerate(flows):
+                gd = flow.get('graph_data') or {}
+                if not gd.get('nodes'):
+                    continue
+                base = _safe_name(flow.get('filename') or f'call-flow-{i + 1}')
+                name = base
+                n = 1
+                while name in used:
+                    n += 1
+                    name = f'{base}-{n}'
+                used.add(name)
+                z.writestr(f'{name}.vsdx', build_vsdx(gd))
+        data = buf.getvalue()
+    except Exception as e:
+        print(f"[VISIO ZIP EXPORT] {e}", file=sys.stderr)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    return Response(
+        data,
+        mimetype='application/zip',
+        headers={
+            'Content-Disposition': 'attachment; filename="call-flows-visio.zip"',
             'Content-Length': str(len(data)),
         },
     )
