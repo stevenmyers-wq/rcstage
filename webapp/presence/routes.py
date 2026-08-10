@@ -1,7 +1,7 @@
 import io
 import json
 import pandas as pd
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, Response, stream_with_context
 from webapp.presence.utils import RCPresenceManager, RCPresenceError
 from webapp.auth_utils import require_rc_token, is_admin_user
 from webapp.usage_tracking import track_usage
@@ -57,57 +57,112 @@ def get_users():
 @require_rc_token
 @track_usage('BLF Presence Audit')
 def generate_audit_report():
+    """Stream per-user audit progress as NDJSON so the UI can show a progress
+    bar (each user needs two RC reads, so a large selection is slow). The built
+    rows ride along in the ``progress`` chunks; the client accumulates them and
+    posts them to /api/presence/audit/report to get the formatted workbook."""
+    data = request.json or {}
+    selected_users = data.get('users', [])
+    task_id = data.get('task_id')
+
+    def generate():
+        try:
+            manager = RCPresenceManager()
+            all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
+            id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
+
+            total = len(selected_users)
+            yield json.dumps({"type": "start", "total": total,
+                              "message": f"Auditing {total} user(s)…"}) + "\n"
+
+            for idx, user in enumerate(selected_users):
+                # Cooperative stop: rows already built are still downloadable.
+                if task_control.is_stopped(task_id):
+                    yield json.dumps({
+                        "type": "cancelled", "current": idx, "total": total,
+                        "message": f"Stopped by user. {idx} of {total} audited; the rest were skipped."
+                    }) + "\n"
+                    break
+
+                ext_id = user.get('id')
+                try:
+                    settings = manager.get_presence_settings(ext_id)
+                    lines_resp = manager.get_monitored_lines(ext_id)
+                except Exception as e:
+                    # One unreadable user shouldn't abort the whole audit now that
+                    # results stream incrementally — skip it and keep going.
+                    logging.warning("Audit read failed for %s: %s", ext_id, e)
+                    yield json.dumps({
+                        "type": "progress", "current": idx + 1, "total": total,
+                        "result": {"name": user.get('name', '') or str(ext_id),
+                                   "status": "error", "message": f"Could not read presence ({e})"}
+                    }) + "\n"
+                    continue
+                records = lines_resp.get('records') or []
+
+                row = {
+                    "Target Extension Name": user.get('name', ''),
+                    "Target Extension Number": user.get('extensionNumber', ''),
+                    "Target Extension ID": ext_id,
+                    "Ring on Monitored Call": settings.get('ringOnMonitoredCall', False),
+                    "Enable Me to Pickup a Monitored Line": settings.get('pickUpCallsOnHold', False),
+                    "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
+                }
+
+                for i, record in enumerate(records):
+                    line_idx = i + 1
+                    ext_obj = record.get('extension') or {}
+                    m_id = str(ext_obj.get('id', ''))
+
+                    master = id_to_ext_map.get(m_id, {})
+                    type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
+                    name = master.get('name') or ext_obj.get('name') or type_label
+                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+
+                    lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
+                    row[f"Line {line_idx} Name"] = f"{lock_status}{name} ({type_label})"
+                    row[f"Line {line_idx} Extension"] = str(ext_num)
+
+                yield json.dumps({
+                    "type": "progress", "current": idx + 1, "total": total, "row": row,
+                    "result": {"name": user.get('name', '') or str(ext_id),
+                               "status": "success",
+                               "message": f"{len(records)} monitored line(s)"}
+                }) + "\n"
+
+            yield json.dumps({"type": "done"}) + "\n"
+        except Exception as e:
+            logging.exception("Audit Crash")
+            yield json.dumps({"type": "error", "message": f"Audit Failed: {str(e)}"}) + "\n"
+        finally:
+            task_control.clear(task_id)
+
+    resp = Response(stream_with_context(generate()), mimetype='application/x-ndjson')
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['Connection'] = 'keep-alive'
+    return resp
+
+
+@presence_bp.route('/api/presence/audit/report', methods=['POST'])
+@require_rc_token
+def audit_report():
+    """Build the formatted audit workbook from the rows streamed by
+    /api/presence/audit. Column order follows the first-seen keys across rows,
+    exactly as the previous single-shot audit produced it."""
     try:
-        data = request.json
-        selected_users = data.get('users', [])
-        manager = RCPresenceManager()
-        
-        all_exts = manager.get_all_extensions_raw() or manager.get_all_users()
-        id_to_ext_map = {str(e.get('id')): e for e in all_exts if e.get('id')}
-        
-        audit_data = []
-        for user in selected_users:
-            ext_id = user.get('id')
-            settings = manager.get_presence_settings(ext_id)
-            lines_resp = manager.get_monitored_lines(ext_id)
-            records = lines_resp.get('records') or []
-
-            row = {
-                "Target Extension Name": user.get('name', ''),
-                "Target Extension Number": user.get('extensionNumber', ''),
-                "Target Extension ID": ext_id,
-                "Ring on Monitored Call": settings.get('ringOnMonitoredCall', False),
-                "Enable Me to Pickup a Monitored Line": settings.get('pickUpCallsOnHold', False),
-                "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
-            }
-
-            assigned_map = {str(r.get('id')): r for r in records}
-            
-            for i, record in enumerate(records):
-                line_idx = i + 1
-                ext_obj = record.get('extension') or {}
-                m_id = str(ext_obj.get('id', ''))
-                
-                master = id_to_ext_map.get(m_id, {})
-                type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
-                name = master.get('name') or ext_obj.get('name') or type_label
-                ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
-                
-                lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
-                row[f"Line {line_idx} Name"] = f"{lock_status}{name} ({type_label})"
-                row[f"Line {line_idx} Extension"] = str(ext_num)
-            
-            audit_data.append(row)
-            
-        df = pd.DataFrame(audit_data)
+        data = request.json or {}
+        rows = data.get('rows') or []
+        df = pd.DataFrame(rows)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True, download_name='BLF_Audit_Detailed.xlsx')
     except Exception as e:
-        logging.exception("Audit Crash")
-        return jsonify({"status": "error", "message": f"Audit Failed: {str(e)}"}), 500
+        logging.exception("Audit report crash")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @presence_bp.route('/api/presence/update', methods=['POST'])
 @require_rc_token
@@ -130,25 +185,40 @@ def update_blf():
         # id -> record, so per-target results can carry the friendly extension
         # number/name alongside the internal id RC actually keys on.
         id_to_ext = {str(e.get('id')): e for e in all_exts if e.get('id')}
+    except Exception as e:
+        # File/parse/directory failures happen before the stream starts, so they
+        # can still be reported as a plain JSON error the client shows directly.
+        logging.exception("Upload Crash")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-        # "details" is a structured, per-target log (name + friendly number +
-        # internal id + status + what happened) used for the downloadable report.
-        results = {"success": 0, "errors": [], "details": []}
+    # "details" is a structured, per-target log (name + friendly number + internal
+    # id + status + what happened) used for the downloadable results report.
+    results = {"success": 0, "errors": [], "details": []}
+
+    target_id_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
+    target_num_col = next((c for c in df.columns if "target extension number" in c.lower()), None)
+
+    def _clean(v):
+        s = str(v).split('.')[0].strip()
+        return "" if s.lower() in ("", "nan", "none") else s
+
+    def generate():
         cancelled = False
-
-        target_id_col = next((c for c in df.columns if "target extension id" in c.lower()), None)
-        target_num_col = next((c for c in df.columns if "target extension number" in c.lower()), None)
-
-        def _clean(v):
-            s = str(v).split('.')[0].strip()
-            return "" if s.lower() in ("", "nan", "none") else s
-
+        total = len(df)
+        yield json.dumps({"type": "start", "total": total,
+                          "message": f"Processing {total} row(s)…"}) + "\n"
         try:
-            for _, row in df.iterrows():
+            for idx, (_, row) in enumerate(df.iterrows()):
                 # Cooperative stop: users already updated stand; the rest skipped.
                 if task_control.is_stopped(task_id):
                     cancelled = True
+                    yield json.dumps({
+                        "type": "cancelled", "current": idx, "total": total,
+                        "message": f"Stopped by user. Updated {results['success']} user(s); the rest were skipped."
+                    }) + "\n"
                     break
+
+                before = len(results["details"])
 
                 # Prefer Target Extension ID, but fall back to resolving the
                 # Target Extension Number so a sheet with only the number works.
@@ -161,7 +231,10 @@ def update_blf():
                             results["errors"].append(f"Target ext {t_num}: not found in this account.")
                             _add_detail(results, "", t_num, "", "Error",
                                         "Target extension not found in this account.")
-                if not t_id: continue
+                if not t_id:
+                    yield json.dumps({"type": "progress", "current": idx + 1, "total": total,
+                                      "result": _row_result(results, before, "Skipped blank row")}) + "\n"
+                    continue
 
                 try:
                     _process_row(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results, additive=additive)
@@ -176,6 +249,9 @@ def update_blf():
                     name, number = _friendly(id_to_ext, t_id)
                     _add_detail(results, name, number, t_id, "Error", str(e))
                     logging.exception(f"Unexpected error during update for {t_id}")
+
+                yield json.dumps({"type": "progress", "current": idx + 1, "total": total,
+                                  "result": _row_result(results, before)}) + "\n"
         finally:
             task_control.clear(task_id)
 
@@ -185,11 +261,15 @@ def update_blf():
         else:
             status = "completed" if results["success"] or not results["errors"] else "error"
             message = f"Updated {results['success']} users"
-        return jsonify({"status": status, "message": message, "cancelled": cancelled,
-                        "errors": results["errors"], "details": results["details"]})
-    except Exception as e:
-        logging.exception("Upload Crash")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        yield json.dumps({"type": "done", "status": status, "message": message,
+                          "cancelled": cancelled, "errors": results["errors"],
+                          "details": results["details"]}) + "\n"
+
+    resp = Response(stream_with_context(generate()), mimetype='application/x-ndjson')
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['Connection'] = 'keep-alive'
+    return resp
 
 
 @presence_bp.route('/api/presence/update/report', methods=['POST'])
@@ -224,6 +304,24 @@ def _friendly(id_to_ext, t_id):
     cache (e.g. an id supplied directly in the sheet)."""
     e = id_to_ext.get(str(t_id), {}) if id_to_ext else {}
     return e.get('name', '') or '', str(e.get('extensionNumber', '') or '')
+
+
+def _row_result(results, before_len, empty_message="No changes"):
+    """Shape the newest detail row (appended since ``before_len``) into a compact
+    per-row result for the progress stream. Rows that produced no detail (e.g. a
+    fully blank sheet row) fall back to a neutral 'skipped' result."""
+    new_details = results["details"][before_len:]
+    if not new_details:
+        return {"name": "", "ext": "", "status": "skipped", "message": empty_message}
+    d = new_details[-1]
+    st = (d.get("Status") or "").strip().lower()
+    kind = "error" if st == "error" else ("skipped" if st in ("no change", "skipped") else "success")
+    return {
+        "name": d.get("Target Extension Name") or "",
+        "ext": d.get("Target Extension Number") or d.get("Target Extension ID") or "",
+        "status": kind,
+        "message": d.get("Detail") or (d.get("Status") or ""),
+    }
 
 
 def _add_detail(results, name, number, ext_id, status, detail):
