@@ -2,7 +2,25 @@
     
     <div class="text-center mb-8">
         <h2 class="text-3xl font-bold text-slate-800 dark:text-white">Custom Rules Manager</h2>
-        <p class="text-slate-600 dark:text-slate-400 mt-2">Audit, Create, or Modify User Answering Rules in Bulk. The tool will attempt to use V1 Custom Rule APIs, and if this fails it will use V2 APIs.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-2">Audit, Create, or Modify Answering Rules in Bulk across Users, Call Queues, IVRs and more. The tool will attempt to use V1 Custom Rule APIs, and if this fails it will use V2 APIs.</p>
+    </div>
+
+    <div class="card !p-4">
+        <div class="flex flex-col md:flex-row md:items-end gap-4">
+            <div class="flex-1">
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Audit scope — filter by type</label>
+                <div id="crTypeFilters" class="flex flex-wrap gap-2 mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    <span class="text-slate-400 dark:text-slate-500">Loading types…</span>
+                </div>
+            </div>
+            <div class="w-full md:w-64">
+                <label for="crSiteFilter" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Filter by site</label>
+                <select id="crSiteFilter" class="mt-2 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm py-2 px-3">
+                    <option value="">All Sites</option>
+                </select>
+            </div>
+        </div>
+        <p class="text-xs text-slate-400 dark:text-slate-500 mt-3">Leave everything unselected to audit all rule-capable extensions across every site. These filters apply to the <strong>Audit</strong> report only.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -86,15 +104,59 @@
         box.scrollTop = box.scrollHeight;
     }
 
+    async function initCrFilters() {
+        try {
+            const res = await fetch('/api/custom_rules/filters');
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const typeBox = document.getElementById('crTypeFilters');
+            typeBox.innerHTML = '';
+            (data.types || []).forEach(t => {
+                const wrap = document.createElement('label');
+                wrap.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = t;
+                cb.className = 'cr-type-cb';
+                wrap.appendChild(cb);
+                wrap.appendChild(document.createTextNode(t));
+                typeBox.appendChild(wrap);
+            });
+            if (!(data.types || []).length) {
+                typeBox.innerHTML = '<span class="text-slate-400 dark:text-slate-500">All rule-capable types</span>';
+            }
+
+            const siteSel = document.getElementById('crSiteFilter');
+            (data.sites || []).forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.name || s.id;
+                siteSel.appendChild(opt);
+            });
+        } catch (e) {
+            const typeBox = document.getElementById('crTypeFilters');
+            if (typeBox) typeBox.innerHTML = '<span class="text-slate-400 dark:text-slate-500">All rule-capable types</span>';
+        }
+    }
+    initCrFilters();
+
     async function auditRules() {
         const btn = document.getElementById('auditBtn');
         btn.disabled = true;
         btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
-        
+
+        // Build scope filters from the UI (type checkboxes + site select).
+        const params = new URLSearchParams();
+        document.querySelectorAll('.cr-type-cb:checked').forEach(cb => params.append('type', cb.value));
+        const site = document.getElementById('crSiteFilter');
+        if (site && site.value) params.append('site', site.value);
+        const qs = params.toString();
+
         logRule("Starting Audit... this may take a while depending on account size.");
 
         try {
-            const res = await fetch('/api/custom_rules/audit');
+            const res = await fetch('/api/custom_rules/audit' + (qs ? `?${qs}` : ''));
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || "Audit failed");
