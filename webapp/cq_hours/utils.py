@@ -581,9 +581,20 @@ def run_cq_audit(task_id, queue_ids, token):
                 if mgrs:
                     row["Queue Manager"] = ", ".join(mgrs)
 
-            succ, mem_resp = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}/members', token=token)
-            if succ and mem_resp.get('records'):
-                mems = [str(m.get('extensionNumber')) for m in mem_resp['records'] if m.get('extensionNumber')]
+            # Paginate (the endpoint caps a single page, so large queues lose the
+            # overflow otherwise) and resolve each member the same robust way as
+            # managers: prefer the record's extensionNumber, but fall back to mapping
+            # its id -- some member records come back without extensionNumber, and
+            # relying on it alone silently dropped those members from the export.
+            succ, mem_records = fetch_directory(f'/restapi/v1.0/account/~/call-queues/{qid}/members', token)
+            if succ and mem_records:
+                mems = []
+                for m in mem_records:
+                    num = str(m.get('extensionNumber') or '').strip()
+                    if not num:
+                        num = ext_id_to_num.get(str(m.get('id', '')), '')
+                    if num and num != 'None':
+                        mems.append(num)
                 if fixed_order_nums:
                     # Sequential queue: list agents in ring order, then any members not in it.
                     ordered = [n for n in fixed_order_nums if n in mems]
