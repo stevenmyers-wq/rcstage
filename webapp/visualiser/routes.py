@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from webapp.auth_utils import is_authenticated, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
-from webapp.visualiser.utils import generate_graph_flow
+from webapp.visualiser.utils import generate_graph_flow, generate_graph_flow_multi
 
 viz_bp = Blueprint('visualiser', __name__)
 
@@ -187,6 +187,41 @@ def visualize_call_flow_api(ext_id):
 
     try:
         graph_data, logs = generate_graph_flow(ext_id)
+        return jsonify({
+            'status': 'success',
+            'graph_data': graph_data,
+            'api_log': logs,
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e), 'api_log': []}), 500
+
+
+@viz_bp.route('/api/rc/trace-flow-multi', methods=['GET', 'POST'])
+@track_usage('Call Flow Visualiser')
+def visualize_call_flow_multi_api():
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
+
+    # Accept ids from JSON body (POST) or comma-separated query param (GET)
+    ids = []
+    if request.method == 'POST':
+        payload = request.get_json(silent=True) or {}
+        ids = payload.get('ids') or []
+    if not ids:
+        raw = request.args.get('ids', '')
+        ids = [p for p in raw.split(',') if p.strip()]
+
+    ids = [str(i).strip() for i in ids if str(i).strip()]
+    if not ids:
+        return jsonify({'status': 'error',
+                        'message': 'No entry points supplied.',
+                        'api_log': []}), 400
+
+    # Guard against runaway requests
+    ids = ids[:15]
+
+    try:
+        graph_data, logs = generate_graph_flow_multi(ids)
         return jsonify({
             'status': 'success',
             'graph_data': graph_data,
