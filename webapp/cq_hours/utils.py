@@ -1582,7 +1582,12 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 new_email_on = str(vm_set.get('notifyByEmail'))
                 if val_vn is not None:
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
-                    v_needs_update |= check_diff(changes, 'VM Attach/Read', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
+                    v_needs_update |= check_diff(changes, 'VM Attach', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
+                    # markAsRead is the only difference between "Notify & Attach" and
+                    # "Notify Attach & Read"; diff it separately so switching between the two
+                    # is both visible in the preview and able to trigger the PUT on its own
+                    # (otherwise a read-only change with no other diff was silently dropped).
+                    v_needs_update |= check_diff(changes, 'VM Mark Read', str(orig_notif.get('voicemails', {}).get('markAsRead')), str(vm_set.get('markAsRead')))
 
                 if val_vn is not None or vm_to_text is not None:
                     old_trans = str(orig_notif.get('voicemails', {}).get('includeTranscription', False))
