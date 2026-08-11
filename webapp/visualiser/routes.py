@@ -209,12 +209,15 @@ def visualize_call_flow_multi_api():
 
     # Accept ids from JSON body (POST) or comma-separated query param (GET)
     ids = []
+    show_inactive = False
     if request.method == 'POST':
         payload = request.get_json(silent=True) or {}
         ids = payload.get('ids') or []
+        show_inactive = bool(payload.get('show_inactive', False))
     if not ids:
         raw = request.args.get('ids', '')
         ids = [p for p in raw.split(',') if p.strip()]
+        show_inactive = request.args.get('show_inactive', '').lower() in ('1', 'true', 'yes')
 
     ids = [str(i).strip() for i in ids if str(i).strip()]
     if not ids:
@@ -226,7 +229,7 @@ def visualize_call_flow_multi_api():
     ids = ids[:15]
 
     try:
-        graph_data, logs = generate_graph_flow_multi(ids)
+        graph_data, logs = generate_graph_flow_multi(ids, show_inactive=show_inactive)
         return jsonify({
             'status': 'success',
             'graph_data': graph_data,
@@ -246,12 +249,13 @@ def visualize_call_flow_separate_api():
 
     payload = request.get_json(silent=True) or {}
     ids = payload.get('ids') or []
+    show_inactive = bool(payload.get('show_inactive', False))
     ids = [str(i).strip() for i in ids if str(i).strip()][:15]
     if not ids:
         return jsonify({'status': 'error', 'message': 'No entry points supplied.'}), 400
 
     try:
-        flows = generate_graph_flow_separate(ids)
+        flows = generate_graph_flow_separate(ids, show_inactive=show_inactive)
         return jsonify({'status': 'success', 'flows': flows})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -271,12 +275,13 @@ def export_visio():
         return jsonify({'status': 'error', 'message': 'No graph data supplied.'}), 400
 
     filename = payload.get('filename') or 'call-flow'
+    include_desc = bool(payload.get('include_descriptors', False))
     # Sanitise the filename to a safe basename
     safe = ''.join(c if c.isalnum() or c in ('-', '_') else '_'
                    for c in str(filename))[:80] or 'call-flow'
 
     try:
-        data = build_vsdx(graph_data)
+        data = build_vsdx(graph_data, include_descriptors=include_desc)
     except Exception as e:
         print(f"[VISIO EXPORT] {e}", file=sys.stderr)
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -306,6 +311,7 @@ def export_visio_zip():
 
     payload = request.get_json(silent=True) or {}
     flows = payload.get('flows') or []
+    include_desc = bool(payload.get('include_descriptors', False))
     if not flows:
         return jsonify({'status': 'error', 'message': 'No flows supplied.'}), 400
 
@@ -324,7 +330,7 @@ def export_visio_zip():
                     n += 1
                     name = f'{base}-{n}'
                 used.add(name)
-                z.writestr(f'{name}.vsdx', build_vsdx(gd))
+                z.writestr(f'{name}.vsdx', build_vsdx(gd, include_descriptors=include_desc))
         data = buf.getvalue()
     except Exception as e:
         print(f"[VISIO ZIP EXPORT] {e}", file=sys.stderr)

@@ -27,6 +27,7 @@ class CallFlowTracer:
         self.visited = set()
         self.phone_map = None          # ext_id -> [{"number", "usage"}]
         self.entry_node_ids = []       # node ids that are graph entry points
+        self.show_inactive = False     # also draw disabled/inactive rules
 
     # ------------------------------------------------------------------
     # API helpers
@@ -277,14 +278,15 @@ class CallFlowTracer:
             }
         })
 
-    def add_edge(self, source, target, label=""):
-        self.edges.append({
-            "data": {
-                "source": source,
-                "target": target,
-                "label": _truncate_edge(label),
-            }
-        })
+    def add_edge(self, source, target, label="", disabled=False):
+        data = {
+            "source": source,
+            "target": target,
+            "label": _truncate_edge(label),
+        }
+        if disabled:
+            data["disabled"] = True
+        self.edges.append({"data": data})
 
     def extract_target(self, obj):
         if not obj:
@@ -400,6 +402,8 @@ class CallFlowTracer:
                         dest_info.get("name", target) if dest_info else target
                     )
                     inactive_labels.append(f"{lbl} → {dest_name}")
+                    if self.show_inactive:
+                        self.trace(target, phone_nid, f"[Off] {lbl}", disabled=True)
                 else:
                     inactive_labels.append(f"{lbl} ({action or 'no destination'})")
                 continue
@@ -484,7 +488,7 @@ class CallFlowTracer:
     # Core tracer
     # ------------------------------------------------------------------
 
-    def trace(self, ext_id, parent_nid=None, edge_label="", history=None):
+    def trace(self, ext_id, parent_nid=None, edge_label="", history=None, disabled=False):
         if history is None:
             history = []
 
@@ -495,24 +499,24 @@ class CallFlowTracer:
             number = ext_id.replace("ext_", "")
             self.add_node(nid, number, "external", sublabel="External Transfer")
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             return nid
 
         if ext_id.startswith("vm_"):
             nid = self._next_id()
             self.add_node(nid, "Voicemail", "voicemail")
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             return nid
 
         if ext_id in history:
             if ext_id in self.node_map and parent_nid:
-                self.add_edge(parent_nid, self.node_map[ext_id], edge_label + " ↩")
+                self.add_edge(parent_nid, self.node_map[ext_id], edge_label + " ↩", disabled=disabled)
             return self.node_map.get(ext_id)
 
         if ext_id in self.node_map:
             if parent_nid:
-                self.add_edge(parent_nid, self.node_map[ext_id], edge_label)
+                self.add_edge(parent_nid, self.node_map[ext_id], edge_label, disabled=disabled)
             return self.node_map[ext_id]
 
         self.visited.add(ext_id)
@@ -524,7 +528,7 @@ class CallFlowTracer:
             self.node_map[ext_id] = nid
             self.add_node(nid, "Unknown", "unknown", sublabel=f"ID: {ext_id}")
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             return nid
 
         e_type = info.get("type", "Unknown")
@@ -674,7 +678,7 @@ class CallFlowTracer:
                 tooltip="\n\n".join(tooltip_parts),
             )
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
 
             seen = set()
             for t_id, lbl in overflow_targets:
@@ -731,7 +735,7 @@ class CallFlowTracer:
                           sublabel=f"IVR · Ext {ext_num}",
                           tooltip="\n\n".join(ivr_tooltip_parts))
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
 
             for key, t_id in actions:
                 self.trace(t_id, nid, f"Press {key}", new_history)
@@ -755,7 +759,7 @@ class CallFlowTracer:
                           sublabel=f"Auto Receptionist · Ext {ext_num}",
                           tooltip="\n\n".join(ar_parts))
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             self._trace_rules(ext_id, nid, new_history,
                               skip_bh=False, active_only=True)
 
@@ -774,7 +778,7 @@ class CallFlowTracer:
             self.add_node(nid, name, "site", sublabel=f"Site · Ext {ext_num}",
                           tooltip="\n\n".join(site_parts))
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             self._trace_rules(ext_id, nid, new_history,
                               skip_bh=False, active_only=True)
 
@@ -804,7 +808,7 @@ class CallFlowTracer:
             self.add_node(nid, name, node_type, sublabel=f"Ext {ext_num}",
                           tooltip="\n".join(u_overview))
             if parent_nid:
-                self.add_edge(parent_nid, nid, edge_label)
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             self._trace_rules(ext_id, nid, new_history,
                               skip_bh=False, active_only=True)
 
@@ -859,13 +863,17 @@ class CallFlowTracer:
                         if dest_info:
                             dest_label = self.clean(dest_info.get("name", target))
                     inactive_rule_lines.append(f"{lbl} → {dest_label}")
+                    # Optionally draw the disabled rule as a dashed branch too.
+                    if self.show_inactive:
+                        self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
                 else:
                     inactive_rule_lines.append(f"{lbl} (no destination)")
                 continue
 
             if target:
                 edge_lbl = lbl if is_active else f"[Off] {lbl}"
-                self.trace(target, nid, edge_lbl, history)
+                self.trace(target, nid, edge_lbl, history,
+                           disabled=not is_active)
 
         if inactive_rule_lines:
             for node in self.nodes:
@@ -959,17 +967,19 @@ class CallFlowTracer:
         )
 
 
-def generate_graph_flow(start_ext_id):
+def generate_graph_flow(start_ext_id, show_inactive=False):
     tracer = CallFlowTracer()
+    tracer.show_inactive = show_inactive
     return tracer.generate(start_ext_id)
 
 
-def generate_graph_flow_multi(start_ext_ids):
+def generate_graph_flow_multi(start_ext_ids, show_inactive=False):
     tracer = CallFlowTracer()
+    tracer.show_inactive = show_inactive
     return tracer.generate_many(start_ext_ids)
 
 
-def generate_graph_flow_separate(start_ext_ids):
+def generate_graph_flow_separate(start_ext_ids, show_inactive=False):
     """Trace each entry point on its own fresh tracer so the flows stay
     independent (no shared/merged nodes). Returns a list of per-flow dicts."""
     flows = []
@@ -977,6 +987,7 @@ def generate_graph_flow_separate(start_ext_ids):
         if sid is None or str(sid).strip() == "":
             continue
         tracer = CallFlowTracer()
+        tracer.show_inactive = show_inactive
         graph, logs = tracer.generate_many([str(sid).strip()])
         flows.append({"id": str(sid).strip(), "graph_data": graph, "api_log": logs})
     return flows

@@ -35,6 +35,12 @@
             <button type="button" id="clear-entries" class="hidden text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline ml-auto">Clear all</button>
         </div>
 
+        <label class="inline-flex items-center gap-2 cursor-pointer mt-3">
+            <input type="checkbox" id="toggle-inactive" class="w-4 h-4 accent-rose-600 cursor-pointer">
+            <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Show disabled rules</span>
+            <span class="text-[11px] text-slate-400 dark:text-slate-500">(draws inactive answering rules as dashed branches)</span>
+        </label>
+
         <p id="loading-indicator" class="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-3 flex items-center gap-2">
             <span class="spinner w-4 h-4 border-blue-600 dark:border-blue-400"></span> Loading account data…
         </p>
@@ -502,7 +508,9 @@
     });
 
     // ── Visualise ─────────────────────────────────────────────────────
-    vizBtn.addEventListener('click', async () => {
+    const inactiveToggle = document.getElementById('toggle-inactive');
+
+    async function runVisualise() {
         if (!selectedEntries.length) return;
         vizBtn.disabled = true;
         zoomControls.style.display = 'none';
@@ -514,6 +522,7 @@
 
         const count = selectedEntries.length;
         const separate = count > 1;
+        const showInactive = inactiveToggle.checked;
         logDiv.innerHTML = '<div class="text-slate-500 italic">Running API calls…</div>';
 
         if (separate) {
@@ -538,7 +547,7 @@
                 const res = await fetch('/api/rc/trace-flow-separate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids: selectedEntries.map(e => e.id) }),
+                    body: JSON.stringify({ ids: selectedEntries.map(e => e.id), show_inactive: showInactive }),
                 });
                 const data = await res.json();
                 if (data.status === 'success' && Array.isArray(data.flows)) {
@@ -555,7 +564,7 @@
                 const res = await fetch('/api/rc/trace-flow-multi', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids: selectedEntries.map(e => e.id) }),
+                    body: JSON.stringify({ ids: selectedEntries.map(e => e.id), show_inactive: showInactive }),
                 });
                 const data = await res.json();
                 renderLog(data.api_log || []);
@@ -572,6 +581,11 @@
         } finally {
             vizBtn.disabled = false;
         }
+    }
+    vizBtn.addEventListener('click', runVisualise);
+    // Toggling disabled-rule visibility re-traces (server-side change).
+    inactiveToggle.addEventListener('change', () => {
+        if (selectedEntries.length) runVisualise();
     });
 
     // ── Neighbourhood highlight (scalability aid) ─────────────────────
@@ -644,6 +658,15 @@
                     'text-background-opacity': 1, 'text-background-padding': '4px 8px',
                     'text-background-shape': 'round-rectangle', 'text-border-color': edgeBorderColor,
                     'text-border-width': 1, 'text-wrap': 'wrap', 'text-max-width': '160px'
+                },
+            },
+            {
+                selector: 'edge[?disabled]',
+                style: {
+                    'line-style': 'dashed', 'line-color': '#f43f5e',
+                    'target-arrow-color': '#f43f5e', 'color': '#e11d48',
+                    'text-background-color': isDark ? '#1e293b' : '#fff1f2',
+                    'text-border-color': '#fecdd3',
                 },
             },
             { selector: '.dim', style: { 'opacity': 0.15 } },
@@ -1137,7 +1160,7 @@
             const res = await fetch('/api/rc/visualiser/export-visio', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ graph_data: graphData, filename: slug }),
+                body: JSON.stringify({ graph_data: graphData, filename: slug, include_descriptors: toggleDesc.checked }),
             });
             if (!res.ok) {
                 let msg = 'Export failed.';
@@ -1184,6 +1207,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     flows: ticked.map(c => ({ filename: flowFileSlug(c.title), graph_data: c.graphData })),
+                    include_descriptors: toggleDesc.checked,
                 }),
             });
             if (!res.ok) {
