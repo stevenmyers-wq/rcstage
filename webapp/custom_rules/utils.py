@@ -264,7 +264,43 @@ def build_v1_payload(row, ext_id):
 
 # --- 3. V2 TRANSFORMER ---
 
-def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
+def sanitize_v2_greeting(greeting):
+    """Reduces a V2 greeting object (as returned by a rule GET) to the minimal,
+    writable shape, so it can be re-sent on a PUT without read-only fields.
+
+    Preserves a Custom clip (by id) or a Preset (by id); anything else — or a
+    missing greeting — becomes an explicit Default. Returns None only for a
+    falsy input so callers can distinguish "no info" from "Default"."""
+    if not greeting:
+        return None
+    egt = greeting.get('effectiveGreetingType')
+    if egt == 'Custom' and (greeting.get('custom') or {}).get('id'):
+        return {"effectiveGreetingType": "Custom", "custom": {"id": greeting['custom']['id']}}
+    if egt == 'Preset' and (greeting.get('preset') or {}).get('id'):
+        return {"effectiveGreetingType": "Preset", "preset": {"id": greeting['preset']['id']}}
+    return {"effectiveGreetingType": "Default"}
+
+
+def get_existing_v2_greeting(ext_id, rule_id):
+    """Fetches the greeting currently on a V2 interaction rule so an update can
+    preserve it instead of clobbering it. Returns a sanitized greeting object or
+    None when there's no existing rule/greeting to read."""
+    if not rule_id:
+        return None
+    try:
+        url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules/{rule_id}"
+        resp = rc_api_call(url, raise_error=True)
+        for action in (resp or {}).get('dispatching', {}).get('actions', []):
+            for t in action.get('targets', []):
+                g = (t.get('prompt') or {}).get('greeting')
+                if g:
+                    return sanitize_v2_greeting(g)
+    except Exception:
+        pass
+    return None
+
+
+def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=None):
     if user_devices is None: user_devices = []
     v2 = {
         "displayName": str(v1_payload.get("name", f"Custom Rule {datetime.now()}")), 
@@ -295,7 +331,11 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None):
 
     # --- 3. Actions - Strict Schema ---
     v1_act = v1_payload.get("callHandlingAction")
-    vm_prompt = {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}
+    # Greeting: use the caller-provided greeting (a preserved existing greeting,
+    # an explicit Default, or a freshly uploaded Custom). Falling back to Default
+    # instead of a hardcoded preset means the tool no longer silently replaces a
+    # queue/user's custom voicemail greeting with preset 590080.
+    vm_prompt = {"greeting": vm_greeting or {"effectiveGreetingType": "Default"}}
 
     if v1_act == "ForwardCalls":
         v2["dispatching"]["type"] = "RingAndTerminate"
@@ -388,6 +428,50 @@ def _resolve_ext_display(ext_obj, ext_lookup):
     return str(eid) if eid is not None else ''
 
 
+# Keyword the audit emits (and the update accepts) for a voicemail rule that
+# deposits into the owning extension's own mailbox, matching RingCentral's
+# "This extension" option.
+THIS_EXTENSION = 'This extension'
+
+
+def _voicemail_recipient_cell(target_obj, owner_ext, ext_lookup):
+    """Audit value for a voicemail recipient. When the mailbox is the rule's own
+    extension, emit 'This extension' (round-trips to the same on upload);
+    otherwise emit the recipient's extension number."""
+    if not target_obj:
+        return ''
+    tid = target_obj.get('id')
+    if tid is not None and owner_ext is not None and str(tid) == str(owner_ext.get('id')):
+        return THIS_EXTENSION
+    return _resolve_ext_display(target_obj, ext_lookup)
+
+
+def _greeting_cell_v2(target):
+    """Greeting column value for a V2 terminating target."""
+    g = (target.get('prompt') or {}).get('greeting') or {}
+    egt = g.get('effectiveGreetingType')
+    if egt in ('Custom', 'Preset'):
+        return 'Custom'
+    if egt == 'Default':
+        return 'Default'
+    return ''
+
+
+def _greeting_cell_v1(rule, slot):
+    """Greeting column value for a V1 rule's greeting slot (e.g. 'Voicemail').
+
+    A custom or non-default preset greeting reads as 'Custom' (preserved on
+    round-trip); an absent slot means RingCentral is using the Default."""
+    for g in rule.get('greetings', []):
+        if g.get('type') == slot:
+            if g.get('custom'):
+                return 'Custom'
+            if (g.get('preset') or {}).get('id'):
+                return 'Custom'
+            return 'Default'
+    return 'Default'
+
+
 def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
     """Converts a RingCentral Rule (V1 or V2) into a flat Excel row.
 
@@ -406,7 +490,8 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
         'Monday': '', 'Tuesday': '', 'Wednesday': '', 'Thursday': '', 'Friday': '', 'Saturday': '', 'Sunday': '',
         'Specific Dates': '',
         'Action': 'Unknown',
-        'External Number': '', 'Transfer Extension': '', 'Voicemail Recipient': ''
+        'External Number': '', 'Transfer Extension': '', 'Voicemail Recipient': '',
+        'Greeting': '', 'Greeting File': ''
     }
 
     schedule_data = None
@@ -471,9 +556,13 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
                 if main_target: row['Transfer Extension'] = _resolve_ext_display(main_target.get('extension', {}), ext_lookup)
             elif target_type == 'VoiceMailTerminatingTarget':
                 row['Action'] = 'Send to Voicemail'
-                if main_target: row['Voicemail Recipient'] = _resolve_ext_display(main_target.get('mailbox', {}), ext_lookup)
+                if main_target:
+                    row['Voicemail Recipient'] = _voicemail_recipient_cell(main_target.get('mailbox', {}), ext, ext_lookup)
+                    row['Greeting'] = _greeting_cell_v2(main_target)
             elif target_type == 'PlayAnnouncementTerminatingTarget':
                 row['Action'] = 'Play Message'
+                if main_target:
+                    row['Greeting'] = _greeting_cell_v2(main_target)
     else:
         action_type = rule.get('callHandlingAction')
         if action_type == 'UnconditionalForwarding':
@@ -484,8 +573,10 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
             row['Transfer Extension'] = _resolve_ext_display(rule.get('transfer', {}).get('extension', {}), ext_lookup)
         elif action_type == 'TakeMessagesOnly':
             row['Action'] = 'Send to Voicemail'
-            row['Voicemail Recipient'] = _resolve_ext_display(rule.get('voicemail', {}).get('recipient', {}), ext_lookup)
+            row['Voicemail Recipient'] = _voicemail_recipient_cell(rule.get('voicemail', {}).get('recipient', {}), ext, ext_lookup)
+            row['Greeting'] = _greeting_cell_v1(rule, 'Voicemail')
         elif action_type == 'PlayAnnouncementOnly':
             row['Action'] = 'Play Message'
+            row['Greeting'] = _greeting_cell_v1(rule, 'Announcement')
 
     return row
