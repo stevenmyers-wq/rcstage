@@ -602,29 +602,41 @@
                                     const rowStatus = data.is_preview ? 'Pending' : (r.status === 'error' ? 'Aborted/Failed' : 'Applied');
                                     if (r.changes && r.changes.length > 0) {
                                         r.changes.forEach(change => {
+                                            const isSkipped = change.skipped === true;
                                             cqResultRows.push({
                                                 'Extension': r.ext,
                                                 'Parameter': change.parameter,
                                                 'Old Value': change.old || 'None',
                                                 'New Value': change.new || 'None',
-                                                'Status': rowStatus,
+                                                'Status': isSkipped ? 'Skipped' : rowStatus,
                                                 'Message': r.message || ''
                                             });
                                             let statusUi = '';
-                                            if (data.is_preview) {
+                                            if (isSkipped) {
+                                                statusUi = `<span class="badge badge-neutral">Skipped</span>`;
+                                            } else if (data.is_preview) {
                                                 statusUi = `<span class="badge badge-info">Pending</span>`;
                                             } else if (r.status === 'error') {
                                                 statusUi = `<span class="badge badge-warning">Aborted</span>`;
                                             } else {
                                                 statusUi = `<span class="badge badge-success">Applied</span>`;
                                             }
-                                            
+
+                                            // Skipped rows use neutral styling -- nothing is changing,
+                                            // so the red->green "old -> new" treatment would be misleading.
+                                            const oldCell = isSkipped
+                                                ? `<td><span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-mono">${change.old || 'None'}</span></td>`
+                                                : `<td><span class="bg-rose-50/80 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 px-2 py-1 rounded-md border border-rose-100 dark:border-rose-800 text-xs font-mono">${change.old || 'None'}</span></td>`;
+                                            const newCell = isSkipped
+                                                ? `<td><span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-mono">${change.new || 'None'}</span></td>`
+                                                : `<td><span class="bg-emerald-50/80 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-2 py-1 rounded-md border border-emerald-100 dark:border-emerald-800 text-xs font-mono">${change.new || 'None'}</span></td>`;
+
                                             const tr = document.createElement('tr');
                                             tr.innerHTML = `
                                                 <td class="font-bold">${r.ext}</td>
                                                 <td class="font-semibold text-slate-500">${change.parameter}</td>
-                                                <td><span class="bg-rose-50/80 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 px-2 py-1 rounded-md border border-rose-100 dark:border-rose-800 text-xs font-mono">${change.old || 'None'}</span></td>
-                                                <td><span class="bg-emerald-50/80 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-2 py-1 rounded-md border border-emerald-100 dark:border-emerald-800 text-xs font-mono">${change.new || 'None'}</span></td>
+                                                ${oldCell}
+                                                ${newCell}
                                                 <td class="text-right">${statusUi}</td>
                                             `;
                                             tableBody.appendChild(tr);

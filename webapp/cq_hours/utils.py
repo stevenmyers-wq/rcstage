@@ -1491,6 +1491,24 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 vm_set = notif.get('voicemails', {})
                 v_needs_update = False
 
+                # Manager-recipient guard. When a queue's voicemail email is delivered to its
+                # Manager(s) rather than specified addresses, RingCentral stores no address
+                # (notifyByEmail=True with an empty address list) and does not let us edit the
+                # recipient / attach / mark-as-read flags reliably. Skip this queue's notification
+                # update entirely and report it in the GUI -- unless the sheet supplies an explicit
+                # recipient (Voicemail Notifications Email / Queue Email), which is a deliberate
+                # switch to specified-emails mode and should be honoured.
+                _ovm = orig_notif.get('voicemails', {})
+                _existing_addr = (_ovm.get('emailAddresses') or _ovm.get('advancedEmailAddresses')
+                                  or orig_notif.get('emailAddresses') or [])
+                _sheet_email = (get_val(row, 'Voicemail Notifications Email') is not None
+                                or get_val(row, 'Queue Email') is not None)
+                vm_skip = bool(_ovm.get('notifyByEmail')) and not _existing_addr and not _sheet_email
+                if vm_skip:
+                    changes.append({"parameter": "VM Notifications", "old": "Manager recipient",
+                                    "new": "Skipped", "skipped": True})
+                    logs.append("Skipped VM notifications (Manager-based recipient, no specified emails)")
+
                 val_vn = get_val(row, 'Voicemail Notifications')
                 if val_vn is not None:
                     vm_val = val_vn.lower()
@@ -1580,7 +1598,7 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
 
                 old_email_on = str(orig_notif.get('voicemails', {}).get('notifyByEmail'))
                 new_email_on = str(vm_set.get('notifyByEmail'))
-                if val_vn is not None:
+                if val_vn is not None and not vm_skip:
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
                     v_needs_update |= check_diff(changes, 'VM Attach', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
                     # markAsRead is the only difference between "Notify & Attach" and
@@ -1589,13 +1607,14 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                     # (otherwise a read-only change with no other diff was silently dropped).
                     v_needs_update |= check_diff(changes, 'VM Mark Read', str(orig_notif.get('voicemails', {}).get('markAsRead')), str(vm_set.get('markAsRead')))
 
-                if val_vn is not None or vm_to_text is not None:
+                if (val_vn is not None or vm_to_text is not None) and not vm_skip:
                     old_trans = str(orig_notif.get('voicemails', {}).get('includeTranscription', False))
                     v_needs_update |= check_diff(changes, 'VM Transcription', old_trans, str(want_trans))
 
                 # Per-type email notification toggles (missed calls, faxes, texts). Each
-                # column flips notifyByEmail for that notification type only.
-                for col_name, key in notif_toggle_cols:
+                # column flips notifyByEmail for that notification type only. Skipped for
+                # Manager-recipient queues (see the manager-recipient guard above).
+                for col_name, key in (notif_toggle_cols if not vm_skip else []):
                     tog = _parse_toggle(get_val(row, col_name))
                     if tog is None:
                         continue
@@ -1610,7 +1629,7 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                     if set(old_emails) != set(new_emails):
                         v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
                 
-                if v_needs_update and not is_preview:
+                if v_needs_update and not vm_skip and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
                     
                     if not put_succ and ('includeAttachment' in str(err) or 'markAsRead' in str(err) or 'includeTranscription' in str(err)):
