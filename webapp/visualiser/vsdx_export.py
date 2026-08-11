@@ -114,9 +114,14 @@ def _clip_to_border(cx, cy, hw, hh, tox, toy):
     return cx + dx * s, cy + dy * s
 
 
-def build_vsdx(graph_data):
+def build_vsdx(graph_data, include_descriptors=False):
     """Return the bytes of a .vsdx package for the given graph data dict
-    ({'nodes': [...], 'edges': [...], 'entry_ids': [...]})."""
+    ({'nodes': [...], 'edges': [...], 'entry_ids': [...]}).
+
+    include_descriptors mirrors the visualiser's "Show Descriptors" toggle:
+    when False (default) the export is just the clean coloured nodes +
+    connectors, matching the on-screen diagram; when True it also adds the
+    dark OVERVIEW/ROUTING descriptor cards."""
     nodes = [n['data'] for n in graph_data.get('nodes', []) if 'data' in n]
     edges = [e['data'] for e in graph_data.get('edges', []) if 'data' in e]
     entry = set(graph_data.get('entry_ids', []))
@@ -135,7 +140,7 @@ def build_vsdx(graph_data):
         longest = max([len(l) for l in lines] + [10])
         w = min(360, max(200, longest * 7 + 24))
         h = max(56, 24 + len(lines) * 16)
-        desc = _descriptor_lines(n)
+        desc = _descriptor_lines(n) if include_descriptors else []
         desc_h = max(56, 20 + len(desc) * 14) if desc else 0
         dim[n['id']] = {'w': w, 'h': h, 'lines': lines, 'desc': desc, 'desc_h': desc_h}
 
@@ -161,7 +166,7 @@ def build_vsdx(graph_data):
         max_x = max(max_x, x)
         y += row_h + V_GAP
 
-    total_w = max_x + MARGIN + DESC_W
+    total_w = max_x + MARGIN + (DESC_W if include_descriptors else 0)
     total_h = y + MARGIN
     page_w = total_w / PXIN
     page_h = total_h / PXIN
@@ -308,7 +313,10 @@ def build_vsdx(graph_data):
         tcx, tcy = pos[t]['x'] + dt['w'] / 2.0, pos[t]['y'] + dt['h'] / 2.0
         bx, by = _clip_to_border(scx, scy, ds['w'] / 2.0, ds['h'] / 2.0, tcx, tcy)
         ex, ey = _clip_to_border(tcx, tcy, dt['w'] / 2.0, dt['h'] / 2.0, scx, scy)
-        shapes.append(line_shape(sid, bx, by, ex, ey, text=e.get('label', '') or ''))
+        disabled = bool(e.get('disabled'))
+        shapes.append(line_shape(
+            sid, bx, by, ex, ey, text=e.get('label', '') or '',
+            color='#f43f5e' if disabled else '#64748b', dash=disabled))
         glue(sid, id_of[s], id_of[t])
         sid += 1
 
