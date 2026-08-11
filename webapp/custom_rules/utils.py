@@ -5,20 +5,17 @@ from webapp.rc_api import rc_api_call
 
 # --- 0. EXTENSION TYPE / SITE HELPERS ---
 #
-# Custom answering (interaction) rules are NOT a User-only feature. Call Queues
-# (Department), IVR menus, shared-line/paging groups and the announcement- and
-# message-only extensions all carry their own answering rules. Auditing only
-# `type=User` silently misses every one of those. The set below is the full
-# list of extension types that can own an answering rule.
+# Custom answering (interaction) rules are NOT a User-only feature — Call Queues
+# (Department), Shared Lines Groups and Sites carry their own answering rules
+# too, and auditing only `type=User` silently misses them. Types that cannot own
+# a custom answering rule (IVR menus, paging groups, announcement-only,
+# message-only and park locations) are deliberately excluded so the scan and the
+# filter list only offer extensions that can actually have rules.
 RULE_CAPABLE_TYPES = {
     'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited',
     'Department',          # Call Queue
-    'IvrMenu',             # IVR menu / auto-receptionist
     'SharedLinesGroup',    # Shared lines group
-    'PagingOnly',          # Paging group
-    'Announcement', 'AnnouncementOnly',   # Announcement-only
-    'Voicemail', 'MessageOnly',           # Message-only
-    'ParkLocation',        # Park zone / location
+    'Site',                # Site (site-level call handling)
 }
 
 # Human-readable label shown in the audit's Type column (and used to build the
@@ -30,6 +27,7 @@ TYPE_LABELS = {
     'FlexibleUser': 'User',
     'Limited': 'Limited Extension',
     'Department': 'Call Queue',
+    'Site': 'Site',
     'IvrMenu': 'IVR Menu',
     'SharedLinesGroup': 'Shared Lines Group',
     'PagingOnly': 'Paging Group',
@@ -46,12 +44,8 @@ TYPE_LABELS = {
 FILTER_GROUPS = {
     'User': {'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser', 'Limited'},
     'Call Queue': {'Department'},
-    'IVR Menu': {'IvrMenu'},
     'Shared Lines Group': {'SharedLinesGroup'},
-    'Paging Group': {'PagingOnly'},
-    'Announcement Only': {'Announcement', 'AnnouncementOnly'},
-    'Message Only': {'Voicemail', 'MessageOnly'},
-    'Park Location': {'ParkLocation'},
+    'Site': {'Site'},
 }
 
 
