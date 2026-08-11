@@ -2,7 +2,7 @@
     
     <div class="text-center mb-8">
         <h2 class="text-3xl font-bold text-slate-800 dark:text-white">Custom Rules Manager</h2>
-        <p class="text-slate-600 dark:text-slate-400 mt-2">Audit, Create, or Modify Answering Rules in Bulk across Users, Call Queues, IVRs and more. The tool will attempt to use V1 Custom Rule APIs, and if this fails it will use V2 APIs.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-2">Audit, Create, or Modify Answering Rules in Bulk across Users, Call Queues, IVRs and more — including voicemail recipients and custom greeting audio. The tool will attempt to use V1 Custom Rule APIs, and if this fails it will use V2 APIs.</p>
     </div>
 
     <div class="card !p-4">
@@ -69,7 +69,7 @@
             </div>
             <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Edit Rules</h3>
             <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
-                Use the "Audit" report to get Rule IDs. Modify the Excel file and upload here to update existing rules.
+                Use the "Audit" report to get Rule IDs. Modify the Excel file (voicemail recipient, greeting, etc.) and upload here to update existing rules.
             </p>
             <label class="w-full bg-transparent border-2 border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 dark:hover:text-white transition-colors cursor-pointer">
                 Upload to Update
@@ -77,6 +77,24 @@
             </label>
         </div>
 
+    </div>
+
+    <div class="card !p-4 mt-6">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+                <h4 class="font-semibold text-slate-800 dark:text-slate-100">Optional: greeting audio</h4>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Attach <code>.wav</code>/<code>.mp3</code> clips, then reference a file by name in the sheet's
+                    <strong>Greeting File</strong> column. Each is applied as the rule's custom voicemail / announcement
+                    greeting after the rule is written. Select these <em>before</em> you upload the spreadsheet.
+                </p>
+            </div>
+            <label class="shrink-0 bg-transparent border-2 border-amber-500 text-amber-600 dark:border-amber-400 dark:text-amber-400 font-semibold py-2 px-4 rounded-lg hover:bg-amber-500 hover:text-white dark:hover:bg-amber-500 dark:hover:text-white transition-colors cursor-pointer text-sm">
+                Select audio files
+                <input id="crAudioInput" type="file" class="hidden" accept=".wav,.mp3,audio/*" multiple onchange="crAudioSelected(this)">
+            </label>
+        </div>
+        <div id="crAudioList" class="mt-3 text-xs text-slate-500 dark:text-slate-400"></div>
     </div>
 
     <div id="cr-progress-container" class="card hidden !py-4 mt-8">
@@ -265,6 +283,20 @@
         }
     }
 
+    // Greeting audio the user attaches; sent alongside the spreadsheet so the
+    // backend can apply a clip named in a row's 'Greeting File' column.
+    let rulesAudioFiles = [];
+    function crAudioSelected(input) {
+        rulesAudioFiles = input.files ? Array.from(input.files) : [];
+        const list = document.getElementById('crAudioList');
+        if (!rulesAudioFiles.length) {
+            list.innerHTML = '';
+            return;
+        }
+        const names = rulesAudioFiles.map(f => `<span class="inline-block bg-slate-100 dark:bg-slate-700 rounded px-2 py-0.5 mr-1 mb-1">${f.name}</span>`).join('');
+        list.innerHTML = `<span class="text-slate-500 dark:text-slate-400">${rulesAudioFiles.length} file(s) ready:</span><br>${names}`;
+    }
+
     let rulesTaskId = null;
     const rulesStopBtn = document.getElementById('rules-stop-btn');
     if (rulesStopBtn) {
@@ -287,8 +319,11 @@
         const formData = new FormData();
         formData.append('file', file);
         formData.append('task_id', rulesTaskId);
+        // Attach any selected greeting audio (keyed by filename via 'Greeting File').
+        rulesAudioFiles.forEach(f => formData.append('audio', f, f.name));
 
         logRule(`Uploading ${file.name}...`);
+        if (rulesAudioFiles.length) logRule(`Including ${rulesAudioFiles.length} greeting audio file(s).`);
         if (rulesStopBtn) { rulesStopBtn.classList.remove('hidden'); rulesStopBtn.disabled = false; rulesStopBtn.textContent = '■ Stop'; }
         crProgressShow('Uploading file…');
 
