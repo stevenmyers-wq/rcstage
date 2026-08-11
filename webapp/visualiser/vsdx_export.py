@@ -125,28 +125,49 @@ def build_vsdx(graph_data, include_descriptors=False):
     nodes = [n['data'] for n in graph_data.get('nodes', []) if 'data' in n]
     edges = [e['data'] for e in graph_data.get('edges', []) if 'data' in e]
     entry = set(graph_data.get('entry_ids', []))
-    byid = {n['id']: n for n in nodes}
 
     if not nodes:
         nodes = [{'id': '_empty', 'type': 'unknown', 'label': 'No flow data',
                   'sublabel': '', 'tooltip': ''}]
 
+    # When descriptors are on, inject each card as a child pseudo-node linked by
+    # a dashed edge — exactly like the on-screen "Show Descriptors" toggle — so
+    # the same layered layout positions them (below/beside their node) instead
+    # of us hand-placing giant boxes that overlap.
+    desc_ids = set()
+    if include_descriptors:
+        extra_nodes, extra_edges = [], []
+        for n in list(nodes):
+            desc = _descriptor_lines(n)
+            if not desc:
+                continue
+            did = str(n['id']) + '_desc'
+            desc_ids.add(did)
+            extra_nodes.append({'id': did, 'type': 'descriptor',
+                                'label': '\n'.join(desc), 'sublabel': '', 'tooltip': ''})
+            extra_edges.append({'source': n['id'], 'target': did, 'descriptor': True})
+        nodes = nodes + extra_nodes
+        edges = edges + extra_edges
+
+    byid = {n['id']: n for n in nodes}
     layer = _layered_layout(nodes, edges, list(entry))
 
-    # Node sizes + descriptor content
+    # Node sizes
     dim = {}
     for n in nodes:
-        lines = _node_text_lines(n, n['id'] in entry)
-        longest = max([len(l) for l in lines] + [10])
-        w = min(360, max(200, longest * 7 + 24))
-        h = max(56, 24 + len(lines) * 16)
-        desc = _descriptor_lines(n) if include_descriptors else []
-        desc_h = max(56, 20 + len(desc) * 14) if desc else 0
-        dim[n['id']] = {'w': w, 'h': h, 'lines': lines, 'desc': desc, 'desc_h': desc_h}
+        if n['id'] in desc_ids:
+            lines = [l for l in str(n['label']).split('\n')]
+            longest = max([len(l) for l in lines] + [10])
+            w = min(300, max(210, longest * 6 + 20))
+            h = max(56, 16 + len(lines) * 13)
+        else:
+            lines = _node_text_lines(n, n['id'] in entry)
+            longest = max([len(l) for l in lines] + [10])
+            w = min(360, max(200, longest * 7 + 24))
+            h = max(56, 24 + len(lines) * 16)
+        dim[n['id']] = {'w': w, 'h': h, 'lines': lines}
 
-    # Group by layer, lay out left→right reserving room for descriptor cards.
-    # Row height must account for the (often taller) descriptor cards so they
-    # don't spill into the next row of nodes.
+    # Group by layer, lay out left→right.
     layers = {}
     for n in nodes:
         layers.setdefault(layer[n['id']], []).append(n)
@@ -156,17 +177,16 @@ def build_vsdx(graph_data, include_descriptors=False):
     max_x = 0
     for k in sorted(layers):
         row = layers[k]
-        row_h = max(max(dim[n['id']]['h'], dim[n['id']]['desc_h']) for n in row)
+        row_h = max(dim[n['id']]['h'] for n in row)
         x = MARGIN
         for n in row:
             d = dim[n['id']]
             pos[n['id']] = {'x': x, 'y': y + (row_h - d['h']) / 2}
-            reserve = d['w'] + (DESC_W + DESC_GAP if d['desc'] else 0)
-            x += reserve + H_GAP
+            x += d['w'] + H_GAP
         max_x = max(max_x, x)
         y += row_h + V_GAP
 
-    total_w = max_x + MARGIN + (DESC_W if include_descriptors else 0)
+    total_w = max_x + MARGIN
     total_h = y + MARGIN
     page_w = total_w / PXIN
     page_h = total_h / PXIN
@@ -254,17 +274,24 @@ def build_vsdx(graph_data, include_descriptors=False):
 
     id_of = {}
 
-    # Node rectangles
+    # Node rectangles (descriptor pseudo-nodes render as dark, left-aligned cards)
     for n in nodes:
         d = dim[n['id']]
-        c = COLOURS.get(n.get('type'), COLOURS['unknown'])
-        is_e = n['id'] in entry
-        stroke = '#facc15' if is_e else c['br']
-        lw = 0.03 if is_e else 0.014
         id_of[n['id']] = sid
-        shapes.append(rect_shape(
-            sid, pos[n['id']]['x'], pos[n['id']]['y'], d['w'], d['h'],
-            c['bg'], stroke, lw, _esc('\n'.join(d['lines']))))
+        if n['id'] in desc_ids:
+            shapes.append(rect_shape(
+                sid, pos[n['id']]['x'], pos[n['id']]['y'], d['w'], d['h'],
+                '#0f172a', '#334155', 0.01, _esc('\n'.join(d['lines'])),
+                font_color='#E2E8F0', font_size=0.072, bold=False,
+                font_lines_left=True))
+        else:
+            c = COLOURS.get(n.get('type'), COLOURS['unknown'])
+            is_e = n['id'] in entry
+            stroke = '#facc15' if is_e else c['br']
+            lw = 0.03 if is_e else 0.014
+            shapes.append(rect_shape(
+                sid, pos[n['id']]['x'], pos[n['id']]['y'], d['w'], d['h'],
+                c['bg'], stroke, lw, _esc('\n'.join(d['lines']))))
         sid += 1
 
     # Whole-shape glue records so Lucid treats connectors as *attached* to the
@@ -280,30 +307,8 @@ def build_vsdx(graph_data, include_descriptors=False):
             f'ToSheet="{tgt_id}" ToPart="3"/>'
         )
 
-    # Descriptor cards (dark) + dashed connectors (glued node → card)
-    for n in nodes:
-        d = dim[n['id']]
-        if not d['desc']:
-            continue
-        nx = pos[n['id']]['x']
-        ny = pos[n['id']]['y']
-        dh = max(56, 20 + len(d['desc']) * 14)
-        dx = nx + d['w'] + DESC_GAP
-        dy = ny + (d['h'] - dh) / 2.0
-        desc_id = sid
-        shapes.append(rect_shape(
-            sid, dx, dy, DESC_W, dh, '#0f172a', '#334155', 0.01,
-            _esc('\n'.join(d['desc'])), font_color='#E2E8F0',
-            font_size=0.075, bold=False, font_lines_left=True))
-        sid += 1
-        sy = ny + d['h'] / 2.0
-        dsy = dy + dh / 2.0
-        shapes.append(line_shape(sid, nx + d['w'], sy, dx, dsy,
-                                 color='#f59e0b', lw=0.01, dash=True))
-        glue(sid, id_of[n['id']], desc_id)
-        sid += 1
-
-    # Edges: dynamic connector lines (glued) + mid-line labels
+    # Edges: dynamic connector lines (glued). Descriptor edges are dashed amber
+    # with no label; disabled rules are dashed red.
     for e in edges:
         s, t = e.get('source'), e.get('target')
         if s not in id_of or t not in id_of:
@@ -313,10 +318,14 @@ def build_vsdx(graph_data, include_descriptors=False):
         tcx, tcy = pos[t]['x'] + dt['w'] / 2.0, pos[t]['y'] + dt['h'] / 2.0
         bx, by = _clip_to_border(scx, scy, ds['w'] / 2.0, ds['h'] / 2.0, tcx, tcy)
         ex, ey = _clip_to_border(tcx, tcy, dt['w'] / 2.0, dt['h'] / 2.0, scx, scy)
-        disabled = bool(e.get('disabled'))
-        shapes.append(line_shape(
-            sid, bx, by, ex, ey, text=e.get('label', '') or '',
-            color='#f43f5e' if disabled else '#64748b', dash=disabled))
+        if e.get('descriptor'):
+            shapes.append(line_shape(sid, bx, by, ex, ey, color='#f59e0b',
+                                     lw=0.01, dash=True))
+        else:
+            disabled = bool(e.get('disabled'))
+            shapes.append(line_shape(
+                sid, bx, by, ex, ey, text=e.get('label', '') or '',
+                color='#f43f5e' if disabled else '#64748b', dash=disabled))
         glue(sid, id_of[s], id_of[t])
         sid += 1
 

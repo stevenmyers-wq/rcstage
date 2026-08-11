@@ -28,6 +28,7 @@ class CallFlowTracer:
         self.phone_map = None          # ext_id -> [{"number", "usage"}]
         self.entry_node_ids = []       # node ids that are graph entry points
         self.show_inactive = False     # also draw disabled/inactive rules
+        self.notif_cache = {}          # ext_id -> voicemail notification email(s)
 
     # ------------------------------------------------------------------
     # API helpers
@@ -222,6 +223,33 @@ class CallFlowTracer:
         if extra > 0:
             line += f" +{extra} more"
         return line
+
+    def _vm_notification(self, ext_id):
+        """Return the voicemail *notification* email address(es) for an
+        extension. This can differ from the base contact email, so it's worth
+        surfacing on voicemail nodes. Best-effort + cached."""
+        ext_id = str(ext_id)
+        if ext_id in self.notif_cache:
+            return self.notif_cache[ext_id]
+        result = ""
+        try:
+            resp = self.api(
+                f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings"
+            )
+            if resp and "errorCode" not in resp:
+                vm = resp.get("voicemails") or {}
+                emails = []
+                if resp.get("advancedMode"):
+                    emails = vm.get("advancedEmailAddresses") or []
+                if not emails:
+                    emails = resp.get("emailAddresses") or []
+                emails = [e for e in emails if e]
+                # de-dupe, preserve order
+                result = ", ".join(dict.fromkeys(emails))
+        except Exception:
+            result = ""
+        self.notif_cache[ext_id] = result
+        return result
 
     @staticmethod
     def _fmt_secs(val):
@@ -504,7 +532,13 @@ class CallFlowTracer:
 
         if ext_id.startswith("vm_"):
             nid = self._next_id()
-            self.add_node(nid, "Voicemail", "voicemail")
+            owner = ext_id.replace("vm_", "")
+            vm_overview = ["Overview", "Type: Voicemail"]
+            notif = self._vm_notification(owner)
+            if notif:
+                vm_overview.append(f"VM notification: {notif}")
+            self.add_node(nid, "Voicemail", "voicemail",
+                          tooltip="\n".join(vm_overview) if notif else "")
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             return nid
@@ -805,6 +839,9 @@ class CallFlowTracer:
             direct_nums = self._direct_numbers(ext_id)
             if direct_nums:
                 u_overview.append(f"Direct numbers: {direct_nums}")
+            vm_notif = self._vm_notification(ext_id)
+            if vm_notif and vm_notif != u_email:
+                u_overview.append(f"VM notification: {vm_notif}")
             self.add_node(nid, name, node_type, sublabel=f"Ext {ext_num}",
                           tooltip="\n".join(u_overview))
             if parent_nid:
