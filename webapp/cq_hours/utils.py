@@ -1514,10 +1514,22 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         if fallback:
                             new_emails = [e.strip() for e in fallback.split(',') if e.strip()]
                         else:
-                            if notif.get('advancedMode') and vm_set.get('emailAddresses'):
-                                new_emails = vm_set.get('emailAddresses')
-                            elif not notif.get('advancedMode') and notif.get('emailAddresses'):
-                                new_emails = notif.get('emailAddresses')
+                            # Reuse the queue's existing notification address so changing the
+                            # notification style (e.g. -> "Notify & Attach") with a blank email
+                            # column doesn't wipe email notifications. Gather from every place the
+                            # export path reads: advanced-mode queues keep addresses under
+                            # voicemails.emailAddresses / advancedEmailAddresses, basic mode at the
+                            # top level. Only disable email notification when no address exists at
+                            # all (RingCentral rejects notifyByEmail=True with no address).
+                            if notif.get('advancedMode'):
+                                existing_emails = vm_set.get('emailAddresses') or vm_set.get('advancedEmailAddresses') or []
+                            else:
+                                existing_emails = notif.get('emailAddresses') or []
+                            if not existing_emails:
+                                existing_emails = (vm_set.get('emailAddresses') or vm_set.get('advancedEmailAddresses')
+                                                   or notif.get('emailAddresses') or [])
+                            if existing_emails:
+                                new_emails = list(existing_emails)
                             else:
                                 vm_set['notifyByEmail'] = False
                                 vm_set['includeAttachment'] = False
