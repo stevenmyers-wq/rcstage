@@ -1510,14 +1510,21 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                     logs.append("Skipped VM notifications (Manager-based recipient, no specified emails)")
 
                 val_vn = get_val(row, 'Voicemail Notifications')
+                # "Include attachment" and "Mark as read" are advanced-mode-only settings in
+                # RingCentral -- basic mode exposes only an on/off "By email" tick, so those flags
+                # are silently ignored on a basic-mode queue. When the requested style needs
+                # either, we must switch the queue to advanced mode for them to actually apply.
+                want_advanced = False
                 if val_vn is not None:
                     vm_val = val_vn.lower()
                     if vm_val in ['off', 'false', 'no']:
                         vm_set['notifyByEmail'] = False; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
                     elif 'read' in vm_val:
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = True
+                        want_advanced = True
                     elif 'attach' in vm_val:
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = True; vm_set['markAsRead'] = False
+                        want_advanced = True
                     else:
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
 
@@ -1565,13 +1572,24 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
 
                 new_notif['voicemails']['notifyByEmail'] = vm_set.get('notifyByEmail', False)
 
+                # Switch to advanced mode when the requested style needs attach and/or read.
+                # These flags only exist under advanced mode; a basic-mode queue ignores them.
+                if want_advanced and vm_set.get('notifyByEmail'):
+                    new_notif['advancedMode'] = True
+
                 # Only rewrite the shared address list when the sheet supplied one (or a
                 # fallback filled it). A blank email column must never wipe the queue's
                 # existing addresses -- which matters now that a fax/text toggle alone can
                 # trigger this PUT.
                 if new_emails:
                     if new_notif.get('advancedMode'):
+                        # Advanced mode keeps the recipient under the voicemails block. Write both
+                        # emailAddresses and advancedEmailAddresses (the export path reads either),
+                        # and keep the top-level copy so a basic->advanced switch can't drop the
+                        # recipient if RingCentral still reads it from there.
                         new_notif['voicemails']['emailAddresses'] = new_emails
+                        new_notif['voicemails']['advancedEmailAddresses'] = new_emails
+                        new_notif['emailAddresses'] = new_emails
                     else:
                         new_notif['emailAddresses'] = new_emails
 
@@ -1600,6 +1618,9 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 new_email_on = str(vm_set.get('notifyByEmail'))
                 if val_vn is not None and not vm_skip:
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
+                    # Attach/read require advanced mode; surface the mode switch so it's visible.
+                    if want_advanced:
+                        v_needs_update |= check_diff(changes, 'VM Advanced Mode', str(orig_notif.get('advancedMode')), str(new_notif.get('advancedMode')))
                     v_needs_update |= check_diff(changes, 'VM Attach', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
                     # markAsRead is the only difference between "Notify & Attach" and
                     # "Notify Attach & Read"; diff it separately so switching between the two
