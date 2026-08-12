@@ -1,6 +1,8 @@
 import io
 import json
 import pandas as pd
+from openpyxl.utils import get_column_letter, quote_sheetname
+from openpyxl.worksheet.datavalidation import DataValidation
 from flask import Blueprint, jsonify, request, send_file, session, Response, stream_with_context
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
@@ -14,6 +16,30 @@ site_allocation_bp.add_url_rule('/cancel', 'cancel', task_control.cancel_view, m
 def _token():
     """Prefer the SM impersonation (bridge) token, falling back to PKCE."""
     return session.get('sm_isolated_token') or session.get('rc_access_token')
+
+
+def _add_site_dropdown(alloc_sheet, sites_sheet, site_col_index, data_rows, site_count):
+    """Attach a list data-validation (dropdown) to the Site column, sourced from
+    the Valid Sites reference sheet so operators can only choose an existing Site.
+
+    site_col_index is 0-based; header occupies row 1, so data starts at row 2.
+    """
+    if data_rows < 1 or site_count < 1:
+        return
+
+    site_letter = get_column_letter(site_col_index + 1)
+    source = "{sheet}!${col}$2:${col}${end}".format(
+        sheet=quote_sheetname(sites_sheet.title),
+        col='A',
+        end=site_count + 1,
+    )
+    dv = DataValidation(type='list', formula1=source, allow_blank=True)
+    dv.error = 'Pick a Site from the dropdown (see the Valid Sites sheet).'
+    dv.errorTitle = 'Invalid Site'
+    dv.prompt = 'Choose a Site from the list.'
+    dv.promptTitle = 'Site'
+    alloc_sheet.add_data_validation(dv)
+    dv.add("{col}2:{col}{end}".format(col=site_letter, end=data_rows + 1))
 
 
 @site_allocation_bp.route('/sites', methods=['GET'])
@@ -60,6 +86,16 @@ def download_template():
             for column in sheet.columns:
                 length = max(len(str(cell.value) or "") for cell in column)
                 sheet.column_dimensions[column[0].column_letter].width = min(length + 5, 50)
+
+        # Constrain the Site column to the Valid Sites list via an Excel dropdown,
+        # so operators pick an existing Site rather than free-typing one.
+        _add_site_dropdown(
+            writer.sheets['Site Allocation'],
+            writer.sheets['Valid Sites'],
+            columns.index('Site'),
+            len(df),
+            len(site_names or ['Main Site']),
+        )
     output.seek(0)
 
     return send_file(
