@@ -5,15 +5,24 @@
             <h2 class="text-display mb-2">Call Queue Manager</h2>
             <p class="text-subheading">Bulk update Hours, Routing, Timers, and Limits for Call Queues using Impersonation Bridging.</p>
         </div>
-        <a href="/api/cq_hours/template" class="btn-secondary whitespace-nowrap flex items-center gap-2" download>
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
-            Download Template
-        </a>
+        <div class="flex items-center gap-2 flex-wrap">
+            <a href="/api/cq_hours/help" target="_blank" rel="noopener" class="btn-secondary whitespace-nowrap flex items-center gap-2" title="Open the full behaviour guide in a new tab">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Behaviour guide
+            </a>
+            <a href="/api/cq_hours/template" class="btn-secondary whitespace-nowrap flex items-center gap-2" download>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
+                Download Template
+            </a>
+        </div>
     </div>
 
     <div class="card bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm">
         <p class="text-sm text-blue-800 dark:text-blue-300">
             Use this tool to bulk update your Call Queue configurations. <strong>You do not need to update the queue wholly.</strong> Simply leave a column blank to ignore that specific setting.
+        </p>
+        <p class="text-sm text-blue-800 dark:text-blue-300 mt-2">
+            Notifications can be set per type &mdash; the template includes a dedicated email column for <strong>Voicemail</strong>, <strong>Missed Call</strong>, <strong>Fax</strong> and <strong>Text</strong>. Attach / Mark-as-read and per-type addresses switch a queue to advanced mode automatically. See the <a href="/api/cq_hours/help" target="_blank" rel="noopener" class="font-semibold underline hover:text-blue-600">behaviour guide</a> for how manager queues, advanced mode and skips are handled.
         </p>
     </div>
 
@@ -88,6 +97,14 @@
                 <span class="text-sm text-slate-600 dark:text-slate-300 leading-snug">
                     <span class="font-semibold text-slate-700 dark:text-slate-200">Overwrite queue members</span>
                     <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">When a row lists Members, remove anyone not listed so the queue matches the sheet exactly. Off = add the listed members only. A blank Members column is never changed either way.</span>
+                </span>
+            </label>
+
+            <label for="cq-override-managers" class="flex items-start gap-3 mb-4 cursor-pointer select-none" title="Only affects queues whose voicemail notifications are sent to a real user Manager (no editable address). Requires an email in the sheet.">
+                <input type="checkbox" id="cq-override-managers" class="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500">
+                <span class="text-sm text-slate-600 dark:text-slate-300 leading-snug">
+                    <span class="font-semibold text-slate-700 dark:text-slate-200">Convert manager-notification queues</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">Off (default): queues that notify a <strong>user Manager</strong> are skipped. On: untick the Manager and switch them to advanced notifications using the specified email(s) from the sheet. Queues with a real notification address are updated either way. <a href="/api/cq_hours/help" target="_blank" rel="noopener" class="underline hover:text-blue-600">Learn more</a>.</span>
                 </span>
             </label>
 
@@ -559,6 +576,7 @@
                 formData.append('file', fileInput.files[0]);
                 formData.append('action', action);
                 formData.append('wipe_members', document.getElementById('cq-wipe-members').checked ? '1' : '0');
+                formData.append('override_managers', document.getElementById('cq-override-managers').checked ? '1' : '0');
                 if (cqTaskId) formData.append('task_id', cqTaskId);
 
                 if (!sheetContainer.classList.contains('hidden')) {
