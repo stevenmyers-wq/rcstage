@@ -208,6 +208,14 @@ def update_rules():
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
+    # Fail loudly if the sheet doesn't have the key column, instead of silently
+    # treating every row as blank. Guards against uploading the wrong sheet or a
+    # renamed header.
+    if 'Ext Number' not in df.columns:
+        found = ', '.join(str(c) for c in df.columns) or '(none)'
+        return jsonify({"error": f"The sheet has no 'Ext Number' column. Found columns: {found}. "
+                                 f"Make sure you're uploading the 'Template' sheet or an Audit export."}), 400
+
     # Read any uploaded greeting audio into memory now (request context), keyed
     # by lowercased filename so a 'Greeting File' cell can reference it. The
     # spreadsheet itself is under the 'file' key and is skipped here.
@@ -233,6 +241,7 @@ def update_rules():
     def generate():
         cancelled = False
         current = 0
+        written_count = 0
 
         def prog(message=None, level='info'):
             evt = {"type": "progress", "current": current, "total": total}
@@ -254,7 +263,12 @@ def update_rules():
             current += 1
             raw_ext_num = row.get('Ext Number')
             if pd.isna(raw_ext_num):
-                yield prog()  # advance the bar for a blank row, no log line
+                # A row that carries other data but no Ext Number is a mistake
+                # worth flagging; a wholly empty row (trailing blanks) is silent.
+                if row.notna().any():
+                    yield prog(f"Row {index}: ⚠️ Skipped — 'Ext Number' is blank.", "info")
+                else:
+                    yield prog()
                 continue
 
             try:
@@ -377,11 +391,14 @@ def update_rules():
                             yield prog(f"   ↳ ❌ Greeting upload failed for Ext {raw_ext_num}: {str(ge)}", "error")
                 elif audio_note:
                     yield prog(f"   ↳ ⚠️ Ext {raw_ext_num}: {audio_note}.", "info")
+
+                if written_ok:
+                    written_count += 1
             except Exception as e:
                 yield prog(f"❌ Error Ext {raw_ext_num}: {str(e)}", "error")
 
         task_control.clear(task_id)
-        yield json.dumps({"type": "complete", "cancelled": cancelled}) + "\n"
+        yield json.dumps({"type": "complete", "cancelled": cancelled, "written": written_count}) + "\n"
 
     resp = Response(stream_with_context(generate()), mimetype='application/x-ndjson')
     resp.headers['X-Accel-Buffering'] = 'no'

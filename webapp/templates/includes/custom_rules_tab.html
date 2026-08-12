@@ -351,6 +351,8 @@
                     uploadError = evt.message;
                 } else if (evt.type === 'complete') {
                     crProgressFinish(true, evt.cancelled ? 'Stopped' : 'Done');
+                    const w = (typeof evt.written === 'number') ? ` — ${evt.written} rule(s) written` : '';
+                    logRule((evt.cancelled ? '■ Stopped' : '✔ Finished') + w + '.', evt.written ? 'success' : 'info');
                 }
             });
 
