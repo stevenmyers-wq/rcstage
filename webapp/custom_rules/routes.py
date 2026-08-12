@@ -6,6 +6,7 @@ import requests
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, Response, stream_with_context
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.utils import get_column_letter
 from webapp.auth_utils import require_rc_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
@@ -31,6 +32,27 @@ class _MemFile:
 
     def read(self):
         return self._data
+
+
+# Dropdown (data-validation) specs shared by the template AND the audit export,
+# so an audited sheet can be edited in place and re-uploaded without retyping.
+_DROPDOWN_SPECS = {
+    'Enabled': '"Yes,No"',
+    'Action': '"Transfer to External,Transfer to Extension,Send to Voicemail,Play Message,Play Message and Disconnect,Fwd Direct To Main"',
+    'Greeting': '"Default,Custom"',
+}
+
+
+def add_rule_dropdowns(ws, columns, max_row=1000):
+    """Attaches the Enabled/Action/Greeting dropdowns to whichever columns hold
+    those headers, resolving the column letter by header name so it works for
+    both the template and the (wider) audit layout."""
+    for name, formula in _DROPDOWN_SPECS.items():
+        if name in columns:
+            letter = get_column_letter(columns.index(name) + 1)
+            dv = DataValidation(type="list", formula1=formula, allow_blank=True)
+            ws.add_data_validation(dv)
+            dv.add(f"{letter}2:{letter}{max_row}")
 
 custom_rules_bp = Blueprint('custom_rules', __name__)
 custom_rules_bp.add_url_rule('/api/custom_rules/cancel', 'custom_rules_cancel', task_control.cancel_view, methods=['POST'])
@@ -149,6 +171,9 @@ def audit_rules():
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='Audit')
                 worksheet = writer.sheets['Audit']
+                # Same dropdowns as the blank template, so the audit can be
+                # edited in place and re-uploaded without retyping values.
+                add_rule_dropdowns(worksheet, cols)
                 for column in worksheet.columns:
                     length = max(len(str(cell.value) or "") for cell in column)
                     worksheet.column_dimensions[column[0].column_letter].width = length + 5
@@ -246,9 +271,26 @@ def update_rules():
                     continue
 
                 # Greeting intent for this row (used on the V2 path + audio upload).
+                # Resolve which uploaded clip (if any) to apply:
+                #   - a named 'Greeting File' picks that clip;
+                #   - Greeting='Custom' with no file named falls back to the sole
+                #     uploaded clip (the common "one rule, one file" case), so a
+                #     forgotten filename no longer silently applies nothing.
                 greeting_choice = str(row.get('Greeting') or '').strip().lower()
                 greeting_file_name = str(row.get('Greeting File') or '').strip().lower()
-                has_audio = bool(greeting_file_name) and greeting_file_name in uploaded_audio
+                audio_to_apply = None
+                audio_note = None
+                if greeting_file_name:
+                    if greeting_file_name in uploaded_audio:
+                        audio_to_apply = uploaded_audio[greeting_file_name]
+                    else:
+                        audio_note = f"greeting file '{greeting_file_name}' was not among the uploaded audio files"
+                elif greeting_choice == 'custom' and uploaded_audio:
+                    if len(uploaded_audio) == 1:
+                        audio_to_apply = next(iter(uploaded_audio.values()))
+                    else:
+                        audio_note = "Greeting is 'Custom' but no 'Greeting File' named — add the filename to that column (multiple audio files were uploaded)"
+                has_audio = audio_to_apply is not None
 
                 if action_type == 'UnconditionalForwarding' and pd.notna(row.get('External Number')):
                     raw_ph = str(row.get('External Number')).strip()
@@ -326,15 +368,15 @@ def update_rules():
                     if not written_ok or not written_rule_id:
                         yield prog(f"   ↳ ⚠️ Ext {raw_ext_num}: rule not written, skipped greeting audio.", "info")
                     elif action_type not in ('TakeMessagesOnly', 'PlayAnnouncementOnly'):
-                        yield prog(f"   ↳ ⚠️ Ext {raw_ext_num}: 'Greeting File' ignored (Action isn't Send to Voicemail / Play Message).", "info")
+                        yield prog(f"   ↳ ⚠️ Ext {raw_ext_num}: greeting audio ignored (Action isn't Send to Voicemail / Play Message).", "info")
                     else:
                         try:
-                            apply_greeting_audio(ext_id, written_rule_id, action_type, uploaded_audio[greeting_file_name])
-                            yield prog(f"   ↳ 🎵 Applied greeting '{uploaded_audio[greeting_file_name].filename}' to Ext {raw_ext_num}", "success")
+                            apply_greeting_audio(ext_id, written_rule_id, action_type, audio_to_apply)
+                            yield prog(f"   ↳ 🎵 Applied greeting '{audio_to_apply.filename}' to Ext {raw_ext_num}", "success")
                         except Exception as ge:
                             yield prog(f"   ↳ ❌ Greeting upload failed for Ext {raw_ext_num}: {str(ge)}", "error")
-                elif greeting_file_name:
-                    yield prog(f"   ↳ ⚠️ Ext {raw_ext_num}: greeting file '{greeting_file_name}' was not among the uploaded audio files.", "info")
+                elif audio_note:
+                    yield prog(f"   ↳ ⚠️ Ext {raw_ext_num}: {audio_note}.", "info")
             except Exception as e:
                 yield prog(f"❌ Error Ext {raw_ext_num}: {str(e)}", "error")
 
@@ -384,20 +426,8 @@ def download_template():
         df_template.to_excel(writer, index=False, sheet_name='Template')
         ws1 = writer.sheets['Template']
         
-        # --- Add Dropdown Validations ---
-        # Column E is Enabled, Column P is Action, Column T is Greeting.
-        dv_enabled = DataValidation(type="list", formula1='"Yes,No"', allow_blank=True)
-        dv_action = DataValidation(type="list", formula1='"Transfer to External,Transfer to Extension,Send to Voicemail,Play Message,Play Message and Disconnect,Fwd Direct To Main"', allow_blank=True)
-        dv_greeting = DataValidation(type="list", formula1='"Default,Custom"', allow_blank=True)
-
-        ws1.add_data_validation(dv_enabled)
-        ws1.add_data_validation(dv_action)
-        ws1.add_data_validation(dv_greeting)
-
-        # Apply to a generous range of rows (Row 2 to 1000)
-        dv_enabled.add("E2:E1000")
-        dv_action.add("P2:P1000")
-        dv_greeting.add("T2:T1000")
+        # --- Add Dropdown Validations (Enabled / Action / Greeting) ---
+        add_rule_dropdowns(ws1, columns)
 
         # Auto-adjust column widths
         for column in ws1.columns:
