@@ -15,7 +15,8 @@ from .utils import (
     build_v1_payload, format_phone, parse_rule_to_row, transform_v1_to_v2,
     fetch_all_extensions, fetch_sites, resolve_type_filter,
     extension_site_id, FILTER_GROUPS,
-    get_existing_v2_greeting, THIS_EXTENSION,
+    get_existing_v2_greeting, get_existing_v1_conditions, get_existing_v2_conditions,
+    THIS_EXTENSION,
 )
 
 
@@ -280,9 +281,19 @@ def update_rules():
                 user_devices = get_user_devices(ext_id)
                 payload, action_type = build_v1_payload(row, ext_id)
 
+                rule_id = str(row.get('Rule ID')).replace('.0', '').strip() if pd.notna(row.get('Rule ID')) else ""
+                is_update = bool(rule_id)
+
+                # Conditions (caller / called number / schedule) are required to
+                # CREATE a rule, but an UPDATE may only be changing the action or
+                # greeting — so carry the existing rule's conditions forward
+                # instead of blanking them, and never block the edit.
                 if not any(k in payload for k in ['callers', 'calledNumbers', 'schedule']):
-                    yield prog(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions found.", "info")
-                    continue
+                    if is_update:
+                        payload.update(get_existing_v1_conditions(ext_id, rule_id))
+                    else:
+                        yield prog(f"⚠️ Ext {raw_ext_num}: Skipped - No conditions found (required to create a NEW rule).", "info")
+                        continue
 
                 # Greeting intent for this row (used on the V2 path + audio upload).
                 # Resolve which uploaded clip (if any) to apply:
@@ -330,9 +341,6 @@ def update_rules():
                             recipient_id = vm_id if vm_id else ext_id
                     payload['voicemail'] = {'recipient': {'id': recipient_id}}
 
-                rule_id = str(row.get('Rule ID')).replace('.0', '').strip() if pd.notna(row.get('Rule ID')) else ""
-                is_update = bool(rule_id)
-
                 v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule"
                 if is_update: v1_url += f"/{rule_id}"
                 v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
@@ -362,6 +370,13 @@ def update_rules():
                             else:
                                 vm_greeting = get_existing_v2_greeting(ext_id, rule_id)
                             v2_payload = transform_v1_to_v2(payload, ext_id, user_devices, vm_greeting=vm_greeting)
+                            # On a V2 update with no conditions in the sheet, keep
+                            # the rule's existing conditions rather than replacing
+                            # them with an empty array.
+                            if is_update and not v2_payload.get('conditions'):
+                                existing_conditions = get_existing_v2_conditions(ext_id, rule_id)
+                                if existing_conditions:
+                                    v2_payload['conditions'] = existing_conditions
                             # V2 requires PUT for updating existing rules, or POST for new
                             v2_method = "PUT" if is_update else "POST"
                             resp2 = rc_api_call(v2_url, method=v2_method, json=v2_payload, raise_error=True)
