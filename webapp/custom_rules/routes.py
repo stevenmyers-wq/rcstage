@@ -2,7 +2,6 @@ import io
 import json
 import base64
 import pandas as pd
-import requests
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, Response, stream_with_context
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -33,6 +32,15 @@ class _MemFile:
 
     def read(self):
         return self._data
+
+
+def _resp_id(resp):
+    """Best-effort extraction of a created rule's id from a write response."""
+    try:
+        body = resp.json()
+        return body.get('id') if isinstance(body, dict) else None
+    except Exception:
+        return None
 
 
 # Dropdown (data-validation) specs shared by the template AND the audit export,
@@ -351,46 +359,52 @@ def update_rules():
                 written_ok = False
                 written_rule_id = rule_id or None
 
-                try:
-                    resp = rc_api_call(v1_url, method=method, json=payload, raise_error=True)
-                    if not written_rule_id and isinstance(resp, dict):
-                        written_rule_id = resp.get('id')
+                # Inspect the raw response rather than relying on exception types:
+                # rc_api_call re-wraps HTTP errors into a generic Exception, so a
+                # `except HTTPError` never fires. Any V1 rejection falls through
+                # to the V2 (new call-handling) model that Call Queues, Sites and
+                # newer rules require.
+                v1_resp = rc_api_call(v1_url, method=method, json=payload, return_response=True)
+                if v1_resp is not None and getattr(v1_resp, 'ok', False):
+                    written_rule_id = written_rule_id or _resp_id(v1_resp)
                     yield prog(f"✅ {method} Rule Ext {raw_ext_num} (V1)", "success")
                     written_ok = True
-                except requests.exceptions.HTTPError as http_err:
-                    if "NewCallHandlingAndForwarding" in http_err.response.text:
-                        try:
-                            # Greeting for the V2 rule body: an uploaded clip is
-                            # applied separately after the write (use Default in
-                            # the body); an explicit 'Default' forces Default;
-                            # otherwise preserve the rule's existing greeting so
-                            # we never silently replace a custom one.
-                            if has_audio or greeting_choice == 'default':
-                                vm_greeting = {"effectiveGreetingType": "Default"}
-                            else:
-                                vm_greeting = get_existing_v2_greeting(ext_id, rule_id)
-                            v2_payload = transform_v1_to_v2(payload, ext_id, user_devices, vm_greeting=vm_greeting)
-                            # On a V2 update with no conditions in the sheet, keep
-                            # the rule's existing conditions rather than replacing
-                            # them with an empty array.
-                            if is_update and not v2_payload.get('conditions'):
-                                existing_conditions = get_existing_v2_conditions(ext_id, rule_id)
-                                if existing_conditions:
-                                    v2_payload['conditions'] = existing_conditions
-                            # V2 requires PUT for updating existing rules, or POST for new
-                            v2_method = "PUT" if is_update else "POST"
-                            resp2 = rc_api_call(v2_url, method=v2_method, json=v2_payload, raise_error=True)
-                            if not written_rule_id and isinstance(resp2, dict):
-                                written_rule_id = resp2.get('id')
+                else:
+                    v1_status = getattr(v1_resp, 'status_code', '?')
+                    v1_body = ((getattr(v1_resp, 'text', '') or '').strip())[:300]
+                    try:
+                        # Greeting for the V2 rule body: an uploaded clip is applied
+                        # separately after the write (use Default in the body); an
+                        # explicit 'Default' forces Default; otherwise preserve the
+                        # rule's existing greeting so we never silently replace it.
+                        if has_audio or greeting_choice == 'default':
+                            vm_greeting = {"effectiveGreetingType": "Default"}
+                        else:
+                            vm_greeting = get_existing_v2_greeting(ext_id, rule_id)
+                        v2_payload = transform_v1_to_v2(payload, ext_id, user_devices, vm_greeting=vm_greeting)
+                        # On a V2 update with no conditions in the sheet, keep the
+                        # rule's existing conditions rather than replacing them with
+                        # an empty array.
+                        if is_update and not v2_payload.get('conditions'):
+                            existing_conditions = get_existing_v2_conditions(ext_id, rule_id)
+                            if existing_conditions:
+                                v2_payload['conditions'] = existing_conditions
+                        # V2 requires PUT for updating existing rules, or POST for new
+                        v2_method = "PUT" if is_update else "POST"
+                        v2_resp = rc_api_call(v2_url, method=v2_method, json=v2_payload, return_response=True)
+                        if v2_resp is not None and getattr(v2_resp, 'ok', False):
+                            written_rule_id = written_rule_id or _resp_id(v2_resp)
                             yield prog(f"✅ {v2_method} Rule Ext {raw_ext_num} (V2)", "success")
                             written_ok = True
-                        except Exception as v2_err:
-                            error_msg = str(v2_err)
-                            if hasattr(v2_err, 'response') and v2_err.response is not None:
-                                error_msg += f" | Details: {v2_err.response.text}"
-                            yield prog(f"❌ V2 Error Ext {raw_ext_num}: {error_msg}", "error")
-                    else:
-                        raise http_err
+                        else:
+                            v2_status = getattr(v2_resp, 'status_code', '?')
+                            v2_body = ((getattr(v2_resp, 'text', '') or '').strip())[:400]
+                            yield prog(
+                                f"❌ Ext {raw_ext_num}: write failed. "
+                                f"V1 [{v1_status}] {v1_body or '(no body)'} · "
+                                f"V2 [{v2_status}] {v2_body or '(no body)'}", "error")
+                    except Exception as v2_err:
+                        yield prog(f"❌ V2 Error Ext {raw_ext_num}: {str(v2_err)}", "error")
 
                 # Post-write: apply an uploaded greeting clip to the rule.
                 if has_audio:
