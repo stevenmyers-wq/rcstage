@@ -1576,6 +1576,12 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 # These flags only exist under advanced mode; a basic-mode queue ignores them.
                 if want_advanced and vm_set.get('notifyByEmail'):
                     new_notif['advancedMode'] = True
+                    # In advanced mode recipients live per-notification-type. The shared
+                    # top-level emailAddresses is a basic-mode field and RingCentral rejects it
+                    # here with CMN-101, so drop it -- per-type advancedEmailAddresses are used
+                    # instead. Top-level includeManagers is left as-is to preserve the manager
+                    # delivery of any other notification types that relied on it.
+                    new_notif.pop('emailAddresses', None)
 
                 # Only rewrite the shared address list when the sheet supplied one (or a
                 # fallback filled it). A blank email column must never wipe the queue's
@@ -1583,13 +1589,13 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 # trigger this PUT.
                 if new_emails:
                     if new_notif.get('advancedMode'):
-                        # Advanced mode keeps the recipient under the voicemails block. Write both
-                        # emailAddresses and advancedEmailAddresses (the export path reads either),
-                        # and keep the top-level copy so a basic->advanced switch can't drop the
-                        # recipient if RingCentral still reads it from there.
-                        new_notif['voicemails']['emailAddresses'] = new_emails
+                        # Advanced mode stores the voicemail recipient under the voicemails block
+                        # as advancedEmailAddresses (a list of address strings). The basic-mode
+                        # emailAddresses fields -- top-level and per-type -- are invalid here
+                        # (CMN-101), so use advancedEmailAddresses only and drop both emailAddresses.
+                        new_notif['voicemails'].pop('emailAddresses', None)
                         new_notif['voicemails']['advancedEmailAddresses'] = new_emails
-                        new_notif['emailAddresses'] = new_emails
+                        new_notif.pop('emailAddresses', None)
                     else:
                         new_notif['emailAddresses'] = new_emails
 
