@@ -294,6 +294,39 @@ def get_existing_v2_greeting(ext_id, rule_id):
     return None
 
 
+def get_existing_v1_conditions(ext_id, rule_id):
+    """Fetches an existing rule's match conditions (callers / called numbers /
+    schedule) from the V1 answering-rule endpoint, so an update that only
+    changes the action or greeting can carry the original conditions forward
+    instead of blanking them. Returns a dict with only the keys that are set."""
+    if not rule_id:
+        return {}
+    try:
+        resp = rc_api_call(
+            f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}',
+            params={'view': 'Detailed'}, raise_error=True)
+        out = {}
+        if resp.get('callers'): out['callers'] = resp['callers']
+        if resp.get('calledNumbers'): out['calledNumbers'] = resp['calledNumbers']
+        if resp.get('schedule'): out['schedule'] = resp['schedule']
+        return out
+    except Exception:
+        return {}
+
+
+def get_existing_v2_conditions(ext_id, rule_id):
+    """Fetches an existing V2 interaction rule's conditions so a V2 update can
+    preserve them rather than submitting an empty conditions array."""
+    if not rule_id:
+        return []
+    try:
+        url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules/{rule_id}"
+        resp = rc_api_call(url, raise_error=True)
+        return (resp or {}).get('conditions', []) or []
+    except Exception:
+        return []
+
+
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=None):
     if user_devices is None: user_devices = []
     v2 = {
