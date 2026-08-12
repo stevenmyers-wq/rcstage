@@ -79,7 +79,19 @@ TEMPLATE_COLUMNS = [
     "Time Reached Destination", "Voicemail Greeting", "Voicemail Recipients",
     "Voicemail Notifications", "Voicemail Notifications Email", "After Hours Behavior",
     "After Hours Destination", "Voicemail to Text", "Missed Call Notifications",
-    "Inbound Fax Notifications", "Outbound Fax Notifications", "Text Notifications"
+    "Inbound Fax Notifications", "Outbound Fax Notifications", "Text Notifications",
+    "Missed Call Notifications Email", "Inbound Fax Notifications Email",
+    "Outbound Fax Notifications Email", "Text Notifications Email"
+]
+
+# Per-type notification columns: (sheet On/Off toggle column, sheet per-type email column,
+# RingCentral notification-settings key). Voicemail is handled separately (it has its own
+# style column). Per-type email addresses are an advanced-mode feature.
+NOTIF_TYPE_COLS = [
+    ('Missed Call Notifications', 'Missed Call Notifications Email', 'missedCalls'),
+    ('Inbound Fax Notifications', 'Inbound Fax Notifications Email', 'inboundFaxes'),
+    ('Outbound Fax Notifications', 'Outbound Fax Notifications Email', 'outboundFaxes'),
+    ('Text Notifications', 'Text Notifications Email', 'inboundTexts'),
 ]
 
 GLOBAL_TIMEZONES = [
@@ -628,10 +640,14 @@ def run_cq_audit(task_id, queue_ids, token):
                 # Per-type email toggles + voicemail-to-text, exported as On/Off so the
                 # sheet round-trips back through the upload path.
                 row["Voicemail to Text"] = "On" if vm_set.get('includeTranscription') else "Off"
-                row["Missed Call Notifications"] = "On" if notif.get('missedCalls', {}).get('notifyByEmail') else "Off"
-                row["Inbound Fax Notifications"] = "On" if notif.get('inboundFaxes', {}).get('notifyByEmail') else "Off"
-                row["Outbound Fax Notifications"] = "On" if notif.get('outboundFaxes', {}).get('notifyByEmail') else "Off"
-                row["Text Notifications"] = "On" if notif.get('inboundTexts', {}).get('notifyByEmail') else "Off"
+                # Per-type On/Off + each type's own notification address (advanced mode keeps a
+                # separate advancedEmailAddresses per type). Exported so the sheet round-trips.
+                for _tcol, _ecol, _key in NOTIF_TYPE_COLS:
+                    blk = notif.get(_key, {})
+                    row[_tcol] = "On" if blk.get('notifyByEmail') else "Off"
+                    _addrs = blk.get('advancedEmailAddresses') or blk.get('emailAddresses') or []
+                    if _addrs:
+                        row[_ecol] = ", ".join(dict.fromkeys(_addrs))
 
             rows.append(row)
             time.sleep(0.35) 
@@ -669,7 +685,7 @@ def check_diff(changes_list, param_name, old_val, new_val):
         return True
     return False
 
-def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_id=None):
+def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_id=None, override_managers=False):
     total_records = len(records)
     yield {"type": "start", "total": total_records, "message": "Fetching Account Directories..."}
     
@@ -1476,14 +1492,10 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
         # transcription switch, alongside the original voicemail-notification handling.
         # Any one of these columns triggers a notification-settings PUT; untouched
         # columns are left exactly as the queue already has them.
-        notif_toggle_cols = [
-            ('Missed Call Notifications', 'missedCalls'),
-            ('Inbound Fax Notifications', 'inboundFaxes'),
-            ('Outbound Fax Notifications', 'outboundFaxes'),
-            ('Text Notifications', 'inboundTexts'),
-        ]
+        notif_toggle_cols = [(tcol, key) for tcol, _ecol, key in NOTIF_TYPE_COLS]
         vm_fields = (['Voicemail Notifications', 'Voicemail Notifications Email', 'Queue Email',
-                      'Voicemail to Text'] + [c for c, _ in notif_toggle_cols])
+                      'Voicemail to Text'] + [c for c, _ in notif_toggle_cols]
+                     + [ecol for _tcol, ecol, _key in NOTIF_TYPE_COLS])
         if any(get_val(row, f) is not None for f in vm_fields):
             get_succ, notif = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='GET', token=token)
             if get_succ and isinstance(notif, dict):
@@ -1495,20 +1507,30 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 # Manager is selected -- RingCentral delivers by manager reference, so email is on
                 # but NO editable recipient address is stored; (2) a Specified Email (including the
                 # dummy address Pro Serv provisions "as" the manager via API) -- a real address is
-                # stored. We can't safely edit case (1) -- there's no address to work with and
-                # advanced mode (needed for attach/read) rejects manager-based recipients -- so skip
-                # it and report. Case (2) has a stored address and is updated as a normal
-                # specified-email queue. The reliable signal is simply whether a stored address
-                # exists; includeManagers is left true by RingCentral even on specified-email
-                # queues, so it can't be used here.
+                # stored. Case (2) has a stored address and is updated as a normal specified-email
+                # queue. Case (1) can't be edited normally (no address, and advanced mode rejects
+                # manager-based recipients), so by default we skip it -- UNLESS the operator ticked
+                # "Convert manager queues" AND the sheet supplies a specified address: then we untick
+                # the manager, switch to advanced mode, and set the sheet's specified emails.
                 _ovm = orig_notif.get('voicemails', {})
                 _existing_addr = (_ovm.get('emailAddresses') or _ovm.get('advancedEmailAddresses')
                                   or orig_notif.get('emailAddresses') or [])
-                vm_skip = bool(_ovm.get('notifyByEmail')) and not _existing_addr
+                _sheet_emails = ([get_val(row, 'Voicemail Notifications Email'), get_val(row, 'Queue Email')]
+                                 + [get_val(row, ecol) for _tcol, ecol, _key in NOTIF_TYPE_COLS])
+                _has_sheet_email = any(e for e in _sheet_emails)
+                _is_manager = bool(_ovm.get('notifyByEmail')) and not _existing_addr
+                manager_override = _is_manager and override_managers and _has_sheet_email
+                vm_skip = _is_manager and not manager_override
                 if vm_skip:
+                    _msg = ("Manager recipient, no editable address" if not override_managers
+                            else "Manager recipient -- tick 'Convert' and supply an email to override")
                     changes.append({"parameter": "VM Notifications", "old": "Manager recipient",
                                     "new": "Skipped", "skipped": True})
-                    logs.append("Skipped VM notifications (Manager recipient, no editable address)")
+                    logs.append(f"Skipped VM notifications ({_msg})")
+                if manager_override:
+                    changes.append({"parameter": "VM Notifications", "old": "Manager recipient",
+                                    "new": "Converted to Specified Emails"})
+                    logs.append("Converted manager queue to Specified Emails (advanced mode)")
 
                 val_vn = get_val(row, 'Voicemail Notifications')
                 # "Include attachment" and "Mark as read" are advanced-mode-only settings in
@@ -1528,6 +1550,12 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         want_advanced = True
                     else:
                         vm_set['notifyByEmail'] = True; vm_set['includeAttachment'] = False; vm_set['markAsRead'] = False
+
+                # Distinct per-type notification addresses, and converting a manager queue, both
+                # require advanced mode (basic mode has only one shared address / manager tick).
+                _pertype_email_given = any(get_val(row, ecol) for _tcol, ecol, _key in NOTIF_TYPE_COLS)
+                if manager_override or _pertype_email_given:
+                    want_advanced = True
 
                 new_emails = []
                 val_vne = get_val(row, 'Voicemail Notifications Email')
@@ -1573,16 +1601,22 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
 
                 new_notif['voicemails']['notifyByEmail'] = vm_set.get('notifyByEmail', False)
 
-                # Switch to advanced mode when the requested style needs attach and/or read.
-                # These flags only exist under advanced mode; a basic-mode queue ignores them.
-                if want_advanced and vm_set.get('notifyByEmail'):
+                # Switch to advanced mode when the requested style needs attach/read, when
+                # per-type addresses are supplied, or when converting a manager queue. These
+                # features only exist under advanced mode; a basic-mode queue ignores them.
+                if want_advanced and (vm_set.get('notifyByEmail') or manager_override or _pertype_email_given):
                     new_notif['advancedMode'] = True
                     # In advanced mode recipients live per-notification-type. The shared
                     # top-level emailAddresses is a basic-mode field and RingCentral rejects it
                     # here with CMN-101, so drop it -- per-type advancedEmailAddresses are used
-                    # instead. Top-level includeManagers is left as-is to preserve the manager
-                    # delivery of any other notification types that relied on it.
+                    # instead.
                     new_notif.pop('emailAddresses', None)
+                    if manager_override:
+                        # Untick the manager: turn off manager delivery at the top level and on
+                        # every type, so notifications go only to the sheet's specified emails.
+                        new_notif['includeManagers'] = False
+                    # else: leave top-level includeManagers as-is to preserve manager delivery of
+                    # any other notification types that relied on it.
 
                 # Only rewrite the shared address list when the sheet supplied one (or a
                 # fallback filled it). A blank email column must never wipe the queue's
@@ -1625,9 +1659,6 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 new_email_on = str(vm_set.get('notifyByEmail'))
                 if val_vn is not None and not vm_skip:
                     v_needs_update |= check_diff(changes, 'VM Email On', old_email_on, new_email_on)
-                    # Attach/read require advanced mode; surface the mode switch so it's visible.
-                    if want_advanced:
-                        v_needs_update |= check_diff(changes, 'VM Advanced Mode', str(orig_notif.get('advancedMode')), str(new_notif.get('advancedMode')))
                     v_needs_update |= check_diff(changes, 'VM Attach', str(orig_notif.get('voicemails', {}).get('includeAttachment')), str(vm_set.get('includeAttachment')))
                     # markAsRead is the only difference between "Notify & Attach" and
                     # "Notify Attach & Read"; diff it separately so switching between the two
@@ -1658,25 +1689,58 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
 
                 # Advanced mode requires EVERY email-enabled notification type to carry a
-                # non-empty advancedEmailAddresses (EXT-455). Cascade the queue's notification
-                # address across every type that is ON, leaving each type's on/off state as-is
-                # (the per-type toggles above already applied any sheet-driven changes). The sheet's
-                # Voicemail Notifications Email wins as the cascade address when supplied and
-                # overwrites existing per-type recipients; otherwise fill only the types missing an
-                # address, using the queue's existing notification address. Runs after the toggles
-                # so a type just turned on is covered too.
+                # non-empty advancedEmailAddresses (EXT-455). For each type that is ON, set its
+                # address in priority order: (1) that type's own sheet column (e.g. "Text
+                # Notifications Email"), (2) the queue's cascade address -- the sheet's Voicemail
+                # Notifications Email when supplied, else the queue's existing notification address.
+                # Each type's on/off state is left as-is unless the per-type toggle changed it.
                 if new_notif.get('advancedMode'):
                     cascade_addr = (new_emails or orig_notif.get('emailAddresses') or [])
-                    sheet_addr_given = val_vne is not None and bool(new_emails)
+                    if not cascade_addr:
+                        # No voicemail/existing address (e.g. converting a manager queue supplying
+                        # only per-type emails) -- fall back to any address the sheet provided so
+                        # every enabled type still validates in advanced mode.
+                        for _c in (['Voicemail Notifications Email', 'Queue Email']
+                                   + [ecol for _tcol, ecol, _key in NOTIF_TYPE_COLS]):
+                            _cv = get_val(row, _c)
+                            if _cv:
+                                cascade_addr = [e.strip() for e in _cv.split(',') if e.strip()]
+                                break
+                    sheet_addr_given = (val_vne is not None and bool(new_emails)) or manager_override
+                    # Map RingCentral keys -> that type's own sheet email column (voicemail's is
+                    # the VM email, already reflected in cascade_addr).
+                    pertype_addr = {}
+                    for _tcol, _ecol, _key in NOTIF_TYPE_COLS:
+                        _v = get_val(row, _ecol)
+                        if _v:
+                            pertype_addr[_key] = [e.strip() for e in _v.split(',') if e.strip()]
                     for _t in ('voicemails', 'inboundFaxes', 'outboundFaxes', 'inboundTexts', 'missedCalls', 'callNotes'):
                         blk = new_notif.get(_t)
                         if not (isinstance(blk, dict) and blk.get('notifyByEmail')):
                             continue
-                        if sheet_addr_given or not blk.get('advancedEmailAddresses'):
+                        if manager_override:
+                            blk['includeManagers'] = False
+                        if _t in pertype_addr:
+                            blk.pop('emailAddresses', None)
+                            blk['advancedEmailAddresses'] = list(pertype_addr[_t])
+                        elif sheet_addr_given or not blk.get('advancedEmailAddresses'):
                             blk.pop('emailAddresses', None)
                             blk['advancedEmailAddresses'] = list(cascade_addr)
 
-                if v_needs_update and not vm_skip and not is_preview:
+                    # Surface the mode switch and any per-type address change so they're visible
+                    # in the preview AND can trigger the PUT on their own (e.g. a per-type email
+                    # supplied for a type that is already on produces no other diff).
+                    if not vm_skip:
+                        v_needs_update |= check_diff(changes, 'VM Advanced Mode',
+                                                     str(orig_notif.get('advancedMode')), str(new_notif.get('advancedMode')))
+                        for _tcol, _ecol, _key in NOTIF_TYPE_COLS:
+                            if get_val(row, _ecol):
+                                _old_a = ", ".join(orig_notif.get(_key, {}).get('advancedEmailAddresses')
+                                                   or orig_notif.get(_key, {}).get('emailAddresses') or [])
+                                _new_a = ", ".join(new_notif.get(_key, {}).get('advancedEmailAddresses') or [])
+                                v_needs_update |= check_diff(changes, f"{_tcol} Email", _old_a, _new_a)
+
+                if (v_needs_update or manager_override) and not vm_skip and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
                     
                     if not put_succ and ('includeAttachment' in str(err) or 'markAsRead' in str(err) or 'includeTranscription' in str(err)):

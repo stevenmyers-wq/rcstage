@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call Queue Manager — Behaviour Guide</title>
+<style>
+  :root{
+    --bg:#f7f9fc; --card:#ffffff; --ink:#1e293b; --muted:#64748b; --line:#e2e8f0;
+    --brand:#2563eb; --brand-ink:#1d4ed8; --ok:#059669; --warn:#b45309; --warnbg:#fffbeb;
+    --skip:#64748b; --code-bg:#f1f5f9; --okbg:#ecfdf5; --infobg:#eff6ff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0b1220; --card:#111a2b; --ink:#e2e8f0; --muted:#94a3b8; --line:#243149;
+      --brand:#60a5fa; --brand-ink:#93c5fd; --ok:#34d399; --warn:#fbbf24; --warnbg:#20180a;
+      --skip:#94a3b8; --code-bg:#1a2438; --okbg:#0c2018; --infobg:#0d1a30;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px;}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:28px;}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em;}
+  .sub{color:var(--muted);margin:0;}
+  h2{font-size:19px;margin:34px 0 10px;letter-spacing:-.01em;}
+  h3{font-size:15px;margin:20px 0 6px;}
+  p{margin:10px 0;}
+  a{color:var(--brand);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0;}
+  code{background:var(--code-bg);padding:1px 6px;border-radius:5px;font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top;}
+  th{background:var(--code-bg);font-weight:600;}
+  ul{margin:10px 0;padding-left:22px;}
+  li{margin:5px 0;}
+  .tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.04em;padding:2px 8px;border-radius:999px;border:1px solid;}
+  .tag.skip{color:var(--skip);border-color:var(--line);background:var(--code-bg);}
+  .tag.ok{color:var(--ok);border-color:var(--ok);background:var(--okbg);}
+  .tag.proc{color:var(--brand-ink);border-color:var(--brand);background:var(--infobg);}
+  .note{border-left:4px solid var(--brand);background:var(--infobg);padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;}
+  .warn{border-left:4px solid var(--warn);background:var(--warnbg);padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;}
+  .toc{columns:2;font-size:14px;}
+  .toc a{display:block;margin:4px 0;}
+  .back{display:inline-block;margin-bottom:18px;font-size:14px;}
+  hr{border:none;border-top:1px solid var(--line);margin:34px 0;}
+  @media(max-width:640px){.toc{columns:1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="javascript:window.close()">&larr; Close</a>
+  <header class="top">
+    <h1>Call Queue Manager — Behaviour Guide</h1>
+    <p class="sub">How the bulk audit &amp; update tool reads your sheet and applies changes to RingCentral call queues.</p>
+  </header>
+
+  <div class="card toc">
+    <a href="#flow">1. Audit &amp; upload flow</a>
+    <a href="#blank">2. Blank columns are ignored</a>
+    <a href="#vm">3. Voicemail notification styles</a>
+    <a href="#advanced">4. Advanced mode &amp; why it's needed</a>
+    <a href="#pertype">5. Per-type notification addresses</a>
+    <a href="#managers">6. Manager queues &amp; the Convert option</a>
+    <a href="#members">7. Overwriting members</a>
+    <a href="#preview">8. Preview, skips &amp; results</a>
+  </div>
+
+  <h2 id="flow">1. Audit &amp; upload flow</h2>
+  <p>The tool works in two halves that share one spreadsheet layout:</p>
+  <ul>
+    <li><strong>Audit &amp; Export</strong> — select queues and download their current configuration into the master template.</li>
+    <li><strong>Upload &amp; Process</strong> — edit that sheet, then <strong>Preview</strong> (a dry run that writes nothing) and <strong>Confirm &amp; Sync</strong> (applies the changes).</li>
+  </ul>
+  <p>Always <strong>Preview first</strong> — it shows exactly what would change, per queue, with no risk.</p>
+
+  <h2 id="blank">2. Blank columns are ignored</h2>
+  <p>You never have to fill the whole sheet. <strong>A blank cell means "leave this setting exactly as it is."</strong> Only columns you fill in are considered, and only queues whose values differ are written.</p>
+
+  <h2 id="vm">3. Voicemail notification styles</h2>
+  <p>The <code>Voicemail Notifications</code> column accepts:</p>
+  <table>
+    <tr><th>Value</th><th>Meaning</th></tr>
+    <tr><td><code>Off</code></td><td>No voicemail email notification.</td></tr>
+    <tr><td><code>Notify by Email</code></td><td>Email on, no attachment.</td></tr>
+    <tr><td><code>Notify &amp; Attach</code></td><td>Email on, voicemail attached.</td></tr>
+    <tr><td><code>Notify Attach &amp; Read</code></td><td>Email on, attached, and marked read once emailed.</td></tr>
+  </table>
+  <p><code>Voicemail to Text</code> (<code>On</code>/<code>Off</code>) controls transcription independently.</p>
+
+  <h2 id="advanced">4. Advanced mode &amp; why it's needed</h2>
+  <p>RingCentral notification settings have two modes:</p>
+  <ul>
+    <li><strong>Basic</strong> — a single on/off "By email" tick per notification type, one shared recipient. <em>No</em> attach or mark-as-read options.</li>
+    <li><strong>Advanced</strong> — per-type recipients, plus <strong>Include attachment</strong> and <strong>Mark as read</strong>.</li>
+  </ul>
+  <div class="note">
+    <strong>Attach, Mark-as-read, and per-type addresses only exist in advanced mode.</strong> So whenever your sheet asks for <code>Notify &amp; Attach</code>, <code>Notify Attach &amp; Read</code>, or a per-type email address, the tool automatically switches that queue to advanced mode. A <strong>VM Advanced Mode</strong> row appears in the preview when this happens. Plain <code>Notify by Email</code> and <code>Off</code> stay on basic mode.
+  </div>
+  <p>When a queue is switched to advanced mode, its existing notification address is <strong>cascaded</strong> across every notification type that is on, because advanced mode requires each enabled type to carry its own recipient. Each type's on/off state is left as-is unless your sheet changes it.</p>
+
+  <h2 id="pertype">5. Per-type notification addresses</h2>
+  <p>Beyond the shared voicemail address, the template has a dedicated email column for each type, so different notifications can go to different inboxes:</p>
+  <table>
+    <tr><th>Notification</th><th>On/Off column</th><th>Address column</th></tr>
+    <tr><td>Voicemail</td><td><code>Voicemail Notifications</code></td><td><code>Voicemail Notifications Email</code></td></tr>
+    <tr><td>Missed calls</td><td><code>Missed Call Notifications</code></td><td><code>Missed Call Notifications Email</code></td></tr>
+    <tr><td>Inbound fax</td><td><code>Inbound Fax Notifications</code></td><td><code>Inbound Fax Notifications Email</code></td></tr>
+    <tr><td>Outbound fax</td><td><code>Outbound Fax Notifications</code></td><td><code>Outbound Fax Notifications Email</code></td></tr>
+    <tr><td>Text</td><td><code>Text Notifications</code></td><td><code>Text Notifications Email</code></td></tr>
+  </table>
+  <p>Address priority for each type, in advanced mode:</p>
+  <ul>
+    <li><strong>1.</strong> That type's own address column, if filled.</li>
+    <li><strong>2.</strong> Otherwise the cascade address — the <code>Voicemail Notifications Email</code> if you supplied one, else the queue's existing notification address.</li>
+  </ul>
+  <p>Supplying any per-type address puts the queue into advanced mode (basic mode can only hold one shared address).</p>
+
+  <h2 id="managers">6. Manager queues &amp; the Convert option</h2>
+  <p>There are two kinds of queue notification setup, and they behave differently:</p>
+  <table>
+    <tr><th>Type</th><th>Recipient</th><th>Default behaviour</th></tr>
+    <tr>
+      <td><strong>Specified Emails</strong><br>(incl. a dummy "Manager Email" address set via API)</td>
+      <td>A real, editable address is stored on the notification settings.</td>
+      <td><span class="tag proc">Processed</span> as normal.</td>
+    </tr>
+    <tr>
+      <td><strong>User Manager</strong></td>
+      <td>Delivered to a real user Manager by reference — <em>no</em> editable address is stored.</td>
+      <td><span class="tag skip">Skipped</span> by default.</td>
+    </tr>
+  </table>
+  <div class="note">
+    The <strong>Manager Email</strong> field on the queue's General tab is <em>not</em> the notification recipient. What matters is the <strong>Notifications &rarr; Send email notifications to</strong> setting. If it points to a real user Manager, there's no editable address to work with — and advanced mode won't accept a manager reference — so the queue is skipped and reported.
+  </div>
+  <h3>The "Convert manager-notification queues" checkbox</h3>
+  <ul>
+    <li><strong>Unticked (default):</strong> user-Manager queues are skipped and listed as <span class="tag skip">Skipped</span>.</li>
+    <li><strong>Ticked:</strong> for those queues the tool <strong>unticks the Manager</strong>, switches to advanced mode, and sets the <strong>specified email(s) from your sheet</strong> as the recipient(s).</li>
+  </ul>
+  <div class="warn">
+    Conversion needs an address to switch to. If the checkbox is ticked but the sheet provides no email (Voicemail / per-type / Queue Email) for that queue, it is still skipped — there is nothing to convert it to.
+  </div>
+
+  <h2 id="members">7. Overwriting members</h2>
+  <ul>
+    <li><strong>Off (default):</strong> members listed in a row are <em>added</em>; nobody is removed.</li>
+    <li><strong>On:</strong> the queue is made to match the sheet exactly — anyone not listed is removed.</li>
+    <li>A blank <code>Members (Ext)</code> column is never changed either way.</li>
+  </ul>
+
+  <h2 id="preview">8. Preview, skips &amp; results</h2>
+  <ul>
+    <li><strong>Preview</strong> writes nothing — it lists every proposed change as <em>Pending</em>.</li>
+    <li><strong>Skipped</strong> rows (neutral badge) explain why a queue was left untouched — most often a user-Manager notification recipient.</li>
+    <li>After a real sync, rows show <em>Applied</em>, and a results spreadsheet can be downloaded.</li>
+  </ul>
+
+  <hr>
+  <p class="sub">This page reflects the current tool behaviour. If a queue behaves unexpectedly, run a Preview first and check the Skipped/So reason shown for that extension.</p>
+</div>
+</body>
+</html>
