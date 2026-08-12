@@ -1658,19 +1658,23 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         v_needs_update |= check_diff(changes, 'VM Emails', ", ".join(old_emails), ", ".join(new_emails))
 
                 # Advanced mode requires EVERY email-enabled notification type to carry a
-                # non-empty advancedEmailAddresses (EXT-455). Basic-mode queues share one recipient
-                # (top-level emailAddresses / Managers), so when we migrate voicemail to advanced
-                # mode the other enabled types (faxes, texts, ...) would otherwise fail. Fill each
-                # empty one from the queue's shared recipient, falling back to the voicemail
-                # recipient we're setting, so their notifications keep flowing. Runs after the
-                # per-type toggles so a type just turned on is covered too.
+                # non-empty advancedEmailAddresses (EXT-455). Cascade the queue's notification
+                # address across every type that is ON, leaving each type's on/off state as-is
+                # (the per-type toggles above already applied any sheet-driven changes). The sheet's
+                # Voicemail Notifications Email wins as the cascade address when supplied and
+                # overwrites existing per-type recipients; otherwise fill only the types missing an
+                # address, using the queue's existing notification address. Runs after the toggles
+                # so a type just turned on is covered too.
                 if new_notif.get('advancedMode'):
-                    shared_recip = (orig_notif.get('emailAddresses') or new_emails or [])
+                    cascade_addr = (new_emails or orig_notif.get('emailAddresses') or [])
+                    sheet_addr_given = val_vne is not None and bool(new_emails)
                     for _t in ('voicemails', 'inboundFaxes', 'outboundFaxes', 'inboundTexts', 'missedCalls', 'callNotes'):
                         blk = new_notif.get(_t)
-                        if isinstance(blk, dict) and blk.get('notifyByEmail') and not blk.get('advancedEmailAddresses'):
+                        if not (isinstance(blk, dict) and blk.get('notifyByEmail')):
+                            continue
+                        if sheet_addr_given or not blk.get('advancedEmailAddresses'):
                             blk.pop('emailAddresses', None)
-                            blk['advancedEmailAddresses'] = list(shared_recip)
+                            blk['advancedEmailAddresses'] = list(cascade_addr)
 
                 if v_needs_update and not vm_skip and not is_preview:
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
