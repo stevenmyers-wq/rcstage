@@ -1491,19 +1491,24 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 vm_set = notif.get('voicemails', {})
                 v_needs_update = False
 
-                # Manager-recipient guard. If the queue's notification recipient includes its
-                # Manager(s) -- "Send email notifications to: Managers", stored as includeManagers
-                # -- skip its notification update entirely and report it, whether the recipient is
-                # Managers-only OR Managers plus defined emails. RingCentral represents Managers by
-                # reference rather than an editable address, and advanced mode (needed for
-                # attach/read) rejects manager-based recipients, so these queues are left untouched
-                # by design. Only queues on Specified Emails (includeManagers false) are updated.
+                # Manager-recipient guard. There are two notification setups: (1) a real user
+                # Manager is selected -- RingCentral delivers by manager reference, so email is on
+                # but NO editable recipient address is stored; (2) a Specified Email (including the
+                # dummy address Pro Serv provisions "as" the manager via API) -- a real address is
+                # stored. We can't safely edit case (1) -- there's no address to work with and
+                # advanced mode (needed for attach/read) rejects manager-based recipients -- so skip
+                # it and report. Case (2) has a stored address and is updated as a normal
+                # specified-email queue. The reliable signal is simply whether a stored address
+                # exists; includeManagers is left true by RingCentral even on specified-email
+                # queues, so it can't be used here.
                 _ovm = orig_notif.get('voicemails', {})
-                vm_skip = bool(orig_notif.get('includeManagers')) or bool(_ovm.get('includeManagers'))
+                _existing_addr = (_ovm.get('emailAddresses') or _ovm.get('advancedEmailAddresses')
+                                  or orig_notif.get('emailAddresses') or [])
+                vm_skip = bool(_ovm.get('notifyByEmail')) and not _existing_addr
                 if vm_skip:
                     changes.append({"parameter": "VM Notifications", "old": "Manager recipient",
                                     "new": "Skipped", "skipped": True})
-                    logs.append("Skipped VM notifications (Manager recipient)")
+                    logs.append("Skipped VM notifications (Manager recipient, no editable address)")
 
                 val_vn = get_val(row, 'Voicemail Notifications')
                 # "Include attachment" and "Mark as read" are advanced-mode-only settings in
