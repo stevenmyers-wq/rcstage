@@ -189,10 +189,19 @@
         if (!input.files || !input.files[0]) return;
 
         const file = input.files[0];
+
+        // Let the operator pick the worksheet when the workbook has more than one.
+        let sheetName = '';
+        if (window.SheetPicker) {
+            sheetName = await SheetPicker.choose(file, { title: 'Choose worksheet' });
+            if (sheetName === null) { input.value = ''; return; }  // cancelled
+        }
+
         encTaskId = `enc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const formData = new FormData();
         formData.append('file', file);
         formData.append('task_id', encTaskId);
+        if (sheetName) formData.append('sheet_name', sheetName);
 
         logEnc(`Uploading ${file.name}... analyzing changes.`);
         encResultRows = null;

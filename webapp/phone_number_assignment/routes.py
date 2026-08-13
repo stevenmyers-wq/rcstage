@@ -38,7 +38,7 @@ def upload():
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
         else:
-            df = pd.read_excel(file)
+            df = pd.read_excel(file, sheet_name=(request.form.get('sheet_name') or 0))
             
         records = df.to_dict('records')
         results = utils.process_assignments(records, token)

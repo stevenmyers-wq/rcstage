@@ -22,6 +22,10 @@ def create_app():
         from .core import routes as core_routes
         app.register_blueprint(core_routes.core_bp)
 
+        # Shared helpers (workbook sheet listing for the upload sheet-picker)
+        from .common import routes as common_routes
+        app.register_blueprint(common_routes.common_bp)
+
         # RingCentral PKCE authentication routes
         from .auth import routes as auth_routes
         app.register_blueprint(auth_routes.auth_bp)

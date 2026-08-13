@@ -92,7 +92,7 @@ def generate_audio():
     default_voice  = request.form.get('voice',  'Kore')
     default_accent = request.form.get('accent', 'Australian English')
 
-    rows, parse_error = parse_generation_file(file)
+    rows, parse_error = parse_generation_file(file, request.form.get('sheet_name') or None)
     if parse_error:
         return jsonify({"error": parse_error}), 400
 
@@ -183,7 +183,7 @@ def generate_and_upload():
     default_voice  = request.form.get('voice',  'Kore')
     default_accent = request.form.get('accent', 'Australian English')
 
-    rows, parse_error = parse_generation_file(file)
+    rows, parse_error = parse_generation_file(file, request.form.get('sheet_name') or None)
     if parse_error:
         return jsonify({"error": parse_error}), 400
 

@@ -232,11 +232,20 @@
 
     async function uploadAir(input) {
         if (!input.files || !input.files[0]) return;
-        
+
         const file = input.files[0];
+
+        // Let the operator pick the worksheet when the workbook has more than one.
+        let sheetName = '';
+        if (window.SheetPicker) {
+            sheetName = await SheetPicker.choose(file, { title: 'Choose AIR worksheet' });
+            if (sheetName === null) { input.value = ''; return; }  // cancelled
+        }
+
         const formData = new FormData();
         formData.append('file', file);
-        
+        if (sheetName) formData.append('sheet_name', sheetName);
+
         logAir(`Uploading ${file.name}... parsing rules and skills.`);
         airResultRows = null;
         document.getElementById('air-result-btn').classList.add('hidden');

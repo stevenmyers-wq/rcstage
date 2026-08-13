@@ -212,7 +212,7 @@ def update_rules():
     task_id = request.form.get('task_id')
     try:
         if file.filename.endswith('.csv'): df = pd.read_csv(file)
-        else: df = pd.read_excel(file)
+        else: df = pd.read_excel(file, sheet_name=(request.form.get('sheet_name') or 0))
         df.columns = df.columns.str.strip()
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400

@@ -316,10 +316,19 @@
         if (!input.files || !input.files[0]) return;
 
         const file = input.files[0];
+
+        // Let the operator pick the worksheet when the workbook has more than one.
+        let sheetName = '';
+        if (window.SheetPicker) {
+            sheetName = await SheetPicker.choose(file, { title: 'Choose worksheet', preferred: ['Template'] });
+            if (sheetName === null) { input.value = ''; return; }  // cancelled
+        }
+
         rulesTaskId = `cr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const formData = new FormData();
         formData.append('file', file);
         formData.append('task_id', rulesTaskId);
+        if (sheetName) formData.append('sheet_name', sheetName);
         // Attach any selected greeting audio (keyed by filename via 'Greeting File').
         rulesAudioFiles.forEach(f => formData.append('audio', f, f.name));
 

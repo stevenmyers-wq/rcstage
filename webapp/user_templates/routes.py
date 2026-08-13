@@ -33,6 +33,7 @@ def upload_audit():
         
     file = request.files['file']
     file_bytes = file.read()
+    sheet_name = request.form.get('sheet_name') or None
 
     task_id = f"template_apply_{int(time.time())}"
 
@@ -41,7 +42,7 @@ def upload_audit():
     # the token expires mid-run and every call 401s "Token not found".
     auth_bundle = utils.capture_auth(session)
 
-    thread = threading.Thread(target=utils.process_upload_background, args=(task_id, file_bytes, auth_bundle))
+    thread = threading.Thread(target=utils.process_upload_background, args=(task_id, file_bytes, auth_bundle, sheet_name))
     thread.daemon = True
     thread.start()
     

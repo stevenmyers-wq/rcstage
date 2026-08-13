@@ -129,7 +129,11 @@ def upload():
         else:
             data = io.BytesIO(file.read())
             xls = pd.ExcelFile(data)
-            sheet = 'Site Allocation' if 'Site Allocation' in xls.sheet_names else xls.sheet_names[0]
+            requested = request.form.get('sheet_name')
+            if requested and requested in xls.sheet_names:
+                sheet = requested
+            else:
+                sheet = 'Site Allocation' if 'Site Allocation' in xls.sheet_names else xls.sheet_names[0]
             df = pd.read_excel(xls, sheet_name=sheet)
         df = df.fillna('')
         records = df.to_dict('records')
