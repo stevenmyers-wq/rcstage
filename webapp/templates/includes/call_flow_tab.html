@@ -922,7 +922,7 @@
                 const a = document.createElement('a');
                 a.href = png; a.download = 'call-flow-' + flowFileSlug(title) + '.png'; a.click();
             };
-            visB.onclick = () => downloadVisioSingle(gd, flowFileSlug(title), visB);
+            visB.onclick = () => downloadVisioSingle(gd, flowFileSlug(title), visB, cyInst);
 
             separateCtxs.push({ id: flow.id, title, graphData: gd, cy: cyInst, checkbox: cb });
         });
@@ -1153,14 +1153,37 @@
     });
 
     // ── Visio (.vsdx) export — high-fidelity Lucidchart import ────────
-    async function downloadVisioSingle(graphData, slug, btn) {
+    // Serialise a cytoscape instance's on-screen layout so the Visio export
+    // reproduces it 1:1 (same dagre positions, sizes, labels, descriptors).
+    function serializeCy(cyInst) {
+        if (!cyInst) return null;
+        const nodes = cyInst.nodes().map(n => {
+            const d = n.data();
+            return {
+                data: { id: d.id, type: d.type, label: d.displayLabel || d.label || '',
+                        isEntry: !!d.isEntry, disabled: !!d.disabled },
+                position: n.position(),
+                dimensions: { w: n.width(), h: n.height() },
+            };
+        });
+        const edges = cyInst.edges().map(e => {
+            const d = e.data();
+            return { data: { source: d.source, target: d.target, label: d.label || '',
+                             type: d.type, disabled: !!d.disabled } };
+        });
+        return { nodes, edges };
+    }
+
+    async function downloadVisioSingle(graphData, slug, btn, cyInst) {
         const orig = btn ? btn.textContent : '';
         if (btn) { btn.disabled = true; btn.textContent = '… building'; }
         try {
             const res = await fetch('/api/rc/visualiser/export-visio', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ graph_data: graphData, filename: slug, include_descriptors: toggleDesc.checked }),
+                body: JSON.stringify({ graph_data: graphData, filename: slug,
+                                       include_descriptors: toggleDesc.checked,
+                                       render: serializeCy(cyInst || cy) }),
             });
             if (!res.ok) {
                 let msg = 'Export failed.';
@@ -1206,7 +1229,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    flows: ticked.map(c => ({ filename: flowFileSlug(c.title), graph_data: c.graphData })),
+                    flows: ticked.map(c => ({ filename: flowFileSlug(c.title), graph_data: c.graphData, render: serializeCy(c.cy) })),
                     include_descriptors: toggleDesc.checked,
                 }),
             });

@@ -276,12 +276,13 @@ def export_visio():
 
     filename = payload.get('filename') or 'call-flow'
     include_desc = bool(payload.get('include_descriptors', False))
+    render = payload.get('render')
     # Sanitise the filename to a safe basename
     safe = ''.join(c if c.isalnum() or c in ('-', '_') else '_'
                    for c in str(filename))[:80] or 'call-flow'
 
     try:
-        data = build_vsdx(graph_data, include_descriptors=include_desc)
+        data = build_vsdx(graph_data, include_descriptors=include_desc, render=render)
     except Exception as e:
         print(f"[VISIO EXPORT] {e}", file=sys.stderr)
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -330,7 +331,8 @@ def export_visio_zip():
                     n += 1
                     name = f'{base}-{n}'
                 used.add(name)
-                z.writestr(f'{name}.vsdx', build_vsdx(gd, include_descriptors=include_desc))
+                z.writestr(f'{name}.vsdx', build_vsdx(
+                    gd, include_descriptors=include_desc, render=flow.get('render')))
         data = buf.getvalue()
     except Exception as e:
         print(f"[VISIO ZIP EXPORT] {e}", file=sys.stderr)
