@@ -137,9 +137,10 @@ def generate_audit_report():
                     row[f"Line {line_idx} Extension"] = str(ext_num)
 
                 # Users allowed to answer this extension's calls (separate list).
+                # A record may nest the extension or carry the id flat; tolerate both.
                 for i, record in enumerate(perms_resp.get('records') or []):
                     ans_idx = i + 1
-                    ext_obj = record.get('extension') or {}
+                    ext_obj = record.get('extension') or record
                     m_id = str(ext_obj.get('id', ''))
 
                     master = id_to_ext_map.get(m_id, {})
@@ -565,12 +566,12 @@ def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, 
     """Apply the "users allowed to answer my calls" list from the sheet's
     'Answer Line N' columns to the presence/permission resource.
 
-    Additive and position-agnostic, exactly like the monitored-line handling:
-    every current permission is re-sent and only extensions not already present
-    are appended — nothing is removed. Runs independently of the monitored-line
-    update and records its own result row (added only when something actually
-    changes or an extension can't be resolved) so it never overwrites the
-    monitored-line outcome. Raises nothing: RC failures are captured as errors."""
+    Additive: every current permission is kept and only extensions not already
+    present are appended — nothing is removed. The write is a full replacement,
+    so the current list is read first and merged. Runs independently of the
+    monitored-line update and records its own result row (added only when
+    something actually changes or an extension can't be resolved) so it never
+    overwrites the monitored-line outcome. RC failures are captured as errors."""
     ans_cols = [c for c in df.columns
                 if c.strip().lower().startswith("answer line") and "extension" in c.strip().lower()]
     if not ans_cols:
@@ -592,14 +593,21 @@ def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, 
     # empty/partial list would wipe the user's existing permissions.
     live_records = manager.get_presence_permissions(t_id).get('records', [])
 
-    payload_records = []
+    # The GET record may nest the extension ({"extension": {"id": …}}) or carry
+    # the id flat ({"id": …, "extensionNumber": …}); tolerate both.
+    def _rec_id(record):
+        return str((record.get('extension') or record).get('id', '') or '')
+
+    current = []          # ordered list of current permission extension ids
     seen = set()
     for record in live_records:
-        current_ext_id = str(record.get('extension', {}).get('id', ''))
-        if current_ext_id and current_ext_id not in seen:
-            payload_records.append({"extension": {"id": current_ext_id}})
-            seen.add(current_ext_id)
+        cur = _rec_id(record)
+        if cur and cur not in seen:
+            current.append(cur)
+            seen.add(cur)
 
+    # Additive: keep every current permission, then append new sheet extensions.
+    updated = list(current)
     unresolved = []
     for col in ans_cols:
         val = row.get(col)
@@ -612,24 +620,16 @@ def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, 
             continue
         if resolved_id in seen:
             continue
-        payload_records.append({"extension": {"id": resolved_id}})
+        updated.append(resolved_id)
         seen.add(resolved_id)
-
-    # Assign contiguous slot ids, mirroring the monitored-line PUT contract for
-    # this Limited endpoint. Permission records carry no reserved/locked flag.
-    for i, rec in enumerate(payload_records):
-        rec["id"] = str(i + 1)
 
     name, number = _friendly(id_to_ext, t_id)
     note = f" Unresolved answer extension(s): {', '.join(unresolved)}." if unresolved else ""
 
-    current = [str(r.get('extension', {}).get('id', '')) for r in live_records]
-    updated = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
-
     if current != updated:
-        logging.info("Presence permission PUT ext=%s payload=%s", t_id, json.dumps(payload_records))
+        logging.info("Presence permission PUT ext=%s extensions=%s", t_id, json.dumps(updated))
         try:
-            manager.update_presence_permissions(t_id, payload_records)
+            manager.update_presence_permissions(t_id, updated)
             _add_detail(results, name, number, t_id, "Updated",
                         f"Users allowed to answer calls updated "
                         f"({len(current)} -> {len(updated)}).{note}")

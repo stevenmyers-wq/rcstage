@@ -133,8 +133,8 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
             <div class="input-wrapper">
-                <label class="input-label">Raw JSON Payload <span class="font-normal text-slate-400">(PUT only — bare array)</span></label>
-                <textarea id="sb-payload" class="w-full h-64 input-field font-mono text-xs resize-y" placeholder='[{"id":"1","extension":{"id":"233306125"}}]'></textarea>
+                <label class="input-label">Raw JSON Payload <span class="font-normal text-slate-400">(PUT only — line: bare array · permission: {"extensions":[…]})</span></label>
+                <textarea id="sb-payload" class="w-full h-64 input-field font-mono text-xs resize-y" placeholder='line:  [{"id":"1","extension":{"id":"233306125"}}]&#10;permission:  {"extensions":[{"id":"233306125"}]}'></textarea>
                 <button id="sb-send" class="btn-danger w-full mt-4 !py-3">FIRE API REQUEST</button>
             </div>
             <div class="input-wrapper">
