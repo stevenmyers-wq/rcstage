@@ -114,80 +114,134 @@ def _clip_to_border(cx, cy, hw, hh, tox, toy):
     return cx + dx * s, cy + dy * s
 
 
-def build_vsdx(graph_data, include_descriptors=False):
-    """Return the bytes of a .vsdx package for the given graph data dict
-    ({'nodes': [...], 'edges': [...], 'entry_ids': [...]}).
+def _render_lines(label):
+    """Split a cytoscape displayLabel into printable lines, dropping the
+    divider rules the on-screen node draws."""
+    out = []
+    for l in str(label or '').split('\n'):
+        s = l.strip()
+        if not s:
+            continue
+        if set(s) <= set('─-—_'):  # a divider line
+            continue
+        out.append(s)
+    return out
 
-    include_descriptors mirrors the visualiser's "Show Descriptors" toggle:
-    when False (default) the export is just the clean coloured nodes +
-    connectors, matching the on-screen diagram; when True it also adds the
-    dark OVERVIEW/ROUTING descriptor cards."""
-    nodes = [n['data'] for n in graph_data.get('nodes', []) if 'data' in n]
-    edges = [e['data'] for e in graph_data.get('edges', []) if 'data' in e]
-    entry = set(graph_data.get('entry_ids', []))
 
-    if not nodes:
-        nodes = [{'id': '_empty', 'type': 'unknown', 'label': 'No flow data',
-                  'sublabel': '', 'tooltip': ''}]
+def build_vsdx(graph_data, include_descriptors=False, render=None):
+    """Return the bytes of a .vsdx package.
 
-    # When descriptors are on, inject each card as a child pseudo-node linked by
-    # a dashed edge — exactly like the on-screen "Show Descriptors" toggle — so
-    # the same layered layout positions them (below/beside their node) instead
-    # of us hand-placing giant boxes that overlap.
+    If `render` is supplied (the exact node positions/sizes/labels from the
+    on-screen cytoscape diagram), the export reproduces that layout 1:1 — the
+    faithful way to match the visualiser. Otherwise it falls back to an
+    internal layered layout from graph_data.
+
+    include_descriptors mirrors the "Show Descriptors" toggle for the
+    fallback path (the render path already includes whatever is on screen)."""
+    entry = set()
     desc_ids = set()
-    if include_descriptors:
-        extra_nodes, extra_edges = [], []
-        for n in list(nodes):
-            desc = _descriptor_lines(n)
-            if not desc:
-                continue
-            did = str(n['id']) + '_desc'
-            desc_ids.add(did)
-            extra_nodes.append({'id': did, 'type': 'descriptor',
-                                'label': '\n'.join(desc), 'sublabel': '', 'tooltip': ''})
-            extra_edges.append({'source': n['id'], 'target': did, 'descriptor': True})
-        nodes = nodes + extra_nodes
-        edges = edges + extra_edges
 
-    byid = {n['id']: n for n in nodes}
-    layer = _layered_layout(nodes, edges, list(entry))
+    if render and render.get('nodes'):
+        # ── Faithful path: use the on-screen layout verbatim ──
+        nodes, dim, pos, edges = [], {}, {}, []
+        min_x = min_y = float('inf')
+        raw = []
+        for rn in render['nodes']:
+            d = rn.get('data', rn)
+            nid = str(d.get('id'))
+            ntype = d.get('type', 'unknown')
+            p = rn.get('position', {}) or {}
+            dims = rn.get('dimensions', {}) or {}
+            w = float(dims.get('w') or 200)
+            h = float(dims.get('h') or 60)
+            cx = float(p.get('x') or 0)
+            cy = float(p.get('y') or 0)
+            left, top = cx - w / 2.0, cy - h / 2.0
+            min_x = min(min_x, left)
+            min_y = min(min_y, top)
+            if ntype == 'descriptor':
+                desc_ids.add(nid)
+            if d.get('isEntry'):
+                entry.add(nid)
+            lines = _render_lines(d.get('label'))
+            raw.append((nid, ntype, left, top, w, h, lines))
+        if not raw:
+            raw = [('_empty', 'unknown', 0, 0, 200, 60, ['No flow data'])]
+            min_x = min_y = 0
+        for nid, ntype, left, top, w, h, lines in raw:
+            nodes.append({'id': nid, 'type': ntype})
+            dim[nid] = {'w': w, 'h': h, 'lines': lines}
+            pos[nid] = {'x': left - min_x + MARGIN, 'y': top - min_y + MARGIN}
+        for re_ in render.get('edges', []):
+            d = re_.get('data', re_)
+            edges.append({
+                'source': str(d.get('source')), 'target': str(d.get('target')),
+                'label': '' if d.get('type') == 'descriptor-edge' else (d.get('label') or ''),
+                'descriptor': d.get('type') == 'descriptor-edge',
+                'disabled': bool(d.get('disabled')),
+            })
+        max_x = max((pos[n]['x'] + dim[n]['w'] for n in pos), default=MARGIN)
+        max_y = max((pos[n]['y'] + dim[n]['h'] for n in pos), default=MARGIN)
+        total_w = max_x + MARGIN
+        total_h = max_y + MARGIN
+    else:
+        # ── Fallback path: compute a layered layout from graph_data ──
+        nodes = [n['data'] for n in graph_data.get('nodes', []) if 'data' in n]
+        edges = [e['data'] for e in graph_data.get('edges', []) if 'data' in e]
+        entry = set(graph_data.get('entry_ids', []))
 
-    # Node sizes
-    dim = {}
-    for n in nodes:
-        if n['id'] in desc_ids:
-            lines = [l for l in str(n['label']).split('\n')]
-            longest = max([len(l) for l in lines] + [10])
-            w = min(300, max(210, longest * 6 + 20))
-            h = max(56, 16 + len(lines) * 13)
-        else:
-            lines = _node_text_lines(n, n['id'] in entry)
-            longest = max([len(l) for l in lines] + [10])
-            w = min(360, max(200, longest * 7 + 24))
-            h = max(56, 24 + len(lines) * 16)
-        dim[n['id']] = {'w': w, 'h': h, 'lines': lines}
+        if not nodes:
+            nodes = [{'id': '_empty', 'type': 'unknown', 'label': 'No flow data',
+                      'sublabel': '', 'tooltip': ''}]
 
-    # Group by layer, lay out left→right.
-    layers = {}
-    for n in nodes:
-        layers.setdefault(layer[n['id']], []).append(n)
+        if include_descriptors:
+            extra_nodes, extra_edges = [], []
+            for n in list(nodes):
+                desc = _descriptor_lines(n)
+                if not desc:
+                    continue
+                did = str(n['id']) + '_desc'
+                desc_ids.add(did)
+                extra_nodes.append({'id': did, 'type': 'descriptor',
+                                    'label': '\n'.join(desc), 'sublabel': '', 'tooltip': ''})
+                extra_edges.append({'source': n['id'], 'target': did, 'descriptor': True})
+            nodes = nodes + extra_nodes
+            edges = edges + extra_edges
 
-    pos = {}
-    y = MARGIN
-    max_x = 0
-    for k in sorted(layers):
-        row = layers[k]
-        row_h = max(dim[n['id']]['h'] for n in row)
-        x = MARGIN
-        for n in row:
-            d = dim[n['id']]
-            pos[n['id']] = {'x': x, 'y': y + (row_h - d['h']) / 2}
-            x += d['w'] + H_GAP
-        max_x = max(max_x, x)
-        y += row_h + V_GAP
+        layer = _layered_layout(nodes, edges, list(entry))
+        dim = {}
+        for n in nodes:
+            if n['id'] in desc_ids:
+                lines = [l for l in str(n['label']).split('\n')]
+                longest = max([len(l) for l in lines] + [10])
+                w = min(300, max(210, longest * 6 + 20))
+                h = max(56, 16 + len(lines) * 13)
+            else:
+                lines = _node_text_lines(n, n['id'] in entry)
+                longest = max([len(l) for l in lines] + [10])
+                w = min(360, max(200, longest * 7 + 24))
+                h = max(56, 24 + len(lines) * 16)
+            dim[n['id']] = {'w': w, 'h': h, 'lines': lines}
 
-    total_w = max_x + MARGIN
-    total_h = y + MARGIN
+        layers = {}
+        for n in nodes:
+            layers.setdefault(layer[n['id']], []).append(n)
+        pos = {}
+        y = MARGIN
+        max_x = 0
+        for k in sorted(layers):
+            row = layers[k]
+            row_h = max(dim[n['id']]['h'] for n in row)
+            x = MARGIN
+            for n in row:
+                d = dim[n['id']]
+                pos[n['id']] = {'x': x, 'y': y + (row_h - d['h']) / 2}
+                x += d['w'] + H_GAP
+            max_x = max(max_x, x)
+            y += row_h + V_GAP
+        total_w = max_x + MARGIN
+        total_h = y + MARGIN
+
     page_w = total_w / PXIN
     page_h = total_h / PXIN
 
