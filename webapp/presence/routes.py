@@ -28,12 +28,17 @@ def get_sites():
 @presence_bp.route('/api/presence/template', methods=['GET'])
 def get_template():
     try:
-        columns = ["Target Extension Name", "Target Extension Number", "Target Extension ID", 
-                   "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line", 
+        columns = ["Target Extension Name", "Target Extension Number", "Target Extension ID",
+                   "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line",
                    "Allow other users to see my presence status"]
         for i in range(1, 101):
             columns.append(f"Line {i} Name")
             columns.append(f"Line {i} Extension")
+        # "Answer Line N" columns drive the separate "users allowed to answer my
+        # calls" permission list (additive, like the monitored lines above).
+        for i in range(1, 51):
+            columns.append(f"Answer Line {i} Name")
+            columns.append(f"Answer Line {i} Extension")
         df_template = pd.DataFrame(columns=columns)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -98,6 +103,14 @@ def generate_audit_report():
                                    "status": "error", "message": f"Could not read presence ({e})"}
                     }) + "\n"
                     continue
+                # "Users allowed to answer my calls" lives on a separate resource.
+                # Soft-fail it: an account/extension without this permission list
+                # shouldn't blank out the rest of an otherwise-good audit row.
+                try:
+                    perms_resp = manager.get_presence_permissions(ext_id)
+                except Exception as e:
+                    logging.warning("Permission read failed for %s: %s", ext_id, e)
+                    perms_resp = {"records": []}
                 records = lines_resp.get('records') or []
 
                 row = {
@@ -123,11 +136,26 @@ def generate_audit_report():
                     row[f"Line {line_idx} Name"] = f"{lock_status}{name} ({type_label})"
                     row[f"Line {line_idx} Extension"] = str(ext_num)
 
+                # Users allowed to answer this extension's calls (separate list).
+                for i, record in enumerate(perms_resp.get('records') or []):
+                    ans_idx = i + 1
+                    ext_obj = record.get('extension') or {}
+                    m_id = str(ext_obj.get('id', ''))
+
+                    master = id_to_ext_map.get(m_id, {})
+                    type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
+                    name = master.get('name') or ext_obj.get('name') or type_label
+                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+
+                    row[f"Answer Line {ans_idx} Name"] = f"{name} ({type_label})"
+                    row[f"Answer Line {ans_idx} Extension"] = str(ext_num)
+
+                perm_count = len(perms_resp.get('records') or [])
                 yield json.dumps({
                     "type": "progress", "current": idx + 1, "total": total, "row": row,
                     "result": {"name": user.get('name', '') or str(ext_id),
                                "status": "success",
-                               "message": f"{len(records)} monitored line(s)"}
+                               "message": f"{len(records)} monitored line(s), {perm_count} answer permission(s)"}
                 }) + "\n"
 
             yield json.dumps({"type": "done"}) + "\n"
@@ -238,6 +266,10 @@ def update_blf():
 
                 try:
                     _process_row(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results, additive=additive)
+                    # "Users allowed to answer my calls" is a separate resource,
+                    # applied independently so a permission failure never masks a
+                    # successful monitored-line update (and vice-versa).
+                    _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results)
                 except RCPresenceError as e:
                     results["errors"].append(f"Ext {t_id}: RC rejected update ({e.status_code}): {e.body}")
                     name, number = _friendly(id_to_ext, t_id)
@@ -529,27 +561,146 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results,
         _add_detail(results, name, number, t_id, "No Change", "No changes detected.")
 
 
+def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results):
+    """Apply the "users allowed to answer my calls" list from the sheet's
+    'Answer Line N' columns to the presence/permission resource.
+
+    Additive and position-agnostic, exactly like the monitored-line handling:
+    every current permission is re-sent and only extensions not already present
+    are appended — nothing is removed. Runs independently of the monitored-line
+    update and records its own result row (added only when something actually
+    changes or an extension can't be resolved) so it never overwrites the
+    monitored-line outcome. Raises nothing: RC failures are captured as errors."""
+    ans_cols = [c for c in df.columns
+                if c.strip().lower().startswith("answer line") and "extension" in c.strip().lower()]
+    if not ans_cols:
+        return  # sheet doesn't drive answer permissions
+
+    def resolve(val_str):
+        if val_str in ext_map:
+            return ext_map[val_str]
+        if val_str in valid_ids:
+            return val_str
+        looked = manager.get_extension_by_number(val_str)
+        if looked:
+            return str(looked)
+        if manager.extension_exists(val_str):
+            return val_str
+        return None
+
+    # A failed read must abort: the PUT is a full replacement, so acting on an
+    # empty/partial list would wipe the user's existing permissions.
+    live_records = manager.get_presence_permissions(t_id).get('records', [])
+
+    payload_records = []
+    seen = set()
+    for record in live_records:
+        current_ext_id = str(record.get('extension', {}).get('id', ''))
+        if current_ext_id and current_ext_id not in seen:
+            payload_records.append({"extension": {"id": current_ext_id}})
+            seen.add(current_ext_id)
+
+    unresolved = []
+    for col in ans_cols:
+        val = row.get(col)
+        if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
+            continue
+        val_str = str(val).split('.')[0].strip()
+        resolved_id = resolve(val_str)
+        if not resolved_id:
+            unresolved.append(val_str)
+            continue
+        if resolved_id in seen:
+            continue
+        payload_records.append({"extension": {"id": resolved_id}})
+        seen.add(resolved_id)
+
+    # Assign contiguous slot ids, mirroring the monitored-line PUT contract for
+    # this Limited endpoint. Permission records carry no reserved/locked flag.
+    for i, rec in enumerate(payload_records):
+        rec["id"] = str(i + 1)
+
+    name, number = _friendly(id_to_ext, t_id)
+    note = f" Unresolved answer extension(s): {', '.join(unresolved)}." if unresolved else ""
+
+    current = [str(r.get('extension', {}).get('id', '')) for r in live_records]
+    updated = [str(p.get('extension', {}).get('id', '')) for p in payload_records]
+
+    if current != updated:
+        logging.info("Presence permission PUT ext=%s payload=%s", t_id, json.dumps(payload_records))
+        try:
+            manager.update_presence_permissions(t_id, payload_records)
+            _add_detail(results, name, number, t_id, "Updated",
+                        f"Users allowed to answer calls updated "
+                        f"({len(current)} -> {len(updated)}).{note}")
+        except RCPresenceError as e:
+            results["errors"].append(
+                f"Ext {t_id} (answer permissions): RC rejected ({e.status_code}): {e.body}"
+            )
+            _add_detail(results, name, number, t_id, "Error",
+                        f"RC rejected answer-permission update ({e.status_code}): {e.body}")
+    elif unresolved:
+        results["errors"].append(
+            f"Ext {t_id}: skipped unresolved answer extension(s): {', '.join(unresolved)}"
+        )
+        _add_detail(results, name, number, t_id, "Error",
+                    "No answer-permission changes applied." + note)
+
+
 # ==========================================
 # THE DIAGNOSTICS SANDBOX (admin-only)
 # ==========================================
 @presence_bp.route('/api/presence/sandbox/<extension_id>', methods=['POST'])
 @require_rc_token
 def presence_sandbox(extension_id):
-    # Fires an arbitrary raw PUT straight at RC — restrict to admins.
+    """Fire a RAW GET/PUT straight at a presence sub-resource — admin only.
+
+    Generalised from the old line-only PUT so the exact request shape for the
+    'users allowed to answer my calls' list (presence/permission) can be probed
+    against a live extension: GET to read the current body, then PUT candidate
+    payloads and read back RC's real status/body. Goes through ``rc`` directly
+    (no retry/raise wrapper) so the untouched HTTP status and response are
+    returned verbatim, and echoes the request that was sent for the record.
+
+    Body: {"resource": "line"|"permission", "method": "GET"|"PUT", "payload": …}.
+    A bare/legacy body (no these keys) is treated as a presence/line PUT payload.
+    """
     if not is_admin_user():
         return jsonify({"status": "error", "message": "Admin privileges required."}), 403
-    try:
-        raw_payload = request.json
-        manager = RCPresenceManager()
-        endpoint = f"{manager.base_path}/extension/{extension_id}/presence/line"
 
-        # Surface the real HTTP status/body from RC instead of swallowing it.
-        response = manager._call(endpoint, method="PUT", json=raw_payload)
-        return jsonify({"status": "success", "data": response})
-    except RCPresenceError as e:
-        return jsonify({"status": "error", "status_code": e.status_code, "message": e.body or str(e)}), 400
+    from webapp.rc_api import rc
+
+    body = request.json
+    if isinstance(body, dict) and any(k in body for k in ("resource", "method", "payload")):
+        resource = (body.get("resource") or "line").strip().lower()
+        method = (body.get("method") or "PUT").strip().upper()
+        payload = body.get("payload")
+    else:
+        resource, method, payload = "line", "PUT", body
+
+    sub = "presence/permission" if resource in ("permission", "permissions") else "presence/line"
+    manager = RCPresenceManager()
+    endpoint = f"{manager.base_path}/extension/{extension_id}/{sub}"
+    req_info = {"method": method, "endpoint": endpoint,
+                "body": payload if method == "PUT" else None}
+
+    try:
+        if method == "GET":
+            resp = rc.get(endpoint)
+        elif method == "PUT":
+            resp = rc.put(endpoint, json=payload)
+        else:
+            return jsonify({"status": "error", "request": req_info,
+                            "message": f"Unsupported method '{method}' (use GET or PUT)."}), 400
+
+        return jsonify({
+            "status": "success" if getattr(resp, "ok", False) else "error",
+            "request": req_info,
+            "status_code": getattr(resp, "status_code", None),
+            "body": _safe_json(resp),
+        })
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return jsonify({"status": "error", "request": req_info, "message": str(e)}), 400
 
 
 # ==========================================
