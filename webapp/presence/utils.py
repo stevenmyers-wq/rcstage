@@ -173,3 +173,42 @@ class RCPresenceManager:
             f"{self.base_path}/extension/{extension_id}/presence/line",
             method="PUT", json=line_records,
         )
+
+    # ------------------------------------------------------------------
+    # Presence permissions — "users allowed to answer my calls"
+    #
+    # This is a DISTINCT resource from the monitored (presence/line) list. The
+    # monitored list is who *this* extension watches; the permission list is who
+    # is allowed to answer *this* extension's calls. The wrapper shape mirrors
+    # presence/line ({records, paging, navigation}), so it pages the same way.
+    # ------------------------------------------------------------------
+    def get_presence_permissions(self, extension_id):
+        """Return the *complete* 'users allowed to answer my calls' list,
+        following pagination — exactly like get_monitored_lines, since the PUT
+        is a full replacement and any record missing from the list we read back
+        would be silently dropped."""
+        endpoint = f"{self.base_path}/extension/{extension_id}/presence/permission"
+        all_records = []
+        page = 1
+        while True:
+            resp = self._call(
+                endpoint, method="GET", params={"perPage": 100, "page": page}
+            ) or {}
+            records = resp.get('records', []) or []
+            all_records.extend(records)
+
+            paging = resp.get('paging', {}) or {}
+            total_pages = paging.get('totalPages')
+            current_page = paging.get('page', page)
+            if not records or not total_pages or current_page >= total_pages:
+                break
+            page = current_page + 1
+        return {"records": all_records}
+
+    def update_presence_permissions(self, extension_id, permission_records):
+        # Same Limited-endpoint contract as presence/line: the body must be a
+        # BARE JSON ARRAY, not the {"records": ...} wrapper.
+        return self._call(
+            f"{self.base_path}/extension/{extension_id}/presence/permission",
+            method="PUT", json=permission_records,
+        )
