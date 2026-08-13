@@ -653,21 +653,54 @@ def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, 
 @presence_bp.route('/api/presence/sandbox/<extension_id>', methods=['POST'])
 @require_rc_token
 def presence_sandbox(extension_id):
-    # Fires an arbitrary raw PUT straight at RC — restrict to admins.
+    """Fire a RAW GET/PUT straight at a presence sub-resource — admin only.
+
+    Generalised from the old line-only PUT so the exact request shape for the
+    'users allowed to answer my calls' list (presence/permission) can be probed
+    against a live extension: GET to read the current body, then PUT candidate
+    payloads and read back RC's real status/body. Goes through ``rc`` directly
+    (no retry/raise wrapper) so the untouched HTTP status and response are
+    returned verbatim, and echoes the request that was sent for the record.
+
+    Body: {"resource": "line"|"permission", "method": "GET"|"PUT", "payload": …}.
+    A bare/legacy body (no these keys) is treated as a presence/line PUT payload.
+    """
     if not is_admin_user():
         return jsonify({"status": "error", "message": "Admin privileges required."}), 403
-    try:
-        raw_payload = request.json
-        manager = RCPresenceManager()
-        endpoint = f"{manager.base_path}/extension/{extension_id}/presence/line"
 
-        # Surface the real HTTP status/body from RC instead of swallowing it.
-        response = manager._call(endpoint, method="PUT", json=raw_payload)
-        return jsonify({"status": "success", "data": response})
-    except RCPresenceError as e:
-        return jsonify({"status": "error", "status_code": e.status_code, "message": e.body or str(e)}), 400
+    from webapp.rc_api import rc
+
+    body = request.json
+    if isinstance(body, dict) and any(k in body for k in ("resource", "method", "payload")):
+        resource = (body.get("resource") or "line").strip().lower()
+        method = (body.get("method") or "PUT").strip().upper()
+        payload = body.get("payload")
+    else:
+        resource, method, payload = "line", "PUT", body
+
+    sub = "presence/permission" if resource in ("permission", "permissions") else "presence/line"
+    manager = RCPresenceManager()
+    endpoint = f"{manager.base_path}/extension/{extension_id}/{sub}"
+    req_info = {"method": method, "endpoint": endpoint,
+                "body": payload if method == "PUT" else None}
+
+    try:
+        if method == "GET":
+            resp = rc.get(endpoint)
+        elif method == "PUT":
+            resp = rc.put(endpoint, json=payload)
+        else:
+            return jsonify({"status": "error", "request": req_info,
+                            "message": f"Unsupported method '{method}' (use GET or PUT)."}), 400
+
+        return jsonify({
+            "status": "success" if getattr(resp, "ok", False) else "error",
+            "request": req_info,
+            "status_code": getattr(resp, "status_code", None),
+            "body": _safe_json(resp),
+        })
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return jsonify({"status": "error", "request": req_info, "message": str(e)}), 400
 
 
 # ==========================================
