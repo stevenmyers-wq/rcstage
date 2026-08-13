@@ -235,7 +235,8 @@
 
             <div class="input-wrapper">
                 <label class="input-label">Mapping Spreadsheet (.xlsx)</label>
-                <input type="file" name="file" accept=".xlsx,.xls" required class="file-input">
+                <input type="file" name="file" id="mm-xlsx-file" accept=".xlsx,.xls" required class="file-input">
+                <div id="mm-xlsx-sheet-mount" class="mt-3"></div>
             </div>
 
             <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
@@ -1226,6 +1227,14 @@ document.addEventListener('DOMContentLoaded', () => {
         processBulkTts(fd.get('text'), fd.get('voice'), fd.get('greeting_type'));
     });
 
+    const mmXlsxSheetPicker = window.SheetPicker
+        ? SheetPicker.create(document.getElementById('mm-xlsx-sheet-mount'))
+        : null;
+    const mmXlsxFileInput = document.getElementById('mm-xlsx-file');
+    if (mmXlsxFileInput && mmXlsxSheetPicker) {
+        mmXlsxFileInput.addEventListener('change', () => mmXlsxSheetPicker.update(mmXlsxFileInput.files[0]));
+    }
+
     document.getElementById('form-xlsx').addEventListener('submit', (e) => {
         e.preventDefault();
         const fd = new FormData(e.target);
@@ -1233,7 +1242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const driveUrl = (fd.get('drive_url') || '').trim();
         if (!file || !file.name) { alert('Please choose a mapping spreadsheet.'); return; }
         if (!driveUrl) { alert('Please paste the Google Drive folder link.'); return; }
-        processXlsxUpload(file, driveUrl);
+        processXlsxUpload(file, driveUrl, mmXlsxSheetPicker ? mmXlsxSheetPicker.value() : '');
     });
 
     // --- Per-user Google Drive authorization (OAuth access token via GIS) ---
@@ -1293,7 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function processXlsxUpload(file, driveUrl) {
+    async function processXlsxUpload(file, driveUrl, sheetName) {
         // Acquire a per-user Drive token first, within the click gesture.
         let driveToken;
         try {
@@ -1358,6 +1367,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('drive_token', token);
                 formData.append('cursor', String(cursor));
                 formData.append('chunk_size', String(CHUNK_SIZE));
+                if (sheetName) formData.append('sheet_name', sheetName);
 
                 const res = await fetch('/api/message_management/xlsx_upload', { method: 'POST', body: formData });
                 const data = await res.json();

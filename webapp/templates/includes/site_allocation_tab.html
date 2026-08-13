@@ -35,6 +35,7 @@
                 <input type="file" class="hidden" accept=".xlsx,.csv" onchange="validateSiteFile(this)">
             </label>
             <p id="saFileName" class="text-xs text-slate-400 mt-2 truncate w-full"></p>
+            <div id="saSheetMount" class="mt-4 text-left"></div>
         </div>
 
     </div>
@@ -95,12 +96,24 @@
     let saResultRows = [];
     // Shared with the server during an Apply so /cancel can flag this exact run.
     let saTaskId = null;
+    // Worksheet picker (populated once a workbook is chosen).
+    let saSheetPicker = null;
 
     document.addEventListener('DOMContentLoaded', () => {
         UCResults.attachButton(
             document.getElementById('sa-results-download'),
             () => saResultRows, 'Site_Allocation_Results', 'Results'
         );
+        if (window.SheetPicker) {
+            saSheetPicker = SheetPicker.create(
+                document.getElementById('saSheetMount'), { preferred: ['Site Allocation'] }
+            );
+            // Switching worksheets re-validates the already-selected file against
+            // the newly chosen sheet.
+            saSheetPicker.select.addEventListener('change', () => {
+                if (saFile) runSiteBatch('preview');
+            });
+        }
         const stopBtn = document.getElementById('sa-stop-btn');
         if (stopBtn) {
             stopBtn.addEventListener('click', async () => {
@@ -164,6 +177,7 @@
         saFile = input.files[0];
         document.getElementById('saFileName').innerText = 'Selected: ' + saFile.name;
         input.value = '';
+        if (saSheetPicker) saSheetPicker.update(saFile);
         runSiteBatch('preview');
     };
 
@@ -218,6 +232,7 @@
         formData.append('file', saFile);
         formData.append('action', action);
         if (saTaskId) formData.append('task_id', saTaskId);
+        if (saSheetPicker) saSheetPicker.appendTo(formData);
 
         try {
             const res = await fetch('/api/site_allocation/upload', { method: 'POST', body: formData });
@@ -262,6 +277,7 @@
                 saLog(`Apply complete — ${summaryBits.join(', ')}.`, 'success');
                 applyBtn.disabled = true;
                 saFile = null;
+                if (saSheetPicker) saSheetPicker.reset();
                 document.getElementById('saFileName').innerText = '';
             }
 

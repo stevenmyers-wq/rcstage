@@ -225,7 +225,7 @@ def upload_to_cxone(base_uri, token, file_bytes, cx_filename, overwrite=False):
     return response.json() if response.content else {}
 
 
-def parse_generation_file(file_storage):
+def parse_generation_file(file_storage, sheet_name=None):
     """
     Parses an uploaded CSV or XLSX file into a list of row dicts.
 
@@ -233,13 +233,16 @@ def parse_generation_file(file_storage):
     Optional columns : voice   (Gemini voice name — overrides default per-row)
                        accent  (e.g. "Australian English" — overrides default per-row)
 
+    ``sheet_name`` picks the worksheet to read from a multi-sheet workbook;
+    when omitted the first sheet is used.
+
     Returns (rows, error_message). On success error_message is None.
     """
     fname = file_storage.filename.lower()
 
     try:
         if fname.endswith('.xlsx'):
-            df = pd.read_excel(file_storage, engine='openpyxl')
+            df = pd.read_excel(file_storage, engine='openpyxl', sheet_name=(sheet_name or 0))
         elif fname.endswith('.csv'):
             df = pd.read_csv(file_storage)
         else:

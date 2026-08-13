@@ -212,6 +212,7 @@ def xlsx_upload():
         summary = utils.xlsx_bulk_upload(
             file_obj, drive_url, task_id, access_token=drive_token,
             cursor=cursor, chunk_size=chunk_size,
+            sheet_name=(request.form.get('sheet_name') or None),
         )
         return jsonify({'success': True, **summary})
     except Exception as e:

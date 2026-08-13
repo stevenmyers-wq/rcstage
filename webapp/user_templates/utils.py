@@ -452,7 +452,7 @@ def _snapshot_extension(ext_id, auth):
     }
 
 
-def process_upload_background(task_id, file_bytes, auth_bundle):
+def process_upload_background(task_id, file_bytes, auth_bundle, sheet_name=None):
     """Parses the Excel file, snapshots current state, chunks the requests, and
     applies each batch via the async Bulk Apply task."""
     template_progress_store[task_id] = {
@@ -463,7 +463,7 @@ def process_upload_background(task_id, file_bytes, auth_bundle):
     auth = _Auth(auth_bundle)
 
     try:
-        df = pd.read_excel(io.BytesIO(file_bytes))
+        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=(sheet_name or 0))
         templates = fetch_all_templates(auth.token)
         template_map = {t.get('name', '').replace(',', ''): t['id'] for t in templates}
         template_names = {t['id']: t.get('name', '') for t in templates}

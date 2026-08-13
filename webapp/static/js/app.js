@@ -278,6 +278,173 @@ window.CheckboxSelect = (function () {
     return { create };
 })();
 
+// --- Shared: Excel workbook sheet picker --------------------------------------
+// Every upload flow that accepts an .xlsx/.xls workbook can offer a "Target
+// Worksheet" dropdown so the user chooses which sheet to process, instead of the
+// backend silently assuming the first sheet. Sheet names come from the shared
+// /api/common/sheets endpoint.
+//
+// Usage:
+//   const picker = SheetPicker.create(mountEl, { preferred: ['Assignment Template'] });
+//   picker.update(file);              // whenever the chosen file changes
+//   picker.appendTo(formData);        // adds sheet_name when a sheet is chosen
+//   picker.value();                   // selected sheet name, or '' (csv/no file)
+//   picker.reset();                   // hide + clear (e.g. after a successful run)
+//
+// The dropdown hides itself for CSV uploads and when no file is selected, so
+// value() safely returns '' and appendTo() adds nothing — preserving the old
+// "first sheet" behaviour for those cases.
+window.SheetPicker = (function () {
+    const CSV_SENTINEL = 'CSV Format (No Sheets)';
+
+    function create(mount, options) {
+        options = options || {};
+        const endpoint = options.endpoint || '/api/common/sheets';
+        const label = options.label || 'Target Worksheet';
+        const preferred = (options.preferred || []).map(s => String(s).toLowerCase());
+        const onReady = typeof options.onReady === 'function' ? options.onReady : function () {};
+
+        mount.innerHTML =
+            '<div class="input-wrapper" data-sp-wrap style="display:none">' +
+            '<label class="input-label">' + label + '</label>' +
+            '<select class="input-field" data-sp-select></select>' +
+            '</div>';
+        const wrap = mount.querySelector('[data-sp-wrap]');
+        const select = mount.querySelector('[data-sp-select]');
+
+        // Monotonic token so a slow response for an earlier file can't overwrite
+        // the dropdown after the user has already picked a different file.
+        let reqToken = 0;
+        let visible = false;
+
+        function hide() {
+            visible = false;
+            wrap.style.display = 'none';
+            select.innerHTML = '';
+        }
+
+        function fill(sheets) {
+            select.innerHTML = '';
+            sheets.forEach(sheet => {
+                const opt = document.createElement('option');
+                opt.value = sheet;
+                opt.textContent = sheet;
+                select.appendChild(opt);
+            });
+            let idx = 0;
+            if (preferred.length) {
+                const match = sheets.findIndex(s => preferred.includes(String(s).toLowerCase()));
+                if (match >= 0) idx = match;
+            }
+            select.selectedIndex = idx;
+        }
+
+        async function update(file) {
+            const myToken = ++reqToken;
+            if (!file) { hide(); return; }
+            const name = (file.name || '').toLowerCase();
+            if (name.endsWith('.csv')) { hide(); onReady([CSV_SENTINEL]); return; }
+
+            visible = true;
+            wrap.style.display = '';
+            select.innerHTML = '<option value="">Reading file…</option>';
+
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                const res = await fetch(endpoint, { method: 'POST', body: fd });
+                const sheets = await res.json();
+                if (myToken !== reqToken) return;   // superseded by a newer file
+                if (res.ok && Array.isArray(sheets)) {
+                    fill(sheets);
+                    onReady(sheets);
+                } else {
+                    select.innerHTML = '<option value="">Could not read sheets</option>';
+                }
+            } catch (e) {
+                if (myToken !== reqToken) return;
+                select.innerHTML = '<option value="">Error reading sheets</option>';
+            }
+        }
+
+        function value() {
+            if (!visible) return '';
+            const v = select.value;
+            return (v && v !== CSV_SENTINEL) ? v : '';
+        }
+
+        function appendTo(formData, field) {
+            const v = value();
+            if (v) formData.append(field || 'sheet_name', v);
+        }
+
+        return { update, reset: hide, value, appendTo, select, el: wrap };
+    }
+
+    // Modal variant for compact upload buttons that can't host an inline
+    // dropdown (e.g. a hidden <input> inside a small card that uploads on
+    // change). choose(file) returns a Promise:
+    //   ''            -> no choice needed (csv, single-sheet, or no SheetPicker)
+    //   '<sheetName>' -> the worksheet the user picked
+    //   null          -> the user cancelled (caller should abort the upload)
+    // The modal is only shown when the workbook actually has 2+ sheets, so
+    // single-sheet uploads keep their one-click behaviour.
+    function choose(file, options) {
+        options = options || {};
+        const endpoint = options.endpoint || '/api/common/sheets';
+        const title = options.title || 'Choose worksheet';
+        const preferred = (options.preferred || []).map(s => String(s).toLowerCase());
+
+        return new Promise(async (resolve) => {
+            if (!file) { resolve(''); return; }
+            const name = (file.name || '').toLowerCase();
+            if (name.endsWith('.csv')) { resolve(''); return; }
+
+            let sheets;
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                const res = await fetch(endpoint, { method: 'POST', body: fd });
+                sheets = await res.json();
+            } catch (e) { resolve(''); return; }   // fall back to backend default
+
+            if (!Array.isArray(sheets) || sheets.length === 0) { resolve(''); return; }
+            if (sheets.length === 1) { resolve(''); return; }   // nothing to choose
+
+            // Build the modal.
+            const overlay = document.createElement('div');
+            overlay.className = 'fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4';
+            const optionsHtml = sheets.map(s =>
+                '<option value="' + String(s).replace(/"/g, '&quot;') + '">' + String(s) + '</option>'
+            ).join('');
+            overlay.innerHTML =
+                '<div class="card w-full max-w-md shadow-2xl">' +
+                '<h3 class="text-heading mb-2">' + title + '</h3>' +
+                '<p class="text-subheading mb-5">This workbook has multiple worksheets. Choose which one to process.</p>' +
+                '<div class="input-wrapper mb-6"><label class="input-label">Target Worksheet</label>' +
+                '<select class="input-field" data-sp-modal-select>' + optionsHtml + '</select></div>' +
+                '<div class="flex justify-end gap-3">' +
+                '<button type="button" class="btn-secondary" data-sp-cancel>Cancel</button>' +
+                '<button type="button" class="btn-primary" data-sp-confirm>Continue</button>' +
+                '</div></div>';
+            document.body.appendChild(overlay);
+
+            const select = overlay.querySelector('[data-sp-modal-select]');
+            if (preferred.length) {
+                const idx = sheets.findIndex(s => preferred.includes(String(s).toLowerCase()));
+                if (idx >= 0) select.selectedIndex = idx;
+            }
+
+            function close(result) { overlay.remove(); resolve(result); }
+            overlay.querySelector('[data-sp-confirm]').addEventListener('click', () => close(select.value));
+            overlay.querySelector('[data-sp-cancel]').addEventListener('click', () => close(null));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+        });
+    }
+
+    return { create, choose };
+})();
+
 // ... Keep all your existing app.js code below here (handleLogin, handleRcConnect, etc) ...
 
 // Ensure initTheme is called on load

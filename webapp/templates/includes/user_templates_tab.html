@@ -46,6 +46,8 @@
                     <p class="text-sm font-bold text-emerald-600 dark:text-emerald-500" id="template-filename">Select Excel File</p>
                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Drag and drop or click to browse</p>
                 </div>
+
+                <div id="utSheetMount"></div>
             </div>
 
             <button id="btn-up-templates" class="btn-success w-full !py-3 disabled:opacity-50" disabled>
@@ -98,6 +100,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let utResultRows = null;
     UCResults.attachButton(document.getElementById('ut-result-btn'), () => utResultRows, 'User_Template_Results', 'Results');
 
+    const utSheetPicker = window.SheetPicker
+        ? SheetPicker.create(document.getElementById('utSheetMount'))
+        : null;
+
     let pollInterval = null;
     let currentTaskId = null;
 
@@ -117,9 +123,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.files.length > 0) {
             filenameDisplay.textContent = e.target.files[0].name;
             btnUpload.disabled = false;
+            if (utSheetPicker) utSheetPicker.update(e.target.files[0]);
         } else {
             filenameDisplay.textContent = 'Select Excel File';
             btnUpload.disabled = true;
+            if (utSheetPicker) utSheetPicker.reset();
         }
     });
 
@@ -257,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
+        if (utSheetPicker) utSheetPicker.appendTo(formData);
 
         try {
             const res = await fetch('/api/user_templates/upload', {

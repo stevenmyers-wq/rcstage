@@ -9,6 +9,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ── Element refs ──────────────────────────────────────────────────────────
   const convertFileInput = document.getElementById("convert-file-input");
   const genFileInput = document.getElementById("gen-file-input");
+  const genSheetPicker = window.SheetPicker
+    ? SheetPicker.create(document.getElementById("gen-sheet-mount"))
+    : null;
   const genVoice = document.getElementById("gen-voice");
   const genAccent = document.getElementById("gen-accent");
   const templateBtn = document.getElementById("template-btn");
@@ -114,6 +117,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (convertFileInput) convertFileInput.addEventListener("change", checkStep1);
   if (genFileInput) genFileInput.addEventListener("change", checkStep1);
+  if (genFileInput && genSheetPicker) {
+    genFileInput.addEventListener("change", () =>
+      genSheetPicker.update(genFileInput.files[0])
+    );
+  }
 
   // ── Step 2: Output mode ───────────────────────────────────────────────────
   async function loadStep2() {
@@ -377,6 +385,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     formData.append("generation_file", genFileInput.files[0]);
     formData.append("voice", genVoice ? genVoice.value : "Kore");
     formData.append("accent", accent);
+    if (genSheetPicker) genSheetPicker.appendTo(formData);
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/cxone_audio_converter/generate", true);
@@ -428,6 +437,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     formData.append("generation_file", genFileInput.files[0]);
     formData.append("voice", genVoice ? genVoice.value : "Kore");
     formData.append("accent", accent);
+    if (genSheetPicker) genSheetPicker.appendTo(formData);
 
     try {
       const res = await fetch(

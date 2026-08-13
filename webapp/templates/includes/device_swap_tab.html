@@ -45,6 +45,8 @@
                 <form id="deviceSwapForm" class="w-full flex flex-col gap-4">
                     <input type="file" id="deviceSwapFile" accept=".xlsx" class="file-input" required/>
 
+                    <div id="deviceSwapSheetMount"></div>
+
                     <button type="submit" class="btn-primary w-full" id="deviceSwapBtn" disabled>
                         <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white hidden" id="deviceSwapSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -126,6 +128,8 @@
                 <form id="swapForm" class="w-full flex flex-col gap-4">
                     <input type="file" id="swapFile" accept=".xlsx" class="file-input" required/>
 
+                    <div id="swapSheetMount"></div>
+
                     <button type="submit" class="btn-primary w-full" id="swapBtn" disabled>
                         <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white hidden" id="swapSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -199,9 +203,14 @@ document.addEventListener('DOMContentLoaded', function () {
     let deviceUpdateRows = null;
     UCResults.attachButton(document.getElementById('deviceSwapResultBtn'), () => deviceUpdateRows, 'Device_Update_Results', 'Results');
 
+    const deviceSwapSheetPicker = window.SheetPicker
+        ? SheetPicker.create(document.getElementById('deviceSwapSheetMount'))
+        : null;
+
     if (fileUpload && processFileBtn) {
         fileUpload.addEventListener('change', () => {
             processFileBtn.disabled = !fileUpload.files.length > 0;
+            if (deviceSwapSheetPicker) deviceSwapSheetPicker.update(fileUpload.files[0]);
         });
     }
 
@@ -214,6 +223,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const formData = new FormData();
             formData.append('file', file);
+            if (deviceSwapSheetPicker) deviceSwapSheetPicker.appendTo(formData);
 
             const spinner = document.getElementById('deviceSwapSpinner');
             const btnText = document.querySelector('#deviceSwapBtn .btn-text');
@@ -297,9 +307,14 @@ document.addEventListener('DOMContentLoaded', function () {
     let swapResultRows = null;
     UCResults.attachButton(document.getElementById('swapResultBtn'), () => swapResultRows, 'Device_Swap_Results', 'Results');
 
+    const swapSheetPicker = window.SheetPicker
+        ? SheetPicker.create(document.getElementById('swapSheetMount'))
+        : null;
+
     if (fileUpload && processBtn) {
         fileUpload.addEventListener('change', () => {
             processBtn.disabled = !fileUpload.files.length > 0;
+            if (swapSheetPicker) swapSheetPicker.update(fileUpload.files[0]);
         });
     }
 
@@ -312,6 +327,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const formData = new FormData();
             formData.append('file', file);
+            if (swapSheetPicker) swapSheetPicker.appendTo(formData);
 
             const spinner = document.getElementById('swapSpinner');
             const btnText = document.querySelector('#swapBtn .btn-text');

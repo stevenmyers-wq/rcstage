@@ -35,6 +35,7 @@
                 <input type="file" class="hidden" accept=".xlsx,.csv" onchange="validateExtFile(this)">
             </label>
             <p id="euFileName" class="text-xs text-slate-400 mt-2 truncate w-full"></p>
+            <div id="euSheetMount" class="mt-4 text-left"></div>
         </div>
 
     </div>
@@ -98,8 +99,19 @@
     let euResultRows = [];
     // Shared with the server during a Create so /cancel can flag this exact run.
     let euTaskId = null;
+    // Worksheet picker (populated once a workbook is chosen).
+    let euSheetPicker = null;
 
     document.addEventListener('DOMContentLoaded', () => {
+        if (window.SheetPicker) {
+            euSheetPicker = SheetPicker.create(
+                document.getElementById('euSheetMount'), { preferred: ['Extension Upload'] }
+            );
+            // Switching worksheets re-reviews the selected file against the new sheet.
+            euSheetPicker.select.addEventListener('change', () => {
+                if (euFile) runExtBatch('preview');
+            });
+        }
         UCResults.attachButton(
             document.getElementById('eu-results-download'),
             () => euResultRows, 'Extension_Uploader_Results', 'Results'
@@ -168,6 +180,7 @@
         euFile = input.files[0];
         document.getElementById('euFileName').innerText = 'Selected: ' + euFile.name;
         input.value = '';
+        if (euSheetPicker) euSheetPicker.update(euFile);
         runExtBatch('preview');
     };
 
@@ -222,6 +235,7 @@
         formData.append('file', euFile);
         formData.append('action', action);
         if (euTaskId) formData.append('task_id', euTaskId);
+        if (euSheetPicker) euSheetPicker.appendTo(formData);
 
         try {
             const res = await fetch('/api/extension_uploader/upload', { method: 'POST', body: formData });
@@ -266,6 +280,7 @@
                 euLog(`Create complete — ${summaryBits.join(', ')}.`, 'success');
                 applyBtn.disabled = true;
                 euFile = null;
+                if (euSheetPicker) euSheetPicker.reset();
                 document.getElementById('euFileName').innerText = '';
             }
 

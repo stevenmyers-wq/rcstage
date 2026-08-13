@@ -120,7 +120,7 @@ def upload_updates():
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file)
         else:
-            df = pd.read_excel(file)
+            df = pd.read_excel(file, sheet_name=(request.form.get('sheet_name') or 0))
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 

@@ -1042,7 +1042,7 @@ def _prune_xlsx_cache(max_age_seconds=7200):
         xlsx_upload_progress_store.pop(key, None)
 
 
-def _prepare_xlsx_upload(file_storage, drive_url, access_token):
+def _prepare_xlsx_upload(file_storage, drive_url, access_token, sheet_name=None):
     """One-time setup for a bulk upload: parse the sheet, list the Drive folder,
     and build the extension index. Expensive, so it's cached per task and reused
     across chunks."""
@@ -1052,7 +1052,7 @@ def _prepare_xlsx_upload(file_storage, drive_url, access_token):
     if not folder_id:
         raise ValueError("Could not read a Google Drive folder ID from the provided link.")
 
-    df = pd.read_excel(file_storage, sheet_name=0, engine='openpyxl').dropna(how='all')
+    df = pd.read_excel(file_storage, sheet_name=(sheet_name or 0), engine='openpyxl').dropna(how='all')
     ext_col, type_col, name_col = _resolve_upload_columns(df)
 
     drive_files = list_drive_folder_files(folder_id, access_token=access_token)
@@ -1081,7 +1081,7 @@ def _prepare_xlsx_upload(file_storage, drive_url, access_token):
 
 
 def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
-                     cursor=0, chunk_size=None):
+                     cursor=0, chunk_size=None, sheet_name=None):
     """
     Drive a bulk greeting upload from an uploaded spreadsheet plus a Drive folder
     link. Each row (EXT NUMBER, GREETING TYPE, GREETING NAME) is resolved, matched
@@ -1100,7 +1100,7 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
 
     ctx = _xlsx_upload_cache.get(task_id) if (chunked and task_id) else None
     if ctx is None:
-        ctx = _prepare_xlsx_upload(file_storage, drive_url, access_token)
+        ctx = _prepare_xlsx_upload(file_storage, drive_url, access_token, sheet_name)
         if chunked and task_id:
             _prune_xlsx_cache()
             _xlsx_upload_cache[task_id] = ctx

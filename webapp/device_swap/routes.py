@@ -34,7 +34,8 @@ def bulk_device_swap():
         return jsonify({'error': 'No file selected'}), 400
         
     try:
-        df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
+        sheet = request.form.get('sheet_name') or 0
+        df = pd.read_excel(file, sheet_name=sheet, engine='openpyxl')
         df = df.dropna(subset=['Extension', 'Device Type', 'MAC Address'], how='all')
         records = df.to_dict('records')
         
@@ -72,7 +73,8 @@ def bulk_device_swap_replace():
         return jsonify({'error': 'No file selected'}), 400
 
     try:
-        df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
+        sheet = request.form.get('sheet_name') or 0
+        df = pd.read_excel(file, sheet_name=sheet, engine='openpyxl')
         df = df.dropna(subset=['Extension', 'Replacement Device', 'Current Device'], how='all')
         records = df.to_dict('records')
 
