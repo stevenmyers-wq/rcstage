@@ -445,8 +445,11 @@ def run_cq_audit(task_id, queue_ids, token):
             for e in ext_records:
                 ext_id_to_num[str(e['id'])] = str(e.get('extensionNumber', ''))
 
-        succ, sites_resp = safe_api_call('/restapi/v1.0/account/~/sites', token=token)
-        site_map = {str(s['id']): s['name'] for s in sites_resp.get('records', [])} if succ else {}
+        # Paginate: accounts with >100 sites otherwise lose the overflow and the raw site id
+        # bleeds into the Site column for those queues.
+        succ, site_records = fetch_directory('/restapi/v1.0/account/~/sites', token)
+        site_map = {str(s['id']): s['name'] for s in site_records} if succ else {}
+        site_map.setdefault('main-site', 'Main Site')
 
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
