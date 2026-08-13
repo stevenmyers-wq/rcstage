@@ -205,10 +205,18 @@ class RCPresenceManager:
             page = current_page + 1
         return {"records": all_records}
 
-    def update_presence_permissions(self, extension_id, permission_records):
-        # Same Limited-endpoint contract as presence/line: the body must be a
-        # BARE JSON ARRAY, not the {"records": ...} wrapper.
+    def update_presence_permissions(self, extension_id, extension_ids):
+        """Replace the 'users allowed to answer my calls' list.
+
+        Confirmed against a live extension (and verified in the RC admin portal):
+        this write is NOT shaped like presence/line. The body is
+        ``{"extensions": [{"id": "<extId>"}, ...]}`` — the wrapper key is
+        ``extensions`` (not ``records``), each element is a FLAT ``{"id": …}``
+        (no nested ``extension`` object, no slot id). RC echoes back
+        ``{"extensions": [...]}``. ``extension_ids`` is an ordered id list.
+        """
+        body = {"extensions": [{"id": str(x)} for x in extension_ids]}
         return self._call(
             f"{self.base_path}/extension/{extension_id}/presence/permission",
-            method="PUT", json=permission_records,
+            method="PUT", json=body,
         )
