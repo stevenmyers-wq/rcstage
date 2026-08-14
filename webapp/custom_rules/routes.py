@@ -199,14 +199,28 @@ def audit_rules():
                 # `dispatchingRef`, which would leave every action column blank).
                 try:
                     v2_rules = fetch_v2_interaction_rules(ext_id)
-                    # Only treat V2 as authoritative when it actually returns
-                    # rules; an empty list must not suppress the V1 fallback.
-                    if v2_rules:
-                        for rule in v2_rules:
-                            audit_data.append(parse_rule_to_row(ext, rule, is_v2=True, ext_lookup=ext_lookup))
-                        rules_found = True
                 except Exception:
-                    pass
+                    v2_rules = None  # endpoint failure (e.g. V1 account) -> V1 fallback
+
+                # A non-empty V2 result means V2 owns this extension; an empty
+                # list must not suppress the V1 fallback. Parse each rule under
+                # its OWN guard so one rule with an unexpected shape can't drop
+                # the others (or, since V1 is 403 on new-call-handling accounts,
+                # wipe the whole extension) — a failing rule becomes a visible
+                # diagnostic row instead.
+                if v2_rules:
+                    rules_found = True
+                    for rule in v2_rules:
+                        try:
+                            audit_data.append(parse_rule_to_row(ext, rule, is_v2=True, ext_lookup=ext_lookup))
+                        except Exception as pe:
+                            audit_data.append({
+                                'Ext Number': ext.get('extensionNumber'),
+                                'Ext Name': ext.get('name'),
+                                'Rule ID': rule.get('id'),
+                                'Rule Name': rule.get('displayName') or rule.get('name'),
+                                'Action': f'⚠️ Could not parse rule: {pe}',
+                            })
 
                 # Fallback V1
                 if not rules_found:
