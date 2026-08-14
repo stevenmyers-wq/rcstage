@@ -30,15 +30,13 @@ def get_template():
     try:
         columns = ["Target Extension Name", "Target Extension Number", "Target Extension ID",
                    "Ring on Monitored Call", "Enable Me to Pickup a Monitored Line",
-                   "Allow other users to see my presence status"]
+                   "Allow other users to see my presence status",
+                   # Single cell: comma-separated extensions permitted to answer
+                   # this target's calls (presence/permission). Additive on upload.
+                   "Users Allowed to Answer My Calls"]
         for i in range(1, 101):
             columns.append(f"Line {i} Name")
             columns.append(f"Line {i} Extension")
-        # "Answer Line N" columns drive the separate "users allowed to answer my
-        # calls" permission list (additive, like the monitored lines above).
-        for i in range(1, 51):
-            columns.append(f"Answer Line {i} Name")
-            columns.append(f"Answer Line {i} Extension")
         df_template = pd.DataFrame(columns=columns)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -113,13 +111,27 @@ def generate_audit_report():
                     perms_resp = {"records": []}
                 records = lines_resp.get('records') or []
 
+                # "Users allowed to answer my calls" is rendered as a single cell:
+                # a comma-separated list of the permitted extensions' numbers, so
+                # it round-trips straight back into the upload column. A record may
+                # nest the extension or carry the id flat; tolerate both.
+                answer_nums = []
+                for record in perms_resp.get('records') or []:
+                    ext_obj = record.get('extension') or record
+                    m_id = str(ext_obj.get('id', ''))
+                    master = id_to_ext_map.get(m_id, {})
+                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
+                    if ext_num:
+                        answer_nums.append(str(ext_num))
+
                 row = {
                     "Target Extension Name": user.get('name', ''),
                     "Target Extension Number": user.get('extensionNumber', ''),
                     "Target Extension ID": ext_id,
                     "Ring on Monitored Call": settings.get('ringOnMonitoredCall', False),
                     "Enable Me to Pickup a Monitored Line": settings.get('pickUpCallsOnHold', False),
-                    "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False)
+                    "Allow other users to see my presence status": settings.get('allowSeeMyPresence', False),
+                    "Users Allowed to Answer My Calls": ", ".join(answer_nums),
                 }
 
                 for i, record in enumerate(records):
@@ -135,21 +147,6 @@ def generate_audit_report():
                     lock_status = "[LOCKED] " if record.get('notEditableOnHud') else ""
                     row[f"Line {line_idx} Name"] = f"{lock_status}{name} ({type_label})"
                     row[f"Line {line_idx} Extension"] = str(ext_num)
-
-                # Users allowed to answer this extension's calls (separate list).
-                # A record may nest the extension or carry the id flat; tolerate both.
-                for i, record in enumerate(perms_resp.get('records') or []):
-                    ans_idx = i + 1
-                    ext_obj = record.get('extension') or record
-                    m_id = str(ext_obj.get('id', ''))
-
-                    master = id_to_ext_map.get(m_id, {})
-                    type_label = master.get('type') or ext_obj.get('type') or 'Unknown'
-                    name = master.get('name') or ext_obj.get('name') or type_label
-                    ext_num = master.get('extensionNumber') or ext_obj.get('extensionNumber') or m_id
-
-                    row[f"Answer Line {ans_idx} Name"] = f"{name} ({type_label})"
-                    row[f"Answer Line {ans_idx} Extension"] = str(ext_num)
 
                 perm_count = len(perms_resp.get('records') or [])
                 yield json.dumps({
@@ -563,8 +560,9 @@ def _process_row(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results,
 
 
 def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, results):
-    """Apply the "users allowed to answer my calls" list from the sheet's
-    'Answer Line N' columns to the presence/permission resource.
+    """Apply the "users allowed to answer my calls" list from the sheet's single
+    'Users Allowed to Answer My Calls' column (a comma-separated list of
+    extensions) to the presence/permission resource.
 
     Additive: every current permission is kept and only extensions not already
     present are appended — nothing is removed. The write is a full replacement,
@@ -572,10 +570,18 @@ def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, 
     monitored-line update and records its own result row (added only when
     something actually changes or an extension can't be resolved) so it never
     overwrites the monitored-line outcome. RC failures are captured as errors."""
-    ans_cols = [c for c in df.columns
-                if c.strip().lower().startswith("answer line") and "extension" in c.strip().lower()]
-    if not ans_cols:
-        return  # sheet doesn't drive answer permissions
+    ans_col = next((c for c in df.columns if "allowed to answer" in c.strip().lower()), None)
+    if not ans_col:
+        return  # sheet doesn't carry the answer-permission column
+
+    raw = row.get(ans_col)
+    if pd.isna(raw) or str(raw).strip() == "":
+        return  # blank cell = no-op (add-only; never removes existing grants)
+
+    # Split the comma/semicolon-separated cell into individual extension tokens.
+    tokens = [t.split('.')[0].strip()
+              for t in str(raw).replace(';', ',').split(',')
+              if t.split('.')[0].strip() and t.strip().upper() != "CLEAR"]
 
     def resolve(val_str):
         if val_str in ext_map:
@@ -609,11 +615,7 @@ def _process_permissions(manager, df, row, t_id, ext_map, valid_ids, id_to_ext, 
     # Additive: keep every current permission, then append new sheet extensions.
     updated = list(current)
     unresolved = []
-    for col in ans_cols:
-        val = row.get(col)
-        if pd.isna(val) or str(val).strip() == "" or str(val).strip().upper() == "CLEAR":
-            continue
-        val_str = str(val).split('.')[0].strip()
+    for val_str in tokens:
         resolved_id = resolve(val_str)
         if not resolved_id:
             unresolved.append(val_str)
