@@ -27,6 +27,7 @@
                 <div class="input-wrapper text-left">
                     <label class="input-label !text-blue-600 dark:!text-blue-400">Paste Google Drive Link</label>
                     <input type="url" id="loa-url" class="input-field" placeholder="https://drive.google.com/file/d/...">
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Google will ask you to <strong>authorize Drive access</strong> (read-only). The file is read <strong>as you</strong>, so any link you can open works — no public sharing needed.</p>
                 </div>
             </div>
         </div>
@@ -53,6 +54,7 @@
                 <div class="input-wrapper text-left">
                     <label class="input-label !text-emerald-600 dark:!text-emerald-400">Paste Google Drive Link</label>
                     <input type="url" id="brd-url" class="input-field" placeholder="https://docs.google.com/spreadsheets/d/...">
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Google will ask you to <strong>authorize Drive access</strong> (read-only). The file is read <strong>as you</strong>, so any link you can open works — no public sharing needed.</p>
                 </div>
             </div>
         </div>
@@ -106,14 +108,84 @@
             checkInputs();
         });
 
+        // --- Per-user Google Drive authorization (OAuth access token via GIS) ---
+        // Mirrors the message-management bulk upload: the user authorizes Drive
+        // (read-only) and we read the pasted link as them, so public sharing is
+        // no longer required.
+        let _driveTokenClient = null;
+        let _driveToken = null;   // { access_token, expires_at }
+        let _drivePending = null; // { resolve, reject } for the in-flight request
+
+        function ensureDriveToken() {
+            return new Promise((resolve, reject) => {
+                // Reuse a still-valid token so we don't re-prompt every submit.
+                if (_driveToken && (_driveToken.expires_at - Date.now()) > 60000) {
+                    resolve(_driveToken.access_token);
+                    return;
+                }
+                const clientId = window.GOOGLE_CLIENT_ID || '';
+                if (!clientId) {
+                    reject(new Error('Google client ID is not configured, so Drive access cannot be authorized.'));
+                    return;
+                }
+                if (!(window.google && google.accounts && google.accounts.oauth2)) {
+                    reject(new Error('Google authorization library has not loaded yet. Refresh the page and try again.'));
+                    return;
+                }
+                const hadToken = !!_driveToken;
+                _drivePending = { resolve, reject };
+                if (!_driveTokenClient) {
+                    _driveTokenClient = google.accounts.oauth2.initTokenClient({
+                        client_id: clientId,
+                        scope: 'https://www.googleapis.com/auth/drive.readonly',
+                        callback: (resp) => {
+                            const pending = _drivePending;
+                            _drivePending = null;
+                            if (resp && resp.access_token) {
+                                _driveToken = {
+                                    access_token: resp.access_token,
+                                    expires_at: Date.now() + ((resp.expires_in || 3600) * 1000)
+                                };
+                                if (pending) pending.resolve(resp.access_token);
+                            } else if (pending) {
+                                pending.reject(new Error('Google Drive authorization was cancelled.'));
+                            }
+                        },
+                        error_callback: (err) => {
+                            const pending = _drivePending;
+                            _drivePending = null;
+                            if (pending) pending.reject(new Error('Google Drive authorization failed: ' + ((err && err.type) || 'unknown')));
+                        }
+                    });
+                }
+                // Must be called during the user gesture so the popup isn't blocked.
+                try { _driveTokenClient.requestAccessToken(hadToken ? { prompt: '' } : {}); }
+                catch (e) { _drivePending = null; reject(new Error('Could not start Google Drive authorization: ' + e.message)); }
+            });
+        }
+
         submitBtn.addEventListener('click', async () => {
             const formData = new FormData();
-            
+
             if (loaInput.files.length > 0) formData.append('loa_file', loaInput.files[0]);
             if (loaUrl.value.trim()) formData.append('loa_url', loaUrl.value.trim());
-            
+
             if (brdInput.files.length > 0) formData.append('brd_file', brdInput.files[0]);
             if (brdUrl.value.trim()) formData.append('brd_url', brdUrl.value.trim());
+
+            // If either source is a Drive link, authorize Drive first — within the
+            // click gesture, so Google's popup isn't blocked.
+            const usesDriveLink = !!(loaUrl.value.trim() || brdUrl.value.trim());
+            if (usesDriveLink) {
+                try {
+                    const driveToken = await ensureDriveToken();
+                    formData.append('drive_token', driveToken);
+                } catch (e) {
+                    statusDiv.className = "card !py-4 text-center bg-rose-50 dark:bg-rose-900/10 text-rose-800 dark:text-rose-400 border-rose-200 dark:border-rose-800 block";
+                    statusDiv.innerHTML = `<strong>❌ Drive Authorization Failed:</strong> ${e.message}`;
+                    return;
+                }
+            }
 
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<div class="spinner border-white w-4 h-4 mr-2"></div> Processing AI Mapping... (This can take 30s+)';

@@ -18,6 +18,10 @@ def process_mapping():
     loa_url = request.form.get('loa_url')
     brd_file = request.files.get('brd_file')
     brd_url = request.form.get('brd_url')
+    # Per-user Google Drive OAuth token from the browser (Google Identity
+    # Services), same as the message-management bulk upload. Required to read
+    # any Drive link, since public/anyone-with-link access is now restricted.
+    drive_token = (request.form.get('drive_token') or '').strip() or None
 
     if not loa_file and not loa_url: return jsonify({"error": "LOA (PDF) file or URL is required."}), 400
     if not brd_file and not brd_url: return jsonify({"error": "BRD (Excel) file or URL is required."}), 400
@@ -41,13 +45,18 @@ def process_mapping():
         if not match: return jsonify({"error": "Invalid BRD Google Drive URL."}), 400
         brd_file_id = match.group(1)
 
+    # A Drive link can only be read with the user's authorization now.
+    if (loa_file_id or brd_file_id) and not drive_token:
+        return jsonify({"error": "Google Drive authorization is required to read Drive links. Please authorize Drive access and try again."}), 400
+
     try:
         output_buffer = utils.process_port_mapping(
-            token=token, 
-            loa_bytes=loa_bytes, 
-            loa_file_id=loa_file_id, 
-            brd_bytes=brd_bytes, 
-            brd_file_id=brd_file_id
+            token=token,
+            loa_bytes=loa_bytes,
+            loa_file_id=loa_file_id,
+            brd_bytes=brd_bytes,
+            brd_file_id=brd_file_id,
+            drive_token=drive_token
         )
         return send_file(
             output_buffer,
