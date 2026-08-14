@@ -31,15 +31,57 @@ def get_impersonation_token(employee_token, target_account_id):
         print(f"Exception during token exchange: {e}")
         return None
 
-def download_public_drive_file(file_id, is_pdf=False):
-    if not is_pdf:
-        url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
-        response = requests.get(url)
-        if response.status_code == 200: return response.content
-            
-    url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    response = requests.get(url)
-    if response.status_code == 200: return response.content
+DRIVE_API_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+# Native Google formats can't be downloaded raw — they must be exported.
+GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+def download_authorized_drive_file(file_id, access_token):
+    """Download a Drive file's bytes as the signed-in user via the Drive API.
+
+    A per-user OAuth access token (obtained in the browser through Google
+    Identity Services — the same authorization flow used by the bulk message
+    upload) is required. Public / anyone-with-the-link download is no longer
+    available. Native Google Sheets are exported to XLSX; everything else
+    (PDFs, uploaded spreadsheets) is downloaded as-is.
+    """
+    if not access_token:
+        raise Exception("Google Drive authorization is required. Please authorize Drive access and try again.")
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Look up the mime type first so native Google formats are exported correctly.
+    meta = requests.get(
+        f"{DRIVE_API_FILES_URL}/{file_id}",
+        headers=headers,
+        params={"fields": "mimeType,name", "supportsAllDrives": "true"},
+    )
+    if meta.status_code == 401:
+        raise Exception("Google Drive authorization expired or was denied. Please re-authorize Drive access and try again.")
+    if meta.status_code != 200:
+        raise Exception(
+            f"Could not access the Google Drive file (HTTP {meta.status_code}). "
+            "Confirm the link is correct and that you have access to it in Google Drive."
+        )
+    mime_type = meta.json().get("mimeType", "")
+
+    if mime_type == GOOGLE_SHEET_MIME:
+        response = requests.get(
+            f"{DRIVE_API_FILES_URL}/{file_id}/export",
+            headers=headers,
+            params={"mimeType": XLSX_MIME},
+        )
+    else:
+        response = requests.get(
+            f"{DRIVE_API_FILES_URL}/{file_id}",
+            headers=headers,
+            params={"alt": "media", "supportsAllDrives": "true"},
+        )
+
+    if response.status_code == 200:
+        return response.content
+    if response.status_code == 401:
+        raise Exception("Google Drive authorization expired or was denied. Please re-authorize Drive access and try again.")
     raise Exception(f"Failed to download file from Google Drive. HTTP {response.status_code}")
 
 def normalize_number(txt):
@@ -196,13 +238,13 @@ def extract_loa_numbers_with_gemini(pdf_bytes):
     response = client.models.generate_content(model='gemini-2.5-flash', contents=[pdf_part, prompt])
     return response.text.strip()
 
-def process_port_mapping(token, loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_file_id=None):
+def process_port_mapping(token, loa_bytes=None, loa_file_id=None, brd_bytes=None, brd_file_id=None, drive_token=None):
     if not loa_bytes and loa_file_id:
-        try: loa_bytes = download_public_drive_file(loa_file_id, is_pdf=True)
+        try: loa_bytes = download_authorized_drive_file(loa_file_id, drive_token)
         except Exception as e: raise ValueError(f"LOA Download Error: {str(e)}")
 
     if not brd_bytes and brd_file_id:
-        try: brd_bytes = download_public_drive_file(brd_file_id, is_pdf=False)
+        try: brd_bytes = download_authorized_drive_file(brd_file_id, drive_token)
         except Exception as e: raise ValueError(f"BRD Download Error: {str(e)}")
 
     extracted_csv = extract_loa_numbers_with_gemini(loa_bytes)
