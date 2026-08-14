@@ -3,7 +3,7 @@ import json
 import base64
 import pandas as pd
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file, Response, stream_with_context
+from flask import Blueprint, request, jsonify, send_file, Response, stream_with_context, current_app
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 from webapp.auth_utils import require_rc_token
@@ -94,6 +94,61 @@ def custom_rules_filters():
         return jsonify({'types': list(FILTER_GROUPS.keys()), 'sites': sites})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# --- DEBUG ROUTE ---
+@custom_rules_bp.route('/api/custom_rules/debug', methods=['GET'])
+@require_rc_token
+def debug_rules():
+    """Raw dump of an extension's rules exactly as RingCentral returns them, so
+    the parser can be fixed against the real schema instead of assumptions.
+
+    Visit in the browser (on the tool's own site, while signed in), e.g.
+    /api/custom_rules/debug?ext=101 — returns the V1 answering-rule payload, the
+    V2 interaction-rules list, and each V2 rule fetched by id (the authoritative
+    body the audit parses)."""
+    ext_num = (request.args.get('ext') or '').strip()
+    if not ext_num:
+        return jsonify({"error": "Pass ?ext=<extension number>, e.g. /api/custom_rules/debug?ext=101"}), 400
+
+    out = {"ext_requested": ext_num}
+    try:
+        ext_id = get_extension_id(ext_num)
+        if not ext_id:
+            return jsonify({"error": f"Extension {ext_num} not found."}), 404
+        out["ext_id"] = ext_id
+
+        # V1 answering rules (Detailed)
+        v1 = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule",
+                         params={'view': 'Detailed'}, return_response=True)
+        out["v1_answering_rules"] = v1.json() if getattr(v1, 'ok', False) else {
+            "status": getattr(v1, 'status_code', '?'), "body": getattr(v1, 'text', '')}
+
+        # V2 interaction-rules: the list as-is …
+        base = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
+        v2list = rc_api_call(base, return_response=True)
+        if getattr(v2list, 'ok', False):
+            list_body = v2list.json()
+            out["v2_interaction_rules_list"] = list_body
+            # … and each rule fetched by id (what the audit actually parses).
+            detailed = []
+            for rec in (list_body.get('records') or []):
+                rid = rec.get('id')
+                if not rid:
+                    continue
+                one = rc_api_call(f"{base}/{rid}", return_response=True)
+                detailed.append(one.json() if getattr(one, 'ok', False) else {
+                    "id": rid, "status": getattr(one, 'status_code', '?'),
+                    "body": getattr(one, 'text', '')})
+            out["v2_interaction_rules_detailed"] = detailed
+        else:
+            out["v2_interaction_rules_list"] = {
+                "status": getattr(v2list, 'status_code', '?'), "body": getattr(v2list, 'text', '')}
+    except Exception as e:
+        out["error"] = str(e)
+
+    return current_app.response_class(
+        json.dumps(out, indent=2), mimetype='application/json')
+
 
 # --- AUDIT ROUTE ---
 @custom_rules_bp.route('/api/custom_rules/audit', methods=['GET'])
