@@ -344,8 +344,16 @@ def fetch_v2_interaction_rules(ext_id):
     endpoint; returns an empty list when the account is V2 but the extension has
     no custom rules (which must NOT suppress the V1 fallback)."""
     base = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-    resp = rc_api_call(base, raise_error=True)
-    records = (resp or {}).get('records') or []
+    records = []
+    page = 1
+    while True:
+        resp = rc_api_call(base, params={'perPage': 100, 'page': page}, raise_error=True)
+        page_records = (resp or {}).get('records') or []
+        records.extend(page_records)
+        paging = (resp or {}).get('paging') or {}
+        if not page_records or page >= (paging.get('totalPages') or page):
+            break
+        page += 1
     detailed = []
     for rec in records:
         rid = rec.get('id')
