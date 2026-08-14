@@ -15,7 +15,7 @@ from .utils import (
     fetch_all_extensions, fetch_sites, resolve_type_filter,
     extension_site_id, FILTER_GROUPS,
     get_existing_v2_greeting, get_existing_v1_conditions, get_existing_v2_conditions,
-    THIS_EXTENSION,
+    fetch_v2_interaction_rules, THIS_EXTENSION,
 )
 
 
@@ -139,14 +139,15 @@ def audit_rules():
                 ext_id = ext['id']
                 rules_found = False
 
-                # Try V2
+                # Try V2. Each rule is fetched by id so its full inline
+                # `dispatching` is parsed (the collection list only carries a
+                # `dispatchingRef`, which would leave every action column blank).
                 try:
-                    v2_url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
-                    v2_resp = rc_api_call(v2_url, raise_error=True)
+                    v2_rules = fetch_v2_interaction_rules(ext_id)
                     # Only treat V2 as authoritative when it actually returns
                     # rules; an empty list must not suppress the V1 fallback.
-                    if v2_resp and v2_resp.get('records'):
-                        for rule in v2_resp['records']:
+                    if v2_rules:
+                        for rule in v2_rules:
                             audit_data.append(parse_rule_to_row(ext, rule, is_v2=True, ext_lookup=ext_lookup))
                         rules_found = True
                 except Exception:
