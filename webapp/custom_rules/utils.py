@@ -599,14 +599,21 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
         term_action = next((a for a in actions if a.get('type') == 'TerminatingAction'), None)
         
         if term_action:
-            # The action carries its target under `targets[].type`; there is no
-            # reliable `terminatingTargetType` on the action itself, so derive
-            # the type from the terminating target directly.
+            # A TerminatingAction carries a MENU of possible targets (voicemail,
+            # announcement, external number, extension, …) and names the one
+            # actually in effect via `terminatingTargetType`. Honour that field;
+            # picking the first TerminatingTarget instead lands on the voicemail
+            # entry (which RingCentral lists first) and mislabels every forward /
+            # announcement rule as "Send to Voicemail".
             targets = term_action.get('targets', [])
-            main_target = next(
-                (t for t in targets if str(t.get('type', '')).endswith('TerminatingTarget')),
-                None
-            )
+            eff_type = term_action.get('terminatingTargetType')
+            main_target = None
+            if eff_type:
+                main_target = next((t for t in targets if t.get('type') == eff_type), None)
+            if main_target is None:
+                main_target = next(
+                    (t for t in targets if str(t.get('type', '')).endswith('TerminatingTarget')),
+                    None)
             if main_target is None and targets:
                 main_target = targets[0]
             target_type = main_target.get('type') if main_target else None
