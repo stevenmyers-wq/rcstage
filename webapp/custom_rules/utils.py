@@ -327,6 +327,39 @@ def get_existing_v2_conditions(ext_id, rule_id):
         return []
 
 
+def fetch_v2_interaction_rules(ext_id):
+    """Lists an extension's V2 custom interaction rules with FULL detail.
+
+    The collection endpoint returns each rule with its dispatching as a
+    `dispatchingRef` reference rather than the inline `dispatching.actions`, so
+    parsing the list records directly leaves the Action (and every column
+    derived from it — External Number, Transfer Extension, Voicemail Recipient,
+    Greeting) blank while the rule still appears in the audit. The per-rule GET
+    is what returns the authoritative body (the same inline `dispatching` /
+    `conditions` shape the update path reads), so fetch each rule by id and only
+    fall back to the summary record if that detail GET fails.
+
+    Raises on a genuine V2 failure (e.g. a non-new-call-handling account where
+    the endpoint 404s) so the caller can fall back to the V1 answering-rule
+    endpoint; returns an empty list when the account is V2 but the extension has
+    no custom rules (which must NOT suppress the V1 fallback)."""
+    base = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
+    resp = rc_api_call(base, raise_error=True)
+    records = (resp or {}).get('records') or []
+    detailed = []
+    for rec in records:
+        rid = rec.get('id')
+        if not rid:
+            detailed.append(rec)
+            continue
+        try:
+            full = rc_api_call(f"{base}/{rid}", raise_error=True)
+            detailed.append(full or rec)
+        except Exception:
+            detailed.append(rec)
+    return detailed
+
+
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=None):
     if user_devices is None: user_devices = []
     v2 = {
@@ -559,7 +592,10 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
             row['Specific Dates'] = "\n".join(date_strs)
 
     if is_v2:
-        actions = rule.get('dispatching', {}).get('actions', [])
+        # Prefer the inline dispatching (present on a per-rule GET); tolerate a
+        # `dispatchingRef` if a summary record ever reaches here.
+        dispatching = rule.get('dispatching') or rule.get('dispatchingRef', {}).get('dispatching') or {}
+        actions = dispatching.get('actions', [])
         term_action = next((a for a in actions if a.get('type') == 'TerminatingAction'), None)
         
         if term_action:
