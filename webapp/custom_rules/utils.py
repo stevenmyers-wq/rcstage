@@ -532,6 +532,25 @@ def _greeting_cell_v1(rule, slot):
     return 'Default'
 
 
+def _v2_phone_list(items):
+    """Reads a V2 Interaction condition's from/to list to phone-number strings.
+
+    RingCentral is inconsistent here: `from` comes back as objects
+    ({'phoneNumber': '+61…'}) while `to` can come back as bare strings
+    ('+61…'). Handle both (and skip blanks) so a called-number condition doesn't
+    crash the whole audit — a single crashing rule otherwise takes out every
+    rule on the extension because the audit loop shares one try/except."""
+    out = []
+    for it in items or []:
+        if isinstance(it, dict):
+            val = it.get('phoneNumber') or it.get('callerId') or it.get('name')
+        else:
+            val = it
+        if val:
+            out.append(str(val))
+    return out
+
+
 def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
     """Converts a RingCentral Rule (V1 or V2) into a flat Excel row.
 
@@ -560,9 +579,9 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
         for cond in rule.get('conditions', []):
             if cond.get('type') == 'Interaction':
                 if 'from' in cond:
-                    row['Caller ID'] = ', '.join([str(c.get('phoneNumber', c)) for c in cond['from']])
+                    row['Caller ID'] = ', '.join(_v2_phone_list(cond['from']))
                 if 'to' in cond:
-                    row['Called Number'] = ', '.join([str(t.get('phoneNumber', t)) for t in cond['to']])
+                    row['Called Number'] = ', '.join(_v2_phone_list(cond['to']))
             elif cond.get('type') == 'Schedule':
                 schedule_data = cond.get('schedule', {})
     else:
@@ -609,7 +628,14 @@ def parse_rule_to_row(ext, rule, is_v2=False, ext_lookup=None):
             eff_type = term_action.get('terminatingTargetType')
             main_target = None
             if eff_type:
-                main_target = next((t for t in targets if t.get('type') == eff_type), None)
+                # Several targets can share the effective type (e.g. a ringing-
+                # phase announcement and the terminating one); prefer the one
+                # whose dispatchingType is Terminating, else the first match.
+                main_target = next(
+                    (t for t in targets if t.get('type') == eff_type
+                     and t.get('dispatchingType') == 'Terminating'), None)
+                if main_target is None:
+                    main_target = next((t for t in targets if t.get('type') == eff_type), None)
             if main_target is None:
                 main_target = next(
                     (t for t in targets if str(t.get('type', '')).endswith('TerminatingTarget')),
