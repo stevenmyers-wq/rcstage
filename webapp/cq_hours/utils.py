@@ -119,7 +119,10 @@ SCHEMA_VALIDATIONS = {
     "V": '"Allowed,Not Allowed"',
     "W": '"5,10,15,20,25"',
     "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-    "Z": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
+    # holdTimeExpirationAction has no "Announcement" option — offering it here produced an
+    # InvalidParameter (CMN-101) that failed the entire queue update. "WaitPrimaryMembers"
+    # is the "keep waiting for an available member" action shown in the portal.
+    "Z": '"Voicemail,TransferToExtension,Disconnect,WaitPrimaryMembers"',
     "AB": '"Default,Custom,Off"',
     "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
     "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"',
@@ -129,6 +132,19 @@ SCHEMA_VALIDATIONS = {
     "AK": '"On,Off"',
     "AL": '"On,Off"'
 }
+
+# RingCentral rejects the whole queue PUT if an action enum is out of range, which silently
+# takes Ring Type and every timer down with it. These are the values each field actually
+# accepts. NOTE: "Announcement" is valid for maxCallersAction (When Queue is Full) but NOT
+# for holdTimeExpirationAction (When Max Time is Reached) — the two look identical in the
+# portal but their API enums differ.
+VALID_MAX_CALLERS_ACTIONS = [
+    "Voicemail", "TransferToExtension", "Disconnect", "Announcement", "UnconditionalForwarding"
+]
+VALID_HOLD_TIME_EXPIRATION_ACTIONS = [
+    "Voicemail", "TransferToExtension", "Disconnect", "WaitPrimaryMembers",
+    "WaitPrimaryAndOverflowMembers", "UnconditionalForwarding"
+]
 
 
 def build_config_workbook(df):
@@ -1131,6 +1147,15 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         q_set['holdAudioInterruptionPeriod'] = parsed
 
             val_wmtr = get_val(row, 'When Max Time is Reached')
+            if val_wmtr is not None and val_wmtr not in VALID_HOLD_TIME_EXPIRATION_ACTIONS:
+                # e.g. "Announcement" — valid for When Queue is Full but not here. Sending it
+                # fails the whole queue PUT, which would silently drop Ring Type, Total Ring
+                # Time and every other timer (reverting the queue to the 3-minute default).
+                # Skip just this field so the rest of the update still lands.
+                has_error = True
+                logs.append(f"When Max Time is Reached '{val_wmtr}' is not a valid action for this field "
+                            f"(allowed: {', '.join(VALID_HOLD_TIME_EXPIRATION_ACTIONS)}); left unchanged so the rest of the queue still updates.")
+                val_wmtr = None
             if val_wmtr is not None:
                 if val_wmtr == 'TransferToExtension':
                     tr_dest = get_val(row, 'Time Reached Destination')
@@ -1145,6 +1170,11 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                     _set_queue_transfer(q_set, 'HoldTimeExpiration', None)
 
             val_wqf = get_val(row, 'When Queue is Full')
+            if val_wqf is not None and val_wqf not in VALID_MAX_CALLERS_ACTIONS:
+                has_error = True
+                logs.append(f"When Queue is Full '{val_wqf}' is not a valid action for this field "
+                            f"(allowed: {', '.join(VALID_MAX_CALLERS_ACTIONS)}); left unchanged so the rest of the queue still updates.")
+                val_wqf = None
             if val_wqf is not None:
                 if val_wqf == 'TransferToExtension':
                     qf_dest = get_val(row, 'Queue Full Destination')
