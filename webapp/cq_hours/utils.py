@@ -118,11 +118,13 @@ SCHEMA_VALIDATIONS = {
     "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"',
     "V": '"Allowed,Not Allowed"',
     "W": '"5,10,15,20,25"',
-    "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-    # holdTimeExpirationAction has no "Announcement" option — offering it here produced an
-    # InvalidParameter (CMN-101) that failed the entire queue update. "WaitPrimaryMembers"
-    # is the "keep waiting for an available member" action shown in the portal.
-    "Z": '"Voicemail,TransferToExtension,Disconnect,WaitPrimaryMembers"',
+    # maxCallersAction (When Queue is Full): the queue API does NOT accept "Disconnect".
+    "X": '"Voicemail,TransferToExtension,Announcement"',
+    # holdTimeExpirationAction (When Max Time is Reached) accepts neither "Announcement" nor
+    # "Disconnect" — offering them produced an InvalidParameter (CMN-101) that failed the
+    # entire queue update. "WaitPrimaryMembers" is the "keep waiting for an available member"
+    # action shown in the portal.
+    "Z": '"Voicemail,TransferToExtension,WaitPrimaryMembers"',
     "AB": '"Default,Custom,Off"',
     "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
     "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"',
@@ -135,14 +137,16 @@ SCHEMA_VALIDATIONS = {
 
 # RingCentral rejects the whole queue PUT if an action enum is out of range, which silently
 # takes Ring Type and every timer down with it. These are the values each field actually
-# accepts. NOTE: "Announcement" is valid for maxCallersAction (When Queue is Full) but NOT
-# for holdTimeExpirationAction (When Max Time is Reached) — the two look identical in the
-# portal but their API enums differ.
+# accepts on a call queue. The two fields look identical in the portal but their API enums
+# differ, and NEITHER accepts "Disconnect" (that value only applies to user/IVR rules):
+#   - "Announcement" is valid for maxCallersAction (When Queue is Full) but NOT for
+#     holdTimeExpirationAction (When Max Time is Reached).
+#   - holdTimeExpirationAction uses "WaitPrimaryMembers" to keep callers waiting.
 VALID_MAX_CALLERS_ACTIONS = [
-    "Voicemail", "TransferToExtension", "Disconnect", "Announcement", "UnconditionalForwarding"
+    "Voicemail", "TransferToExtension", "Announcement", "UnconditionalForwarding"
 ]
 VALID_HOLD_TIME_EXPIRATION_ACTIONS = [
-    "Voicemail", "TransferToExtension", "Disconnect", "WaitPrimaryMembers",
+    "Voicemail", "TransferToExtension", "WaitPrimaryMembers",
     "WaitPrimaryAndOverflowMembers", "UnconditionalForwarding"
 ]
 
