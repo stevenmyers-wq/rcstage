@@ -118,11 +118,14 @@ SCHEMA_VALIDATIONS = {
     "U": '"0 Seconds,5 Seconds,10 Seconds,15 Seconds,20 Seconds,30 Seconds,1 Minute"',
     "V": '"Allowed,Not Allowed"',
     "W": '"5,10,15,20,25"',
-    "X": '"Voicemail,TransferToExtension,Disconnect,Announcement"',
-    # holdTimeExpirationAction has no "Announcement" option — offering it here produced an
-    # InvalidParameter (CMN-101) that failed the entire queue update. "WaitPrimaryMembers"
-    # is the "keep waiting for an available member" action shown in the portal.
-    "Z": '"Voicemail,TransferToExtension,Disconnect,WaitPrimaryMembers"',
+    # maxCallersAction (When Queue is Full): Voicemail, Announcement, TransferToExtension,
+    # UnconditionalForwarding. Does NOT accept "Disconnect".
+    "X": '"Voicemail,TransferToExtension,Announcement"',
+    # holdTimeExpirationAction (When Max Time is Reached): only Voicemail, TransferToExtension,
+    # UnconditionalForwarding. It does NOT accept "Announcement", "Disconnect" or
+    # "WaitPrimaryMembers" (that last one belongs to noAnswerAction) — offering any of them
+    # produced an InvalidParameter (CMN-101) that failed the entire queue update.
+    "Z": '"Voicemail,TransferToExtension"',
     "AB": '"Default,Custom,Off"',
     "AD": '"Off,Notify by Email,Notify & Attach,Notify Attach & Read"',
     "AF": '"TakeMessagesOnly,TransferToExtension,UnconditionalForwarding,PlayAnnouncementOnly,Disconnect"',
@@ -134,16 +137,17 @@ SCHEMA_VALIDATIONS = {
 }
 
 # RingCentral rejects the whole queue PUT if an action enum is out of range, which silently
-# takes Ring Type and every timer down with it. These are the values each field actually
-# accepts. NOTE: "Announcement" is valid for maxCallersAction (When Queue is Full) but NOT
-# for holdTimeExpirationAction (When Max Time is Reached) — the two look identical in the
-# portal but their API enums differ.
+# takes Ring Type and every timer down with it. These are the exact values each field accepts
+# on a call queue per the API reference. The two fields look identical in the portal but their
+# enums differ, and NEITHER accepts "Disconnect" (that value only applies to user/IVR rules):
+#   - "Announcement" is valid for maxCallersAction (When Queue is Full) but NOT for
+#     holdTimeExpirationAction (When Max Time is Reached).
+#   - "WaitPrimaryMembers" belongs to noAnswerAction, not holdTimeExpirationAction.
 VALID_MAX_CALLERS_ACTIONS = [
-    "Voicemail", "TransferToExtension", "Disconnect", "Announcement", "UnconditionalForwarding"
+    "Voicemail", "Announcement", "TransferToExtension", "UnconditionalForwarding"
 ]
 VALID_HOLD_TIME_EXPIRATION_ACTIONS = [
-    "Voicemail", "TransferToExtension", "Disconnect", "WaitPrimaryMembers",
-    "WaitPrimaryAndOverflowMembers", "UnconditionalForwarding"
+    "Voicemail", "TransferToExtension", "UnconditionalForwarding"
 ]
 
 
