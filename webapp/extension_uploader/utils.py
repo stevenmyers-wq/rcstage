@@ -23,6 +23,20 @@ USER_TYPE_MAP = {
     'Limited Extension': 'Limited',
 }
 
+# Ordered fallback API types tried when the account's service plan rejects the
+# primary type with "Invalid user type [X] for current account service plan".
+# RingCentral exposes several equivalent "user" types (User, DigitalUser,
+# VirtualUser, FlexibleUser) and which ones a createExtension is allowed to use
+# depends on the account's service plan. In particular the newer flexible plans
+# expose the video-capable, no-digital-line user (shown as "Video Pro" in the
+# portal) as FlexibleUser rather than the legacy VirtualUser. When a plan rejects
+# the primary type, the create/validate is retried with each fallback in turn and
+# the substitution is surfaced to the operator so they can confirm the created
+# extension in the portal.
+USER_TYPE_FALLBACKS = {
+    'VirtualUser': ['FlexibleUser'],
+}
+
 # The template's dropdown order for the User Type column.
 USER_TYPES = ['User', 'Virtual User', 'Message Only', 'Announcement Only', 'Limited Extension']
 
@@ -396,6 +410,46 @@ def _apply_notification_settings(ext_id, email, enable_transcription, token):
     return ok, resp, transcription_dropped
 
 
+def _create_one(api_type, contact, ext_number, site_id, token):
+    """POST a single extension of one specific api_type.
+
+    Handles the main-site quirk and the drop-site retry (both independent of the
+    user type). Returns (ok, body, resp, site_dropped)."""
+    base_payload = {
+        'type': api_type,
+        'extensionNumber': ext_number,
+        'contact': contact,
+    }
+    # The synthetic 'main-site' token is exactly what createExtension rejects
+    # with an opaque 500, and new extensions default to the main site when no
+    # site is sent -- so for main-site rows omit the site up front (this avoids
+    # a guaranteed-failing first POST). Real sites use a numeric id and are sent
+    # normally; the retry-without-site below is their safety net.
+    send_site = bool(site_id) and str(site_id) != 'main-site'
+    payload = dict(base_payload)
+    if send_site:
+        payload['site'] = {'id': str(site_id)}
+
+    ok, body, resp = _rc_write('/restapi/v1.0/account/~/extension', payload, token, method='POST')
+
+    # A real (numeric-id) site can still be rejected with a bare 500 -- e.g. a
+    # site the type can't live on. The number itself is fine (it's in the type's
+    # free-number pool and validate passed), so retry once without the site; the
+    # extension then lands on the account's main site, flagged with a warning.
+    # Don't retry the genuine "no numbers" (EXT-250) or "wrong type for plan"
+    # conditions -- neither is a site problem, and dropping the site won't help.
+    site_dropped = False
+    if not ok and send_site:
+        code, msg = _error_code_and_message(resp)
+        if not _looks_like_no_number(code, msg) and not _looks_like_invalid_type_for_plan(code, msg):
+            r_ok, r_body, r_resp = _rc_write(
+                '/restapi/v1.0/account/~/extension', base_payload, token, method='POST')
+            if r_ok:
+                ok, body, resp, site_dropped = True, r_body, r_resp, True
+
+    return ok, body, resp, site_dropped
+
+
 def create_extension(plan, token):
     """Creates one extension from a validated plan dict, then assigns its role if
     one was resolved. Returns (ok, message)."""
@@ -409,38 +463,26 @@ def create_extension(plan, token):
 
     # `contact.firstName` and `contact.email` are the only contact fields the
     # createExtension schema (ContactInfoCreationRequest) marks required.
-    base_payload = {
-        'type': plan['api_type'],
-        'extensionNumber': plan['ext'],
-        'contact': contact,
-    }
-    # The synthetic 'main-site' token is exactly what createExtension rejects
-    # with an opaque 500, and new extensions default to the main site when no
-    # site is sent -- so for main-site rows omit the site up front (this avoids
-    # a guaranteed-failing first POST). Real sites use a numeric id and are sent
-    # normally; the retry-without-site below is their safety net.
+    #
+    # Try the plan's primary type, then any service-plan fallbacks: if RC rejects
+    # the type as unsupported by the account's plan ("Invalid user type [X] for
+    # current account service plan") we retry with an equivalent type the plan
+    # does support. Any other failure stops the chain and is reported as-is.
+    api_type = plan['api_type']
     site_id = plan.get('site_id')
-    send_site = bool(site_id) and str(site_id) != 'main-site'
-    payload = dict(base_payload)
-    if send_site:
-        payload['site'] = {'id': str(site_id)}
-
-    ok, body, resp = _rc_write('/restapi/v1.0/account/~/extension', payload, token, method='POST')
-
-    # A real (numeric-id) site can still be rejected with a bare 500 -- e.g. a
-    # site the type can't live on. The number itself is fine (it's in the type's
-    # free-number pool and validate passed), so retry once without the site; the
-    # extension then lands on the account's main site, flagged with a warning.
-    # The genuine "no numbers" condition (EXT-250) isn't a site problem, so
-    # don't retry it.
+    candidate_types = [api_type] + USER_TYPE_FALLBACKS.get(api_type, [])
+    ok = False
+    body = resp = None
     site_dropped = False
-    if not ok and send_site:
+    used_type = api_type
+    for candidate in candidate_types:
+        ok, body, resp, site_dropped = _create_one(candidate, contact, plan['ext'], site_id, token)
+        if ok:
+            used_type = candidate
+            break
         code, msg = _error_code_and_message(resp)
-        if not _looks_like_no_number(code, msg):
-            r_ok, r_body, r_resp = _rc_write(
-                '/restapi/v1.0/account/~/extension', base_payload, token, method='POST')
-            if r_ok:
-                ok, body, resp, site_dropped = True, r_body, r_resp, True
+        if not _looks_like_invalid_type_for_plan(code, msg):
+            break
 
     if not ok:
         return False, f"Create failed — {_full_error(resp)}"
@@ -452,6 +494,10 @@ def create_extension(plan, token):
     # extension created, so it is reported as a partial success (a warning), not
     # a hard failure.
     warnings = []
+    if used_type != api_type:
+        warnings.append(
+            f"created as {used_type} — the account's service plan does not support "
+            f"{api_type} (please confirm the extension in the portal)")
     if site_dropped:
         warnings.append("created on the main site (RingCentral rejected the site assignment)")
 
@@ -539,6 +585,22 @@ def _looks_like_no_number(code, msg):
     )
 
 
+def _looks_like_invalid_type_for_plan(code, msg):
+    """True if RC rejected the extension `type` as unsupported by the account's
+    current service plan -- e.g. HTTP 400 "Invalid user type [VirtualUser] for
+    current account service plan".
+
+    This is a plan/type mismatch, not a bad-data or capacity problem, so the
+    caller can safely retry with an equivalent user type the plan does support
+    (see USER_TYPE_FALLBACKS). Matched on the message text so it works regardless
+    of the (inconsistently spelled) errorCode RC returns alongside it."""
+    m = (msg or '').lower()
+    return (
+        'invalid user type' in m
+        or ('user type' in m and 'service plan' in m)
+    )
+
+
 def fetch_free_numbers(token, api_type, count=1):
     """Available free extension numbers for a given extension type.
 
@@ -567,16 +629,9 @@ def fetch_free_numbers(token, api_type, count=1):
     return None
 
 
-def validate_new_extension(plan, token):
-    """Dry-run an extension via POST extension/validate (creates nothing).
-
-    Returns:
-      ('ok', None)           -- RingCentral accepts this extension
-      ('invalid', message)   -- rejected for a *number availability* reason
-                                (EXT-250 etc.) -- the thing we want to flag
-      ('unavailable', None)  -- couldn't validate, or the rejection was for an
-                                unrelated reason; caller should not block on it
-    """
+def _validate_one(api_type, plan, token):
+    """POST extension/validate for one specific api_type. Returns the response
+    (after a short 429 back-off), or None if it couldn't be called."""
     contact = {'firstName': plan['first_name']}
     if plan.get('last_name') and not plan['drop_last_name']:
         contact['lastName'] = plan['last_name']
@@ -584,7 +639,7 @@ def validate_new_extension(plan, token):
         contact['email'] = plan['email']
     if plan.get('department'):
         contact['department'] = plan['department']
-    payload = {'type': plan['api_type'], 'extensionNumber': plan['ext'], 'contact': contact}
+    payload = {'type': api_type, 'extensionNumber': plan['ext'], 'contact': contact}
     if plan.get('site_id'):
         payload['site'] = {'id': str(plan['site_id'])}
 
@@ -596,40 +651,94 @@ def validate_new_extension(plan, token):
             wait = int(resp.headers.get('Retry-After', 5)) + 1 if hasattr(resp, 'headers') else 5
             time.sleep(wait)
             continue
+        return resp
+    return None
+
+
+def validate_new_extension(plan, token, invalid_types=None):
+    """Dry-run an extension via POST extension/validate (creates nothing).
+
+    Tries the plan's primary type then any service-plan fallbacks, so a type the
+    account's plan rejects (e.g. VirtualUser -> FlexibleUser) is resolved here,
+    at review time, exactly as Create will resolve it. `invalid_types` is an
+    optional set reused across rows to remember which primary types this account's
+    plan has already rejected, so each is validated at most once per batch.
+
+    Returns (state, message, effective_type):
+      ('ok', None, <type>)         -- RingCentral accepts this extension as <type>
+      ('invalid', message, <type>) -- rejected for a *number availability* reason
+                                      (EXT-250 etc.) -- the thing we want to flag
+      ('badtype', message, None)   -- the primary type and every fallback were
+                                      rejected as unsupported by the service plan
+      ('unavailable', None, None)  -- couldn't validate, or the rejection was for
+                                      an unrelated reason; caller should not block
+    """
+    api_type = plan['api_type']
+    badtype_msg = None
+    for candidate in [api_type] + USER_TYPE_FALLBACKS.get(api_type, []):
+        if invalid_types is not None and candidate in invalid_types:
+            badtype_msg = badtype_msg or f"Invalid user type [{candidate}] for current account service plan"
+            continue
+        resp = _validate_one(candidate, plan, token)
         if resp is not None and getattr(resp, 'ok', False):
-            return 'ok', None
+            return 'ok', None, candidate
         err_code, msg = _error_code_and_message(resp)
+        if _looks_like_invalid_type_for_plan(err_code, msg):
+            if invalid_types is not None:
+                invalid_types.add(candidate)
+            badtype_msg = badtype_msg or msg
+            continue  # this type isn't allowed on the plan -- try the next one
         if _looks_like_no_number(err_code, msg):
-            return 'invalid', f"{err_code + ': ' if err_code else ''}{msg}"
-        return 'unavailable', None
-    return 'unavailable', None
+            return 'invalid', f"{err_code + ': ' if err_code else ''}{msg}", candidate
+        return 'unavailable', None, None
+    # Every candidate type was rejected as unsupported by the account's plan.
+    if badtype_msg is not None:
+        return 'badtype', badtype_msg, None
+    return 'unavailable', None, None
 
 
-def preflight_row(plan, token, free_cache):
+def preflight_row(plan, token, free_cache, invalid_types=None):
     """Review-time check for one planned extension against the live account.
 
     Returns (ok, message). ok=False means the row would be rejected on Create
-    (surfaced now instead). free_cache maps api_type -> free-number result and is
-    reused across rows so each type is polled at most once per batch."""
+    (surfaced now instead); message is the reason. ok=True means it will be
+    created; message is an optional note (e.g. a service-plan type substitution)
+    or None. free_cache maps api_type -> free-number result and invalid_types
+    remembers plan-rejected types, both reused across rows so each type is polled
+    at most once per batch."""
     api_type = plan['api_type']
-    cap = free_cache.get(api_type, _UNSET)
-    if cap is _UNSET:
-        cap = fetch_free_numbers(token, api_type, count=1)
-        free_cache[api_type] = cap
 
-    # Definitive empty pool for this type -> EXT-250 is certain.
-    if cap == []:
-        return False, (
-            f"No available extension numbers for this type on the account "
-            f"(RingCentral EXT-250). Check the account's extension-number range/capacity."
-        )
-
-    # Pool has room (or is unknown): confirm THIS specific number is creatable.
-    state, vmsg = validate_new_extension(plan, token)
+    # Confirm THIS specific number/type is creatable, resolving any service-plan
+    # type substitution the same way Create will.
+    state, vmsg, eff_type = validate_new_extension(plan, token, invalid_types)
     if state == 'invalid':
         return False, (
             f"RingCentral won't create extension {plan['ext']} — {vmsg}. "
             f"Try a different extension number within the account's range."
+        )
+    if state == 'badtype':
+        tried = ', '.join([api_type] + USER_TYPE_FALLBACKS.get(api_type, []))
+        return False, (
+            f"RingCentral rejected the user type for this account's service plan "
+            f"({vmsg}). Tried: {tried}. This plan may not support this user type."
+        )
+    if state == 'ok':
+        note = None
+        if eff_type and eff_type != api_type:
+            note = (f"the account's service plan does not support {api_type}; "
+                    f"it will be created as {eff_type} — please confirm in the portal")
+        return True, note
+
+    # validate couldn't give a definitive answer -- fall back to the free-number
+    # heuristic so a definitively empty pool still surfaces EXT-250 at review time.
+    cap = free_cache.get(api_type, _UNSET)
+    if cap is _UNSET:
+        cap = fetch_free_numbers(token, api_type, count=1)
+        free_cache[api_type] = cap
+    if cap == []:
+        return False, (
+            f"No available extension numbers for this type on the account "
+            f"(RingCentral EXT-250). Check the account's extension-number range/capacity."
         )
     return True, None
 
@@ -682,6 +791,9 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
     # Free-number availability per extension type, polled once per type and
     # reused across rows during the review-time preflight.
     free_cache = {}
+    # User types this account's service plan has rejected, remembered so each is
+    # validated at most once per batch (see validate_new_extension).
+    invalid_types = set()
 
     for i, row in enumerate(records):
         # Cooperative stop (apply only -- preview writes nothing).
@@ -814,14 +926,16 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
         detail = f" ({'; '.join(note)})" if note else ""
 
         if is_preview:
-            # Preflight against the live account so a number that RingCentral
-            # would reject (EXT-250 etc.) is flagged here, at review time, rather
-            # than only when Create is clicked.
-            ok, pf_msg = preflight_row(plan, token, free_cache)
+            # Preflight against the live account so a number RingCentral would
+            # reject (EXT-250) or a user type its service plan doesn't support
+            # (VirtualUser -> FlexibleUser) is flagged here, at review time,
+            # rather than only when Create is clicked.
+            ok, pf_msg = preflight_row(plan, token, free_cache, invalid_types)
             if not ok:
                 yield progress("error", pf_msg)
                 continue
-            yield progress("success", f"Will create {user_type} ext {ext}{detail}")
+            extra = f" — {pf_msg}" if pf_msg else ""
+            yield progress("success", f"Will create {user_type} ext {ext}{detail}{extra}")
             time.sleep(0.05)
             continue
 
