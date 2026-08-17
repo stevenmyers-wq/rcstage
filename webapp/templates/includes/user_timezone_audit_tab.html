@@ -1,0 +1,331 @@
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">User Timezone Audit</h2>
+        <p class="text-subheading">Check every user's timezone against the site they're assigned to, then bulk-correct the mismatches.</p>
+    </div>
+
+    <!-- Step 1: Run audit + download editable export -->
+    <div class="card !p-6">
+        <div class="flex items-start gap-3 mb-4">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">1</span>
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Run the audit</h3>
+                <p class="text-slate-500 dark:text-slate-400 text-sm">Scans every user, compares their timezone to their site's timezone, and produces an editable spreadsheet. Mismatches are highlighted and sorted to the top.</p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <button id="tz-run-audit-btn" class="btn-primary !py-2.5">Run Audit</button>
+            <a id="tz-audit-download" class="btn-secondary !py-2.5 hidden" download>Download Audit Spreadsheet</a>
+        </div>
+
+        <div id="tz-audit-progress-wrap" class="hidden mt-5">
+            <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <span id="tz-audit-progress-label">Scanning users…</span>
+                <span id="tz-audit-progress-count">0 / 0</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div id="tz-audit-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+            </div>
+            <p id="tz-audit-summary" class="mt-3 text-sm font-medium hidden"></p>
+        </div>
+    </div>
+
+    <!-- Step 2: Upload edited file + preview/apply -->
+    <div class="card !p-6">
+        <div class="flex items-start gap-3 mb-4">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">2</span>
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Edit &amp; upload to correct</h3>
+                <p class="text-slate-500 dark:text-slate-400 text-sm">Edit the <span class="font-semibold">User Timezone</span> column in the downloaded file (e.g. set it to match the Site Timezone), then upload it here. <span class="font-semibold">Preview</span> shows what will change; <span class="font-semibold">Apply</span> writes the updates. Rows already correct are skipped.</p>
+            </div>
+        </div>
+
+        <input type="file" id="tz-file-input" accept=".xlsx,.xls,.csv" class="block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/40 dark:file:text-blue-300 mb-3">
+
+        <div id="tz-sheet-wrap" class="hidden mb-3">
+            <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Worksheet</label>
+            <select id="tz-sheet-select" class="input-field !py-2"></select>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <button id="tz-preview-btn" class="btn-success !py-2.5" disabled>Preview Changes</button>
+            <button id="tz-apply-btn" class="btn-primary !py-2.5 hidden" disabled>Apply Updates</button>
+            <button id="tz-cancel-btn" class="btn-danger !py-2.5 hidden">Stop</button>
+        </div>
+
+        <div id="tz-upload-progress-wrap" class="hidden mt-5">
+            <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <span id="tz-upload-progress-label">Processing…</span>
+                <span id="tz-upload-progress-count">0 / 0</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div id="tz-upload-progress-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+            </div>
+        </div>
+
+        <div id="tz-results-wrap" class="hidden mt-5 overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th class="py-2 pr-3">Ext</th>
+                        <th class="py-2 pr-3">User</th>
+                        <th class="py-2 pr-3">From</th>
+                        <th class="py-2 pr-3">To</th>
+                        <th class="py-2 pr-3 text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="tz-results-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const runBtn = document.getElementById('tz-run-audit-btn');
+    if (!runBtn) return;
+
+    // ---- Shared helpers -------------------------------------------------
+    const $ = (id) => document.getElementById(id);
+    const notify = (msg, isErr) => {
+        if (typeof showMessage === 'function') showMessage(msg, !!isErr);
+    };
+    const handle401 = () => { window.location.href = '/api/sm_auth/logout?tab=user_timezone_audit'; };
+
+    // ---- Step 1: Run audit ---------------------------------------------
+    const dl = $('tz-audit-download');
+    const progWrap = $('tz-audit-progress-wrap');
+    const progBar = $('tz-audit-progress-bar');
+    const progCount = $('tz-audit-progress-count');
+    const progLabel = $('tz-audit-progress-label');
+    const auditSummary = $('tz-audit-summary');
+
+    runBtn.addEventListener('click', async () => {
+        runBtn.disabled = true;
+        const original = runBtn.innerHTML;
+        runBtn.innerHTML = '<div class="spinner border-white w-5 h-5"></div> Starting…';
+        dl.classList.add('hidden');
+        auditSummary.classList.add('hidden');
+        progWrap.classList.remove('hidden');
+        progBar.style.width = '0%';
+        progCount.textContent = '0 / 0';
+        progLabel.textContent = 'Scanning users…';
+
+        try {
+            const res = await fetch('/api/user_timezone_audit/audit', { method: 'POST' });
+            if (res.status === 401) return handle401();
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to start audit.');
+            pollAudit(data.task_id);
+        } catch (err) {
+            notify(err.message, true);
+            progWrap.classList.add('hidden');
+        } finally {
+            runBtn.disabled = false;
+            runBtn.innerHTML = original;
+        }
+    });
+
+    function pollAudit(taskId) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/user_timezone_audit/audit/status?task_id=${taskId}`);
+                const d = await res.json();
+                const total = d.total || 0;
+                const cur = d.current || 0;
+                progCount.textContent = `${cur} / ${total}`;
+                progBar.style.width = total ? `${Math.round((cur / total) * 100)}%` : '5%';
+
+                if (d.status === 'completed') {
+                    clearInterval(interval);
+                    progBar.style.width = '100%';
+                    progLabel.textContent = 'Audit complete.';
+                    dl.href = `/api/user_timezone_audit/audit/download?task_id=${taskId}`;
+                    dl.classList.remove('hidden');
+                    auditSummary.textContent = d.mismatches > 0
+                        ? `${d.mismatches} user(s) have a timezone that doesn't match their site.`
+                        : 'All users match their site timezone. 🎉';
+                    auditSummary.className = 'mt-3 text-sm font-medium ' +
+                        (d.mismatches > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400');
+                    auditSummary.classList.remove('hidden');
+                    notify('Audit complete.', false);
+                } else if (d.status === 'error') {
+                    clearInterval(interval);
+                    progLabel.textContent = 'Audit failed.';
+                    notify(d.error || 'Audit failed.', true);
+                } else if (d.status === 'cancelled') {
+                    clearInterval(interval);
+                    progLabel.textContent = 'Audit cancelled.';
+                }
+            } catch (err) {
+                clearInterval(interval);
+                notify('Lost connection to audit job.', true);
+            }
+        }, 1200);
+    }
+
+    // ---- Step 2: Upload / preview / apply ------------------------------
+    const fileInput = $('tz-file-input');
+    const sheetWrap = $('tz-sheet-wrap');
+    const sheetSelect = $('tz-sheet-select');
+    const previewBtn = $('tz-preview-btn');
+    const applyBtn = $('tz-apply-btn');
+    const cancelBtn = $('tz-cancel-btn');
+    const upWrap = $('tz-upload-progress-wrap');
+    const upBar = $('tz-upload-progress-bar');
+    const upCount = $('tz-upload-progress-count');
+    const upLabel = $('tz-upload-progress-label');
+    const resultsWrap = $('tz-results-wrap');
+    const resultsBody = $('tz-results-body');
+    let uploadTaskId = null;
+
+    const badge = (status) => {
+        const map = {
+            applied: ['badge-success', 'Applied'],
+            pending: ['badge-info', 'Pending'],
+            skipped: ['badge-neutral', 'Skipped'],
+            error: ['badge-warning', 'Error'],
+        };
+        const [cls, label] = map[status] || ['badge-neutral', status];
+        return `<span class="badge ${cls}">${label}</span>`;
+    };
+
+    fileInput.addEventListener('change', async () => {
+        applyBtn.classList.add('hidden');
+        resultsWrap.classList.add('hidden');
+        resultsBody.innerHTML = '';
+        if (!fileInput.files[0]) {
+            previewBtn.disabled = true;
+            sheetWrap.classList.add('hidden');
+            return;
+        }
+        previewBtn.disabled = false;
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        try {
+            const res = await fetch('/api/user_timezone_audit/sheets', { method: 'POST', body: fd });
+            const sheets = await res.json();
+            if (Array.isArray(sheets) && sheets.length && sheets[0] !== 'CSV Format (No Sheets)') {
+                sheetSelect.innerHTML = sheets.map(s => `<option value="${s}">${s}</option>`).join('');
+                sheetWrap.classList.remove('hidden');
+            } else {
+                sheetWrap.classList.add('hidden');
+            }
+        } catch (err) {
+            sheetWrap.classList.add('hidden');
+        }
+    });
+
+    async function run(action) {
+        if (!fileInput.files[0]) return notify('Select a file first.', true);
+        uploadTaskId = `tz_upload_${Date.now()}`;
+
+        const activeBtn = action === 'preview' ? previewBtn : applyBtn;
+        previewBtn.disabled = true;
+        applyBtn.disabled = true;
+        const originalHtml = activeBtn.innerHTML;
+        activeBtn.innerHTML = `<div class="spinner w-5 h-5 border-white"></div> ${action === 'preview' ? 'Analysing…' : 'Applying…'}`;
+        if (action === 'apply') cancelBtn.classList.remove('hidden');
+
+        resultsBody.innerHTML = '';
+        resultsWrap.classList.remove('hidden');
+        upWrap.classList.remove('hidden');
+        upBar.style.width = '0%';
+        upBar.className = (action === 'preview' ? 'bg-emerald-500' : 'bg-blue-600') + ' h-full rounded-full transition-all duration-300';
+        upCount.textContent = '0 / 0';
+        upLabel.textContent = action === 'preview' ? 'Previewing…' : 'Applying…';
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('action', action);
+        fd.append('task_id', uploadTaskId);
+        if (!sheetWrap.classList.contains('hidden')) fd.append('sheet_name', sheetSelect.value);
+
+        try {
+            const res = await fetch('/api/user_timezone_audit/upload', { method: 'POST', body: fd });
+            if (res.status === 401) return handle401();
+            if (!res.ok) {
+                const e = await res.json().catch(() => ({}));
+                throw new Error(e.message || 'Upload rejected.');
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let sawPending = false;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    const msg = JSON.parse(line);
+                    if (msg.type === 'row') {
+                        const total = msg.total || 0;
+                        upCount.textContent = `${msg.current} / ${total}`;
+                        upBar.style.width = total ? `${Math.round((msg.current / total) * 100)}%` : '5%';
+                        if (msg.status === 'pending') sawPending = true;
+                        if (msg.status !== 'skipped') {
+                            resultsBody.insertAdjacentHTML('beforeend', `
+                                <tr class="border-b border-slate-100 dark:border-slate-800">
+                                    <td class="py-2 pr-3 font-mono">${msg.ext || ''}</td>
+                                    <td class="py-2 pr-3">${msg.name || ''}</td>
+                                    <td class="py-2 pr-3 text-slate-500">${msg.from || '—'}</td>
+                                    <td class="py-2 pr-3">${msg.to || '—'}</td>
+                                    <td class="py-2 pr-3 text-right">${badge(msg.status)}</td>
+                                </tr>`);
+                        }
+                    } else if (msg.type === 'done') {
+                        upBar.style.width = '100%';
+                        upLabel.textContent = msg.is_preview ? 'Preview complete.' : 'Update complete.';
+                        const parts = [];
+                        if (!msg.is_preview) parts.push(`${msg.updated} updated`);
+                        parts.push(`${msg.skipped} unchanged`);
+                        if (msg.errors) parts.push(`${msg.errors} error(s)`);
+                        notify(`${msg.is_preview ? 'Preview' : 'Update'} complete — ${parts.join(', ')}.`, msg.errors > 0);
+                        if (msg.is_preview && sawPending) {
+                            applyBtn.classList.remove('hidden');
+                            applyBtn.disabled = false;
+                        }
+                    } else if (msg.type === 'cancelled') {
+                        upLabel.textContent = 'Stopped.';
+                        notify(msg.message || 'Stopped.', true);
+                    } else if (msg.type === 'error') {
+                        upLabel.textContent = 'Error.';
+                        notify(msg.message || 'An error occurred.', true);
+                    }
+                }
+            }
+        } catch (err) {
+            notify(err.message || 'Network error.', true);
+        } finally {
+            activeBtn.innerHTML = originalHtml;
+            previewBtn.disabled = false;
+            cancelBtn.classList.add('hidden');
+            if (action === 'apply') {
+                applyBtn.classList.add('hidden');
+            }
+        }
+    }
+
+    previewBtn.addEventListener('click', () => run('preview'));
+    applyBtn.addEventListener('click', () => run('apply'));
+    cancelBtn.addEventListener('click', async () => {
+        if (!uploadTaskId) return;
+        cancelBtn.disabled = true;
+        try {
+            await fetch(`/api/user_timezone_audit/cancel?task_id=${uploadTaskId}`, { method: 'POST' });
+            notify('Stop requested — finishing the current user…', false);
+        } catch (err) {
+            notify('Could not send stop request.', true);
+        } finally {
+            cancelBtn.disabled = false;
+        }
+    });
+});
+</script>
