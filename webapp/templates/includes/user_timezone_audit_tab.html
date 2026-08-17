@@ -1,0 +1,76 @@
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">User Timezone Audit</h2>
+        <p class="text-subheading">Check every user's timezone setting against the timezone of the site they're assigned to.</p>
+    </div>
+
+    <div class="card flex flex-col items-center text-center max-w-lg mx-auto !p-8">
+        <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-5 border border-blue-200 dark:border-blue-800 shadow-sm">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-3">Generate User Timezone Audit</h3>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mb-8">
+            Downloads an Excel file listing every user, their timezone, and their assigned site's timezone. Rows where the two don't match are flagged and highlighted at the top of the sheet.
+        </p>
+        <button id="btn-export-user-timezone-audit" class="btn-primary w-full !py-3 !text-base">
+            Download Timezone Audit
+        </button>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const btnExport = document.getElementById('btn-export-user-timezone-audit');
+    if (!btnExport) return;
+
+    btnExport.addEventListener('click', async () => {
+        btnExport.disabled = true;
+        const originalText = btnExport.innerHTML;
+        btnExport.innerHTML = '<div class="spinner border-white dark:border-white w-5 h-5"></div> Generating...';
+
+        try {
+            const response = await fetch('/api/user_timezone_audit/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    window.location.href = '/api/sm_auth/logout?tab=user_timezone_audit';
+                    return;
+                }
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to export timezone audit');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+            a.download = `User_Timezone_Audit_${dateStr}.xlsx`;
+
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            if (typeof showMessage === 'function') {
+                showMessage("User Timezone Audit downloaded successfully!", false);
+            }
+        } catch (error) {
+            console.error("User timezone audit error:", error);
+            if (typeof showMessage === 'function') {
+                showMessage(error.message, true);
+            } else {
+                alert("Error: " + error.message);
+            }
+        } finally {
+            btnExport.disabled = false;
+            btnExport.innerHTML = originalText;
+        }
+    });
+});
+</script>
