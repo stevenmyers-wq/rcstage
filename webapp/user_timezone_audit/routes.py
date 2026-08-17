@@ -1,65 +1,130 @@
 import io
+import json
+import time
+import threading
 import pandas as pd
-from datetime import datetime
-from flask import Blueprint, jsonify, send_file
-from openpyxl.styles import PatternFill
+from flask import Blueprint, jsonify, request, send_file, Response, stream_with_context
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
+from webapp import task_control
 from . import utils
 
 user_timezone_audit_bp = Blueprint(
     'user_timezone_audit_bp', __name__, url_prefix='/api/user_timezone_audit'
 )
+user_timezone_audit_bp.add_url_rule(
+    '/cancel', 'cancel', task_control.cancel_view, methods=['POST']
+)
 
 
-@user_timezone_audit_bp.route('/export', methods=['POST'])
+# ---------------------------------------------------------------------------
+# Audit (streamed background job)
+# ---------------------------------------------------------------------------
+
+@user_timezone_audit_bp.route('/audit', methods=['POST'])
 @require_rc_token
-@track_usage('User Timezone Audit - Export')
-def export_timezone_audit():
+@track_usage('User Timezone Audit - Run')
+def start_audit():
     token = get_rc_access_token()
     if not token:
-        return jsonify({"error": "Unauthorized"}), 401
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
 
-    try:
-        data = utils.generate_timezone_audit(token)
-        df = pd.DataFrame(data)
+    task_id = f"tz_audit_{int(time.time())}"
+    threading.Thread(
+        target=utils.run_timezone_audit, args=(task_id, token), daemon=True
+    ).start()
+    return jsonify({"success": True, "task_id": task_id})
 
-        # Surface mismatches first, then unknowns, then matches; keep sites
-        # grouped within each bucket.
-        if not df.empty and "Match (Yes/No)" in df.columns:
-            order = {"No": 0, "Unknown": 1, "Yes": 2}
-            df["_sort"] = df["Match (Yes/No)"].map(lambda v: order.get(v, 3))
-            df.sort_values(by=["_sort", "Site", "Ext Number"], inplace=True)
-            df.drop(columns=["_sort"], inplace=True)
 
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='User Timezone Audit')
-            worksheet = writer.sheets['User Timezone Audit']
+@user_timezone_audit_bp.route('/audit/status', methods=['GET'])
+def audit_status():
+    task_id = request.args.get('task_id')
+    data = utils.audit_progress_store.get(task_id, {})
+    return jsonify({
+        'current': data.get('current', 0),
+        'total': data.get('total', 0),
+        'status': data.get('status', 'running'),
+        'file_ready': data.get('file_ready', False),
+        'mismatches': data.get('mismatches', 0),
+        'error': data.get('error', ''),
+    })
 
-            # Auto-adjust column widths.
-            for column in worksheet.columns:
-                length = max(len(str(cell.value) or "") for cell in column)
-                worksheet.column_dimensions[column[0].column_letter].width = min(length + 5, 50)
 
-            # Highlight mismatched rows in red for quick scanning.
-            headers = [c.value for c in worksheet[1]]
-            if "Match (Yes/No)" in headers:
-                match_col = headers.index("Match (Yes/No)") + 1
-                red = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                for row in range(2, worksheet.max_row + 1):
-                    if worksheet.cell(row=row, column=match_col).value == "No":
-                        for col in range(1, worksheet.max_column + 1):
-                            worksheet.cell(row=row, column=col).fill = red
-
-        output.seek(0)
-        filename = f"User_Timezone_Audit_{datetime.now().strftime('%Y%m%d')}.xlsx"
-
+@user_timezone_audit_bp.route('/audit/download', methods=['GET'])
+def audit_download():
+    task_id = request.args.get('task_id')
+    data = utils.audit_progress_store.get(task_id, {})
+    if data.get('file_ready') and 'file_data' in data:
+        mem = io.BytesIO(data['file_data'])
         return send_file(
-            output,
-            download_name=filename,
+            mem,
             as_attachment=True,
+            download_name='User_Timezone_Audit.xlsx',
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
+    return "File not ready or expired", 404
+
+
+# ---------------------------------------------------------------------------
+# Update (streamed upload -> preview / apply)
+# ---------------------------------------------------------------------------
+
+@user_timezone_audit_bp.route('/sheets', methods=['POST'])
+def get_sheets():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded."}), 400
+    file = request.files['file']
+    if file.filename.endswith('.csv'):
+        return jsonify(["CSV Format (No Sheets)"])
+    try:
+        xls = pd.ExcelFile(file)
+        return jsonify(xls.sheet_names)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Failed to parse sheets: {str(e)}"}), 400
+
+
+@user_timezone_audit_bp.route('/upload', methods=['POST'])
+@require_rc_token
+@track_usage('User Timezone Audit - Update')
+def upload_update():
+    token = get_rc_access_token()
+    if not token:
+        return jsonify({"type": "error", "message": "Unauthorized"}), 401
+
+    if 'file' not in request.files:
+        return jsonify({"type": "error", "message": "No file uploaded."}), 400
+
+    is_preview = request.form.get('action') == 'preview'
+    sheet_name = request.form.get('sheet_name')
+    task_id = request.form.get('task_id')
+
+    try:
+        file = request.files['file']
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        elif sheet_name and sheet_name != 'CSV Format (No Sheets)':
+            df = pd.read_excel(file, sheet_name=sheet_name)
+        else:
+            df = pd.read_excel(file)
+
+        missing = [c for c in ("Extension Number", "User Timezone") if c not in df.columns]
+        if missing:
+            return jsonify({"type": "error",
+                            "message": f"File is missing required column(s): {', '.join(missing)}."}), 400
+
+        df = df.fillna('')
+        records = df.to_dict('records')
+    except Exception as e:
+        return jsonify({"type": "error", "message": f"File parsing error: {str(e)}"}), 400
+
+    def generate():
+        try:
+            for chunk in utils.update_timezone_batch(records, token, is_preview=is_preview, task_id=task_id):
+                yield json.dumps(chunk) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+
+    resp = Response(stream_with_context(generate()), mimetype='application/x-ndjson')
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
