@@ -27,6 +27,14 @@ steps:
     - '3600'
     - '--memory'
     - '2Gi'
+    # Keep the CPU allocated even when no HTTP request is in flight. The audit
+    # tools run their crawl in a background thread AFTER the start request has
+    # returned; with Cloud Run's default (throttled) CPU that thread is starved
+    # to near-zero and only advances during the brief windows a status poll is
+    # being served — a 13-user audit then takes many minutes instead of seconds
+    # and can appear stuck in "working". Always-allocated CPU lets it run at full
+    # speed to completion.
+    - '--no-cpu-throttling'
     # Durable audit storage (Deskphone Ring Time "Recent audits" + cross-instance
     # download). Uses --update-env-vars so it MERGES with the service's existing
     # env vars (RC/SM secrets etc.) rather than replacing them the way

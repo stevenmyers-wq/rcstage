@@ -178,8 +178,20 @@ def _request(endpoint, method='GET', params=None, json_body=None,
     resp = None
     for attempt in range(max_attempts):
         token = auth_data.get('access_token') if auth_data else None
-        resp = rc_api_call(endpoint, params=params, method=method,
-                           json=json_body, return_response=True, token=token)
+        # (connect, read) timeout so a stalled RC connection in the background
+        # thread can't hang the whole audit forever — it surfaces as an error the
+        # retry loop handles instead of a permanent "working" state. rc_api_call
+        # can raise (e.g. requests.Timeout) rather than return a response, so
+        # guard the call and treat a raise as a retryable transient failure.
+        try:
+            resp = rc_api_call(endpoint, params=params, method=method,
+                               json=json_body, return_response=True, token=token,
+                               timeout=(10, 60))
+        except Exception as e:
+            _set_message(task_id, f"Network error ({e}) — retrying…")
+            time.sleep(min(2 * (attempt + 1), 30))
+            resp = None
+            continue
         status = getattr(resp, 'status_code', None)
 
         if status == 429:
