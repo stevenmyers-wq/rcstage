@@ -291,41 +291,101 @@ def download_template():
 
 
 # --- DEBUG ROUTE -----------------------------------------------------------
+def _dump(resp):
+    """Response object -> JSON body on 2xx, else a compact status/body dict."""
+    if getattr(resp, 'ok', False):
+        try:
+            return resp.json()
+        except Exception:
+            return {"note": "ok but non-JSON body"}
+    return {"status": getattr(resp, 'status_code', '?'),
+            "body": ((getattr(resp, 'text', '') or '').strip())[:600]}
+
+
 @deskphone_ring_time_bp.route('/debug', methods=['GET'])
 @require_rc_token
 def debug_ring_time():
-    """Raw dump of an extension's devices, its default V2 state rule and V1
-    answering rule, so the ring-time parser can be checked against the real
-    schema. Visit e.g. /api/deskphone_ring_time/debug?ext=101 while signed in."""
+    """Ground-truth dump used to pin down the real V2/V1 ring-time schema on a
+    live account: an extension's devices, the FULL V2 comm-handling state-rule
+    list AND each rule fetched by id (the list returns dispatching only as a
+    `dispatchingRef`, so per-rule detail is needed to see the RingGroupAction
+    durations), the V1 answering-rule list + business-hours detail, and a
+    durable-storage self-check. Visit /api/deskphone_ring_time/debug?ext=101
+    while signed in. Add &full=1 to include full rule bodies (large)."""
     ext_num = (request.args.get('ext') or '').strip()
+    full = request.args.get('full') in ('1', 'true', 'yes')
     if not ext_num:
         return jsonify({"error": "Pass ?ext=<extension number>, e.g. ?ext=101"}), 400
 
-    out = {"ext_requested": ext_num}
+    out = {"ext_requested": ext_num, "storage": storage.diagnostics()}
     try:
         ext_id = get_extension_id(ext_num)
         if not ext_id:
             return jsonify({"error": f"Extension {ext_num} not found."}), 404
         out["ext_id"] = ext_id
 
-        devices = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device",
-                              return_response=True)
-        out["devices"] = devices.json() if getattr(devices, 'ok', False) else {
-            "status": getattr(devices, 'status_code', '?'), "body": getattr(devices, 'text', '')}
+        dev = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device",
+                          return_response=True)
+        dev_body = _dump(dev)
+        out["devices"] = [
+            {"id": d.get("id"), "type": d.get("type"), "name": d.get("name")}
+            for d in (dev_body.get("records", []) if isinstance(dev_body, dict) else [])
+        ] or dev_body
 
-        v2_url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{DEFAULT_STATE_RULE_ID}"
-        v2 = rc_api_call(v2_url, return_response=True)
-        out["v2_default_state_rule"] = v2.json() if getattr(v2, 'ok', False) else {
-            "status": getattr(v2, 'status_code', '?'), "body": getattr(v2, 'text', '')}
+        # --- V2 comm-handling: LIST the state rules, then GET each by id -----
+        v2_list_url = V2_STATE_RULE_BASE.format(ext_id=ext_id)
+        v2_list_resp = rc_api_call(v2_list_url, return_response=True)
+        v2_list = _dump(v2_list_resp)
+        out["v2_state_rules_list"] = v2_list
+        out["v2_state_rules_detail"] = []
+        if isinstance(v2_list, dict):
+            for rec in v2_list.get("records", []):
+                rid = rec.get("id")
+                if not rid:
+                    continue
+                detail = _dump(rc_api_call(f"{v2_list_url}/{rid}", return_response=True))
+                if full:
+                    out["v2_state_rules_detail"].append({"id": rid, "detail": detail})
+                else:
+                    # Compact: just enough to see how the default rule is keyed
+                    # and where the ring durations live.
+                    dispatching = (detail.get("dispatching") if isinstance(detail, dict) else None) or {}
+                    ring_actions = []
+                    for a in dispatching.get("actions", []):
+                        if a.get("type") == "RingGroupAction":
+                            ring_actions.append({
+                                "enabled": a.get("enabled"),
+                                "duration": a.get("duration"),
+                                "targets": [
+                                    {"type": t.get("type"),
+                                     "device_id": (t.get("device") or {}).get("id")}
+                                    for t in a.get("targets", [])
+                                ],
+                            })
+                    out["v2_state_rules_detail"].append({
+                        "id": rid,
+                        "displayName": rec.get("displayName") or rec.get("name"),
+                        "state": rec.get("state"),
+                        "type": rec.get("type"),
+                        "enabled": rec.get("enabled"),
+                        "dispatching_type": dispatching.get("type"),
+                        "ring_group_actions": ring_actions,
+                    })
 
-        v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{DEFAULT_STATE_RULE_ID}"
-        v1 = rc_api_call(v1_url, params={'view': 'Detailed'}, return_response=True)
-        out["v1_default_answering_rule"] = v1.json() if getattr(v1, 'ok', False) else {
-            "status": getattr(v1, 'status_code', '?'), "body": getattr(v1, 'text', '')}
+        # --- V1 answering rules: list + business-hours detail ---------------
+        v1_list = _dump(rc_api_call(
+            f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule",
+            return_response=True))
+        out["v1_answering_rules_list"] = v1_list
+        v1_bh = rc_api_call(
+            f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{DEFAULT_STATE_RULE_ID}",
+            params={'view': 'Detailed'}, return_response=True)
+        out["v1_business_hours_rule"] = _dump(v1_bh)
 
         schema, durations, _ = get_default_ring_config(ext_id)
-        out["parsed"] = {"schema": schema, "device_durations_secs": durations}
+        out["parsed_by_current_code"] = {"schema": schema, "device_durations_secs": durations}
     except Exception as e:
         out["error"] = str(e)
 
-    return current_app.response_class(json.dumps(out, indent=2), mimetype='application/json')
+    return current_app.response_class(json.dumps(out, indent=2, default=str),
+                                      mimetype='application/json')

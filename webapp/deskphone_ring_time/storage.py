@@ -55,6 +55,25 @@ def _fs():
     return _fs_client
 
 
+def diagnostics():
+    """Read-only self-check for the /debug route: is durable storage configured
+    and reachable? Confirms the AUDIT_BUCKET env var, and actually pings GCS +
+    Firestore so a missing env var vs. a permissions problem can be told apart."""
+    out = {'audit_bucket': _bucket_name(), 'storage_enabled': storage_enabled()}
+    try:
+        out['firestore_ok'] = _fs() is not None
+    except Exception as e:
+        out['firestore_ok'] = False
+        out['firestore_error'] = str(e)[:200]
+    try:
+        bkt = _bucket()
+        out['gcs_bucket_reachable'] = bool(bkt.exists()) if bkt is not None else None
+    except Exception as e:
+        out['gcs_bucket_reachable'] = False
+        out['gcs_error'] = str(e)[:200]
+    return out
+
+
 def record_status(task_id, status, user_email=None, error=None):
     """Best-effort Firestore write of a run's status (e.g. 'running', 'error'),
     so a status poll that lands on another instance — or a later visit — can
