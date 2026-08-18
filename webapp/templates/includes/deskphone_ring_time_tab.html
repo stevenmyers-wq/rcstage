@@ -143,56 +143,77 @@
         if (tail) onEvent(JSON.parse(tail));
     }
 
+    // The audit runs as a background task on the server: we start it, then poll
+    // for progress, then download the finished workbook. Short polling requests
+    // mean a large account can't trip the Cloud Run request timeout.
+    let drtAuditLastMsg = "";
+
+    function drtResetAuditBtn() {
+        const btn = document.getElementById('drtAuditBtn');
+        btn.disabled = false;
+        btn.innerText = "Generate Report";
+    }
+
+    function drtPollAudit(taskId) {
+        const interval = setInterval(async () => {
+            let data;
+            try {
+                const res = await fetch(`/api/deskphone_ring_time/audit/status?task_id=${taskId}`);
+                data = await res.json();
+            } catch (e) {
+                return;  // ignore transient network blips; keep polling
+            }
+
+            if (data.total > 0) {
+                drtProgressUpdate(data.current, data.total, `Scanning ${data.current}/${data.total} users…`);
+            }
+            if (data.message && data.message !== drtAuditLastMsg) {
+                const isRate = data.message.toLowerCase().includes('rate limit');
+                drtLog(data.message, isRate ? 'error' : 'info');
+                drtProgress.text.innerText = data.message;
+                drtAuditLastMsg = data.message;
+            }
+
+            if (data.status === 'completed') {
+                clearInterval(interval);
+                drtProgressFinish(true, `Done — ${data.rows || 0} row(s)`);
+                drtLog(`Audit complete! ${data.rows || 0} device row(s). Downloading file...`, "success");
+                const a = document.createElement('a');
+                a.href = `/api/deskphone_ring_time/audit/download?task_id=${taskId}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                drtResetAuditBtn();
+            } else if (data.status === 'error') {
+                clearInterval(interval);
+                drtProgressFinish(false, 'Failed');
+                drtLog(`Audit failed: ${data.error || 'unknown error'}`, "error");
+                drtResetAuditBtn();
+            }
+        }, 1000);
+    }
+
     async function drtAudit() {
         const btn = document.getElementById('drtAuditBtn');
         btn.disabled = true;
         btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
 
-        drtLog("Starting ring-time audit... this may take a while on large accounts.");
-        drtProgressShow('Loading users…');
+        drtAuditLastMsg = "";
+        drtLog("Starting ring-time audit (background task)... this may take a while on large accounts.");
+        drtProgressShow('Starting background task…');
 
         try {
-            const res = await fetch('/api/deskphone_ring_time/audit');
-            if (!res.ok) {
-                let msg = "Audit failed";
-                try { msg = (await res.json()).error || msg; } catch (e) {}
-                throw new Error(msg);
+            const res = await fetch('/api/deskphone_ring_time/audit', { method: 'POST' });
+            const data = await res.json();
+            if (data.success && data.task_id) {
+                drtPollAudit(data.task_id);
+            } else {
+                throw new Error(data.error || 'Server failed to start the audit.');
             }
-            let auditError = null;
-            await drtConsumeStream(res, (evt) => {
-                if (evt.type === 'status') {
-                    drtProgress.text.innerText = evt.message;
-                } else if (evt.type === 'start') {
-                    drtProgressUpdate(0, evt.total, `Scanning 0/${evt.total} users…`);
-                    drtLog(`Scanning ${evt.total} user(s) with deskphone / generic-SIP devices...`);
-                } else if (evt.type === 'progress') {
-                    drtProgressUpdate(evt.current, evt.total, `Scanning ${evt.current}/${evt.total} users…`);
-                } else if (evt.type === 'error') {
-                    auditError = evt.message;
-                } else if (evt.type === 'complete') {
-                    const bin = atob(evt.file_b64);
-                    const bytes = new Uint8Array(bin.length);
-                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-                    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = evt.filename || `Deskphone_Ring_Time_${new Date().toISOString().slice(0,10)}.xlsx`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                    drtProgressFinish(true, `Done — ${evt.rows} row(s)`);
-                    drtLog(`Audit complete! ${evt.rows} row(s). Downloading file...`, "success");
-                }
-            });
-            if (auditError) throw new Error(auditError);
         } catch (e) {
             drtProgressFinish(false, 'Failed');
             drtLog(`Audit failed: ${e.message}`, "error");
-        } finally {
-            btn.disabled = false;
-            btn.innerText = "Generate Report";
+            drtResetAuditBtn();
         }
     }
 

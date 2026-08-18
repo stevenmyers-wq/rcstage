@@ -1,20 +1,20 @@
 import io
 import json
-import base64
-import pandas as pd
+import threading
+import time
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file, Response, stream_with_context, current_app
-from openpyxl.worksheet.datavalidation import DataValidation
-from openpyxl.utils import get_column_letter
-from webapp.auth_utils import require_rc_token
+import pandas as pd
+from flask import (Blueprint, request, jsonify, send_file, Response,
+                   stream_with_context, current_app, session)
+from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.rc_api import rc_api_call
 from webapp.usage_tracking import track_usage
 from webapp import task_control
 from .utils import (
-    ACCEPTED_RING_SECONDS, DEVICE_TYPE_LABELS, DEFAULT_STATE_RULE_ID,
-    V2_STATE_RULE_BASE,
-    fetch_all_users, fetch_all_devices, fetch_extension_devices,
-    ring_devices_for_ext, device_display_name, get_extension_id,
+    AUDIT_COLS, DEFAULT_STATE_RULE_ID, V2_STATE_RULE_BASE,
+    ring_time_progress_store, run_ring_time_audit_background,
+    add_ring_dropdown, autosize,
+    fetch_extension_devices, ring_devices_for_ext, get_extension_id,
     get_default_ring_config, apply_ring_time, coerce_ring_seconds,
 )
 
@@ -24,131 +24,82 @@ deskphone_ring_time_bp = Blueprint('deskphone_ring_time_bp', __name__,
 deskphone_ring_time_bp.add_url_rule('/cancel', 'deskphone_ring_time_cancel',
                                     task_control.cancel_view, methods=['POST'])
 
-# Columns for the audit export AND the accepted upload layout — a row per
-# deskphone / generic-SIP device. Editing the sheet in place and re-uploading is
-# the intended workflow, so the two share one schema.
-AUDIT_COLS = [
-    'Ext Number', 'Ext Name', 'Site', 'Device Name', 'Device Type',
-    'Device ID', 'Schema', 'Current Ring Time (Secs)', 'New Ring Time (Secs)',
-]
 
-# The one data-validated column: an operator may only pick an API-accepted ring
-# time (5s steps up to 60s). Blank means "leave this device unchanged".
-_RING_DROPDOWN_FORMULA = '"' + ','.join(str(s) for s in ACCEPTED_RING_SECONDS) + '"'
-
-
-def _add_ring_dropdown(ws, columns, max_row=2000):
-    """Attaches the accepted-seconds dropdown to the New Ring Time column."""
-    if 'New Ring Time (Secs)' not in columns:
-        return
-    letter = get_column_letter(columns.index('New Ring Time (Secs)') + 1)
-    dv = DataValidation(type="list", formula1=_RING_DROPDOWN_FORMULA, allow_blank=True)
-    dv.error = 'Pick an accepted ring time in seconds (5s steps, up to 60).'
-    dv.errorTitle = 'Invalid ring time'
-    ws.add_data_validation(dv)
-    dv.add(f"{letter}2:{letter}{max_row}")
+def _session_auth_data():
+    """Bundles the auth material a background thread needs to keep calling RC
+    after the request (and its session) is gone — including a self-healing token
+    refresh path. Mirrors Device Ringing Audit."""
+    return {
+        'access_token': get_rc_access_token(),
+        'refresh_token': session.get('rc_refresh_token'),
+        'client_id': session.get('rc_current_client_id'),
+        'server_url': current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'),
+        'sm_employee_token': session.get('sm_employee_token'),
+        'sm_employee_refresh_token': session.get('sm_employee_refresh_token'),
+        'sm_target_id': session.get('sm_target_id'),
+    }
 
 
-def _autosize(ws):
-    for column in ws.columns:
-        length = max(len(str(cell.value) or "") for cell in column)
-        ws.column_dimensions[column[0].column_letter].width = min(length + 5, 55)
-
-
-# --- AUDIT ROUTE -----------------------------------------------------------
-@deskphone_ring_time_bp.route('/audit', methods=['GET'])
+# --- AUDIT: background task + poll -----------------------------------------
+@deskphone_ring_time_bp.route('/audit', methods=['POST'])
 @require_rc_token
 @track_usage('Deskphone Ring Time Audit')
-def audit_ring_times():
-    """Streams progress while building an Excel report of every user's deskphone
-    / generic-SIP ring time on the default call-handling state. Only users that
-    actually own such a device are queried, keeping the crawl small."""
+def start_audit():
+    """Kicks off the account crawl in a background thread and returns a task id.
+    The browser then polls /audit/status and downloads via /audit/download. This
+    keeps each HTTP request short so a large audit can't hit the Cloud Run
+    request timeout the way a single long streaming response would."""
+    token = get_rc_access_token()
+    if not token:
+        return jsonify({"error": "Unauthorized"}), 401
 
-    def generate():
-        try:
-            yield json.dumps({"type": "status", "message": "Loading users…"}) + "\n"
-            users = fetch_all_users()
-            if not users:
-                yield json.dumps({"type": "error", "message": "Failed to fetch users."}) + "\n"
-                return
+    auth_data = _session_auth_data()
+    task_id = f"drt_audit_{int(time.time())}"
 
-            yield json.dumps({"type": "status", "message": "Loading account devices…"}) + "\n"
-            devices_by_ext = fetch_all_devices()
+    # Pre-initialise the store so the first status poll never 404s.
+    ring_time_progress_store[task_id] = {
+        'status': 'running', 'current': 0, 'total': 0,
+        'message': 'Starting background task…',
+        'file_data': None, 'rows': 0, 'error': None,
+    }
 
-            # Only audit users that own a deskphone / generic-SIP device.
-            targets = []
-            for u in users:
-                ext_id = str(u.get('id'))
-                ring_devs = ring_devices_for_ext(devices_by_ext.get(ext_id, []))
-                if ring_devs:
-                    targets.append((u, ring_devs))
+    # Pass the real app object so the thread can push an app context.
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=run_ring_time_audit_background, args=(app, task_id, auth_data))
+    thread.daemon = True
+    thread.start()
 
-            total = len(targets)
-            yield json.dumps({"type": "start", "total": total}) + "\n"
+    return jsonify({"success": True, "task_id": task_id})
 
-            audit_data = []
-            for i, (user, ring_devs) in enumerate(targets):
-                ext_id = str(user.get('id'))
-                ext_num = user.get('extensionNumber', '')
-                ext_name = user.get('name', 'Unknown')
-                site = (user.get('site') or {}).get('name') or 'Main Site'
 
-                try:
-                    schema, durations, _ = get_default_ring_config(ext_id)
-                except Exception:
-                    schema, durations = None, {}
+@deskphone_ring_time_bp.route('/audit/status', methods=['GET'])
+@require_rc_token
+def audit_status():
+    task_id = request.args.get('task_id')
+    data = ring_time_progress_store.get(task_id, {})
+    return jsonify({
+        'current': data.get('current', 0),
+        'total': data.get('total', 0),
+        'status': data.get('status', 'running'),
+        'message': data.get('message', 'Initializing…'),
+        'rows': data.get('rows', 0),
+        'error': data.get('error', ''),
+    })
 
-                for d in ring_devs:
-                    did = str(d.get('id'))
-                    current = durations.get(did)
-                    audit_data.append({
-                        'Ext Number': ext_num,
-                        'Ext Name': ext_name,
-                        'Site': site,
-                        'Device Name': device_display_name(d),
-                        'Device Type': DEVICE_TYPE_LABELS.get(d.get('type'), d.get('type')),
-                        'Device ID': did,
-                        'Schema': schema or 'Unknown',
-                        'Current Ring Time (Secs)': current if current is not None else '',
-                        'New Ring Time (Secs)': '',
-                    })
 
-                yield json.dumps({
-                    "type": "progress", "current": i + 1, "total": total,
-                    "message": str(ext_num or ext_id)
-                }) + "\n"
-
-            if not audit_data:
-                audit_data = [{'Ext Number': 'No Data',
-                               'Device Name': 'No deskphone / generic-SIP devices found'}]
-
-            df = pd.DataFrame(audit_data)
-            for c in AUDIT_COLS:
-                if c not in df.columns:
-                    df[c] = ''
-            df = df[AUDIT_COLS]
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Ring Times')
-                ws = writer.sheets['Ring Times']
-                _add_ring_dropdown(ws, AUDIT_COLS)
-                _autosize(ws)
-
-            output.seek(0)
-            file_b64 = base64.b64encode(output.read()).decode('ascii')
-            filename = f"Deskphone_Ring_Time_{datetime.now().strftime('%Y%m%d')}.xlsx"
-            yield json.dumps({
-                "type": "complete", "filename": filename, "file_b64": file_b64,
-                "rows": len(df)
-            }) + "\n"
-        except Exception as e:
-            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
-
-    resp = Response(stream_with_context(generate()), mimetype='application/x-ndjson')
-    resp.headers['X-Accel-Buffering'] = 'no'
-    resp.headers['Cache-Control'] = 'no-cache'
-    return resp
+@deskphone_ring_time_bp.route('/audit/download', methods=['GET'])
+@require_rc_token
+def audit_download():
+    task_id = request.args.get('task_id')
+    data = ring_time_progress_store.get(task_id, {})
+    if data.get('status') == 'completed' and data.get('file_data'):
+        mem = io.BytesIO(data['file_data'])
+        filename = f"Deskphone_Ring_Time_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        return send_file(
+            mem, as_attachment=True, download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    return "File not ready or expired", 404
 
 
 # --- APPLY ROUTE -----------------------------------------------------------
@@ -178,8 +129,6 @@ def apply_ring_times():
 
     # Group edited rows by extension so each extension's default rule is fetched
     # and PUT back exactly once, even when it has several deskphone/SIP devices.
-    # Each group carries: {device_id: seconds} explicitly named, plus a flag for
-    # rows that left Device ID blank (apply to every deskphone/SIP device).
     groups = {}
     for index, row in df.iterrows():
         raw_ext = row.get('Ext Number')
@@ -194,7 +143,6 @@ def apply_ring_times():
         g = groups.setdefault(ext_key, {'devices': {}, 'apply_all_secs': None})
         raw_did = row.get('Device ID')
         if pd.isna(raw_did) or not str(raw_did).strip():
-            # No specific device -> apply to all deskphone/SIP devices on the ext.
             g['apply_all_secs'] = secs
         else:
             did = str(raw_did).strip()
@@ -234,8 +182,6 @@ def apply_ring_times():
 
                 device_targets = dict(group['devices'])
 
-                # Resolve a blank-Device-ID row to every deskphone/SIP device on
-                # the extension. Explicit per-device values take precedence.
                 if group['apply_all_secs'] is not None:
                     ring_devs = ring_devices_for_ext(fetch_extension_devices(ext_id))
                     if not ring_devs:
@@ -291,11 +237,11 @@ def download_template():
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_template.to_excel(writer, index=False, sheet_name='Ring Times')
         ws1 = writer.sheets['Ring Times']
-        _add_ring_dropdown(ws1, AUDIT_COLS)
-        _autosize(ws1)
+        add_ring_dropdown(ws1, AUDIT_COLS)
+        autosize(ws1)
 
         df_instructions.to_excel(writer, index=False, sheet_name='Format Guide')
-        _autosize(writer.sheets['Format Guide'])
+        autosize(writer.sheets['Format Guide'])
 
     output.seek(0)
     return send_file(
