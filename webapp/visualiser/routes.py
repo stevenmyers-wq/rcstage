@@ -46,6 +46,38 @@ def fetch_all_pages(endpoint, params=None):
     return all_records
 
 
+_CATEGORY_BY_TYPE = {
+    'PhoneNumber': 'Phone Number',
+    'CallQueue': 'Call Queue',
+    'Department': 'Call Queue',
+    'IvrMenu': 'IVR Menu',
+    'Site': 'Site',
+    'AnnouncementOnly': 'Announcement',
+    'User': 'User / Agent',
+    'DigitalUser': 'User / Agent',
+    'VirtualUser': 'User / Agent',
+    'FlexibleUser': 'User / Agent',
+    'Limited': 'User / Agent',
+    'ApplicationExtension': 'User / Agent',
+    'Bot': 'User / Agent',
+    'Room': 'Other',
+    'ParkLocation': 'Other',
+    'SharedLinesGroup': 'Other',
+}
+
+
+def _category_for(rc_type):
+    return _CATEGORY_BY_TYPE.get(rc_type, 'Other')
+
+
+def _site_name(obj):
+    """Best-effort site name for an extension/queue record; defaults to
+    'Main Site' to match the UAT generator's grouping convention."""
+    site = obj.get('site') or {}
+    name = site.get('name') if isinstance(site, dict) else None
+    return name or 'Main Site'
+
+
 @viz_bp.route('/api/rc/visualiser/search', methods=['GET'])
 def search_for_visualiser_targets():
     if not is_authenticated() or not get_rc_access_token():
@@ -82,6 +114,8 @@ def search_for_visualiser_targets():
                             'text': f"📞 {p_num} ({usage})",
                             'name': p_num,
                             'type': 'PhoneNumber',
+                            'category': 'Phone Number',
+                            'site': 'Main Site',
                             'sort_group': 0,
                         }
 
@@ -107,6 +141,8 @@ def search_for_visualiser_targets():
                     'text': f"👥 {qname} (Ext: {qnum}){phone_txt}",
                     'name': qname,
                     'type': 'CallQueue',
+                    'category': 'Call Queue',
+                    'site': _site_name(q),
                     'sort_group': 1,
                 }
 
@@ -159,6 +195,8 @@ def search_for_visualiser_targets():
                     'text': f"{icon} [{etype}] {ename} (Ext: {enum}){phone_txt}{status_mk}",
                     'name': ename,
                     'type': etype,
+                    'category': _category_for(etype),
+                    'site': _site_name(e),
                     'sort_group': sort_group,
                 }
 

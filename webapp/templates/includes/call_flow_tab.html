@@ -12,34 +12,31 @@
 
     <div class="card w-full z-20">
         <h4 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">1. Select Entry Point(s)</h4>
-        <div class="flex flex-col md:flex-row gap-4 items-start">
-            <div class="relative w-full flex-1 input-wrapper">
-                <input type="text" id="visualiser-search-input"
-                    class="input-field"
-                    placeholder="Loading account data…" autocomplete="off" disabled />
-                <div id="search-results-container"
-                    class="hidden absolute left-0 right-0 top-[calc(100%+0.5rem)] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 max-h-72 overflow-y-auto">
-                </div>
-            </div>
-            <button type="button" id="visualize-button" disabled class="btn-primary w-full md:w-auto px-10 !py-3.5">
+        <!-- Searchable, filterable tick-box multi-select (shared component) -->
+        <div id="cf-entry-select" class="w-full"></div>
+        <p id="entry-hint" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-3">
+            Search, filter by <strong>type</strong> or <strong>site</strong>, and <strong>tick</strong> one or more entry points — ticks persist across searches &amp; filters. Shared queues, IVRs &amp; users are merged automatically.
+        </p>
+
+        <!-- Display toggles (both sliders; available in single and multi views) -->
+        <div class="flex flex-col sm:flex-row sm:items-center gap-x-8 gap-y-3 mt-4">
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="toggle-inactive" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-rose-500"></div>
+                <span class="ml-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Show disabled rules</span>
+                <span class="ml-1 text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">(dashed inactive branches)</span>
+            </label>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="toggle-descriptors" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
+                <span class="ml-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Show Descriptors</span>
+                <span class="ml-1 text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">(detail cards on the diagram)</span>
+            </label>
+
+            <button type="button" id="visualize-button" disabled class="btn-primary w-full sm:w-auto px-10 !py-3 sm:ml-auto">
                 Visualise
             </button>
         </div>
-
-        <!-- Multi-select chips -->
-        <div id="entry-chips" class="hidden flex flex-wrap gap-2 mt-4"></div>
-        <div class="flex items-center gap-3 mt-3">
-            <p id="entry-hint" class="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Search and <strong>tick</strong> one or more entry points — the list stays open so you can pick several at once. Shared queues, IVRs &amp; users are merged automatically.
-            </p>
-            <button type="button" id="clear-entries" class="hidden text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline ml-auto">Clear all</button>
-        </div>
-
-        <label class="inline-flex items-center gap-2 cursor-pointer mt-3">
-            <input type="checkbox" id="toggle-inactive" class="w-4 h-4 accent-rose-600 cursor-pointer">
-            <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Show disabled rules</span>
-            <span class="text-[11px] text-slate-400 dark:text-slate-500">(draws inactive answering rules as dashed branches)</span>
-        </label>
 
         <p id="loading-indicator" class="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-3 flex items-center gap-2">
             <span class="spinner w-4 h-4 border-blue-600 dark:border-blue-400"></span> Loading account data…
@@ -84,12 +81,6 @@
                 </button>
 
                 <div class="text-slate-400 dark:text-slate-500 normal-case font-medium tracking-normal italic" id="interaction-hint">Hover to preview &amp; highlight · Click to pin</div>
-
-                <label class="relative inline-flex items-center cursor-pointer print:hidden">
-                    <input type="checkbox" id="toggle-descriptors" class="sr-only peer">
-                    <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
-                    <span class="ml-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Show Descriptors</span>
-                </label>
             </div>
         </div>
 
@@ -164,7 +155,6 @@
     };
 
     let selectedEntries = [];       // [{id, text}]
-    let searchTimer  = null;
     let cy           = null;
     let allResults   = [];
     let hoverPreview = null;
@@ -174,8 +164,6 @@
     let focusNode    = null;
     let layoutDir    = 'TB';
 
-    const searchInput   = document.getElementById('visualiser-search-input');
-    const resultsList   = document.getElementById('search-results-container');
     const vizBtn        = document.getElementById('visualize-button');
     const diagramDiv    = document.getElementById('call-flow-diagram');
     const wrapper       = document.getElementById('diagram-wrapper');
@@ -185,21 +173,24 @@
     const printBtn      = document.getElementById('btn-print');
     const visioBtn      = document.getElementById('btn-export-visio');
     const toggleDesc    = document.getElementById('toggle-descriptors');
-    const chipsWrap     = document.getElementById('entry-chips');
-    const clearBtn      = document.getElementById('clear-entries');
     const statsEl       = document.getElementById('graph-stats');
     const layoutBtn     = document.getElementById('btn-layout-dir');
     const graphSearch   = document.getElementById('graph-search');
+    const entryMount    = document.getElementById('cf-entry-select');
 
-    // ── Load extensions ──────────────────────────────────────────────
+    let cfSelect = null;   // shared CheckboxSelect instance
+
+    // ── Load entry points into the shared tick-box multi-select ───────
+    // Uses CheckboxSelect (webapp/static/js/app.js) for a consistent,
+    // searchable, filterable picker whose ticks persist across searches —
+    // the same component the UAT generator and other modules use.
     fetch('/api/rc/visualiser/search')
         .then(r => r.json())
         .then(data => {
             loadingEl.classList.add('hidden');
             if (data.status === 'success') {
-                allResults = data.results;
-                searchInput.placeholder = `Search ${allResults.length} extensions, queues & numbers…`;
-                searchInput.disabled = false;
+                allResults = (data.results || []).filter(r => r.id !== 'err');
+                initEntrySelect(allResults);
             } else {
                 loadingEl.textContent = 'Error: ' + (data.message || 'Failed.');
                 loadingEl.classList.add('text-rose-500');
@@ -210,116 +201,29 @@
             loadingEl.classList.add('text-rose-500');
         });
 
-    // ── Searchable multi-select dropdown (tick to add/remove) ─────────
-    // The dropdown stays open while you tick entries, so several flows can
-    // be picked from one search without re-opening it each time.
-    const MAX_DROPDOWN = 60;
-
-    function openDropdown() { refreshDropdown(); }
-    function closeDropdown() { resultsList.classList.add('hidden'); }
-
-    function refreshDropdown() {
-        const q = searchInput.value.toLowerCase().trim();
-        const chosen = new Set(selectedEntries.map(e => e.id));
-        const hits = allResults
-            .filter(r => r.id !== 'err')
-            .filter(r => !q || r.text.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q));
-        const shown = hits.slice(0, MAX_DROPDOWN);
-        renderDropdown(shown, chosen, hits.length);
-    }
-
-    searchInput.addEventListener('input', () => {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(refreshDropdown, 120);
-    });
-    searchInput.addEventListener('focus', openDropdown);
-
-    function renderDropdown(results, chosen, totalCount) {
-        resultsList.innerHTML = '';
-        if (!results.length) {
-            resultsList.innerHTML = '<div class="p-4 text-sm text-slate-500 font-medium">No matching entry points.</div>';
-            resultsList.classList.remove('hidden');
+    function initEntrySelect(items) {
+        if (!window.CheckboxSelect) {
+            entryMount.innerHTML = '<p class="text-sm text-rose-500 font-semibold">Selector component failed to load.</p>';
             return;
         }
-        results.forEach(item => {
-            const isChosen = chosen.has(item.id);
-            const row = document.createElement('label');
-            row.className = 'flex items-center gap-3 px-4 py-2.5 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 text-sm font-medium text-slate-800 dark:text-slate-200 transition-colors ' +
-                (isChosen ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-700');
-
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.checked = isChosen;
-            cb.className = 'w-4 h-4 accent-blue-600 cursor-pointer flex-shrink-0';
-
-            const span = document.createElement('span');
-            span.className = 'flex-1 leading-snug';
-            span.textContent = item.text;
-
-            row.appendChild(cb);
-            row.appendChild(span);
-
-            // Toggle selection without closing the dropdown.
-            row.addEventListener('click', e => {
-                e.preventDefault();
-                if (isChosen) removeEntry(item.id);
-                else addEntry(item);
-                refreshDropdown();   // repaint tick states in place
-            });
-            resultsList.appendChild(row);
-        });
-
-        if (totalCount > results.length) {
-            const more = document.createElement('div');
-            more.className = 'px-4 py-2.5 text-xs font-semibold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/60 text-center';
-            more.textContent = `Showing ${results.length} of ${totalCount} — keep typing to narrow the list`;
-            resultsList.appendChild(more);
-        }
-        resultsList.classList.remove('hidden');
-    }
-
-    document.addEventListener('click', e => {
-        if (!searchInput.contains(e.target) && !resultsList.contains(e.target))
-            closeDropdown();
-    });
-
-    // ── Entry chips (multi-select) ───────────────────────────────────
-    function addEntry(item) {
-        if (selectedEntries.some(e => e.id === item.id)) return;
-        selectedEntries.push({ id: item.id, text: item.text });
-        renderChips();
-    }
-    function removeEntry(id) {
-        selectedEntries = selectedEntries.filter(e => e.id !== id);
-        renderChips();
-    }
-    function renderChips() {
-        chipsWrap.innerHTML = '';
-        if (!selectedEntries.length) {
-            chipsWrap.classList.add('hidden');
-            clearBtn.classList.add('hidden');
-            vizBtn.disabled = true;
-            return;
-        }
-        chipsWrap.classList.remove('hidden');
-        clearBtn.classList.remove('hidden');
-        vizBtn.disabled = false;
-        selectedEntries.forEach(e => {
-            const chip = document.createElement('span');
-            chip.className = 'entry-chip inline-flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200 text-xs font-semibold rounded-full pl-3 pr-2 py-1.5 max-w-full';
-            const txt = document.createElement('span');
-            txt.className = 'truncate max-w-[260px]';
-            txt.textContent = e.text;
-            chip.appendChild(txt);
-            const x = document.createElement('button');
-            x.className = 'text-blue-500 hover:text-rose-500 font-bold leading-none';
-            x.textContent = '✕';
-            x.addEventListener('click', () => removeEntry(e.id));
-            chip.appendChild(x);
-            chipsWrap.appendChild(chip);
+        cfSelect = CheckboxSelect.create(entryMount, {
+            items: items,
+            getValue: r => r.id,
+            getLabel: r => r.text,
+            getSub:   r => r.site ? ('· ' + r.site) : '',
+            filters: [
+                { get: r => r.category || 'Other', label: 'Types', allLabel: 'All types' },
+                { get: r => r.site || 'Main Site', label: 'Sites', allLabel: 'All sites' },
+            ],
+            searchable: true,
+            searchPlaceholder: `Search ${items.length} extensions, queues & numbers…`,
+            listHeightClass: 'h-72',
+            onChange: () => {
+                selectedEntries = cfSelect.getSelectedItems().map(r => ({ id: r.id, text: r.text }));
+                vizBtn.disabled = selectedEntries.length === 0;
+            },
         });
     }
-    clearBtn.addEventListener('click', () => { selectedEntries = []; renderChips(); });
 
     // ── Detail panel builder (enriched key:value cards) ──────────────
     function buildPanelContent(nodeData) {
