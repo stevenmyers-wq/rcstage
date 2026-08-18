@@ -9,6 +9,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 from webapp.rc_api import rc_api_call
 from webapp.auth_utils import get_impersonation_token
+from . import storage
 
 # --- CONSTANTS -------------------------------------------------------------
 #
@@ -543,16 +544,33 @@ def build_ring_time_workbook(audit_data):
 _AUDIT_PACE_SECONDS = 0.2
 
 
-def run_ring_time_audit_background(app, task_id, auth_data):
+def _finalise_storage(task_id, user_email):
+    """Uploads the finished workbook to durable storage (GCS + Firestore index)
+    so it can be downloaded from any instance and after the tab is closed. Best
+    effort — an in-memory copy is always kept as the fast/fallback path."""
+    store = ring_time_progress_store.get(task_id) or {}
+    if not store.get('file_data') or not storage.storage_enabled():
+        return
+    try:
+        storage.save_result(task_id, store['file_data'],
+                            store.get('filename') or f"{task_id}.xlsx",
+                            store.get('rows', 0), user_email)
+    except Exception as e:
+        print(f"deskphone_ring_time: durable save failed: {e}")
+
+
+def run_ring_time_audit_background(app, task_id, auth_data, user_email=None):
     """Crawls the account for deskphone / generic-SIP ring times and builds the
     audit workbook into ring_time_progress_store[task_id]. Runs in a daemon
     thread; wraps its work in an app context so rc_api_call resolves the right
-    RC_SERVER_URL and config even without a request."""
+    RC_SERVER_URL and config even without a request. On completion the workbook
+    is also persisted to durable storage (GCS/Firestore) when configured."""
     store = ring_time_progress_store.get(task_id)
     if store is None:
         return
     try:
         with app.app_context():
+            storage.record_status(task_id, 'running', user_email=user_email)
             store['message'] = 'Loading users…'
             users = fetch_all_users(auth_data=auth_data, task_id=task_id)
 
@@ -569,12 +587,16 @@ def run_ring_time_audit_background(app, task_id, auth_data):
 
             store['total'] = len(targets)
 
+            filename = f"Deskphone_Ring_Time_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            store['filename'] = filename
+
             if not targets:
                 store['file_data'], store['rows'] = build_ring_time_workbook(
                     [{'Ext Number': 'No Data',
                       'Device Name': 'No deskphone / generic-SIP devices found'}])
                 store['status'] = 'completed'
                 store['message'] = 'No deskphone / generic-SIP devices found.'
+                _finalise_storage(task_id, user_email)
                 return
 
             audit_data = []
@@ -614,7 +636,12 @@ def run_ring_time_audit_background(app, task_id, auth_data):
             store['file_data'], store['rows'] = build_ring_time_workbook(audit_data)
             store['status'] = 'completed'
             store['message'] = f"Audit complete — {store['rows']} device row(s)."
+            _finalise_storage(task_id, user_email)
     except Exception as e:
         store['status'] = 'error'
         store['error'] = str(e)
         store['message'] = f"Audit failed: {e}"
+        try:
+            storage.record_status(task_id, 'error', user_email=user_email, error=str(e))
+        except Exception:
+            pass

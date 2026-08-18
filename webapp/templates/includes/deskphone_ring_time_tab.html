@@ -62,6 +62,15 @@
         Leave <strong>Device ID</strong> blank to apply the ring time to every deskphone / generic-SIP device on that extension.
     </div>
 
+    <div id="drt-recent-card" class="card !p-4 mt-2 hidden">
+        <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-slate-800 dark:text-slate-100">Recent audits</h4>
+            <button onclick="drtLoadRecent()" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">Refresh</button>
+        </div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Finished audits are kept for 7 days — download them here even after closing the tab.</p>
+        <div id="drt-recent-list" class="text-sm text-slate-600 dark:text-slate-300"></div>
+    </div>
+
     <div id="drt-progress-container" class="card hidden !py-4 mt-8">
         <div class="flex justify-between text-sm mb-2 text-slate-600 dark:text-slate-300">
             <span id="drt-progress-text">Working…</span>
@@ -184,6 +193,7 @@
                 a.click();
                 document.body.removeChild(a);
                 drtResetAuditBtn();
+                drtLoadRecent();
             } else if (data.status === 'error') {
                 clearInterval(interval);
                 drtProgressFinish(false, 'Failed');
@@ -192,6 +202,30 @@
             }
         }, 1000);
     }
+
+    // Recent (durable) audits — lets the operator grab a result after closing
+    // the tab. The panel stays hidden when durable storage isn't configured.
+    async function drtLoadRecent() {
+        const card = document.getElementById('drt-recent-card');
+        const list = document.getElementById('drt-recent-list');
+        try {
+            const res = await fetch('/api/deskphone_ring_time/audit/recent');
+            const data = await res.json();
+            const recs = data.records || [];
+            if (!recs.length) { card.classList.add('hidden'); return; }
+            card.classList.remove('hidden');
+            list.innerHTML = recs.map(r => {
+                const when = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+                return `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+                    <span class="truncate">${r.filename || 'audit.xlsx'} <span class="text-slate-400 dark:text-slate-500">· ${r.rows || 0} row(s) · ${when}</span></span>
+                    <a href="/api/deskphone_ring_time/audit/download?task_id=${encodeURIComponent(r.task_id)}" class="shrink-0 ml-3 text-blue-600 dark:text-blue-400 hover:underline">Download</a>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            card.classList.add('hidden');
+        }
+    }
+    drtLoadRecent();
 
     async function drtAudit() {
         const btn = document.getElementById('drtAuditBtn');
