@@ -17,6 +17,7 @@ from .utils import (
     fetch_extension_devices, ring_devices_for_ext, get_extension_id,
     get_default_ring_config, apply_ring_time, coerce_ring_seconds,
 )
+from . import storage
 
 deskphone_ring_time_bp = Blueprint('deskphone_ring_time_bp', __name__,
                                    url_prefix='/api/deskphone_ring_time')
@@ -63,10 +64,14 @@ def start_audit():
         'file_data': None, 'rows': 0, 'error': None,
     }
 
-    # Pass the real app object so the thread can push an app context.
+    # Pass the real app object so the thread can push an app context, and the
+    # signed-in user's email so the finished audit can be indexed for the
+    # "Recent audits" list and downloaded later from any instance.
     app = current_app._get_current_object()
+    user_email = session.get('user_email')
     thread = threading.Thread(
-        target=run_ring_time_audit_background, args=(app, task_id, auth_data))
+        target=run_ring_time_audit_background,
+        args=(app, task_id, auth_data, user_email))
     thread.daemon = True
     thread.start()
 
@@ -77,15 +82,30 @@ def start_audit():
 @require_rc_token
 def audit_status():
     task_id = request.args.get('task_id')
-    data = ring_time_progress_store.get(task_id, {})
-    return jsonify({
-        'current': data.get('current', 0),
-        'total': data.get('total', 0),
-        'status': data.get('status', 'running'),
-        'message': data.get('message', 'Initializing…'),
-        'rows': data.get('rows', 0),
-        'error': data.get('error', ''),
-    })
+    data = ring_time_progress_store.get(task_id)
+    if data is not None:
+        return jsonify({
+            'current': data.get('current', 0),
+            'total': data.get('total', 0),
+            'status': data.get('status', 'running'),
+            'message': data.get('message', 'Initializing…'),
+            'rows': data.get('rows', 0),
+            'error': data.get('error', ''),
+        })
+
+    # Not in this instance's memory (poll landed on another instance, or the
+    # container was recycled). Fall back to the durable Firestore record.
+    rec = storage.get_record(task_id) if task_id else None
+    if rec:
+        return jsonify({
+            'current': rec.get('rows', 0), 'total': rec.get('rows', 0),
+            'status': rec.get('status', 'running'),
+            'message': 'Audit complete.' if rec.get('status') == 'completed' else 'Working…',
+            'rows': rec.get('rows', 0),
+            'error': rec.get('error', ''),
+        })
+    return jsonify({'current': 0, 'total': 0, 'status': 'running',
+                    'message': 'Initializing…', 'rows': 0, 'error': ''})
 
 
 @deskphone_ring_time_bp.route('/audit/download', methods=['GET'])
@@ -93,13 +113,31 @@ def audit_status():
 def audit_download():
     task_id = request.args.get('task_id')
     data = ring_time_progress_store.get(task_id, {})
+
+    # Fast path: the file is still in this instance's memory.
     if data.get('status') == 'completed' and data.get('file_data'):
-        mem = io.BytesIO(data['file_data'])
-        filename = f"Deskphone_Ring_Time_{datetime.now().strftime('%Y%m%d')}.xlsx"
         return send_file(
-            mem, as_attachment=True, download_name=filename,
+            io.BytesIO(data['file_data']), as_attachment=True,
+            download_name=data.get('filename') or f"Deskphone_Ring_Time_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # Durable path: pull it from GCS (works from any instance, after tab close).
+    file_bytes, filename = storage.load_file(task_id) if task_id else (None, None)
+    if file_bytes:
+        return send_file(
+            io.BytesIO(file_bytes), as_attachment=True,
+            download_name=filename or f"Deskphone_Ring_Time_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     return "File not ready or expired", 404
+
+
+@deskphone_ring_time_bp.route('/audit/recent', methods=['GET'])
+@require_rc_token
+def audit_recent():
+    """Lists the signed-in user's recent completed audits (durable storage), so
+    they can grab a result after closing the tab. Empty when storage is off."""
+    email = session.get('user_email')
+    return jsonify({'records': storage.list_recent(email) if email else []})
 
 
 # --- APPLY ROUTE -----------------------------------------------------------

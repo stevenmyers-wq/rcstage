@@ -12,6 +12,7 @@ xlsxwriter
 # If any Gemini feature breaks, contact Riyaz Mohammed (riyaz.mohammed@ringcentral.com) before touching this.
 google-genai>=1.11.0
 google-cloud-firestore
+google-cloud-storage
 markdown
 xhtml2pdf
 pydub==0.25.1
