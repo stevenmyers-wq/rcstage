@@ -494,7 +494,12 @@ def get_default_ring_config(ext_id, auth_data=None, task_id=None):
 
 def _apply_v2(ext_id, rule, device_targets, auth_data=None):
     """Sets the ring duration (seconds) on each RingGroupAction of a V2 state
-    rule that contains one of the target devices, then PUTs the rule back.
+    rule that contains one of the target devices, then PATCHes the rule's
+    dispatching back.
+
+    The comm-handling state-rule endpoint updates via PATCH (a PUT returns
+    AGW-404 "resource not found"); we send just the modified `dispatching` object
+    so the rule's state/schedule/conditions are left untouched.
 
     `device_targets` maps device id -> desired seconds. RingCentral holds one
     `duration` per ring group, so if several targeted devices share a group with
@@ -529,19 +534,19 @@ def _apply_v2(ext_id, rule, device_targets, auth_data=None):
         return False, ("Target device(s) were not found in an enabled ring group "
                        "of the default rule — nothing changed.")
 
-    body = dict(rule)
-    body.pop('uri', None)  # read-only; RC rejects it on PUT
-    # PUT back to the rule's OWN id (e.g. 'work-hours'); V2 has no fixed
-    # 'business-hours-rule' id, so a hard-coded id would 404.
+    # PATCH just the modified dispatching to the rule's OWN id (e.g. 'work-hours';
+    # V2 has no fixed 'business-hours-rule' id). PATCH — not PUT — is what the
+    # comm-handling state-rule endpoint accepts; a PUT returns AGW-404.
     rule_id = str(rule.get('id') or DEFAULT_STATE_RULE_ID)
     url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{rule_id}"
-    resp = _request(url, method='PUT', json_body=body, auth_data=auth_data)
+    resp = _request(url, method='PATCH', json_body={'dispatching': dispatching},
+                    auth_data=auth_data)
     if resp is not None and getattr(resp, 'ok', False):
         note = " (multiple ring times requested in one ring group — used the largest)" if conflict else ""
         return True, f"Updated {changed} ring group(s){note}."
     status = getattr(resp, 'status_code', '?')
     text = ((getattr(resp, 'text', '') or '').strip())[:300]
-    return False, f"V2 PUT failed [{status}] {text or '(no body)'}"
+    return False, f"V2 PATCH failed [{status}] {text or '(no body)'}"
 
 
 def _apply_v1(ext_id, rule, device_targets, auth_data=None):
