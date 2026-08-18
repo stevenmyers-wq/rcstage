@@ -174,12 +174,19 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
             pos[nid] = {'x': left - min_x + MARGIN, 'y': top - min_y + MARGIN}
         for re_ in render.get('edges', []):
             d = re_.get('data', re_)
-            edges.append({
+            e = {
                 'source': str(d.get('source')), 'target': str(d.get('target')),
                 'label': '' if d.get('type') == 'descriptor-edge' else (d.get('label') or ''),
                 'descriptor': d.get('type') == 'descriptor-edge',
                 'disabled': bool(d.get('disabled')),
-            })
+            }
+            mp = re_.get('midpoint')
+            if isinstance(mp, dict) and mp.get('x') is not None:
+                # Cytoscape's real (possibly curved) label point — normalise to
+                # the same top-left origin as the nodes.
+                e['lx'] = float(mp['x']) - min_x + MARGIN
+                e['ly'] = float(mp['y']) - min_y + MARGIN
+            edges.append(e)
         max_x = max((pos[n]['x'] + dim[n]['w'] for n in pos), default=MARGIN)
         max_y = max((pos[n]['y'] + dim[n]['h'] for n in pos), default=MARGIN)
         total_w = max_x + MARGIN
@@ -285,10 +292,11 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
             f'<Text>{text}</Text></Shape>'
         )
 
-    def line_shape(_id, bx, by, ex, ey, color='#64748b', lw=0.013, dash=False, text=''):
+    def line_shape(_id, bx, by, ex, ey, color='#64748b', lw=0.013, dash=False,
+                   text='', label_pt=None):
         # A proper Visio 1-D connector: positioned by its Begin/End points, with
-        # a local (0,0)->(Width,0) geometry and its own text block at the
-        # midpoint — so the label is part of the connector and moves with it.
+        # a local (0,0)->(Width,0) geometry and its own text block — so the label
+        # is part of the connector and moves with it.
         vbx, vby, vex, vey = to_vx(bx), to_vy(by), to_vx(ex), to_vy(ey)
         length = math.hypot(vex - vbx, vey - vby) or 0.001
         pinx, piny = (vbx + vex) / 2.0, (vby + vey) / 2.0
@@ -297,12 +305,23 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
         txt_cells = ''
         text_el = '<Text/>'
         if str(text).strip():
-            # Text block placed at the line midpoint, lifted slightly off the
-            # line, on a small white background so it stays readable.
+            # Default: text at the line midpoint, lifted slightly off the line.
+            txt_pin_x = f'<Cell N="TxtPinX" V="{length / 2:.4f}" F="Width*0.5"/>'
+            txt_pin_y = '<Cell N="TxtPinY" V="0.14"/>'
+            if label_pt is not None:
+                # Place text at cytoscape's actual label point by mapping it into
+                # the connector's local (along-line, perpendicular) frame — keeps
+                # parallel/loop-back labels from piling on a node.
+                lx_p, ly_p = label_pt
+                dvx, dvy = lx_p - pinx, ly_p - piny
+                cos_a, sin_a = math.cos(angle), math.sin(angle)
+                along = dvx * cos_a + dvy * sin_a
+                perp = -dvx * sin_a + dvy * cos_a
+                txt_pin_x = f'<Cell N="TxtPinX" V="{length / 2 + along:.4f}"/>'
+                txt_pin_y = f'<Cell N="TxtPinY" V="{perp:.4f}"/>'
             txt_cells = (
                 '<Cell N="TxtWidth" V="1.6"/><Cell N="TxtHeight" V="0.24"/>'
-                '<Cell N="TxtPinX" V="' + f'{length / 2:.4f}' + '" F="Width*0.5"/>'
-                '<Cell N="TxtPinY" V="0.14"/>'
+                + txt_pin_x + txt_pin_y +
                 '<Cell N="TxtLocPinX" V="0.8" F="TxtWidth*0.5"/>'
                 '<Cell N="TxtLocPinY" V="0.12" F="TxtHeight*0.5"/>'
                 '<Section N="Character"><Row IX="0"><Cell N="Color" V="#334155"/>'
@@ -377,9 +396,13 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
                                      lw=0.01, dash=True))
         else:
             disabled = bool(e.get('disabled'))
+            label_pt = None
+            if e.get('lx') is not None and e.get('ly') is not None:
+                label_pt = (to_vx(e['lx']), to_vy(e['ly']))
             shapes.append(line_shape(
                 sid, bx, by, ex, ey, text=e.get('label', '') or '',
-                color='#f43f5e' if disabled else '#64748b', dash=disabled))
+                color='#f43f5e' if disabled else '#64748b', dash=disabled,
+                label_pt=label_pt))
         glue(sid, id_of[s], id_of[t])
         sid += 1
 

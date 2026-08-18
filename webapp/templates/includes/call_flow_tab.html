@@ -1168,8 +1168,11 @@
         });
         const edges = cyInst.edges().map(e => {
             const d = e.data();
+            let mp = null;
+            try { mp = e.midpoint(); } catch (err) { mp = null; }
             return { data: { source: d.source, target: d.target, label: d.label || '',
-                             type: d.type, disabled: !!d.disabled } };
+                             type: d.type, disabled: !!d.disabled },
+                     midpoint: mp };
         });
         return { nodes, edges };
     }
