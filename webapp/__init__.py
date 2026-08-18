@@ -178,4 +178,8 @@ def create_app():
         from .ai_note_manager import routes as ai_note_manager_routes
         app.register_blueprint(ai_note_manager_routes.ai_note_manager_bp)
 
+        # Deskphone Ring Time routes
+        from .deskphone_ring_time import routes as deskphone_ring_time_routes
+        app.register_blueprint(deskphone_ring_time_routes.deskphone_ring_time_bp)
+
     return app
