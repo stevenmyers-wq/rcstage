@@ -156,13 +156,19 @@ window.CheckboxSelect = (function () {
             searchInput.className = 'input-field !py-2 text-sm flex-grow';
             controls.appendChild(searchInput);
         }
-        let filterSelect = null;
-        if (getFilter) {
-            filterSelect = document.createElement('select');
-            filterSelect.className = 'input-field !py-2 text-sm sm:w-48';
-            controls.appendChild(filterSelect);
-        }
-        if (searchable || getFilter) wrap.appendChild(controls);
+        // Support one or many filter dimensions. Back-compat: a single
+        // getFilter/filterLabel is treated as one filter def. Pass
+        // config.filters = [{ get, label, allLabel? }, …] for several.
+        const filterDefs = (Array.isArray(config.filters) && config.filters.length)
+            ? config.filters
+            : (getFilter ? [{ get: getFilter, label: config.filterLabel || 'Sites' }] : []);
+        const filterSelects = filterDefs.map(def => {
+            const sel = document.createElement('select');
+            sel.className = 'input-field !py-2 text-sm sm:w-44';
+            controls.appendChild(sel);
+            return { def, el: sel };
+        });
+        if (searchable || filterSelects.length) wrap.appendChild(controls);
 
         const header = document.createElement('div');
         header.className = 'flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 px-1';
@@ -188,23 +194,26 @@ window.CheckboxSelect = (function () {
         wrap.appendChild(list);
         mount.appendChild(wrap);
 
-        function distinctFilters() {
+        function distinctFilters(def) {
             const set = new Set();
-            items.forEach(it => { const f = getFilter(it); if (f) set.add(f); });
+            items.forEach(it => { const f = def.get(it); if (f) set.add(f); });
             return Array.from(set).sort();
         }
         function rebuildFilterOptions() {
-            if (!filterSelect) return;
-            const prev = filterSelect.value;
-            filterSelect.innerHTML = ['<option value="">All ' + esc(config.filterLabel || 'Sites') + '</option>']
-                .concat(distinctFilters().map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join('');
-            if (prev) filterSelect.value = prev;
+            filterSelects.forEach(({ def, el }) => {
+                const prev = el.value;
+                const allLbl = def.allLabel || ('All ' + (def.label || ''));
+                el.innerHTML = ['<option value="">' + esc(allLbl) + '</option>']
+                    .concat(distinctFilters(def).map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join('');
+                if (prev) el.value = prev;
+            });
         }
         function visibleItems() {
             const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
-            const fv = filterSelect ? filterSelect.value : '';
             return items.filter(it => {
-                if (fv && getFilter && getFilter(it) !== fv) return false;
+                for (const { def, el } of filterSelects) {
+                    if (el.value && def.get(it) !== el.value) return false;
+                }
                 if (q) {
                     const hay = (getLabel(it) + ' ' + (getSub(it) || '')).toLowerCase();
                     if (hay.indexOf(q) === -1) return false;
@@ -247,7 +256,7 @@ window.CheckboxSelect = (function () {
         }
 
         if (searchInput) searchInput.addEventListener('input', renderList);
-        if (filterSelect) filterSelect.addEventListener('change', renderList);
+        filterSelects.forEach(({ el }) => el.addEventListener('change', renderList));
         selectVisibleBtn.addEventListener('click', () => {
             visibleItems().forEach(it => selected.add(getValue(it)));
             renderList();
