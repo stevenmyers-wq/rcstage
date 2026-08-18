@@ -56,12 +56,6 @@
                 <button id="btn-export-visio" class="hidden btn-primary !py-2 !px-4 text-xs font-bold" title="Download a Visio (.vsdx) file, then import it in Lucidchart via Import documents — keeps colours, layout &amp; detail">
                     ⬇ Lucidchart (Visio)
                 </button>
-                <button id="btn-export-mermaid" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Copy Mermaid text, then in Lucidchart use Insert → Advanced → Mermaid and paste (plain, uncoloured)">
-                    ⧉ Copy Mermaid
-                </button>
-                <button id="btn-export-drawio" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold" title="Download a .drawio file for diagrams.net / draw.io">
-                    ⬇ draw.io
-                </button>
                 <button id="btn-print" class="hidden btn-secondary !py-2 !px-4 text-xs font-bold">
                     🖨 Print / Save PDF
                 </button>
@@ -127,8 +121,8 @@
             <div class="flex items-center gap-2 flex-wrap">
                 <button id="sf-tick-all" class="btn-secondary !py-2 !px-3 text-xs font-bold">Tick all</button>
                 <button id="sf-tick-none" class="btn-secondary !py-2 !px-3 text-xs font-bold">Clear</button>
-                <button id="sf-download-visio" class="btn-primary !py-2 !px-4 text-xs font-bold" title="Download the ticked flows as separate Visio files inside one .zip">
-                    ⬇ Download ticked as Visio (.zip)
+                <button id="sf-download-visio" class="btn-primary !py-2 !px-4 text-xs font-bold" title="Download the ticked flows as one Visio file with a tab per flow — import into Lucid as a single multi-page document">
+                    ⬇ Download ticked as Visio (tabbed)
                 </button>
             </div>
         </div>
@@ -189,8 +183,6 @@
     const logDiv        = document.getElementById('api-log-container');
     const loadingEl     = document.getElementById('loading-indicator');
     const printBtn      = document.getElementById('btn-print');
-    const mermaidBtn    = document.getElementById('btn-export-mermaid');
-    const drawioBtn     = document.getElementById('btn-export-drawio');
     const visioBtn      = document.getElementById('btn-export-visio');
     const toggleDesc    = document.getElementById('toggle-descriptors');
     const chipsWrap     = document.getElementById('entry-chips');
@@ -515,8 +507,6 @@
         vizBtn.disabled = true;
         zoomControls.style.display = 'none';
         printBtn.classList.add('hidden');
-        mermaidBtn.classList.add('hidden');
-        drawioBtn.classList.add('hidden');
         visioBtn.classList.add('hidden');
         clearPanels();
 
@@ -799,8 +789,6 @@
 
         zoomControls.style.display = 'flex';
         printBtn.classList.remove('hidden');
-        mermaidBtn.classList.remove('hidden');
-        drawioBtn.classList.remove('hidden');
         visioBtn.classList.remove('hidden');
         layoutBtn.classList.remove('hidden');
         graphSearch.classList.remove('hidden');
@@ -934,224 +922,6 @@
         return `combined_${selectedEntries.length}_flows`;
     }
 
-    // ── Mermaid / Lucidchart export ──────────────────────────────────
-    const MERMAID_SHAPE = {
-        phone: ['(["', '"])'], autoreceptionist: ['{{"', '"}}'], ivr: ['{"', '"}'],
-        queue: ['[["', '"]]'], user: ['("', '")'], voicemail: ['[/"', '"/]'],
-        external: ['[/"', '"\\]'], site: ['[["', '"]]'], unknown: ['["', '"]'],
-    };
-    function mmClean(s) {
-        return String(s || '').replace(/"/g, "'").replace(/[\n\r]+/g, ' ').replace(/[[\]{}()]/g, '').trim();
-    }
-    function buildMermaid(graphData) {
-        const dir = layoutDir === 'LR' ? 'LR' : 'TD';
-        const lines = ['flowchart ' + dir];
-        const idMap = {};
-        graphData.nodes.forEach((n, i) => {
-            const d = n.data;
-            const mid = 'N' + i;
-            idMap[d.id] = mid;
-
-            // Reproduce the full on-screen label (name + members / detail
-            // lines) as multi-line text via <br/>, which Lucid's Mermaid
-            // import renders.
-            const labelLines = (d.label || '').split('\n')
-                .map(l => mmClean(l))
-                .filter(l => l && l !== '─────────────');
-            const name = labelLines[0] || '';
-            const body = labelLines.slice(1);
-            const typeLbl = TYPE_LABEL[d.type] || '';
-            const entryTag = entryIdSet.has(d.id) ? '★ ' : '';
-
-            const parts = [entryTag + name];
-            body.forEach(l => parts.push(l));
-            if (d.sublabel) parts.push(mmClean(d.sublabel));
-            if (typeLbl) parts.push('· ' + typeLbl);
-
-            const wrap = MERMAID_SHAPE[d.type] || MERMAID_SHAPE.unknown;
-            lines.push(`  ${mid}${wrap[0]}${parts.join('<br/>')}${wrap[1]}`);
-        });
-        graphData.edges.forEach(e => {
-            const s = idMap[e.data.source];
-            const t = idMap[e.data.target];
-            if (!s || !t) return;
-            const lbl = mmClean(e.data.label);
-            lines.push(lbl ? `  ${s} -->|"${lbl}"| ${t}` : `  ${s} --> ${t}`);
-        });
-        return lines.join('\n');
-    }
-    // Mermaid → copy to clipboard (paste into Lucidchart via Insert → Mermaid)
-    mermaidBtn.addEventListener('click', () => {
-        if (!currentGraphData) return;
-        const mermaid = buildMermaid(currentGraphData);
-        const flash = (msg) => {
-            const orig = mermaidBtn.textContent;
-            mermaidBtn.textContent = msg;
-            setTimeout(() => { mermaidBtn.textContent = orig; }, 2200);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(mermaid)
-                .then(() => flash('✓ Copied — Lucid: Insert → Advanced → Mermaid'))
-                .catch(() => downloadBlob(mermaid, 'call-flow-' + flowSlug() + '.mmd', 'text/plain'));
-        } else {
-            downloadBlob(mermaid, 'call-flow-' + flowSlug() + '.mmd', 'text/plain');
-            flash('✓ Downloaded .mmd');
-        }
-    });
-
-    // ── Draw.io export (Lucidchart 'Import documents' accepts .drawio) ─
-    function xmlEsc(s) {
-        return String(s || '')
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-            .replace(/[\r\n]+/g, ' ');
-    }
-    function buildDrawio() {
-        // Compute a self-contained layered layout straight from the graph data.
-        // (Reading positions back from the live cytoscape instance proved
-        // unreliable — nodes could collapse to one point and stack — so the
-        // export owns its own deterministic layout.)
-        const cells = [
-            '<mxCell id="0"/>',
-            '<mxCell id="1" parent="0"/>',
-        ];
-
-        const g = currentGraphData;
-        if (g && g.nodes && g.nodes.length) {
-            const nodes = g.nodes.map(n => n.data);
-            const edges = (g.edges || []).map(e => e.data);
-            const entrySet = new Set(g.entry_ids || []);
-            const byId = {};
-            nodes.forEach(n => { byId[n.id] = n; });
-
-            // Build adjacency + in-degree over real edges only.
-            const children = {}, indeg = {};
-            nodes.forEach(n => { children[n.id] = []; indeg[n.id] = 0; });
-            edges.forEach(e => {
-                if (byId[e.source] && byId[e.target] && e.source !== e.target) {
-                    children[e.source].push(e.target);
-                    indeg[e.target] = (indeg[e.target] || 0) + 1;
-                }
-            });
-
-            // Assign a layer (row) to each node via longest-path relaxation
-            // from the entry points / roots. Cycle-safe via an iteration cap.
-            const layer = {};
-            nodes.forEach(n => { layer[n.id] = 0; });
-            const roots = nodes
-                .filter(n => entrySet.has(n.id) || indeg[n.id] === 0)
-                .map(n => n.id);
-            let frontier = roots.length ? roots.slice() : [nodes[0].id];
-            const maxIter = nodes.length * (edges.length + 1) + 10;
-            let iter = 0;
-            while (frontier.length && iter++ < maxIter) {
-                const id = frontier.shift();
-                children[id].forEach(c => {
-                    if (layer[c] < layer[id] + 1) {
-                        layer[c] = layer[id] + 1;
-                        frontier.push(c);
-                    }
-                });
-            }
-
-            // Build the HTML label + measured size for each node.
-            const dim = {};
-            nodes.forEach(n => {
-                const isEntry = entrySet.has(n.id);
-                const labelLines = (n.label || '').split('\n')
-                    .map(s => s.trim()).filter(Boolean);
-                const nameLine = labelLines[0] || '';
-                const bodyLines = labelLines.slice(1)
-                    .filter(l => l !== '─────────────');
-                const typeLbl = TYPE_LABEL[n.type] || '';
-                let html = '<b>' + (isEntry ? '★ ' : '') + nameLine + '</b>';
-                bodyLines.forEach(l => { html += '<br>' + l; });
-                if (n.sublabel) html += '<br>' + n.sublabel;
-                if (typeLbl) html += '<br><i>(' + typeLbl + ')</i>';
-                const lineCount = 1 + bodyLines.length + (n.sublabel ? 1 : 0) + (typeLbl ? 1 : 0);
-                const longest = Math.max(nameLine.length,
-                    ...bodyLines.map(l => l.length), (n.sublabel || '').length, 10);
-                dim[n.id] = {
-                    html,
-                    w: Math.min(360, Math.max(200, longest * 7 + 24)),
-                    h: Math.max(56, 24 + lineCount * 16),
-                };
-            });
-
-            // Group nodes by layer, then lay each layer out left-to-right.
-            const layers = {};
-            nodes.forEach(n => {
-                (layers[layer[n.id]] = layers[layer[n.id]] || []).push(n);
-            });
-            const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
-            const H_GAP = 50, V_GAP = 70, MARGIN = 40;
-            const pos = {};
-            let y = MARGIN;
-            layerKeys.forEach(lk => {
-                const row = layers[lk];
-                const rowH = Math.max.apply(null, row.map(n => dim[n.id].h));
-                let x = MARGIN;
-                row.forEach(n => {
-                    pos[n.id] = { x, y };
-                    x += dim[n.id].w + H_GAP;
-                });
-                y += rowH + V_GAP;
-            });
-
-            // Emit vertices.
-            nodes.forEach(n => {
-                const c = COLOURS[n.type] || COLOURS.unknown;
-                const isEntry = entrySet.has(n.id);
-                const stroke = isEntry ? '#facc15' : c.border;
-                const sw = isEntry ? 4 : 2;
-                const style = `rounded=1;whiteSpace=wrap;html=1;fillColor=${c.bg};` +
-                              `strokeColor=${stroke};strokeWidth=${sw};fontColor=#ffffff;` +
-                              `fontSize=12;verticalAlign=middle;spacing=6;`;
-                const p = pos[n.id], d = dim[n.id];
-                cells.push(
-                    `<mxCell id="${xmlEsc(n.id)}" value="${xmlEsc(d.html)}" ` +
-                    `style="${style}" vertex="1" parent="1">` +
-                    `<mxGeometry x="${p.x}" y="${p.y}" width="${d.w}" height="${d.h}" as="geometry"/></mxCell>`
-                );
-            });
-
-            // Emit edges.
-            let ei = 0;
-            edges.forEach(e => {
-                if (!byId[e.source] || !byId[e.target]) return;
-                const style = 'edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;' +
-                              'endArrow=block;strokeColor=#64748b;fontSize=10;fontColor=#334155;';
-                cells.push(
-                    `<mxCell id="edge_${ei++}" value="${xmlEsc(e.label || '')}" style="${style}" ` +
-                    `edge="1" parent="1" source="${xmlEsc(e.source)}" target="${xmlEsc(e.target)}">` +
-                    `<mxGeometry relative="1" as="geometry"/></mxCell>`
-                );
-            });
-        }
-
-        const model = `<mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" ` +
-                      `guides="1" tooltips="1" connect="1" arrows="1" fold="1" ` +
-                      `page="1" pageScale="1" pageWidth="1600" pageHeight="1200" ` +
-                      `math="0" shadow="0"><root>${cells.join('')}</root></mxGraphModel>`;
-        return `<mxfile host="app.diagrams.net" type="device">` +
-               `<diagram id="callflow" name="Call Flow">${model}</diagram></mxfile>`;
-    }
-    function downloadBlob(text, filename, mime) {
-        const blob = new Blob([text], { type: mime || 'application/octet-stream' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(a.href);
-    }
-    drawioBtn.addEventListener('click', () => {
-        if (!currentGraphData) return;
-        downloadBlob(buildDrawio(), 'call-flow-' + flowSlug() + '.drawio', 'application/xml');
-        const orig = drawioBtn.textContent;
-        drawioBtn.textContent = '✓ Downloaded .drawio';
-        setTimeout(() => { drawioBtn.textContent = orig; }, 2200);
-    });
-
     // ── Visio (.vsdx) export — high-fidelity Lucidchart import ────────
     // Serialise a cytoscape instance's on-screen layout so the Visio export
     // reproduces it 1:1 (same dagre positions, sizes, labels, descriptors).
@@ -1226,13 +996,13 @@
         const ticked = separateCtxs.filter(c => c.checkbox.checked);
         if (!ticked.length) { const o = btn.textContent; btn.textContent = 'Tick at least one flow'; setTimeout(() => { btn.textContent = o; }, 1800); return; }
         const orig = btn.textContent;
-        btn.disabled = true; btn.textContent = '… building ' + ticked.length + ' files';
+        btn.disabled = true; btn.textContent = '… building ' + ticked.length + ' tabs';
         try {
-            const res = await fetch('/api/rc/visualiser/export-visio-zip', {
+            const res = await fetch('/api/rc/visualiser/export-visio-multi', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    flows: ticked.map(c => ({ filename: flowFileSlug(c.title), graph_data: c.graphData, render: serializeCy(c.cy) })),
+                    flows: ticked.map(c => ({ name: c.title, graph_data: c.graphData, render: serializeCy(c.cy) })),
                     include_descriptors: toggleDesc.checked,
                 }),
             });
@@ -1244,10 +1014,10 @@
             const blob = await res.blob();
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = 'call-flows-visio.zip';
+            a.download = 'call-flows.vsdx';
             a.click();
             URL.revokeObjectURL(a.href);
-            btn.textContent = '✓ Downloaded ' + ticked.length + ' Visio files';
+            btn.textContent = '✓ Downloaded ' + ticked.length + ' tabs (1 file)';
         } catch (err) {
             btn.textContent = '✕ ' + err.message;
         } finally {
