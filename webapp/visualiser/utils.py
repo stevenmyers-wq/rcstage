@@ -533,12 +533,17 @@ class CallFlowTracer:
         if ext_id.startswith("vm_"):
             nid = self._next_id()
             owner = ext_id.replace("vm_", "")
+            owner_info = self.get_ext_info(owner) if owner else None
+            owner_name = self.clean(owner_info.get("name", "")) if owner_info else ""
             vm_overview = ["Overview", "Type: Voicemail"]
+            if owner_name:
+                vm_overview.append(f"Mailbox: {owner_name}")
             notif = self._vm_notification(owner)
             if notif:
                 vm_overview.append(f"VM notification: {notif}")
             self.add_node(nid, "Voicemail", "voicemail",
-                          tooltip="\n".join(vm_overview) if notif else "")
+                          sublabel=owner_name,
+                          tooltip="\n".join(vm_overview) if len(vm_overview) > 2 else "")
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             return nid
@@ -882,11 +887,27 @@ class CallFlowTracer:
             else:
                 lbl = self.clean(r.get("name", r_type or "Rule"))[:28]
 
-            target = self.extract_target(r.get("transfer"))
-            if not target:
-                target = self.extract_target(r.get("unconditionalForwarding"))
-            if not target and self._is_voicemail_action(r.get("callHandlingAction", "")):
-                target = f"vm_{ext_id}"
+            action = r.get("callHandlingAction", "")
+            vm_obj = r.get("voicemail") or {}
+
+            # A "send to voicemail" rule → draw the recipient's Voicemail box
+            # (the recipient can be another extension, e.g. the call queue's own
+            # voicemail) instead of resolving a self-transfer into a loop back.
+            if self._is_voicemail_action(action) or (vm_obj.get("enabled") and not action):
+                rec = vm_obj.get("recipient") or {}
+                recip = None
+                if rec.get("id"):
+                    recip = str(rec["id"])
+                elif rec.get("extensionNumber"):
+                    recip = self.resolve_ext_number(rec["extensionNumber"])
+                target = f"vm_{recip or ext_id}"
+            else:
+                target = self.extract_target(r.get("transfer"))
+                if not target:
+                    target = self.extract_target(r.get("unconditionalForwarding"))
+                # A rule that "transfers" to its own extension really means VM.
+                if target == str(ext_id):
+                    target = f"vm_{ext_id}"
 
             if not is_active and active_only:
                 if target:
