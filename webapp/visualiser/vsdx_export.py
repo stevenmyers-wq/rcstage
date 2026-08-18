@@ -128,16 +128,14 @@ def _render_lines(label):
     return out
 
 
-def build_vsdx(graph_data, include_descriptors=False, render=None):
-    """Return the bytes of a .vsdx package.
+def _build_page_contents(graph_data, include_descriptors=False, render=None):
+    """Build one Visio page's contents from a flow. Returns
+    (page_contents_xml, page_width_in, page_height_in).
 
     If `render` is supplied (the exact node positions/sizes/labels from the
-    on-screen cytoscape diagram), the export reproduces that layout 1:1 — the
+    on-screen cytoscape diagram), the page reproduces that layout 1:1 — the
     faithful way to match the visualiser. Otherwise it falls back to an
-    internal layered layout from graph_data.
-
-    include_descriptors mirrors the "Show Descriptors" toggle for the
-    fallback path (the render path already includes whatever is on screen)."""
+    internal layered layout from graph_data."""
     entry = set()
     desc_ids = set()
 
@@ -415,21 +413,61 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
         + '</PageContents>'
     )
 
-    pages = (
+    return page_contents, page_w, page_h
+
+
+def _assemble_package(pages):
+    """Assemble a .vsdx OPC package from a list of pages. Each page is a dict
+    {'name', 'contents', 'w', 'h'}. Multiple pages become multiple tabs that
+    Lucid imports as separate pages in one document."""
+    if not pages:
+        pages = [{'name': 'Call Flow', 'contents':
+                  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                  '<PageContents xmlns="http://schemas.microsoft.com/office/visio/2012/main" '
+                  'xml:space="preserve"><Shapes/></PageContents>', 'w': 11.0, 'h': 8.5}]
+
+    page_els = []
+    page_rels = []
+    page_overrides = []
+    parts = {}
+    seen = set()
+    for i, pg in enumerate(pages, start=1):
+        name = _esc(pg.get('name') or f'Flow {i}')
+        # unique NameU per tab
+        base = name
+        n = 1
+        while name in seen:
+            n += 1
+            name = f'{base} ({n})'
+        seen.add(name)
+        w, h = pg['w'], pg['h']
+        page_els.append(
+            f'<Page ID="{i - 1}" NameU="{name}" Name="{name}" ViewScale="-1" '
+            f'ViewCenterX="{w / 2:.4f}" ViewCenterY="{h / 2:.4f}">'
+            '<PageSheet LineStyle="0" FillStyle="0" TextStyle="0">'
+            f'<Cell N="PageWidth" V="{w:.4f}"/><Cell N="PageHeight" V="{h:.4f}"/>'
+            '<Cell N="ShdwOffsetX" V="0.125"/><Cell N="ShdwOffsetY" V="-0.125"/>'
+            '<Cell N="PageScale" V="1"/><Cell N="DrawingScale" V="1"/>'
+            '<Cell N="DrawingSizeType" V="3"/><Cell N="DrawingScaleType" V="0"/>'
+            f'<Cell N="InhibitSnap" V="0"/></PageSheet><Rel r:id="rId{i}"/></Page>'
+        )
+        page_rels.append(
+            f'<Relationship Id="rId{i}" '
+            'Type="http://schemas.microsoft.com/visio/2010/relationships/page" '
+            f'Target="page{i}.xml"/>'
+        )
+        page_overrides.append(
+            f'<Override PartName="/visio/pages/page{i}.xml" '
+            'ContentType="application/vnd.ms-visio.page+xml"/>'
+        )
+        parts[f'visio/pages/page{i}.xml'] = pg['contents']
+
+    pages_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<Pages xmlns="http://schemas.microsoft.com/office/visio/2012/main" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
-        'xml:space="preserve">'
-        f'<Page ID="0" NameU="Call Flow" Name="Call Flow" ViewScale="-1" '
-        f'ViewCenterX="{page_w / 2:.4f}" ViewCenterY="{page_h / 2:.4f}">'
-        '<PageSheet LineStyle="0" FillStyle="0" TextStyle="0">'
-        f'<Cell N="PageWidth" V="{page_w:.4f}"/><Cell N="PageHeight" V="{page_h:.4f}"/>'
-        '<Cell N="ShdwOffsetX" V="0.125"/><Cell N="ShdwOffsetY" V="-0.125"/>'
-        '<Cell N="PageScale" V="1"/><Cell N="DrawingScale" V="1"/>'
-        '<Cell N="DrawingSizeType" V="3"/><Cell N="DrawingScaleType" V="0"/>'
-        '<Cell N="InhibitSnap" V="0"/></PageSheet><Rel r:id="rId1"/></Page></Pages>'
+        'xml:space="preserve">' + ''.join(page_els) + '</Pages>'
     )
-
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main" '
@@ -440,7 +478,6 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
         '<GlueSettings>9</GlueSettings><SnapSettings>65847</SnapSettings>'
         '</DocumentSettings><Colors/><FaceNames/><StyleSheets/></VisioDocument>'
     )
-
     content_types = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -448,7 +485,7 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
         '<Default Extension="xml" ContentType="application/xml"/>'
         '<Override PartName="/visio/document.xml" ContentType="application/vnd.ms-visio.drawing.main+xml"/>'
         '<Override PartName="/visio/pages/pages.xml" ContentType="application/vnd.ms-visio.pages+xml"/>'
-        '<Override PartName="/visio/pages/page1.xml" ContentType="application/vnd.ms-visio.page+xml"/>'
+        + ''.join(page_overrides) +
         '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
         '</Types>'
     )
@@ -468,8 +505,7 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
     pages_rels = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/page" Target="page1.xml"/>'
-        '</Relationships>'
+        + ''.join(page_rels) + '</Relationships>'
     )
     core = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -478,19 +514,39 @@ def build_vsdx(graph_data, include_descriptors=False, render=None):
         '<dc:creator>Call Flow Visualiser</dc:creator></cp:coreProperties>'
     )
 
-    parts = {
+    parts.update({
         '[Content_Types].xml': content_types,
         '_rels/.rels': root_rels,
         'docProps/core.xml': core,
         'visio/document.xml': document,
         'visio/_rels/document.xml.rels': doc_rels,
-        'visio/pages/pages.xml': pages,
+        'visio/pages/pages.xml': pages_xml,
         'visio/pages/_rels/pages.xml.rels': pages_rels,
-        'visio/pages/page1.xml': page_contents,
-    }
+    })
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
         for name, data in parts.items():
             z.writestr(name, data)
     return buf.getvalue()
+
+
+def build_vsdx(graph_data, include_descriptors=False, render=None):
+    """Single-page .vsdx for one flow."""
+    contents, w, h = _build_page_contents(graph_data, include_descriptors, render)
+    return _assemble_package([{'name': 'Call Flow', 'contents': contents, 'w': w, 'h': h}])
+
+
+def build_vsdx_multi(flows):
+    """Multi-page .vsdx — one tab per flow. `flows` is a list of dicts with
+    {'name', 'graph_data', 'render', 'include_descriptors'}."""
+    pages = []
+    for i, flow in enumerate(flows, start=1):
+        contents, w, h = _build_page_contents(
+            flow.get('graph_data') or {},
+            bool(flow.get('include_descriptors', False)),
+            flow.get('render'),
+        )
+        pages.append({'name': flow.get('name') or f'Flow {i}',
+                      'contents': contents, 'w': w, 'h': h})
+    return _assemble_package(pages)

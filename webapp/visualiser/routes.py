@@ -10,7 +10,7 @@ import zipfile
 from webapp.visualiser.utils import (
     generate_graph_flow, generate_graph_flow_multi, generate_graph_flow_separate,
 )
-from webapp.visualiser.vsdx_export import build_vsdx
+from webapp.visualiser.vsdx_export import build_vsdx, build_vsdx_multi
 
 viz_bp = Blueprint('visualiser', __name__)
 
@@ -303,10 +303,10 @@ def _safe_name(name, fallback='call-flow'):
     return safe or fallback
 
 
-@viz_bp.route('/api/rc/visualiser/export-visio-zip', methods=['POST'])
-def export_visio_zip():
-    """Build one .vsdx per supplied flow and return them as separate files
-    inside a single .zip (for the 'download ticked flows' action)."""
+@viz_bp.route('/api/rc/visualiser/export-visio-multi', methods=['POST'])
+def export_visio_multi():
+    """Build a single multi-page .vsdx — one tab per supplied flow — so it
+    imports into Lucid as one document with multiple pages."""
     if not is_authenticated() or not get_rc_access_token():
         return jsonify({'status': 'error', 'message': 'Auth failed'}), 401
 
@@ -317,32 +317,29 @@ def export_visio_zip():
         return jsonify({'status': 'error', 'message': 'No flows supplied.'}), 400
 
     try:
-        buf = io.BytesIO()
-        used = set()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
-            for i, flow in enumerate(flows):
-                gd = flow.get('graph_data') or {}
-                if not gd.get('nodes'):
-                    continue
-                base = _safe_name(flow.get('filename') or f'call-flow-{i + 1}')
-                name = base
-                n = 1
-                while name in used:
-                    n += 1
-                    name = f'{base}-{n}'
-                used.add(name)
-                z.writestr(f'{name}.vsdx', build_vsdx(
-                    gd, include_descriptors=include_desc, render=flow.get('render')))
-        data = buf.getvalue()
+        page_flows = []
+        for i, flow in enumerate(flows, start=1):
+            gd = flow.get('graph_data') or {}
+            if not gd.get('nodes'):
+                continue
+            page_flows.append({
+                'name': (flow.get('name') or flow.get('filename') or f'Flow {i}')[:60],
+                'graph_data': gd,
+                'render': flow.get('render'),
+                'include_descriptors': include_desc,
+            })
+        if not page_flows:
+            return jsonify({'status': 'error', 'message': 'No flows with data.'}), 400
+        data = build_vsdx_multi(page_flows)
     except Exception as e:
-        print(f"[VISIO ZIP EXPORT] {e}", file=sys.stderr)
+        print(f"[VISIO MULTI EXPORT] {e}", file=sys.stderr)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
     return Response(
         data,
-        mimetype='application/zip',
+        mimetype='application/vnd.ms-visio.drawing',
         headers={
-            'Content-Disposition': 'attachment; filename="call-flows-visio.zip"',
+            'Content-Disposition': 'attachment; filename="call-flows.vsdx"',
             'Content-Length': str(len(data)),
         },
     )
