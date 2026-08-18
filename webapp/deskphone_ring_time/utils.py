@@ -41,12 +41,18 @@ DEVICE_TYPE_LABELS = {
 SECONDS_PER_RING = 5
 ACCEPTED_RING_SECONDS = list(range(5, 61, 5))  # 5,10,15,...,60
 
-# The default call-handling state. On both the V2 comm-handling and the V1
-# answering-rule endpoints the default (business-hours / 24-7) rule shares this
-# well-known id.
+# The default call-handling state on the LEGACY V1 answering-rule endpoint uses
+# this well-known id. NOTE: the modern V2 comm-handling endpoint does NOT — its
+# state rules are keyed by ids like 'work-hours' / 'business-hours' (varies per
+# account), so the V2 path must LIST the rules and pick the default at runtime
+# rather than GET a fixed id (see _v2_pick_default_rule).
 DEFAULT_STATE_RULE_ID = 'business-hours-rule'
 
 V2_STATE_RULE_BASE = "/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
+
+# V2 state-rule ids that are availability TOGGLES, not the scheduled ring state
+# a deskphone ring time belongs to. Excluded when picking the default rule.
+V2_SYSTEM_RULE_IDS = {'forward-all-calls', 'dnd', 'agent'}
 
 # Columns for the audit export AND the accepted upload layout — a row per
 # deskphone / generic-SIP device. Editing the sheet in place and re-uploading is
@@ -341,20 +347,77 @@ def ring_devices_for_ext(devices):
 
 def _extract_v2_device_durations(rule):
     """Maps device id -> ring duration (seconds) from a V2 state rule's
-    dispatching. Only DeviceRingTarget entries inside a RingGroupAction carry a
-    device-level ring time; the group's `duration` is that ring time."""
+    dispatching. Only DeviceRingTarget entries inside an enabled RingGroupAction
+    carry a device-level ring time; the group's `duration` is that ring time.
+    Disabled actions/targets are skipped (a disabled group's device doesn't ring,
+    so its stale duration must not be reported as the current ring time)."""
     out = {}
     dispatching = rule.get('dispatching') or {}
     for action in dispatching.get('actions', []):
         if action.get('type') != 'RingGroupAction':
             continue
+        if action.get('enabled') is False:
+            continue
         duration = action.get('duration')
         for t in action.get('targets', []):
+            if t.get('enabled') is False:
+                continue
             if t.get('type') == 'DeviceRingTarget':
                 did = str((t.get('device') or {}).get('id') or '')
                 if did:
                     out[did] = duration
     return out
+
+
+def _v2_rule_rings_devices(rule):
+    """True when a V2 state rule has at least one enabled RingGroupAction that
+    rings a specific device (as opposed to only mobile/desktop or terminating)."""
+    for action in (rule.get('dispatching') or {}).get('actions', []):
+        if action.get('type') != 'RingGroupAction' or action.get('enabled') is False:
+            continue
+        for t in action.get('targets', []):
+            if t.get('type') == 'DeviceRingTarget' and t.get('enabled') is not False:
+                return True
+    return False
+
+
+def _v2_rule_enabled(rule):
+    """A V2 state rule's on/off, tolerating the flag living on the rule or its
+    nested `state` object."""
+    state = rule.get('state') or {}
+    return state.get('enabled', rule.get('enabled', True))
+
+
+def _v2_pick_default_rule(records):
+    """Chooses the default 'business / work hours' ring rule from the V2
+    state-rule list: an enabled, non-system rule that actually rings a device.
+    Prefers a rule whose name/id reads like business/work hours over an
+    after-hours / holiday one; returns the raw rule dict, or None."""
+    candidates = []
+    for r in records:
+        if str(r.get('id') or '') in V2_SYSTEM_RULE_IDS:
+            continue
+        if not _v2_rule_enabled(r):
+            continue
+        candidates.append(r)
+
+    if not candidates:
+        return None
+
+    def score(r):
+        label = (str(r.get('displayName') or '') + ' ' +
+                 str((r.get('state') or {}).get('displayName') or '') + ' ' +
+                 str(r.get('id') or '')).lower()
+        name_rank = 1
+        if 'business' in label or 'work' in label:
+            name_rank = 0
+        elif 'after' in label or 'night' in label or 'holiday' in label or 'closed' in label:
+            name_rank = 2
+        # Prefer rules that actually ring a device (rank 0) over those that don't.
+        return (0 if _v2_rule_rings_devices(r) else 1, name_rank)
+
+    candidates.sort(key=score)
+    return candidates[0]
 
 
 def _extract_v1_device_durations(rule):
@@ -380,11 +443,32 @@ def get_default_ring_config(ext_id, auth_data=None, task_id=None):
       - schema is 'V2', 'V1' or None,
       - device_durations maps device id (str) -> ring seconds (int or None),
       - rule is the raw rule body (used by the apply path to mutate + PUT).
+
+    V2 has no fixed 'business-hours-rule' id, so we LIST the state rules and pick
+    the default ring rule at runtime. New-call-handling accounts also 403 the V1
+    endpoints, so once V2 returns a usable rule we never fall through to V1.
     """
-    v2_url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{DEFAULT_STATE_RULE_ID}"
-    v2_rule = _json(v2_url, auth_data=auth_data, task_id=task_id)
-    if v2_rule is not None:
-        return 'V2', _extract_v2_device_durations(v2_rule), v2_rule
+    list_data = _json(V2_STATE_RULE_BASE.format(ext_id=ext_id),
+                      auth_data=auth_data, task_id=task_id)
+    if list_data is not None:
+        records = list_data.get('records', []) or []
+        rule = _v2_pick_default_rule(records)
+        if rule is not None:
+            # The list already inlines `dispatching.actions` on this endpoint, but
+            # re-GET by the rule's real id if a summary ever omits them, so the
+            # apply path always mutates the authoritative body.
+            rid = str(rule.get('id') or '')
+            if rid and not (rule.get('dispatching') or {}).get('actions'):
+                full = _json(V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{rid}",
+                             auth_data=auth_data, task_id=task_id)
+                if full is not None:
+                    rule = full
+            return 'V2', _extract_v2_device_durations(rule), rule
+        # A V2 account that returned rules but no ringing default: nothing to
+        # audit/apply on V2, and V1 is 403 here — report V2 with no durations.
+        if records:
+            return 'V2', {}, None
+        # Empty list: likely not a V2 account after all — try V1 below.
 
     v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{DEFAULT_STATE_RULE_ID}"
     v1_rule = _json(v1_url, params={'view': 'Detailed'}, auth_data=auth_data, task_id=task_id)
@@ -435,7 +519,10 @@ def _apply_v2(ext_id, rule, device_targets, auth_data=None):
 
     body = dict(rule)
     body.pop('uri', None)  # read-only; RC rejects it on PUT
-    url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{DEFAULT_STATE_RULE_ID}"
+    # PUT back to the rule's OWN id (e.g. 'work-hours'); V2 has no fixed
+    # 'business-hours-rule' id, so a hard-coded id would 404.
+    rule_id = str(rule.get('id') or DEFAULT_STATE_RULE_ID)
+    url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{rule_id}"
     resp = _request(url, method='PUT', json_body=body, auth_data=auth_data)
     if resp is not None and getattr(resp, 'ok', False):
         note = " (multiple ring times requested in one ring group — used the largest)" if conflict else ""
