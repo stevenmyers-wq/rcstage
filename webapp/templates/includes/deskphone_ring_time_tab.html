@@ -163,11 +163,16 @@
         btn.innerText = "Generate Report";
     }
 
-    function drtPollAudit(taskId) {
+    const DRT_ACTIVE_KEY = 'drtActiveAuditTask';
+
+    // `resuming` = we reconnected to a task after a page reload (rather than
+    // just starting one). It only changes messaging + the stale guard.
+    function drtPollAudit(taskId, resuming = false) {
+        let staleTicks = 0;  // guards a task that vanished (instance recycled, storage off)
         const interval = setInterval(async () => {
             let data;
             try {
-                const res = await fetch(`/api/deskphone_ring_time/audit/status?task_id=${taskId}`);
+                const res = await fetch(`/api/deskphone_ring_time/audit/status?task_id=${encodeURIComponent(taskId)}`);
                 data = await res.json();
             } catch (e) {
                 return;  // ignore transient network blips; keep polling
@@ -185,10 +190,11 @@
 
             if (data.status === 'completed') {
                 clearInterval(interval);
+                localStorage.removeItem(DRT_ACTIVE_KEY);
                 drtProgressFinish(true, `Done — ${data.rows || 0} row(s)`);
                 drtLog(`Audit complete! ${data.rows || 0} device row(s). Downloading file...`, "success");
                 const a = document.createElement('a');
-                a.href = `/api/deskphone_ring_time/audit/download?task_id=${taskId}`;
+                a.href = `/api/deskphone_ring_time/audit/download?task_id=${encodeURIComponent(taskId)}`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -196,11 +202,37 @@
                 drtLoadRecent();
             } else if (data.status === 'error') {
                 clearInterval(interval);
+                localStorage.removeItem(DRT_ACTIVE_KEY);
                 drtProgressFinish(false, 'Failed');
                 drtLog(`Audit failed: ${data.error || 'unknown error'}`, "error");
                 drtResetAuditBtn();
+            } else if (resuming && data.total === 0) {
+                // Resumed a task the server no longer knows about (container
+                // recycled with no durable record). Give it a few seconds to
+                // surface, then stop pretending it's running.
+                if (++staleTicks >= 15) {
+                    clearInterval(interval);
+                    localStorage.removeItem(DRT_ACTIVE_KEY);
+                    drtProgressFinish(false, 'Not found');
+                    drtLog("Couldn't reconnect to that audit — it may have finished earlier (check Recent audits) or the server restarted. Please run it again if needed.", "error");
+                    drtResetAuditBtn();
+                }
             }
         }, 1000);
+    }
+
+    // On page load, reconnect to an audit that was left running (e.g. the tab
+    // was closed and reopened). The task id is remembered in localStorage.
+    function drtResumeActive() {
+        const taskId = localStorage.getItem(DRT_ACTIVE_KEY);
+        if (!taskId) return;
+        const btn = document.getElementById('drtAuditBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Reconnecting...`;
+        drtAuditLastMsg = "";
+        drtProgressShow('Reconnecting to your audit…');
+        drtLog('Reconnecting to an audit that was still running on the server…');
+        drtPollAudit(taskId, true);
     }
 
     // Recent (durable) audits — lets the operator grab a result after closing
@@ -226,6 +258,7 @@
         }
     }
     drtLoadRecent();
+    drtResumeActive();
 
     async function drtAudit() {
         const btn = document.getElementById('drtAuditBtn');
@@ -240,6 +273,8 @@
             const res = await fetch('/api/deskphone_ring_time/audit', { method: 'POST' });
             const data = await res.json();
             if (data.success && data.task_id) {
+                // Remember it so a tab reload/return reconnects to this run.
+                localStorage.setItem(DRT_ACTIVE_KEY, data.task_id);
                 drtPollAudit(data.task_id);
             } else {
                 throw new Error(data.error || 'Server failed to start the audit.');
