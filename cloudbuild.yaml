@@ -27,6 +27,12 @@ steps:
     - '3600'
     - '--memory'
     - '2Gi'
+    # Durable audit storage (Deskphone Ring Time "Recent audits" + cross-instance
+    # download). Uses --update-env-vars so it MERGES with the service's existing
+    # env vars (RC/SM secrets etc.) rather than replacing them the way
+    # --set-env-vars would. The GCS bucket + Firestore were provisioned manually.
+    - '--update-env-vars'
+    - 'AUDIT_BUCKET=rcau-api-tools-audits'
 
 images:
 - 'us-central1-docker.pkg.dev/sr-1906369/rcau-repo/rcau-uid-auth:$COMMIT_SHA'
