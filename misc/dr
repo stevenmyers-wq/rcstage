@@ -1,0 +1,406 @@
+{
+  "ext_requested": "933",
+  "storage": {
+    "audit_bucket": "rcau-api-tools-audits",
+    "storage_enabled": true,
+    "firestore_ok": true,
+    "gcs_bucket_reachable": true
+  },
+  "ext_id": 822868124,
+  "devices": [
+    {
+      "id": "1056843124",
+      "type": "HardPhone",
+      "name": "Existing Phone"
+    }
+  ],
+  "v2_state_rules_list": {
+    "records": [
+      {
+        "id": "forward-all-calls",
+        "displayName": "Forward all calls",
+        "dispatching": {
+          "actions": [
+            {
+              "type": "TerminatingAction",
+              "targets": [
+                {
+                  "type": "VoiceMailTerminatingTarget",
+                  "name": "Voicemail",
+                  "prompt": {
+                    "greeting": {
+                      "effectiveGreetingType": "Preset",
+                      "preset": {
+                        "id": "590080"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "PlayAnnouncementTerminatingTarget",
+                  "name": "PlayAnnouncement",
+                  "prompt": {
+                    "greeting": {
+                      "effectiveGreetingType": "Preset",
+                      "preset": {
+                        "id": "66560"
+                      }
+                    }
+                  },
+                  "dispatchingType": "Terminating"
+                }
+              ],
+              "terminatingTargetType": "VoiceMailTerminatingTarget"
+            }
+          ],
+          "type": "Terminate"
+        },
+        "state": {
+          "id": "forward-all-calls",
+          "enabled": false,
+          "displayName": "Forward all calls",
+          "conditions": [
+            {
+              "type": "Schedule",
+              "schedule": {
+                "triggers": [
+                  {
+                    "triggerType": "Daily",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "dnd",
+        "displayName": "Do not disturb",
+        "dispatching": {
+          "actions": [
+            {
+              "type": "TerminatingAction",
+              "targets": [
+                {
+                  "type": "VoiceMailTerminatingTarget",
+                  "name": "Voicemail",
+                  "prompt": {
+                    "greeting": {
+                      "effectiveGreetingType": "Preset",
+                      "preset": {
+                        "id": "590080"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "PlayAnnouncementTerminatingTarget",
+                  "name": "PlayAnnouncement",
+                  "prompt": {
+                    "greeting": {
+                      "effectiveGreetingType": "Preset",
+                      "preset": {
+                        "id": "66560"
+                      }
+                    }
+                  },
+                  "dispatchingType": "Terminating"
+                }
+              ],
+              "terminatingTargetType": "VoiceMailTerminatingTarget"
+            }
+          ],
+          "type": "Terminate"
+        },
+        "state": {
+          "id": "dnd",
+          "enabled": false,
+          "displayName": "Do not disturb",
+          "conditions": [
+            {
+              "type": "Schedule",
+              "schedule": {
+                "triggers": [
+                  {
+                    "triggerType": "Daily",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "work-hours",
+        "displayName": "Work Hours",
+        "dispatching": {
+          "actions": [
+            {
+              "type": "PlayWelcomePromptAction",
+              "greeting": {
+                "effectiveGreetingType": "Preset",
+                "preset": {
+                  "id": "66048"
+                }
+              },
+              "enabled": false
+            },
+            {
+              "type": "PlayConnectingMessageAction",
+              "greeting": {
+                "effectiveGreetingType": "Preset",
+                "preset": {
+                  "id": "68867"
+                }
+              },
+              "enabled": true
+            },
+            {
+              "type": "PlayConnectingPromptAction",
+              "greeting": {
+                "effectiveGreetingType": "Preset",
+                "preset": {
+                  "id": "66310"
+                }
+              },
+              "enabled": true
+            },
+            {
+              "type": "ScreeningAction",
+              "screening": "NoCallerId",
+              "screeningResult": "AskToAnswer",
+              "enabled": false
+            },
+            {
+              "type": "RingGroupAction",
+              "enabled": true,
+              "targets": [
+                {
+                  "type": "DeviceRingTarget",
+                  "name": "Existing Phone",
+                  "device": {
+                    "id": "1056843124",
+                    "name": "Existing Phone",
+                    "phoneNumber": "+61730089906"
+                  }
+                }
+              ],
+              "duration": 20
+            },
+            {
+              "type": "RingGroupAction",
+              "enabled": true,
+              "targets": [
+                {
+                  "type": "AllMobileRingTarget",
+                  "name": "My mobile apps"
+                }
+              ],
+              "duration": 30
+            },
+            {
+              "type": "RingGroupAction",
+              "enabled": true,
+              "targets": [
+                {
+                  "type": "AllDesktopRingTarget",
+                  "name": "My desktop"
+                }
+              ],
+              "duration": 30
+            },
+            {
+              "type": "TerminatingAction",
+              "targets": [
+                {
+                  "type": "VoiceMailTerminatingTarget",
+                  "name": "Voicemail",
+                  "prompt": {
+                    "greeting": {
+                      "effectiveGreetingType": "Preset",
+                      "preset": {
+                        "id": "590080"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "PlayAnnouncementTerminatingTarget",
+                  "name": "PlayAnnouncement",
+                  "prompt": {
+                    "greeting": {
+                      "effectiveGreetingType": "Preset",
+                      "preset": {
+                        "id": "66816"
+                      }
+                    }
+                  },
+                  "dispatchingType": "Ringing"
+                }
+              ],
+              "ringingTargetType": "VoiceMailTerminatingTarget"
+            }
+          ],
+          "type": "RingAtOnce"
+        },
+        "state": {
+          "id": "work-hours",
+          "enabled": true,
+          "displayName": "Work Hours",
+          "conditions": [
+            {
+              "type": "Schedule",
+              "schedule": {
+                "triggers": [
+                  {
+                    "triggerType": "Daily",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "paging": {
+      "perPage": 100,
+      "page": 1,
+      "pageStart": 0,
+      "pageEnd": 2,
+      "totalPages": 1,
+      "totalElements": 3
+    }
+  },
+  "v2_state_rules_detail": [
+    {
+      "id": "forward-all-calls",
+      "displayName": "Forward all calls",
+      "state": {
+        "id": "forward-all-calls",
+        "enabled": false,
+        "displayName": "Forward all calls",
+        "conditions": [
+          {
+            "type": "Schedule",
+            "schedule": {
+              "triggers": [
+                {
+                  "triggerType": "Daily",
+                  "startTime": "00:00:00",
+                  "endTime": "23:59:59"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "type": null,
+      "enabled": null,
+      "dispatching_type": "Terminate",
+      "ring_group_actions": []
+    },
+    {
+      "id": "dnd",
+      "displayName": "Do not disturb",
+      "state": {
+        "id": "dnd",
+        "enabled": false,
+        "displayName": "Do not disturb",
+        "conditions": [
+          {
+            "type": "Schedule",
+            "schedule": {
+              "triggers": [
+                {
+                  "triggerType": "Daily",
+                  "startTime": "00:00:00",
+                  "endTime": "23:59:59"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "type": null,
+      "enabled": null,
+      "dispatching_type": "Terminate",
+      "ring_group_actions": []
+    },
+    {
+      "id": "work-hours",
+      "displayName": "Work Hours",
+      "state": {
+        "id": "work-hours",
+        "enabled": true,
+        "displayName": "Work Hours",
+        "conditions": [
+          {
+            "type": "Schedule",
+            "schedule": {
+              "triggers": [
+                {
+                  "triggerType": "Daily",
+                  "startTime": "00:00:00",
+                  "endTime": "23:59:59"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "type": null,
+      "enabled": null,
+      "dispatching_type": "RingAtOnce",
+      "ring_group_actions": [
+        {
+          "enabled": true,
+          "duration": 20,
+          "targets": [
+            {
+              "type": "DeviceRingTarget",
+              "device_id": "1056843124"
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "duration": 30,
+          "targets": [
+            {
+              "type": "AllMobileRingTarget",
+              "device_id": null
+            }
+          ]
+        },
+        {
+          "enabled": true,
+          "duration": 30,
+          "targets": [
+            {
+              "type": "AllDesktopRingTarget",
+              "device_id": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "v1_answering_rules_list": {
+    "status": 403,
+    "body": "{\n  \"errorCode\" : \"CMN-468\",\n  \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-468\",\n    \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n    \"featureName\" : \"NewCallHandlingAndForwarding\"\n  } ],\n  \"featureName\" : \"NewCallHandlingAndForwarding\"\n}"
+  },
+  "v1_business_hours_rule": {
+    "status": 403,
+    "body": "{\n  \"errorCode\" : \"CMN-468\",\n  \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-468\",\n    \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n    \"featureName\" : \"NewCallHandlingAndForwarding\"\n  } ],\n  \"featureName\" : \"NewCallHandlingAndForwarding\"\n}"
+  },
+  "parsed_by_current_code": {
+    "schema": null,
+    "device_durations_secs": {}
+  }
+}
