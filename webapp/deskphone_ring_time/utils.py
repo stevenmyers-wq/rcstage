@@ -1,3 +1,4 @@
+import time
 import pandas as pd
 from webapp.rc_api import rc_api_call
 
@@ -37,6 +38,65 @@ ACCEPTED_RING_SECONDS = list(range(5, 61, 5))  # 5,10,15,...,60
 DEFAULT_STATE_RULE_ID = 'business-hours-rule'
 
 V2_STATE_RULE_BASE = "/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
+
+
+# --- RESILIENT API WRAPPER -------------------------------------------------
+#
+# rc_api_call already self-heals an expired token (it refreshes on a 401 and
+# retries the call once), but it does NOT retry rate limits (429) or transient
+# gateway errors (5xx) — it just returns None. On a large account a 429 that
+# lands mid-pagination would otherwise be read as "no more records" and silently
+# truncate the crawl, which is exactly what makes a big audit look like it
+# "stopped in the middle". This wrapper honours Retry-After on a 429, backs off
+# on a 5xx, and returns the response object so callers can distinguish a real
+# failure from an empty-but-successful page.
+
+_MAX_ATTEMPTS = 6
+_RETRY_AFTER_FALLBACK = 5
+_RETRY_AFTER_CAP = 60
+
+
+def safe_request(endpoint, method='GET', params=None, json_body=None,
+                 max_attempts=_MAX_ATTEMPTS):
+    """Calls rc_api_call with 429 (Retry-After) and 5xx backoff. Returns the
+    response object (real or MockResponse); never raises for HTTP status."""
+    resp = None
+    for attempt in range(max_attempts):
+        resp = rc_api_call(endpoint, params=params, method=method,
+                           json=json_body, return_response=True)
+        status = getattr(resp, 'status_code', None)
+
+        # Rate limited: wait the server-advised window, then retry.
+        if status == 429:
+            retry_after = _RETRY_AFTER_FALLBACK
+            headers = getattr(resp, 'headers', None)
+            if headers is not None:
+                try:
+                    retry_after = int(headers.get('Retry-After', _RETRY_AFTER_FALLBACK))
+                except (TypeError, ValueError):
+                    retry_after = _RETRY_AFTER_FALLBACK
+            time.sleep(min(retry_after + 1, _RETRY_AFTER_CAP))
+            continue
+
+        # Transient server / gateway error: exponential-ish backoff, then retry.
+        if status is not None and status >= 500:
+            time.sleep(min(2 * (attempt + 1), 30))
+            continue
+
+        # Success or a non-retryable 4xx (e.g. 404 → fall through to caller).
+        break
+    return resp
+
+
+def _safe_json(endpoint, params=None):
+    """GET helper: returns parsed JSON on success, else None."""
+    resp = safe_request(endpoint, params=params)
+    if resp is not None and getattr(resp, 'ok', False):
+        try:
+            return resp.json()
+        except Exception:
+            return {}
+    return None
 
 
 # --- VALUE HELPERS ---------------------------------------------------------
@@ -88,52 +148,55 @@ def ringcount_to_seconds(ring_count):
 
 # --- ACCOUNT FETCH ---------------------------------------------------------
 
-def fetch_all_users():
-    """Fetches every active/pending User extension across all pages."""
-    users = []
+def _fetch_paginated(endpoint, extra_params, what):
+    """Walks every page of a list endpoint, retrying rate limits / 5xx per page.
+
+    Raises on a genuine page failure rather than returning a partial list — a
+    silent truncation here is what made large audits appear to stop early."""
+    records = []
     page = 1
     while True:
-        resp = rc_api_call('/restapi/v1.0/account/~/extension',
-                           params={'type': 'User', 'perPage': 1000, 'page': page})
-        if not resp or 'records' not in resp:
-            break
-        for u in resp['records']:
-            if u.get('status') in ('Enabled', 'NotActivated'):
-                users.append(u)
-        if not resp.get('navigation', {}).get('nextPage'):
+        params = dict(extra_params or {})
+        params.update({'perPage': 1000, 'page': page})
+        resp = safe_request(endpoint, params=params)
+        if resp is None or not getattr(resp, 'ok', False):
+            status = getattr(resp, 'status_code', '?')
+            text = ((getattr(resp, 'text', '') or '').strip())[:200]
+            raise Exception(f"{what} fetch failed at page {page} [{status}] {text or '(no body)'}")
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        records.extend(data.get('records', []) or [])
+        if not (data.get('navigation') or {}).get('nextPage'):
             break
         page += 1
-    return users
+    return records
+
+
+def fetch_all_users():
+    """Fetches every active/pending User extension across all pages."""
+    records = _fetch_paginated('/restapi/v1.0/account/~/extension',
+                               {'type': 'User'}, 'User list')
+    return [u for u in records if u.get('status') in ('Enabled', 'NotActivated')]
 
 
 def fetch_all_devices():
     """Fetches every device on the account (all pages), grouped by owning
     extension id, so the audit needs one bulk call instead of one per user."""
     by_ext = {}
-    page = 1
-    while True:
-        resp = rc_api_call('/restapi/v1.0/account/~/device',
-                           params={'perPage': 1000, 'page': page})
-        if not resp or 'records' not in resp:
-            break
-        for d in resp['records']:
-            ext_id = str((d.get('extension') or {}).get('id') or '')
-            if ext_id:
-                by_ext.setdefault(ext_id, []).append(d)
-        if not resp.get('navigation', {}).get('nextPage'):
-            break
-        page += 1
+    for d in _fetch_paginated('/restapi/v1.0/account/~/device', {}, 'Device list'):
+        ext_id = str((d.get('extension') or {}).get('id') or '')
+        if ext_id:
+            by_ext.setdefault(ext_id, []).append(d)
     return by_ext
 
 
 def fetch_extension_devices(ext_id):
     """Fetches a single extension's devices (used on the apply path to validate
     device ids and to resolve a blank Device ID to all deskphone/SIP devices)."""
-    try:
-        resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/device')
-        return resp.get('records', []) if resp else []
-    except Exception:
-        return []
+    data = _safe_json(f'/restapi/v1.0/account/~/extension/{ext_id}/device')
+    return (data or {}).get('records', []) if data else []
 
 
 def get_extension_id(extension_number):
@@ -141,10 +204,10 @@ def get_extension_id(extension_number):
     ext_num = str(extension_number).strip()
     if ext_num.endswith('.0'):
         ext_num = ext_num[:-2]
-    resp = rc_api_call('/restapi/v1.0/account/~/extension',
-                       params={'extensionNumber': ext_num})
-    if resp and resp.get('records'):
-        return resp['records'][0]['id']
+    data = _safe_json('/restapi/v1.0/account/~/extension',
+                      params={'extensionNumber': ext_num})
+    if data and data.get('records'):
+        return data['records'][0]['id']
     return None
 
 
@@ -207,22 +270,14 @@ def get_default_ring_config(ext_id):
       - rule is the raw rule body (used by the apply path to mutate + PUT).
     """
     v2_url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{DEFAULT_STATE_RULE_ID}"
-    v2 = rc_api_call(v2_url, return_response=True)
-    if v2 is not None and getattr(v2, 'ok', False):
-        try:
-            rule = v2.json()
-            return 'V2', _extract_v2_device_durations(rule), rule
-        except Exception:
-            pass
+    v2_rule = _safe_json(v2_url)
+    if v2_rule is not None:
+        return 'V2', _extract_v2_device_durations(v2_rule), v2_rule
 
     v1_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{DEFAULT_STATE_RULE_ID}"
-    v1 = rc_api_call(v1_url, params={'view': 'Detailed'}, return_response=True)
-    if v1 is not None and getattr(v1, 'ok', False):
-        try:
-            rule = v1.json()
-            return 'V1', _extract_v1_device_durations(rule), rule
-        except Exception:
-            pass
+    v1_rule = _safe_json(v1_url, params={'view': 'Detailed'})
+    if v1_rule is not None:
+        return 'V1', _extract_v1_device_durations(v1_rule), v1_rule
 
     return None, {}, None
 
@@ -269,7 +324,7 @@ def _apply_v2(ext_id, rule, device_targets):
     body = dict(rule)
     body.pop('uri', None)  # read-only; RC rejects it on PUT
     url = V2_STATE_RULE_BASE.format(ext_id=ext_id) + f"/{DEFAULT_STATE_RULE_ID}"
-    resp = rc_api_call(url, method='PUT', json=body, return_response=True)
+    resp = safe_request(url, method='PUT', json_body=body)
     if resp is not None and getattr(resp, 'ok', False):
         note = " (multiple ring times requested in one ring group — used the largest)" if conflict else ""
         return True, f"Updated {changed} ring group(s){note}."
@@ -308,7 +363,7 @@ def _apply_v1(ext_id, rule, device_targets):
     body = dict(rule)
     body.pop('uri', None)
     url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{DEFAULT_STATE_RULE_ID}"
-    resp = rc_api_call(url, method='PUT', json=body, return_response=True)
+    resp = safe_request(url, method='PUT', json_body=body)
     if resp is not None and getattr(resp, 'ok', False):
         return True, f"Updated {changed} forwarding ring group(s) (V1)."
     status = getattr(resp, 'status_code', '?')
