@@ -1,14 +1,36 @@
 import time
 import threading
 import io
+import pandas as pd
 from datetime import datetime
 from flask import Blueprint, jsonify, send_file, request, session, current_app
 from webapp.auth_utils import require_rc_token, get_rc_access_token
 from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
-from .utils import run_audit_background, audit_progress_store, fetch_users_for_ui
+from webapp import task_control
+from .utils import (run_audit_background, audit_progress_store, fetch_users_for_ui,
+                    apply_progress_store, run_apply_background, parse_apply_upload)
 
 device_ringing_audit_bp = Blueprint('device_ringing_audit_bp', __name__, url_prefix='/api/device_ringing_audit')
+
+# Cooperative-stop endpoint for the streaming Apply run (mirrors Deskphone Ring Time).
+device_ringing_audit_bp.add_url_rule('/cancel', 'device_ringing_audit_cancel',
+                                     task_control.cancel_view, methods=['POST'])
+
+
+def _session_auth_data():
+    """Bundles the auth material a background thread needs to keep calling RC
+    after the request (and its session) is gone — including the self-healing
+    token-refresh path used by safe_api_call."""
+    return {
+        'access_token': get_rc_access_token(),
+        'refresh_token': session.get('rc_refresh_token'),
+        'client_id': session.get('rc_current_client_id'),
+        'server_url': current_app.config.get('RC_SERVER_URL', 'https://platform.ringcentral.com'),
+        'sm_employee_token': session.get('sm_employee_token'),
+        'sm_employee_refresh_token': session.get('sm_employee_refresh_token'),
+        'sm_target_id': session.get('sm_target_id'),
+    }
 
 @device_ringing_audit_bp.route('/users', methods=['GET'])
 @require_rc_token
@@ -103,6 +125,87 @@ def audit_download():
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
     return "File not ready or expired", 404
+
+@device_ringing_audit_bp.route('/apply', methods=['POST'])
+@require_rc_token
+@track_usage('Device Ringing Apply')
+def apply_toggles():
+    """Applies an EDITED audit export back to RingCentral.
+
+    Input is an audit export whose 'Ring Enabled' column has been edited — there
+    is no free-hand template, so the sheet must carry the Extension ID / Rule ID /
+    Device ID / Schema keys the audit wrote. A bulk apply runs in a background
+    thread and the browser polls /apply/status, so it can outlast the Cloud Run
+    request timeout the same way the audit does."""
+    if not get_rc_access_token():
+        return jsonify({"error": "Unauthorized"}), 401
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded."}), 400
+
+    file = request.files['file']
+    try:
+        if (file.filename or '').lower().endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file, sheet_name=0)
+        df.columns = df.columns.str.strip()
+    except Exception as e:
+        return jsonify({"error": f"File read error: {str(e)}"}), 400
+
+    required = ['Extension ID', 'Rule ID', 'Device ID', 'Ring Enabled']
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        found = ', '.join(str(c) for c in df.columns) or '(none)'
+        return jsonify({"error": f"This isn't a Device Ringing Audit export. Missing column(s): "
+                                 f"{', '.join(missing)}. Found: {found}. Run an audit first, edit "
+                                 f"the 'Ring Enabled' column, then upload that file."}), 400
+
+    groups, considered = parse_apply_upload(df)
+    if considered == 0 or not groups:
+        return jsonify({"error": "No rows to apply. Set the 'Ring Enabled' cell to Yes or No on the "
+                                 "devices you want to change (blank rows are left unchanged), then re-upload."}), 400
+
+    task_id = f"ringing_apply_{int(time.time())}"
+    total = sum(len(g['rules']) for g in groups.values())
+    apply_progress_store[task_id] = {
+        'status': 'running', 'current': 0, 'total': total,
+        'message': 'Starting apply…', 'logs': [], 'written': 0,
+        'cancelled': False, 'error': None,
+    }
+
+    auth_data = _session_auth_data()
+    thread = threading.Thread(target=run_apply_background, args=(task_id, groups, auth_data))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"success": True, "task_id": task_id, "total": total})
+
+@device_ringing_audit_bp.route('/apply/status', methods=['GET'])
+@require_rc_token
+def apply_status():
+    """Progress + new log lines for a background apply. `since` is the number of
+    log lines the browser has already shown, so each poll returns only new ones."""
+    task_id = request.args.get('task_id')
+    try:
+        since = int(request.args.get('since') or 0)
+    except (TypeError, ValueError):
+        since = 0
+    data = apply_progress_store.get(task_id)
+    if data is None:
+        return jsonify({'status': 'unknown', 'current': 0, 'total': 0, 'message': '',
+                        'logs': [], 'log_count': 0, 'written': 0, 'cancelled': False, 'error': ''})
+    logs = data.get('logs', [])
+    return jsonify({
+        'status': data.get('status', 'running'),
+        'current': data.get('current', 0),
+        'total': data.get('total', 0),
+        'message': data.get('message', ''),
+        'logs': logs[since:],
+        'log_count': len(logs),
+        'written': data.get('written', 0),
+        'cancelled': data.get('cancelled', False),
+        'error': data.get('error', ''),
+    })
 
 @device_ringing_audit_bp.route('/debug', methods=['POST'])
 @require_rc_token

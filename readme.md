@@ -222,7 +222,7 @@ Layer 2b) · `L3` JWT · `L4` RingCX token exchange.
 | `cost_centres` | Cost Centres | SM | Audit/update Cost Centre allocations |
 | `custom_rules` | Custom Rules | SM | Bulk answering rules via CSV |
 | `device_audit` | Device Audit | SM | Audit provisioned devices + online status |
-| `device_ringing_audit` | Device Ringing Audit | SM | Query V1/V2 call-handling ringing states |
+| `device_ringing_audit` | Device Ringing Audit & Update | SM | Query V1/V2 call-handling ringing states, then edit & re-upload the export to flip device ring toggles |
 | `device_swap` | Device Swap | SM | Swap DLs/Extensions |
 | `extension_number_changer` | Ext Number Changer | SM | Bulk change extension numbers via Excel |
 | `renamer` | Extension Renamer | SM | Bulk edit extension names |

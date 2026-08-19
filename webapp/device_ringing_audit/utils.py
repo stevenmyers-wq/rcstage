@@ -5,17 +5,61 @@ import requests
 import base64
 import pandas as pd
 from datetime import datetime
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from webapp.rc_api import rc_api_call
 from webapp.auth_utils import get_impersonation_token
+from webapp import task_control
 
 # Global store for background task progress
 audit_progress_store = {}
 
-def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
-    """Helper to safely request API data while respecting 429 Rate Limits and healing expired tokens."""
+# The APPLY (upload) run mirrors the audit: it runs in a background thread and
+# the browser polls for progress + log lines, so a bulk toggle apply can outlast
+# the Cloud Run per-request timeout and account-lock waits happen server-side.
+# Keys: status, current, total, message, logs (list of {level, message}),
+# written, cancelled, error.
+apply_progress_store = {}
+
+# Physical endpoint types the audit and apply operate on. Softphones (desktop /
+# mobile apps) are governed by their own app-ring settings, not a device toggle.
+RING_DEVICE_TYPES = ['HardPhone', 'OtherPhone', 'Paging']
+
+# Columns for the audit export AND the accepted upload layout. One row per rule x
+# physical device. Editing this export in place and re-uploading is the ONLY
+# supported input (there is no blank free-hand template): the operator must audit
+# first so every row carries the Extension ID / Rule ID / Device ID / Schema keys
+# the apply path needs to write the toggle back to the exact rule it came from.
+AUDIT_COLS = [
+    'Username', 'Extension', 'Extension ID',
+    'Rule Name', 'Rule ID', 'Schema',
+    'Device Name', 'Device ID', 'Device Type',
+    'Ring Enabled',
+    'Mobile App Ring Enabled', 'Desktop App Ring Enabled', 'External Numbers Ringing',
+]
+
+# The one editable column: an operator flips a device's ring toggle by choosing
+# Yes / No. Blank means "leave this device unchanged".
+RING_TOGGLE_COLUMN = 'Ring Enabled'
+RING_TOGGLE_FORMULA = '"Yes,No"'
+
+# V2 comm-handling endpoints. The audit reads ring state from BOTH the scheduled
+# state-rules (business/after hours) and the custom interaction-rules, so the
+# apply must look a Rule ID up in both lists to know which endpoint to PATCH.
+V2_STATE_RULE_BASE = "/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
+V2_INTERACTION_RULE_BASE = "/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules"
+
+def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None,
+                  json_body=None, raw=False):
+    """Helper to safely request API data while respecting 429 Rate Limits and healing expired tokens.
+
+    Set ``json_body`` to send a JSON payload (PATCH / PUT writes) and ``raw=True``
+    to get the response object back instead of parsed JSON, so a write caller can
+    tell a real failure from an empty-but-OK body."""
     for attempt in range(4):
         active_token = auth_data['access_token'] if auth_data else None
-        resp = rc_api_call(endpoint, method=method, return_response=True, token=active_token)
+        resp = rc_api_call(endpoint, method=method, json=json_body,
+                           return_response=True, token=active_token)
         status_code = getattr(resp, 'status_code', None)
         
         # 1. Handle Rate Limiting (429)
@@ -99,19 +143,22 @@ def safe_api_call(endpoint, method='GET', auth_data=None, task_id=None):
             
         # 3. Handle Success
         if resp and getattr(resp, 'ok', False):
+            if raw:
+                return resp
             try:
                 return resp.json()
             except:
                 return {}
-                
+
         # 4. Handle Server/Gateway Errors (50x)
         if status_code and status_code >= 500:
             time.sleep(3)
             continue
-            
-        # For 400 Bad Request, 403 Forbidden or 404 Not Found, return None (don't retry)
-        return None
-        
+
+        # For 400 Bad Request, 403 Forbidden or 404 Not Found, don't retry.
+        # Writers want the response object to read the status/body for the log.
+        return resp if raw else None
+
     return None
 
 def fetch_users_for_ui(auth_data):
@@ -157,22 +204,27 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
     """
     Evaluates ALL configured call handling rules.
     Queries V2 Schema first (Source of truth for migrated accounts), then falls back to V1.
+
+    Returns (device_map, rules_data, schema) where schema is 'V2', 'V1' or 'Unknown'.
+    Each rule in rules_data also carries 'rule_id' so the edited audit can be
+    re-uploaded and the ring toggle applied back to the exact rule it came from.
     """
     device_map = {}
     for d in user_devices:
         d_type = d.get('type', 'Unknown')
         d_name = d.get('name') or d.get('model', {}).get('name', 'Unknown Device')
-        
+
         # STRICT WHITELIST: Only process actual physical endpoints.
         if d_type not in ['HardPhone', 'OtherPhone', 'Paging']:
             continue
-            
+
         device_map[str(d['id'])] = {
             'name': d_name,
             'type': d_type
         }
 
     rules_data = []
+    schema = 'Unknown'
 
     # ==========================================
     # 1. V2 SCHEMA (PRIMARY)
@@ -184,6 +236,7 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
 
     if v2_state_resp and 'records' in v2_state_resp:
         is_v2 = True
+        schema = 'V2'
         v2_rules_to_check = []
         
         # Load State Rules (Business Hours, After Hours)
@@ -211,6 +264,7 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
         # Parse all collected V2 rules
         for rule in v2_rules_to_check:
             r_name = rule.get('displayName') or rule.get('name') or rule.get('id') or 'Unnamed V2 Rule'
+            r_id = str(rule.get('id') or '')
             mobile_en = False
             desktop_en = False
             external_nums = []
@@ -253,6 +307,7 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
                     
             rules_data.append({
                 'rule_name': r_name,
+                'rule_id': r_id,
                 'mobile_enabled': mobile_en,
                 'desktop_enabled': desktop_en,
                 'external_numbers': external_nums,
@@ -267,15 +322,17 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
         v1_resp = safe_api_call(v1_rules_url, auth_data=auth_data, task_id=task_id)
 
         if v1_resp and 'records' in v1_resp:
+            schema = 'V1'
             for rule_summary in v1_resp['records']:
                 if rule_summary.get('enabled', False) and rule_summary.get('callHandlingAction') == 'ForwardCalls':
                     rule_id = rule_summary.get('id')
-                    
+
                     rule_detail_url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}"
                     rule_detail = safe_api_call(rule_detail_url, auth_data=auth_data, task_id=task_id)
-                    
+
                     if rule_detail and 'forwarding' in rule_detail:
                         r_name = rule_detail.get('name', rule_summary.get('name', 'Unnamed V1 Rule'))
+                        r_id = str(rule_detail.get('id') or rule_id or '')
                         mobile_en = False
                         desktop_en = False
                         external_nums = []
@@ -298,6 +355,7 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
                                         
                         rules_data.append({
                             'rule_name': r_name,
+                            'rule_id': r_id,
                             'mobile_enabled': mobile_en,
                             'desktop_enabled': desktop_en,
                             'external_numbers': external_nums,
@@ -305,7 +363,7 @@ def get_device_ringing_status(ext_id, user_devices, auth_data, task_id=None):
                         })
                     time.sleep(0.5)
 
-    return device_map, rules_data
+    return device_map, rules_data, schema
 
 def run_audit_background(task_id, auth_data, ext_ids=None):
     """Background task to perform the audit, updating progress as it goes."""
@@ -346,54 +404,82 @@ def run_audit_background(task_id, auth_data, ext_ids=None):
             audit_progress_store[task_id]['message'] = f"Auditing Extension {ext_num} ({ext_name})..."
 
             user_devices = devices_by_ext.get(ext_id, [])
-            device_map, rules_data = get_device_ringing_status(ext_id, user_devices, auth_data, task_id=task_id)
+            device_map, rules_data, schema = get_device_ringing_status(ext_id, user_devices, auth_data, task_id=task_id)
 
             if not rules_data:
                 rules_data = [{
                     'rule_name': 'No Enabled Rules Found',
+                    'rule_id': '',
                     'mobile_enabled': False,
                     'desktop_enabled': False,
                     'external_numbers': [],
                     'device_status': {did: False for did in device_map.keys()}
                 }]
 
+            # LONG (tidy) layout: one row per rule x physical device, so the export
+            # can be edited in place (flip the 'Ring Enabled' cell) and re-uploaded
+            # to apply the toggle back to the exact rule/device it came from. The
+            # Extension ID / Rule ID / Device ID / Schema columns are the keys the
+            # apply path reads; the Mobile/Desktop/External columns are informational.
             for r_data in rules_data:
-                row = {
-                    "Username": ext_name,
-                    "Extension": ext_num,
-                    "Extension ID": ext_id,
-                    "Rule Name": r_data['rule_name'],
+                ext_apps = {
                     "Mobile App Ring Enabled": "Yes" if r_data['mobile_enabled'] else "No",
                     "Desktop App Ring Enabled": "Yes" if r_data['desktop_enabled'] else "No",
-                    "External Numbers Ringing": ", ".join(r_data['external_numbers']) if r_data['external_numbers'] else "None"
+                    "External Numbers Ringing": ", ".join(r_data['external_numbers']) if r_data['external_numbers'] else "None",
                 }
 
-                dev_idx = 1
-                for did, d_info in device_map.items():
-                    is_ringing = r_data['device_status'].get(did, False)
-                    row[f"Device {dev_idx} Name"] = d_info['name']
-                    row[f"Device {dev_idx} Ring Enabled"] = "Yes" if is_ringing else "No"
-                    dev_idx += 1
+                if device_map:
+                    for did, d_info in device_map.items():
+                        is_ringing = r_data['device_status'].get(did, False)
+                        row = {
+                            "Username": ext_name,
+                            "Extension": ext_num,
+                            "Extension ID": ext_id,
+                            "Rule Name": r_data['rule_name'],
+                            "Rule ID": r_data.get('rule_id', ''),
+                            "Schema": schema,
+                            "Device Name": d_info['name'],
+                            "Device ID": did,
+                            "Device Type": d_info['type'],
+                            "Ring Enabled": "Yes" if is_ringing else "No",
+                        }
+                        row.update(ext_apps)
+                        audit_data.append(row)
+                else:
+                    # Rule with no physical device targets (rings apps / external
+                    # numbers only). Kept for visibility; blank Device ID means the
+                    # apply path skips it (nothing to toggle).
+                    row = {
+                        "Username": ext_name,
+                        "Extension": ext_num,
+                        "Extension ID": ext_id,
+                        "Rule Name": r_data['rule_name'],
+                        "Rule ID": r_data.get('rule_id', ''),
+                        "Schema": schema,
+                        "Device Name": "(no physical devices)",
+                        "Device ID": "",
+                        "Device Type": "",
+                        "Ring Enabled": "",
+                    }
+                    row.update(ext_apps)
+                    audit_data.append(row)
 
-                audit_data.append(row)
-            
             # SUSTAINABLE PACING: Space out API calls to prevent rapid bucket depletion
             time.sleep(3.0)
 
         audit_progress_store[task_id]['message'] = "Compiling Excel Spreadsheet..."
         df = pd.DataFrame(audit_data)
 
-        base_cols = ["Username", "Extension", "Extension ID", "Rule Name", "Mobile App Ring Enabled", "Desktop App Ring Enabled", "External Numbers Ringing"]
-        dev_cols = [c for c in df.columns if c.startswith("Device")]
-        dev_cols.sort(key=lambda x: int(x.split(' ')[1]) if len(x.split(' ')) > 1 and x.split(' ')[1].isdigit() else 999)
-
-        final_cols = base_cols + dev_cols
-        df = df[[c for c in final_cols if c in df.columns]]
+        for c in AUDIT_COLS:
+            if c not in df.columns:
+                df[c] = ''
+        df = df[AUDIT_COLS]
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Device Ringing Audit')
             worksheet = writer.sheets['Device Ringing Audit']
+            add_ring_toggle_dropdown(worksheet, AUDIT_COLS)
             for column in worksheet.columns:
                 length = max(len(str(cell.value) or "") for cell in column)
                 worksheet.column_dimensions[column[0].column_letter].width = min(length + 5, 50)
@@ -405,3 +491,314 @@ def run_audit_background(task_id, auth_data, ext_ids=None):
     except Exception as e:
         audit_progress_store[task_id]['status'] = 'error'
         audit_progress_store[task_id]['error'] = str(e)
+
+
+# ==========================================================================
+# WORKBOOK HELPERS
+# ==========================================================================
+
+def add_ring_toggle_dropdown(ws, columns, max_row=5000):
+    """Attaches a Yes/No dropdown to the editable 'Ring Enabled' column so an
+    operator can only enter a value the apply path understands."""
+    if RING_TOGGLE_COLUMN not in columns:
+        return
+    letter = get_column_letter(columns.index(RING_TOGGLE_COLUMN) + 1)
+    dv = DataValidation(type="list", formula1=RING_TOGGLE_FORMULA, allow_blank=True)
+    dv.error = 'Choose Yes or No (blank = leave this device unchanged).'
+    dv.errorTitle = 'Invalid ring toggle'
+    ws.add_data_validation(dv)
+    dv.add(f"{letter}2:{letter}{max_row}")
+
+
+# ==========================================================================
+# APPLY: write the edited 'Ring Enabled' toggle back to RingCentral
+# ==========================================================================
+
+def coerce_toggle(value):
+    """Reads a 'Ring Enabled' cell into True / False / None.
+
+    True  -> the device should ring on this rule.
+    False -> the device should NOT ring on this rule.
+    None  -> blank / unrecognised: leave this device unchanged."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    if raw in ('yes', 'y', 'true', '1', 'on', 'enabled', 'enable', 'ring', 'ringing'):
+        return True
+    if raw in ('no', 'n', 'false', '0', 'off', 'disabled', 'disable', 'none'):
+        return False
+    return None
+
+
+def _clean_id(value):
+    """Normalises an id/number cell from the sheet (pandas can render an integer
+    id as '12345.0')."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ''
+    s = str(value).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
+def _dispatching_of(rule):
+    """Returns the dispatching dict of a V2 rule, tolerating the interaction-rule
+    shape where it hangs off `dispatchingRef`. Returns the live object so callers
+    mutate in place before PATCHing it back."""
+    return rule.get('dispatching') or (rule.get('dispatchingRef') or {}).get('dispatching') or {}
+
+
+def _device_ring_targets(dispatching, did):
+    """Yields every DeviceRingTarget for `did` inside a RingGroupAction, paired
+    with its owning action, so a caller can read or flip its enabled flag."""
+    for action in dispatching.get('actions', []):
+        if action.get('type') != 'RingGroupAction':
+            continue
+        for t in action.get('targets', []):
+            if t.get('type') != 'DeviceRingTarget':
+                continue
+            if str((t.get('device') or {}).get('id') or '') == did:
+                yield action, t
+
+
+def _device_currently_rings(dispatching, did):
+    """Mirrors the audit read: True when `did` has an enabled DeviceRingTarget in
+    an enabled RingGroupAction."""
+    for action, target in _device_ring_targets(dispatching, did):
+        if action.get('enabled', True) is False:
+            continue
+        if target.get('enabled', True) is False:
+            continue
+        return True
+    return False
+
+
+def _set_v2_device_toggle(dispatching, did, want):
+    """Flips one device's ring toggle inside a V2 rule's dispatching (in place).
+
+    Returns one of: 'changed', 'nochange', 'cannot'. Enabling a device that has
+    no target yet appends a DeviceRingTarget to the first RingGroupAction; if the
+    rule has no RingGroupAction at all there is nowhere to add it -> 'cannot'."""
+    current = _device_currently_rings(dispatching, did)
+    if current == want:
+        return 'nochange'
+
+    targets = list(_device_ring_targets(dispatching, did))
+
+    if want:
+        if targets:
+            # Re-enable the existing target(s) and their ring group.
+            for action, target in targets:
+                target['enabled'] = True
+                if action.get('enabled', True) is False:
+                    action['enabled'] = True
+            return 'changed'
+        # No target yet: add one to the first ring group (prefer an enabled one).
+        ring_groups = [a for a in dispatching.get('actions', [])
+                       if a.get('type') == 'RingGroupAction']
+        if not ring_groups:
+            return 'cannot'
+        target_group = next((a for a in ring_groups if a.get('enabled', True) is not False),
+                            ring_groups[0])
+        target_group.setdefault('targets', []).append({
+            'type': 'DeviceRingTarget',
+            'device': {'id': did},
+            'enabled': True,
+        })
+        if target_group.get('enabled', True) is False:
+            target_group['enabled'] = True
+        return 'changed'
+
+    # want == False: silence the device by disabling its target(s).
+    if not targets:
+        return 'nochange'
+    for _action, target in targets:
+        target['enabled'] = False
+    return 'changed'
+
+
+def _apply_v2(ext_id, rule_id, device_wants, auth_data=None, task_id=None):
+    """Applies the requested device toggles to one V2 rule (state OR interaction).
+
+    Looks the rule up by id in the state-rules endpoint first, then the
+    interaction-rules endpoint, mutates the ring targets, and PATCHes the
+    modified dispatching back to whichever endpoint owned it (PATCH — a PUT
+    returns AGW-404 on comm-handling). Returns (ok, changed_count, message)."""
+    kind = None
+    rule = None
+    for k, base in (('state', V2_STATE_RULE_BASE), ('interaction', V2_INTERACTION_RULE_BASE)):
+        resp = safe_api_call(base.format(ext_id=ext_id) + f"/{rule_id}",
+                             auth_data=auth_data, task_id=task_id)
+        if isinstance(resp, dict) and (resp.get('dispatching') or resp.get('dispatchingRef')):
+            kind, rule = k, resp
+            break
+    if rule is None:
+        return False, 0, f"rule {rule_id} not found on V2 comm-handling — skipped."
+
+    dispatching = _dispatching_of(rule)
+    changed = 0
+    notes = []
+    for did, want in device_wants.items():
+        result = _set_v2_device_toggle(dispatching, did, want)
+        if result == 'changed':
+            changed += 1
+        elif result == 'cannot':
+            notes.append(f"device {did} could not be enabled (rule has no ring group)")
+
+    if changed == 0:
+        base_msg = "already matched the sheet — nothing to change."
+        if notes:
+            base_msg = "; ".join(notes) + "."
+        return True, 0, base_msg
+
+    base = V2_STATE_RULE_BASE if kind == 'state' else V2_INTERACTION_RULE_BASE
+    url = base.format(ext_id=ext_id) + f"/{rule_id}"
+    resp = safe_api_call(url, method='PATCH', json_body={'dispatching': dispatching},
+                         auth_data=auth_data, task_id=task_id, raw=True)
+    if resp is not None and getattr(resp, 'ok', False):
+        note = (" (" + "; ".join(notes) + ")") if notes else ""
+        return True, changed, f"updated {changed} device toggle(s) [{kind}]{note}."
+    status = getattr(resp, 'status_code', '?')
+    text = ((getattr(resp, 'text', '') or '').strip())[:300]
+    return False, 0, f"V2 PATCH failed [{status}] {text or '(no body)'}"
+
+
+def _apply_v1(ext_id, rule_id, device_wants, auth_data=None, task_id=None):
+    """Best-effort apply for legacy V1 answering rules: flips the `enabled` flag
+    on each forwardingNumber that references a target device, then PUTs the rule
+    back. Classic accounts don't always represent a user's own phones as
+    forwarding numbers, so a device that isn't present is reported, not guessed."""
+    url = f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}"
+    rule = safe_api_call(url, auth_data=auth_data, task_id=task_id)
+    if not isinstance(rule, dict) or 'forwarding' not in rule:
+        return False, 0, f"V1 rule {rule_id} not found — skipped."
+
+    changed = 0
+    missing = []
+    for did, want in device_wants.items():
+        found = False
+        for r in rule.get('forwarding', {}).get('rules', []):
+            for fn in r.get('forwardingNumbers', []):
+                if str((fn.get('device') or {}).get('id') or '') == did:
+                    found = True
+                    if fn.get('enabled', True) != want:
+                        fn['enabled'] = want
+                        changed += 1
+        if not found:
+            missing.append(did)
+
+    if changed == 0:
+        if missing:
+            return True, 0, f"device(s) {', '.join(missing)} not in V1 forwarding config — left unchanged."
+        return True, 0, "already matched the sheet — nothing to change."
+
+    body = dict(rule)
+    body.pop('uri', None)
+    resp = safe_api_call(url, method='PUT', json_body=body,
+                         auth_data=auth_data, task_id=task_id, raw=True)
+    if resp is not None and getattr(resp, 'ok', False):
+        note = f" ({len(missing)} device(s) not present, skipped)" if missing else ""
+        return True, changed, f"updated {changed} device toggle(s) [V1 best-effort]{note}."
+    status = getattr(resp, 'status_code', '?')
+    text = ((getattr(resp, 'text', '') or '').strip())[:300]
+    return False, 0, f"V1 PUT failed [{status}] {text or '(no body)'}"
+
+
+def apply_device_toggles(ext_id, schema, rule_id, device_wants, auth_data=None, task_id=None):
+    """Dispatches a single rule's device toggles to the right schema handler.
+    Returns (ok, changed_count, message)."""
+    if not rule_id:
+        return False, 0, "no Rule ID on this row — re-run the audit to get an editable export."
+    if str(schema).upper().startswith('V1'):
+        return _apply_v1(ext_id, rule_id, device_wants, auth_data=auth_data, task_id=task_id)
+    return _apply_v2(ext_id, rule_id, device_wants, auth_data=auth_data, task_id=task_id)
+
+
+def parse_apply_upload(df):
+    """Turns an edited audit export into work grouped by extension then rule:
+
+        { ext_id: {'label': 'Ext 101 (Jane)', 'schema': 'V2',
+                   'rules': { rule_id: { device_id: want_bool } } } }
+
+    Rows with a blank 'Ring Enabled', or missing Extension ID / Rule ID / Device
+    ID, are skipped (nothing to toggle). Returns (groups, considered_rows)."""
+    groups = {}
+    considered = 0
+    for _, row in df.iterrows():
+        want = coerce_toggle(row.get('Ring Enabled'))
+        if want is None:
+            continue
+        ext_id = _clean_id(row.get('Extension ID'))
+        rule_id = _clean_id(row.get('Rule ID'))
+        did = _clean_id(row.get('Device ID'))
+        if not ext_id or not rule_id or not did:
+            continue
+        considered += 1
+        g = groups.setdefault(ext_id, {
+            'label': f"Ext {_clean_id(row.get('Extension')) or ext_id}"
+                     f" ({str(row.get('Username') or '').strip() or 'Unknown'})",
+            'schema': str(row.get('Schema') or 'V2').strip() or 'V2',
+            'rules': {},
+        })
+        g['rules'].setdefault(rule_id, {})[did] = want
+    return groups, considered
+
+
+def _apply_log(store, level, message):
+    store['logs'].append({'level': level, 'message': message})
+
+
+def run_apply_background(task_id, groups, auth_data):
+    """Applies every edited toggle, one rule at a time, recording per-rule log
+    lines and progress into apply_progress_store[task_id] for the browser to
+    poll. Honours a cooperative stop via task_control."""
+    store = apply_progress_store.get(task_id)
+    if store is None:
+        return
+    try:
+        total = sum(len(g['rules']) for g in groups.values())
+        store['total'] = total
+        written = 0
+        current = 0
+        for ext_id, g in groups.items():
+            for rule_id, device_wants in g['rules'].items():
+                if task_control.is_stopped(task_id):
+                    _apply_log(store, 'info', '■ Stopped by user — remaining rules were skipped.')
+                    store['cancelled'] = True
+                    break
+                current += 1
+                store['current'] = current
+                store['message'] = f"Applying {g['label']} ({current}/{total})…"
+                try:
+                    ok, changed, msg = apply_device_toggles(
+                        ext_id, g['schema'], rule_id, device_wants,
+                        auth_data=auth_data, task_id=task_id)
+                    tag = f"{g['label']} · rule {rule_id}"
+                    if ok and changed:
+                        _apply_log(store, 'success', f"✅ {tag}: {msg}")
+                        written += 1
+                    elif ok:
+                        _apply_log(store, 'info', f"• {tag}: {msg}")
+                    else:
+                        _apply_log(store, 'error', f"❌ {tag}: {msg}")
+                except Exception as e:
+                    _apply_log(store, 'error', f"❌ {g['label']} · rule {rule_id}: {e}")
+                # Gentle pacing between writes to stay under the rate limit.
+                time.sleep(1.0)
+            if store.get('cancelled'):
+                break
+
+        store['written'] = written
+        store['status'] = 'completed'
+        store['message'] = (f"Stopped — {written} rule(s) updated."
+                            if store.get('cancelled')
+                            else f"Finished — {written} rule(s) updated.")
+    except Exception as e:
+        store['status'] = 'error'
+        store['error'] = str(e)
+        _apply_log(store, 'error', f"Apply failed: {e}")
+        store['message'] = f"Apply failed: {e}"
+    finally:
+        task_control.clear(task_id)
