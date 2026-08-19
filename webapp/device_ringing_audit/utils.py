@@ -43,6 +43,14 @@ AUDIT_COLS = [
 RING_TOGGLE_COLUMN = 'Ring Enabled'
 RING_TOGGLE_FORMULA = '"Yes,No"'
 
+# The blank, free-hand template. Deliberately minimal: an operator types an
+# extension number and a Yes/No, and (optionally) a Device ID copied from an
+# audit. A blank Device ID means "all physical devices on the extension"; a
+# blank Rule ID (there is no Rule column here) means "the default business-hours
+# rule". The apply path accepts THIS sheet and a full audit export via the same
+# reader, so the two share the editable 'Ring Enabled' column + dropdown.
+TEMPLATE_COLS = ['Extension', 'Device ID', 'Device Name', 'Ring Enabled']
+
 # V2 comm-handling endpoints. The audit reads ring state from BOTH the scheduled
 # state-rules (business/after hours) and the custom interaction-rules, so the
 # apply must look a Rule ID up in both lists to know which endpoint to PATCH.
@@ -710,20 +718,87 @@ def apply_device_toggles(ext_id, schema, rule_id, device_wants, auth_data=None, 
     """Dispatches a single rule's device toggles to the right schema handler.
     Returns (ok, changed_count, message)."""
     if not rule_id:
-        return False, 0, "no Rule ID on this row — re-run the audit to get an editable export."
+        return False, 0, "no rule to apply to (could not resolve a default call-handling rule)."
     if str(schema).upper().startswith('V1'):
         return _apply_v1(ext_id, rule_id, device_wants, auth_data=auth_data, task_id=task_id)
     return _apply_v2(ext_id, rule_id, device_wants, auth_data=auth_data, task_id=task_id)
 
 
+# --- Resolvers used by the free-hand template path -------------------------
+# A blank template row identifies work loosely (an extension NUMBER, no Rule ID,
+# maybe no Device ID). These resolve that into the concrete ids the apply needs.
+
+def get_extension_id(ext_num, auth_data=None, task_id=None):
+    """Resolves an extension NUMBER to its internal id (for template rows that
+    carry no 'Extension ID' column)."""
+    ext_num = str(ext_num).strip()
+    if ext_num.endswith('.0'):
+        ext_num = ext_num[:-2]
+    if not ext_num:
+        return None
+    data = safe_api_call(f"/restapi/v1.0/account/~/extension?extensionNumber={ext_num}",
+                         auth_data=auth_data, task_id=task_id)
+    if isinstance(data, dict) and data.get('records'):
+        return str(data['records'][0].get('id') or '') or None
+    return None
+
+
+def fetch_physical_devices(ext_id, auth_data=None, task_id=None):
+    """Returns the ids of an extension's physical endpoints (deskphone / generic
+    SIP / paging) — the set a blank Device ID expands to."""
+    data = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device",
+                         auth_data=auth_data, task_id=task_id)
+    recs = data.get('records', []) if isinstance(data, dict) else []
+    return [str(d.get('id')) for d in recs
+            if d.get('type') in RING_DEVICE_TYPES and d.get('id')]
+
+
+def resolve_default_rule(ext_id, auth_data=None, task_id=None):
+    """Finds the extension's DEFAULT (business-hours) call-handling rule for a
+    template row that names no specific rule. Returns (schema, rule_id, kind):
+    the enabled, non-system V2 state rule that reads like business/work hours,
+    else the legacy V1 'business-hours-rule'."""
+    v2 = safe_api_call(V2_STATE_RULE_BASE.format(ext_id=ext_id),
+                       auth_data=auth_data, task_id=task_id)
+    if isinstance(v2, dict) and 'records' in v2:
+        candidates = []
+        for r in v2['records']:
+            if str(r.get('id') or '') in ('agent', 'dnd', 'forward-all-calls'):
+                continue
+            if not (r.get('state') or {}).get('enabled', True):
+                continue
+            candidates.append(r)
+        if candidates:
+            def score(r):
+                label = (str(r.get('displayName') or '') + ' ' +
+                         str((r.get('state') or {}).get('displayName') or '') + ' ' +
+                         str(r.get('id') or '')).lower()
+                if 'business' in label or 'work' in label:
+                    return 0
+                if any(k in label for k in ('after', 'night', 'holiday', 'closed')):
+                    return 2
+                return 1
+            candidates.sort(key=score)
+            return 'V2', str(candidates[0].get('id') or ''), 'state'
+        return 'V2', '', 'state'
+    return 'V1', 'business-hours-rule', 'v1'
+
+
 def parse_apply_upload(df):
-    """Turns an edited audit export into work grouped by extension then rule:
+    """Reads BOTH accepted inputs — a full audit export and the blank free-hand
+    template — into work grouped by extension then rule:
 
-        { ext_id: {'label': 'Ext 101 (Jane)', 'schema': 'V2',
-                   'rules': { rule_id: { device_id: want_bool } } } }
+        { ext_key: {'ext_id': '', 'ext_num': '101', 'label': 'Ext 101 (Jane)',
+                    'rules': { rule_key: {'schema': 'V2',
+                                          'devices': { device_key: want_bool }}}}}
 
-    Rows with a blank 'Ring Enabled', or missing Extension ID / Rule ID / Device
-    ID, are skipped (nothing to toggle). Returns (groups, considered_rows)."""
+    Where a value is absent the apply path resolves it at run time:
+      - no Extension ID  -> resolve the Extension NUMBER to an id,
+      - no Rule ID (rule_key '')     -> the extension's default business-hours rule,
+      - no Device ID (device_key '') -> every physical device on the extension.
+
+    A row is skipped only when 'Ring Enabled' is blank, or it names no extension
+    at all. Returns (groups, considered_rows)."""
     groups = {}
     considered = 0
     for _, row in df.iterrows():
@@ -731,18 +806,27 @@ def parse_apply_upload(df):
         if want is None:
             continue
         ext_id = _clean_id(row.get('Extension ID'))
-        rule_id = _clean_id(row.get('Rule ID'))
-        did = _clean_id(row.get('Device ID'))
-        if not ext_id or not rule_id or not did:
+        ext_num = _clean_id(row.get('Extension'))
+        if not ext_id and not ext_num:
             continue
+        rule_id = _clean_id(row.get('Rule ID'))    # '' -> default rule
+        did = _clean_id(row.get('Device ID'))       # '' -> all physical devices
         considered += 1
-        g = groups.setdefault(ext_id, {
-            'label': f"Ext {_clean_id(row.get('Extension')) or ext_id}"
-                     f" ({str(row.get('Username') or '').strip() or 'Unknown'})",
-            'schema': str(row.get('Schema') or 'V2').strip() or 'V2',
+
+        ext_key = ext_id or f"num:{ext_num}"
+        g = groups.setdefault(ext_key, {
+            'ext_id': ext_id,
+            'ext_num': ext_num,
+            'label': f"Ext {ext_num or ext_id} ({str(row.get('Username') or '').strip() or '—'})",
             'rules': {},
         })
-        g['rules'].setdefault(rule_id, {})[did] = want
+        if not g['ext_num'] and ext_num:
+            g['ext_num'] = ext_num
+
+        rb = g['rules'].setdefault(rule_id, {'schema': '', 'devices': {}})
+        if not rb['schema'] and row.get('Schema') is not None and str(row.get('Schema')).strip():
+            rb['schema'] = str(row.get('Schema')).strip()
+        rb['devices'][did] = want
     return groups, considered
 
 
@@ -762,8 +846,21 @@ def run_apply_background(task_id, groups, auth_data):
         store['total'] = total
         written = 0
         current = 0
-        for ext_id, g in groups.items():
-            for rule_id, device_wants in g['rules'].items():
+        for ext_key, g in groups.items():
+            if store.get('cancelled'):
+                break
+
+            # Resolve the extension id up front (template rows carry only a number).
+            ext_id = g['ext_id']
+            if not ext_id and g['ext_num']:
+                ext_id = get_extension_id(g['ext_num'], auth_data=auth_data, task_id=task_id)
+            if not ext_id:
+                current += len(g['rules'])
+                store['current'] = current
+                _apply_log(store, 'error', f"❌ {g['label']}: extension not found.")
+                continue
+
+            for rule_key, rb in g['rules'].items():
                 if task_control.is_stopped(task_id):
                     _apply_log(store, 'info', '■ Stopped by user — remaining rules were skipped.')
                     store['cancelled'] = True
@@ -772,10 +869,45 @@ def run_apply_background(task_id, groups, auth_data):
                 store['current'] = current
                 store['message'] = f"Applying {g['label']} ({current}/{total})…"
                 try:
+                    schema = rb['schema']
+                    rule_id = rule_key
+                    # No Rule ID (blank template) -> target the default rule.
+                    if not rule_id:
+                        schema, rule_id, _kind = resolve_default_rule(
+                            ext_id, auth_data=auth_data, task_id=task_id)
+                        if not rule_id:
+                            _apply_log(store, 'error',
+                                       f"❌ {g['label']}: no default call-handling rule found.")
+                            continue
+
+                    # Split explicit device targets from the all-devices request
+                    # (a blank Device ID). The all-devices toggle expands to every
+                    # physical endpoint on the extension.
+                    device_wants = {}
+                    all_toggle = None
+                    for did, want in rb['devices'].items():
+                        if did == '':
+                            all_toggle = want
+                        else:
+                            device_wants[did] = want
+                    if all_toggle is not None:
+                        phys = fetch_physical_devices(ext_id, auth_data=auth_data, task_id=task_id)
+                        if not phys and not device_wants:
+                            _apply_log(store, 'error',
+                                       f"❌ {g['label']}: no physical (deskphone / SIP / paging) devices found.")
+                            continue
+                        for did in phys:
+                            device_wants.setdefault(did, all_toggle)
+
+                    if not device_wants:
+                        _apply_log(store, 'info', f"• {g['label']}: nothing to apply.")
+                        continue
+
+                    rule_label = rule_key or f"default ({rule_id})"
                     ok, changed, msg = apply_device_toggles(
-                        ext_id, g['schema'], rule_id, device_wants,
+                        ext_id, schema, rule_id, device_wants,
                         auth_data=auth_data, task_id=task_id)
-                    tag = f"{g['label']} · rule {rule_id}"
+                    tag = f"{g['label']} · rule {rule_label}"
                     if ok and changed:
                         _apply_log(store, 'success', f"✅ {tag}: {msg}")
                         written += 1
@@ -784,11 +916,9 @@ def run_apply_background(task_id, groups, auth_data):
                     else:
                         _apply_log(store, 'error', f"❌ {tag}: {msg}")
                 except Exception as e:
-                    _apply_log(store, 'error', f"❌ {g['label']} · rule {rule_id}: {e}")
+                    _apply_log(store, 'error', f"❌ {g['label']} · rule {rule_key or 'default'}: {e}")
                 # Gentle pacing between writes to stay under the rate limit.
                 time.sleep(1.0)
-            if store.get('cancelled'):
-                break
 
         store['written'] = written
         store['status'] = 'completed'
@@ -802,3 +932,47 @@ def run_apply_background(task_id, groups, auth_data):
         store['message'] = f"Apply failed: {e}"
     finally:
         task_control.clear(task_id)
+
+
+# ==========================================================================
+# BLANK TEMPLATE
+# ==========================================================================
+
+def build_blank_template():
+    """A blank, free-hand sheet for operators who don't want to run an audit
+    first: type an extension number and a Yes/No. It applies to the DEFAULT
+    business-hours rule; a blank Device ID means every physical phone on the
+    extension. Returns the .xlsx bytes."""
+    df = pd.DataFrame([], columns=TEMPLATE_COLS)
+    guide = pd.DataFrame([
+        {"Field": "Extension", "Required": "Yes",
+         "Notes": "The user extension NUMBER (e.g. 101)."},
+        {"Field": "Device ID", "Required": "Optional",
+         "Notes": "Copy from an audit export to target ONE phone. Leave BLANK to apply "
+                  "to ALL physical phones (deskphone / generic SIP / paging) on the extension."},
+        {"Field": "Device Name", "Required": "No",
+         "Notes": "Informational only — ignored on upload."},
+        {"Field": "Ring Enabled", "Required": "Yes",
+         "Notes": "Yes = the phone rings; No = it does not. Blank = leave unchanged."},
+        {"Field": "Scope", "Required": "—",
+         "Notes": "A blank template applies to the DEFAULT business-hours call-handling rule. "
+                  "To change after-hours / custom rules, edit and re-upload an Audit export "
+                  "instead (its rows carry the Rule IDs)."},
+    ])
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Device Ringing')
+        ws = writer.sheets['Device Ringing']
+        add_ring_toggle_dropdown(ws, TEMPLATE_COLS)
+        for column in ws.columns:
+            length = max(len(str(cell.value) or "") for cell in column)
+            ws.column_dimensions[column[0].column_letter].width = min(length + 5, 55)
+
+        guide.to_excel(writer, index=False, sheet_name='Format Guide')
+        gws = writer.sheets['Format Guide']
+        for column in gws.columns:
+            length = max(len(str(cell.value) or "") for cell in column)
+            gws.column_dimensions[column[0].column_letter].width = min(length + 5, 90)
+
+    return output.getvalue()

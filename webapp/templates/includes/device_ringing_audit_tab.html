@@ -3,8 +3,8 @@
         <div>
             <h2 class="text-heading mb-1">Device Ringing Audit &amp; Update</h2>
             <p class="text-subheading">Target specific users to query their active V1 and V2 Call Handling ringing states — then edit and re-upload the export to flip device ring toggles.</p>
-            <p class="text-xs mt-2 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded px-3 py-2 max-w-2xl">
-                <strong>Workflow:</strong> you must <strong>audit first</strong>, edit the <strong>“Ring Enabled”</strong> column (Yes/No) in the exported file, then upload that same file. There is no blank template — the upload only accepts an audit export, because each row carries the Extension&nbsp;/&nbsp;Rule&nbsp;/&nbsp;Device IDs the update needs.
+            <p class="text-xs mt-2 text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded px-3 py-2 max-w-2xl">
+                <strong>Two ways to update:</strong> (1) run an <strong>audit</strong>, edit the <strong>“Ring Enabled”</strong> column, and re-upload — those rows carry Rule IDs so they hit the exact rule (incl. after-hours/custom); or (2) grab the <strong>blank template</strong> below, type an extension number + Yes/No, and upload — that applies to the extension’s default business-hours rule (blank Device ID = all its phones).
             </p>
         </div>
         <div class="flex flex-wrap gap-3 w-full md:w-auto">
@@ -93,13 +93,14 @@
             <div>
                 <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">Update Ring Toggles</h3>
                 <p class="text-sm text-slate-600 dark:text-slate-400 max-w-xl">
-                    Upload an <strong>edited audit export</strong>. Every device row whose <strong>“Ring Enabled”</strong>
-                    cell you set to <strong>Yes</strong> or <strong>No</strong> is applied back to that rule; blank rows are
-                    left unchanged. Run an audit above first — a blank/free-hand sheet will be rejected.
+                    Upload an <strong>edited audit export</strong> or a filled-in <strong>blank template</strong>. Every row
+                    whose <strong>“Ring Enabled”</strong> cell is set to <strong>Yes</strong> or <strong>No</strong> is applied;
+                    blank rows are left unchanged. Template rows (no Rule ID) hit the default business-hours rule.
                 </p>
             </div>
             <div class="flex flex-wrap gap-3 w-full md:w-auto shrink-0">
                 <input type="file" id="apply-file-input" accept=".xlsx,.xls,.csv" class="hidden">
+                <a href="/api/device_ringing_audit/template" class="btn-secondary w-full md:w-auto text-sm text-center">Blank Template</a>
                 <button id="btn-choose-apply-file" class="btn-secondary w-full md:w-auto text-sm">Choose File…</button>
                 <button id="btn-apply-toggles" class="btn-primary w-full md:w-auto px-6 text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Upload &amp; Apply

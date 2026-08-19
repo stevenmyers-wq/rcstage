@@ -9,7 +9,8 @@ from webapp.usage_tracking import track_usage
 from webapp.rc_api import rc_api_call
 from webapp import task_control
 from .utils import (run_audit_background, audit_progress_store, fetch_users_for_ui,
-                    apply_progress_store, run_apply_background, parse_apply_upload)
+                    apply_progress_store, run_apply_background, parse_apply_upload,
+                    build_blank_template)
 
 device_ringing_audit_bp = Blueprint('device_ringing_audit_bp', __name__, url_prefix='/api/device_ringing_audit')
 
@@ -152,13 +153,16 @@ def apply_toggles():
     except Exception as e:
         return jsonify({"error": f"File read error: {str(e)}"}), 400
 
-    required = ['Extension ID', 'Rule ID', 'Device ID', 'Ring Enabled']
-    missing = [c for c in required if c not in df.columns]
-    if missing:
+    # Accept BOTH inputs: a full audit export and the blank free-hand template.
+    # Minimum shape is a 'Ring Enabled' column plus a way to name the extension
+    # ('Extension ID' from an audit, or an 'Extension' number on the template).
+    if 'Ring Enabled' not in df.columns:
         found = ', '.join(str(c) for c in df.columns) or '(none)'
-        return jsonify({"error": f"This isn't a Device Ringing Audit export. Missing column(s): "
-                                 f"{', '.join(missing)}. Found: {found}. Run an audit first, edit "
-                                 f"the 'Ring Enabled' column, then upload that file."}), 400
+        return jsonify({"error": f"No 'Ring Enabled' column found (found: {found}). Upload an audit "
+                                 f"export or the blank template, set 'Ring Enabled' to Yes/No, then re-upload."}), 400
+    if 'Extension ID' not in df.columns and 'Extension' not in df.columns:
+        return jsonify({"error": "The sheet needs an 'Extension ID' (audit export) or 'Extension' "
+                                 "number (blank template) column to identify each user."}), 400
 
     groups, considered = parse_apply_upload(df)
     if considered == 0 or not groups:
@@ -206,6 +210,19 @@ def apply_status():
         'cancelled': data.get('cancelled', False),
         'error': data.get('error', ''),
     })
+
+@device_ringing_audit_bp.route('/template', methods=['GET'])
+def download_template():
+    """A blank, free-hand upload template — an extension number + a Yes/No, no
+    audit required. Applies to the default business-hours rule; a blank Device ID
+    means all physical phones on the extension."""
+    data = build_blank_template()
+    return send_file(
+        io.BytesIO(data),
+        as_attachment=True,
+        download_name="Device_Ringing_Template.xlsx",
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 @device_ringing_audit_bp.route('/debug', methods=['POST'])
 @require_rc_token
