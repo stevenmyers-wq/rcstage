@@ -1,8 +1,11 @@
 <div class="space-y-6 animate-fade-in w-full">
     <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <div>
-            <h2 class="text-heading mb-1">Device Ringing Audit</h2>
-            <p class="text-subheading">Target specific users to query their active V1 and V2 Call Handling ringing states.</p>
+            <h2 class="text-heading mb-1">Device Ringing Audit &amp; Update</h2>
+            <p class="text-subheading">Target specific users to query their active V1 and V2 Call Handling ringing states — then edit and re-upload the export to flip device ring toggles.</p>
+            <p class="text-xs mt-2 text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded px-3 py-2 max-w-2xl">
+                <strong>Two ways to update:</strong> (1) run an <strong>audit</strong>, edit the <strong>“Ring Enabled”</strong> column, and re-upload — those rows carry Rule IDs so they hit the exact rule (incl. after-hours/custom); or (2) grab the <strong>blank template</strong> below, type an extension number + Yes/No, and upload — that applies to the extension’s default business-hours rule (blank Device ID = all its phones).
+            </p>
         </div>
         <div class="flex flex-wrap gap-3 w-full md:w-auto">
             <button id="btn-toggle-sandbox" class="btn-secondary w-full md:w-auto text-sm">
@@ -82,6 +85,41 @@
         </div>
         <div class="w-full bg-slate-300 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
             <div id="device-audit-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <div class="card !p-5 mb-6 w-full border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">Update Ring Toggles</h3>
+                <p class="text-sm text-slate-600 dark:text-slate-400 max-w-xl">
+                    Upload an <strong>edited audit export</strong> or a filled-in <strong>blank template</strong>. Every row
+                    whose <strong>“Ring Enabled”</strong> cell is set to <strong>Yes</strong> or <strong>No</strong> is applied;
+                    blank rows are left unchanged. Template rows (no Rule ID) hit the default business-hours rule.
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-3 w-full md:w-auto shrink-0">
+                <input type="file" id="apply-file-input" accept=".xlsx,.xls,.csv" class="hidden">
+                <a href="/api/device_ringing_audit/template" class="btn-secondary w-full md:w-auto text-sm text-center">Blank Template</a>
+                <button id="btn-choose-apply-file" class="btn-secondary w-full md:w-auto text-sm">Choose File…</button>
+                <button id="btn-apply-toggles" class="btn-primary w-full md:w-auto px-6 text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    Upload &amp; Apply
+                </button>
+                <button id="btn-cancel-apply" class="btn-secondary hidden w-full md:w-auto text-sm !border-red-300 !text-red-600 dark:!text-red-400">
+                    Stop
+                </button>
+            </div>
+        </div>
+        <p id="apply-file-name" class="text-xs mt-3 text-slate-500 dark:text-slate-400 italic">No file chosen.</p>
+
+        <div id="apply-progress-container" class="hidden mt-4">
+            <div class="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 mb-2 uppercase tracking-wide">
+                <span id="apply-progress-text">Initializing…</span>
+                <span id="apply-progress-percent">0%</span>
+            </div>
+            <div class="w-full bg-slate-300 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                <div id="apply-progress-bar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+            </div>
         </div>
     </div>
 
@@ -501,5 +539,131 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // --- Update Ring Toggles (edited-export upload) -------------------------
+    const applyFileInput = document.getElementById('apply-file-input');
+    const btnChooseApply = document.getElementById('btn-choose-apply-file');
+    const btnApply = document.getElementById('btn-apply-toggles');
+    const btnCancelApply = document.getElementById('btn-cancel-apply');
+    const applyFileName = document.getElementById('apply-file-name');
+    const applyProgressContainer = document.getElementById('apply-progress-container');
+    const applyProgressBar = document.getElementById('apply-progress-bar');
+    const applyProgressText = document.getElementById('apply-progress-text');
+    const applyProgressPercent = document.getElementById('apply-progress-percent');
+
+    let applyLogCount = 0;
+    let applyTaskId = null;
+
+    btnChooseApply.addEventListener('click', () => applyFileInput.click());
+
+    applyFileInput.addEventListener('change', () => {
+        const f = applyFileInput.files[0];
+        applyFileName.textContent = f ? `Selected: ${f.name}` : 'No file chosen.';
+        btnApply.disabled = !f;
+    });
+
+    function resetApplyButtons(running) {
+        btnApply.disabled = running || !applyFileInput.files[0];
+        btnApply.innerHTML = running
+            ? '<div class="spinner border-white dark:border-white w-4 h-4 mx-auto"></div>'
+            : 'Upload &amp; Apply';
+        btnChooseApply.disabled = running;
+        btnCancelApply.classList.toggle('hidden', !running);
+    }
+
+    function pollApplyStatus(taskId) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/device_ringing_audit/apply/status?task_id=${taskId}&since=${applyLogCount}`);
+                const data = await res.json();
+
+                if (data.total > 0) {
+                    const pct = Math.round((data.current / data.total) * 100);
+                    applyProgressBar.style.width = `${pct}%`;
+                    applyProgressPercent.textContent = `${pct}% (${data.current}/${data.total})`;
+                }
+                if (data.message) applyProgressText.textContent = data.message;
+
+                (data.logs || []).forEach(l => {
+                    const t = l.level === 'error' ? 'error' : (l.level === 'success' ? 'success' : 'info');
+                    logAudit(l.message, t);
+                });
+                if (typeof data.log_count === 'number') applyLogCount = data.log_count;
+
+                if (data.status === 'completed') {
+                    clearInterval(interval);
+                    applyProgressBar.className = 'bg-green-500 h-2.5 rounded-full transition-all duration-300';
+                    applyProgressText.textContent = data.message || 'Apply complete!';
+                    logAudit(data.message || 'Apply complete.', 'success');
+                    resetApplyButtons(false);
+                    setTimeout(() => { applyProgressContainer.classList.add('hidden'); }, 4000);
+                } else if (data.status === 'error') {
+                    clearInterval(interval);
+                    applyProgressBar.className = 'bg-red-500 h-2.5 rounded-full transition-all duration-300';
+                    applyProgressText.textContent = 'Apply failed';
+                    logAudit(`Apply Failed: ${data.error}`, 'error');
+                    resetApplyButtons(false);
+                } else if (data.status === 'unknown') {
+                    clearInterval(interval);
+                    logAudit('Apply task not found (server may have restarted).', 'error');
+                    resetApplyButtons(false);
+                    applyProgressContainer.classList.add('hidden');
+                }
+            } catch (e) {
+                // Ignore transient network blips; the next poll retries.
+            }
+        }, 1000);
+    }
+
+    btnApply.addEventListener('click', async () => {
+        const f = applyFileInput.files[0];
+        if (!f) return;
+
+        resetApplyButtons(true);
+        applyLogCount = 0;
+        applyProgressContainer.classList.remove('hidden');
+        applyProgressBar.className = 'bg-blue-500 h-2.5 rounded-full transition-all duration-300';
+        applyProgressBar.style.width = '0%';
+        applyProgressText.textContent = 'Uploading…';
+        applyProgressPercent.textContent = '0%';
+        logAudit(`Uploading "${f.name}" to apply ring toggles…`, 'info');
+
+        const fd = new FormData();
+        fd.append('file', f);
+
+        try {
+            const res = await fetch('/api/device_ringing_audit/apply', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (data.success) {
+                applyTaskId = data.task_id;
+                logAudit(`Applying ${data.total} rule(s) in the background…`, 'info');
+                pollApplyStatus(data.task_id);
+            } else {
+                throw new Error(data.error || 'Server rejected the upload.');
+            }
+        } catch (e) {
+            logAudit(`Apply Failed: ${e.message}`, 'error');
+            applyProgressText.textContent = 'Apply failed';
+            applyProgressBar.className = 'bg-red-500 h-2.5 rounded-full transition-all duration-300';
+            resetApplyButtons(false);
+        }
+    });
+
+    btnCancelApply.addEventListener('click', async () => {
+        if (!applyTaskId) return;
+        btnCancelApply.disabled = true;
+        logAudit('Stop requested — finishing the current rule then halting…', 'info');
+        try {
+            await fetch('/api/device_ringing_audit/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: applyTaskId })
+            });
+        } catch (e) {
+            // best-effort
+        } finally {
+            btnCancelApply.disabled = false;
+        }
+    });
 });
 </script>
