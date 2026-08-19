@@ -91,14 +91,40 @@ ring_time_progress_store = {}
 # Either way we honour Retry-After on a 429 and back off on 5xx, and return the
 # response object so callers can tell a real failure from an empty-but-OK page.
 
-_MAX_ATTEMPTS = 6
+_MAX_ATTEMPTS = 6            # hard failures: 5xx, network error, repeated 401
 _RETRY_AFTER_FALLBACK = 5
 _RETRY_AFTER_CAP = 60
+_MAX_RATE_LIMIT_WAITS = 30  # 429 pauses (don't burn the hard-failure budget)
+
+# Account/resource-lock handling. When another change is being applied to the
+# same account (e.g. someone applies a template or edits call handling in the
+# admin portal), RingCentral rejects concurrent writes with 409 Conflict (or
+# 423 Locked). We wait with escalating backoff and retry the SAME write so the
+# apply resumes on its own once the portal operation releases the lock.
+_CONFLICT_STATUSES = {409, 423}
+_MAX_CONFLICT_WAITS = 40    # up to ~30-40 min of patience for a long template apply
+_CONFLICT_WAIT_STEP = 15
+_CONFLICT_WAIT_CAP = 60
+# Lock errors that arrive as a 400/500 but are really "busy, try again".
+_LOCK_BODY_MARKERS = ('lock', 'in progress', 'try again', 'another operation',
+                      'concurrent', 'being modified', 'temporarily unavailable')
 
 
 def _set_message(task_id, msg):
     if task_id and task_id in ring_time_progress_store:
         ring_time_progress_store[task_id]['message'] = msg
+
+
+def _looks_locked(resp):
+    """True when a response reads like a transient account lock/conflict, whether
+    by status (409/423) or a recognisable 'busy, try again' error body."""
+    status = getattr(resp, 'status_code', None)
+    if status in _CONFLICT_STATUSES:
+        return True
+    if status in (400, 500):
+        body = (getattr(resp, 'text', '') or '').lower()
+        return any(m in body for m in _LOCK_BODY_MARKERS)
+    return False
 
 
 def _retry_after_seconds(resp):
@@ -174,9 +200,17 @@ def _heal_bg_token(auth_data, task_id=None):
 def _request(endpoint, method='GET', params=None, json_body=None,
              auth_data=None, task_id=None, max_attempts=_MAX_ATTEMPTS):
     """Resilient RC call. See module notes above. Returns a response object
-    (real or MockResponse); never raises for HTTP status."""
+    (real or MockResponse); never raises for HTTP status.
+
+    Bounded retries with separate budgets so a busy account doesn't burn the
+    hard-failure budget: 5xx / network / repeated-401 count against max_attempts;
+    429 rate limits and 409/423 account locks each have their own generous,
+    capped budget and back off before retrying the SAME request."""
     resp = None
-    for attempt in range(max_attempts):
+    hard_attempts = 0
+    rate_waits = 0
+    conflict_waits = 0
+    while True:
         token = auth_data.get('access_token') if auth_data else None
         # (connect, read) timeout so a stalled RC connection in the background
         # thread can't hang the whole audit forever — it surfaces as an error the
@@ -188,27 +222,49 @@ def _request(endpoint, method='GET', params=None, json_body=None,
                                json=json_body, return_response=True, token=token,
                                timeout=(10, 60))
         except Exception as e:
+            hard_attempts += 1
+            if hard_attempts >= max_attempts:
+                return None
             _set_message(task_id, f"Network error ({e}) — retrying…")
-            time.sleep(min(2 * (attempt + 1), 30))
+            time.sleep(min(2 * hard_attempts, 30))
             resp = None
             continue
         status = getattr(resp, 'status_code', None)
 
         if status == 429:
+            rate_waits += 1
+            if rate_waits > _MAX_RATE_LIMIT_WAITS:
+                return resp
             wait = _retry_after_seconds(resp)
             _set_message(task_id, f"Rate limit reached — pausing {wait}s…")
+            time.sleep(wait)
+            continue
+
+        # Account/resource lock (concurrent admin-portal change): wait it out and
+        # retry the same write so the run resumes once the lock releases.
+        if _looks_locked(resp):
+            conflict_waits += 1
+            if conflict_waits > _MAX_CONFLICT_WAITS:
+                return resp
+            wait = min(_CONFLICT_WAIT_STEP * conflict_waits, _CONFLICT_WAIT_CAP)
+            _set_message(task_id, f"Account busy — another change is being applied; "
+                                  f"waiting {wait}s and retrying…")
             time.sleep(wait)
             continue
 
         # Background mode heals a 401 here; session mode already healed it
         # inside rc_api_call before returning, so we only act when auth_data set.
         if status == 401 and auth_data is not None:
-            if _heal_bg_token(auth_data, task_id):
+            hard_attempts += 1
+            if hard_attempts < max_attempts and _heal_bg_token(auth_data, task_id):
                 continue
             return resp
 
         if status is not None and status >= 500:
-            time.sleep(min(2 * (attempt + 1), 30))
+            hard_attempts += 1
+            if hard_attempts >= max_attempts:
+                return resp
+            time.sleep(min(2 * hard_attempts, 30))
             continue
 
         # Success or a non-retryable 4xx (e.g. 404 → fall through to caller).
@@ -544,6 +600,9 @@ def _apply_v2(ext_id, rule, device_targets, auth_data=None):
     if resp is not None and getattr(resp, 'ok', False):
         note = " (multiple ring times requested in one ring group — used the largest)" if conflict else ""
         return True, f"Updated {changed} ring group(s){note}."
+    if _looks_locked(resp):
+        return False, ("account still locked by another change after retrying — skipped; "
+                       "re-run once the admin-portal change finishes.")
     status = getattr(resp, 'status_code', '?')
     text = ((getattr(resp, 'text', '') or '').strip())[:300]
     return False, f"V2 PATCH failed [{status}] {text or '(no body)'}"
@@ -582,6 +641,9 @@ def _apply_v1(ext_id, rule, device_targets, auth_data=None):
     resp = _request(url, method='PUT', json_body=body, auth_data=auth_data)
     if resp is not None and getattr(resp, 'ok', False):
         return True, f"Updated {changed} forwarding ring group(s) (V1)."
+    if _looks_locked(resp):
+        return False, ("account still locked by another change after retrying — skipped; "
+                       "re-run once the admin-portal change finishes.")
     status = getattr(resp, 'status_code', '?')
     text = ((getattr(resp, 'text', '') or '').strip())[:300]
     return False, f"V1 PUT failed [{status}] {text or '(no body)'}"
