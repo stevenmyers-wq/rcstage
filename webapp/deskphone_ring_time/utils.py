@@ -9,6 +9,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 from webapp.rc_api import rc_api_call
 from webapp.auth_utils import get_impersonation_token
+from webapp import task_control
 from . import storage
 
 # --- CONSTANTS -------------------------------------------------------------
@@ -77,6 +78,14 @@ RING_DROPDOWN_FORMULA = '"' + ','.join(str(s) for s in ACCEPTED_RING_SECONDS) + 
 # Audit). Keys: status, current, total, message, file_data, rows, error.
 ring_time_progress_store = {}
 
+# The APPLY (upload) run uses the same background-thread + poll model as the
+# audit, so a bulk apply can outlast Cloud Run's per-request timeout (a streaming
+# apply request was being killed at the 3600s request limit) and so account-lock
+# waits happen server-side without holding an HTTP connection open. Keys: status,
+# current, total, message, logs (list of {level, message}), written, cancelled,
+# error.
+apply_progress_store = {}
+
 
 # --- RESILIENT API WRAPPER -------------------------------------------------
 #
@@ -111,8 +120,13 @@ _LOCK_BODY_MARKERS = ('lock', 'in progress', 'try again', 'another operation',
 
 
 def _set_message(task_id, msg):
-    if task_id and task_id in ring_time_progress_store:
-        ring_time_progress_store[task_id]['message'] = msg
+    """Surface a transient status line (rate-limit / lock waits) on whichever
+    background store owns this task — the audit store or the apply store."""
+    if not task_id:
+        return
+    for store in (ring_time_progress_store, apply_progress_store):
+        if task_id in store:
+            store[task_id]['message'] = msg
 
 
 def _looks_locked(resp):
@@ -662,6 +676,84 @@ def apply_ring_time(ext_id, device_targets, auth_data=None):
         ok, msg = _apply_v1(ext_id, rule, device_targets, auth_data=auth_data)
         return ok, 'V1', msg
     return False, None, "No default call-handling rule found (neither V2 nor V1)."
+
+
+# --- BACKGROUND APPLY ------------------------------------------------------
+#
+# `groups` maps ext_key -> {'devices': {device_id: secs}, 'apply_all_secs': secs
+# or None}. Runs in a daemon thread (see the /apply route) so a bulk apply — and
+# any account-lock waits inside it — can outlast the Cloud Run request timeout.
+
+def _apply_log(store, level, message):
+    store['logs'].append({'level': level, 'message': message})
+
+
+def run_ring_time_apply_background(app, task_id, groups, auth_data, user_email=None):
+    """Applies ring times to every edited extension, recording per-extension log
+    lines and progress into apply_progress_store[task_id] for the browser to
+    poll. Honours a cooperative stop via task_control."""
+    store = apply_progress_store.get(task_id)
+    if store is None:
+        return
+    try:
+        with app.app_context():
+            total = len(groups)
+            store['total'] = total
+            written = 0
+            current = 0
+            for ext_key, group in groups.items():
+                if task_control.is_stopped(task_id):
+                    _apply_log(store, 'info', '■ Stopped by user — remaining extensions were skipped.')
+                    store['cancelled'] = True
+                    break
+                current += 1
+                store['current'] = current
+                store['message'] = f"Applying Ext {ext_key} ({current}/{total})…"
+                try:
+                    ext_id = get_extension_id(ext_key, auth_data=auth_data)
+                    if not ext_id:
+                        _apply_log(store, 'error', f"Ext {ext_key}: ⚠️ extension not found.")
+                        continue
+
+                    device_targets = dict(group['devices'])
+                    if group['apply_all_secs'] is not None:
+                        ring_devs = ring_devices_for_ext(
+                            fetch_extension_devices(ext_id, auth_data=auth_data))
+                        if not ring_devs:
+                            _apply_log(store, 'error', f"Ext {ext_key}: ⚠️ no deskphone / generic-SIP devices found.")
+                            if not device_targets:
+                                continue
+                        for d in ring_devs:
+                            device_targets.setdefault(str(d.get('id')), group['apply_all_secs'])
+
+                    if not device_targets:
+                        _apply_log(store, 'info', f"Ext {ext_key}: ⚠️ nothing to apply.")
+                        continue
+
+                    ok, schema, msg = apply_ring_time(ext_id, device_targets, auth_data=auth_data)
+                    if ok:
+                        secs_shown = sorted(set(device_targets.values()))
+                        secs_label = ', '.join(f"{s}s" for s in secs_shown)
+                        _apply_log(store, 'success', f"✅ Ext {ext_key}: ring time → {secs_label} [{schema}] — {msg}")
+                        written += 1
+                    else:
+                        tag = f"[{schema}] " if schema else ""
+                        _apply_log(store, 'error', f"❌ Ext {ext_key}: {tag}{msg}")
+                except Exception as e:
+                    _apply_log(store, 'error', f"❌ Ext {ext_key}: {e}")
+
+            store['written'] = written
+            store['status'] = 'completed'
+            store['message'] = (f"Stopped — {written} extension(s) updated."
+                                if store.get('cancelled')
+                                else f"Finished — {written} extension(s) updated.")
+    except Exception as e:
+        store['status'] = 'error'
+        store['error'] = str(e)
+        _apply_log(store, 'error', f"Apply failed: {e}")
+        store['message'] = f"Apply failed: {e}"
+    finally:
+        task_control.clear(task_id)
 
 
 # --- WORKBOOK BUILD --------------------------------------------------------

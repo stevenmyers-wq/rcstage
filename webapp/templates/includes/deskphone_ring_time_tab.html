@@ -300,6 +300,10 @@
         });
     }
 
+    // Apply runs as a background task on the server (like the audit): upload the
+    // file, get a task id, then poll for progress + new log lines. This means a
+    // bulk apply — including any account-lock waits — is no longer tied to one
+    // HTTP request, so it can't be killed by the Cloud Run request timeout.
     async function drtUpload(input) {
         if (!input.files || !input.files[0]) return;
         const file = input.files[0];
@@ -310,51 +314,80 @@
             if (sheetName === null) { input.value = ''; return; }  // cancelled
         }
 
-        drtTaskId = `drt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        drtTaskId = `drt_apply_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const formData = new FormData();
         formData.append('file', file);
         formData.append('task_id', drtTaskId);
         if (sheetName) formData.append('sheet_name', sheetName);
 
         drtLog(`Uploading ${file.name}...`);
-        if (drtStopBtn) { drtStopBtn.classList.remove('hidden'); drtStopBtn.disabled = false; drtStopBtn.textContent = '■ Stop'; }
         drtProgressShow('Uploading file…');
 
         try {
             const res = await fetch('/api/deskphone_ring_time/apply', { method: 'POST', body: formData });
-            if (!res.ok || (res.headers.get('content-type') || '').includes('application/json')) {
-                const data = await res.json();
+            const data = await res.json();
+            if (!res.ok || !data.success) {
                 if (data.error) drtLog(data.error, 'error');
                 drtProgressFinish(false, 'Failed');
+                drtTaskId = null;
+                input.value = '';
                 return;
             }
-            let uploadError = null;
-            await drtConsumeStream(res, (evt) => {
-                if (evt.type === 'start') {
-                    drtProgressUpdate(0, evt.total, `Processing 0/${evt.total} extensions…`);
-                    drtLog(`Processing ${evt.total} extension(s)...`);
-                } else if (evt.type === 'progress') {
-                    drtProgressUpdate(evt.current, evt.total, `Processing ${evt.current}/${evt.total} extensions…`);
-                    if (evt.message) drtLog(evt.message, evt.level || 'info');
-                } else if (evt.type === 'error') {
-                    uploadError = evt.message;
-                } else if (evt.type === 'complete') {
-                    drtProgressFinish(true, evt.cancelled ? 'Stopped' : 'Done');
-                    const w = (typeof evt.written === 'number') ? ` — ${evt.written} extension(s) updated` : '';
-                    drtLog((evt.cancelled ? '■ Stopped' : '✔ Finished') + w + '.', evt.written ? 'success' : 'info');
-                }
-            });
-            if (uploadError) {
-                drtLog(uploadError, 'error');
-                drtProgressFinish(false, 'Failed');
-            }
+            drtLog(`Applying to ${data.total} extension(s) in the background... this can pause if the account is being edited elsewhere.`);
+            if (drtStopBtn) { drtStopBtn.classList.remove('hidden'); drtStopBtn.disabled = false; drtStopBtn.textContent = '■ Stop'; }
+            drtPollApply(drtTaskId);
         } catch (e) {
             drtLog(`Upload failed: ${e.message}`, 'error');
             drtProgressFinish(false, 'Failed');
-        } finally {
             drtTaskId = null;
-            if (drtStopBtn) drtStopBtn.classList.add('hidden');
         }
         input.value = '';
+    }
+
+    function drtPollApply(taskId) {
+        let seen = 0;         // log lines already rendered
+        let staleTicks = 0;   // guards a task the server no longer knows about
+        const interval = setInterval(async () => {
+            let data;
+            try {
+                const res = await fetch(`/api/deskphone_ring_time/apply/status?task_id=${encodeURIComponent(taskId)}&since=${seen}`);
+                data = await res.json();
+            } catch (e) {
+                return;  // ignore transient blips; keep polling
+            }
+
+            if (Array.isArray(data.logs) && data.logs.length) {
+                data.logs.forEach(l => drtLog(l.message, l.level || 'info'));
+                seen = (typeof data.log_count === 'number') ? data.log_count : seen + data.logs.length;
+            }
+            if (data.total > 0) {
+                drtProgressUpdate(data.current, data.total, `Processing ${data.current}/${data.total} extensions…`);
+            }
+            if (data.message) drtProgress.text.innerText = data.message;
+
+            const done = () => { if (drtStopBtn) drtStopBtn.classList.add('hidden'); drtTaskId = null; };
+
+            if (data.status === 'completed') {
+                clearInterval(interval);
+                drtProgressFinish(!data.cancelled, data.cancelled ? 'Stopped' : 'Done');
+                drtLog((data.cancelled ? '■ Stopped' : '✔ Finished') + ` — ${data.written || 0} extension(s) updated.`,
+                       data.written ? 'success' : 'info');
+                done();
+            } else if (data.status === 'error') {
+                clearInterval(interval);
+                drtProgressFinish(false, 'Failed');
+                drtLog(`Apply failed: ${data.error || 'unknown error'}`, 'error');
+                done();
+            } else if (data.status === 'unknown') {
+                if (++staleTicks >= 15) {
+                    clearInterval(interval);
+                    drtProgressFinish(false, 'Lost');
+                    drtLog("Lost contact with the apply task (the server may have restarted). Re-audit to see which extensions were updated, then re-run for the rest.", 'error');
+                    done();
+                }
+            } else {
+                staleTicks = 0;
+            }
+        }, 1000);
     }
 </script>
