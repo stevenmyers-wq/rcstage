@@ -13,6 +13,7 @@ from webapp import task_control
 from .utils import (
     AUDIT_COLS, DEFAULT_STATE_RULE_ID, V2_STATE_RULE_BASE,
     ring_time_progress_store, run_ring_time_audit_background,
+    apply_progress_store, run_ring_time_apply_background,
     add_ring_dropdown, autosize,
     fetch_extension_devices, ring_devices_for_ext, get_extension_id,
     get_default_ring_config, apply_ring_time, coerce_ring_seconds,
@@ -189,70 +190,59 @@ def apply_ring_times():
             g['devices'][did] = secs
 
     total = len(groups)
+    if total == 0:
+        return jsonify({"error": "No rows with a 'New Ring Time (Secs)' value to apply. "
+                                 "Fill that column and re-upload."}), 400
 
-    def generate():
-        cancelled = False
-        current = 0
-        written_count = 0
+    # Run the apply in a background thread and let the browser poll — a bulk apply
+    # (with account-lock waits) can run for a long time, and a single streaming
+    # request was being killed at the Cloud Run 3600s request timeout (~1h).
+    task_id = task_id or f"drt_apply_{int(time.time())}"
+    apply_progress_store[task_id] = {
+        'status': 'running', 'current': 0, 'total': total,
+        'message': 'Starting apply…', 'logs': [], 'written': 0,
+        'cancelled': False, 'error': None,
+    }
+    auth_data = _session_auth_data()
+    app = current_app._get_current_object()
+    user_email = session.get('user_email')
+    thread = threading.Thread(
+        target=run_ring_time_apply_background,
+        args=(app, task_id, groups, auth_data, user_email))
+    thread.daemon = True
+    thread.start()
 
-        def prog(message=None, level='info'):
-            evt = {"type": "progress", "current": current, "total": total}
-            if message is not None:
-                evt["message"] = message
-                evt["level"] = level
-            return json.dumps(evt) + "\n"
+    return jsonify({"success": True, "task_id": task_id, "total": total})
 
-        yield json.dumps({"type": "start", "total": total}) + "\n"
 
-        for ext_key, group in groups.items():
-            if task_control.is_stopped(task_id):
-                cancelled = True
-                current = total
-                yield prog("■ Stopped by user — remaining extensions were skipped.", "info")
-                break
-
-            current += 1
-            try:
-                ext_id = get_extension_id(ext_key)
-                if not ext_id:
-                    yield prog(f"Ext {ext_key}: ⚠️ extension not found.", "error")
-                    continue
-
-                device_targets = dict(group['devices'])
-
-                if group['apply_all_secs'] is not None:
-                    ring_devs = ring_devices_for_ext(fetch_extension_devices(ext_id))
-                    if not ring_devs:
-                        yield prog(f"Ext {ext_key}: ⚠️ no deskphone / generic-SIP devices found.", "error")
-                        if not device_targets:
-                            continue
-                    for d in ring_devs:
-                        did = str(d.get('id'))
-                        device_targets.setdefault(did, group['apply_all_secs'])
-
-                if not device_targets:
-                    yield prog(f"Ext {ext_key}: ⚠️ nothing to apply.", "info")
-                    continue
-
-                ok, schema, msg = apply_ring_time(ext_id, device_targets)
-                if ok:
-                    secs_shown = sorted(set(device_targets.values()))
-                    secs_label = ', '.join(f"{s}s" for s in secs_shown)
-                    yield prog(f"✅ Ext {ext_key}: ring time → {secs_label} [{schema}] — {msg}", "success")
-                    written_count += 1
-                else:
-                    tag = f"[{schema}] " if schema else ""
-                    yield prog(f"❌ Ext {ext_key}: {tag}{msg}", "error")
-            except Exception as e:
-                yield prog(f"❌ Ext {ext_key}: {str(e)}", "error")
-
-        task_control.clear(task_id)
-        yield json.dumps({"type": "complete", "cancelled": cancelled, "written": written_count}) + "\n"
-
-    resp = Response(stream_with_context(generate()), mimetype='application/x-ndjson')
-    resp.headers['X-Accel-Buffering'] = 'no'
-    resp.headers['Cache-Control'] = 'no-cache'
-    return resp
+@deskphone_ring_time_bp.route('/apply/status', methods=['GET'])
+@require_rc_token
+def apply_status():
+    """Progress + new log lines for a background apply. `since` is the number of
+    log lines the browser has already shown, so each poll returns only new ones."""
+    task_id = request.args.get('task_id')
+    try:
+        since = int(request.args.get('since') or 0)
+    except (TypeError, ValueError):
+        since = 0
+    data = apply_progress_store.get(task_id)
+    if data is None:
+        # Unknown to this instance (recycled, or landed on another instance).
+        return jsonify({'status': 'unknown', 'current': 0, 'total': 0,
+                        'message': '', 'logs': [], 'log_count': 0,
+                        'written': 0, 'cancelled': False, 'error': ''})
+    logs = data.get('logs', [])
+    return jsonify({
+        'status': data.get('status', 'running'),
+        'current': data.get('current', 0),
+        'total': data.get('total', 0),
+        'message': data.get('message', ''),
+        'logs': logs[since:],
+        'log_count': len(logs),
+        'written': data.get('written', 0),
+        'cancelled': data.get('cancelled', False),
+        'error': data.get('error', ''),
+    })
 
 
 # --- BLANK TEMPLATE --------------------------------------------------------
