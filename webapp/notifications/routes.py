@@ -147,6 +147,14 @@ def audit_single_extension():
         if not obj or key not in obj: return "FALSE"
         return str(obj[key].get('notifyByEmail', False)).upper()
 
+    def get_flag_optional(obj, key):
+        # Some categories (e.g. Fax Transmission Results / Call Notes) only exist
+        # on User extensions; Call Queues and other types have no such block.
+        # Report N/A when the category is absent so the audit doesn't read as
+        # "disabled" for extension types the setting never applies to.
+        if not obj or key not in obj: return "N/A"
+        return str(obj[key].get('notifyByEmail', False)).upper()
+
     is_advanced = settings.get('advancedMode', False)
     
     response_data = {
@@ -156,8 +164,8 @@ def audit_single_extension():
         "Enable MissedCalls": get_flag(settings, 'missedCalls'),
         "Enable Faxes": get_flag(settings, 'inboundFaxes'),
         "Enable SMS": get_flag(settings, 'inboundTexts'),
-        "Enable FaxResults": get_flag(settings, 'outboundFaxes'),
-        "Enable CallNotes": get_flag(settings, 'callNotes'),
+        "Enable FaxResults": get_flag_optional(settings, 'outboundFaxes'),
+        "Enable CallNotes": get_flag_optional(settings, 'callNotes'),
         "Global Emails": "; ".join(settings.get('emailAddresses', [])),
         "Voicemail Emails": get_emails(settings, 'voicemails'),
         "Fax Emails": get_emails(settings, 'inboundFaxes'),
