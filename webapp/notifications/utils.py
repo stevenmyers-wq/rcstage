@@ -25,7 +25,8 @@ class NotificationManager:
             'MissedCalls_Email', 'MissedCalls_SMS',
             'InboundTexts_Email', 'InboundTexts_SMS',
             'InboundFaxes_Email', 'InboundFaxes_SMS', 'InboundFaxes_MarkAsRead',
-            'OutboundFaxes_Email', 'OutboundFaxes_SMS'
+            'OutboundFaxes_Email', 'OutboundFaxes_SMS',
+            'CallNotes_Email', 'CallNotes_SMS'
         ]
         
         self._pause_until = 0
@@ -249,7 +250,8 @@ class NotificationManager:
                         'missedCalls': ('MissedCalls_Email', 'MissedCalls_SMS', None),
                         'inboundTexts': ('InboundTexts_Email', 'InboundTexts_SMS', None),
                         'inboundFaxes': ('InboundFaxes_Email', 'InboundFaxes_SMS', 'InboundFaxes_MarkAsRead'),
-                        'outboundFaxes': ('OutboundFaxes_Email', 'OutboundFaxes_SMS', None)
+                        'outboundFaxes': ('OutboundFaxes_Email', 'OutboundFaxes_SMS', None),
+                        'callNotes': ('CallNotes_Email', 'CallNotes_SMS', None)
                     }
                     
                     for cat, cols in cats.items():
@@ -323,7 +325,9 @@ class NotificationManager:
                         'InboundFaxes_SMS': fax.get('notifyBySms', False),
                         'InboundFaxes_MarkAsRead': fax.get('markAsRead', False),
                         'OutboundFaxes_Email': s.get('outboundFaxes', {}).get('notifyByEmail', False),
-                        'OutboundFaxes_SMS': s.get('outboundFaxes', {}).get('notifyBySms', False)
+                        'OutboundFaxes_SMS': s.get('outboundFaxes', {}).get('notifyBySms', False),
+                        'CallNotes_Email': s.get('callNotes', {}).get('notifyByEmail', False),
+                        'CallNotes_SMS': s.get('callNotes', {}).get('notifyBySms', False)
                     }
                 elif resp.status_code == 429:
                     attempt += 1

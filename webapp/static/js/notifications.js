@@ -129,31 +129,39 @@ document.getElementById('btn-audit-start').addEventListener('click', async funct
 // --- 2. TEMPLATE ---
 document.getElementById('btn-download-template').addEventListener('click', () => {
     const template = [
-        { 
-            "Extension ID": "1001", 
-            "Advanced Mode": "FALSE", 
+        {
+            "Extension ID": "1001",
+            "Advanced Mode": "FALSE",
             "Global Emails": "queue_manager@email.com",
             "Enable Voicemail": "TRUE",
             "Enable MissedCalls": "TRUE",
             "Enable Faxes": "FALSE",
             "Enable SMS": "TRUE",
-            "Voicemail Emails": "", 
-            "Fax Emails": "", 
+            "Enable FaxResults": "FALSE",
+            "Enable CallNotes": "FALSE",
+            "Voicemail Emails": "",
+            "Fax Emails": "",
             "SMS Emails": "",
-            "MissedCall Emails": ""
+            "MissedCall Emails": "",
+            "FaxResults Emails": "",
+            "CallNotes Emails": ""
         },
-        { 
-            "Extension ID": "1002", 
-            "Advanced Mode": "TRUE", 
+        {
+            "Extension ID": "1002",
+            "Advanced Mode": "TRUE",
             "Global Emails": "",
             "Enable Voicemail": "TRUE",
             "Enable MissedCalls": "FALSE",
             "Enable Faxes": "TRUE",
             "Enable SMS": "FALSE",
-            "Voicemail Emails": "my_vm@email.com", 
-            "Fax Emails": "my_fax@email.com", 
+            "Enable FaxResults": "TRUE",
+            "Enable CallNotes": "TRUE",
+            "Voicemail Emails": "my_vm@email.com",
+            "Fax Emails": "my_fax@email.com",
             "SMS Emails": "",
-            "MissedCall Emails": ""
+            "MissedCall Emails": "",
+            "FaxResults Emails": "my_fax@email.com",
+            "CallNotes Emails": "my_notes@email.com"
         }
     ];
     downloadCSV(template, 'notification_template.csv');
@@ -201,7 +209,7 @@ async function startUpdateLoop(tasks) {
         const extId = task['Extension ID'];
         updateStatus(true, `Updating (${i+1}/${tasks.length}): ID ${extId}`, Math.round(((i+1)/tasks.length)*100));
         
-        const payload = { 
+        const payload = {
             id: extId,
             advanced_mode: task['Advanced Mode'],
             global_emails: task['Global Emails'],
@@ -209,10 +217,14 @@ async function startUpdateLoop(tasks) {
             enable_missed: task['Enable MissedCalls'],
             enable_fax: task['Enable Faxes'],
             enable_sms: task['Enable SMS'],
+            enable_outfax: task['Enable FaxResults'],
+            enable_callnotes: task['Enable CallNotes'],
             vm_emails: task['Voicemail Emails'],
             fax_emails: task['Fax Emails'],
             sms_emails: task['SMS Emails'],
-            missed_emails: task['MissedCall Emails']
+            missed_emails: task['MissedCall Emails'],
+            outfax_emails: task['FaxResults Emails'],
+            callnotes_emails: task['CallNotes Emails']
         };
 
         let success = false;

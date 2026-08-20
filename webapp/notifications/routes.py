@@ -156,11 +156,15 @@ def audit_single_extension():
         "Enable MissedCalls": get_flag(settings, 'missedCalls'),
         "Enable Faxes": get_flag(settings, 'inboundFaxes'),
         "Enable SMS": get_flag(settings, 'inboundTexts'),
+        "Enable FaxResults": get_flag(settings, 'outboundFaxes'),
+        "Enable CallNotes": get_flag(settings, 'callNotes'),
         "Global Emails": "; ".join(settings.get('emailAddresses', [])),
         "Voicemail Emails": get_emails(settings, 'voicemails'),
         "Fax Emails": get_emails(settings, 'inboundFaxes'),
         "SMS Emails": get_emails(settings, 'inboundTexts'),
-        "MissedCall Emails": get_emails(settings, 'missedCalls')
+        "MissedCall Emails": get_emails(settings, 'missedCalls'),
+        "FaxResults Emails": get_emails(settings, 'outboundFaxes'),
+        "CallNotes Emails": get_emails(settings, 'callNotes')
     }
 
     return jsonify({"status": "success", "data": response_data})
@@ -188,12 +192,13 @@ def update_single_extension():
     # can't produce a valid, meaningful update — reject it up front with a
     # clear message instead of sending it to RingCentral.
     if requested_advanced:
-        advanced_email_fields = ('vm_emails', 'fax_emails', 'sms_emails', 'missed_emails')
+        advanced_email_fields = ('vm_emails', 'fax_emails', 'sms_emails', 'missed_emails',
+                                 'outfax_emails', 'callnotes_emails')
         if all(not str(data.get(f) or '').strip() for f in advanced_email_fields):
             return jsonify({
                 "status": "error",
                 "message": "Advanced Mode is TRUE but all advanced email fields "
-                           "(Voicemail/Fax/SMS/MissedCall Emails) are blank."
+                           "(Voicemail/Fax/SMS/MissedCall/FaxResults/CallNotes Emails) are blank."
             })
 
     endpoint = f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings'
@@ -210,9 +215,9 @@ def update_single_extension():
 
     # Full read-modify-write, mirroring the RingCentral portal's own request:
     # echo the whole settings object back and change only the fields this row
-    # touches. Sending the complete resource (every category, incl. ones this
-    # tool does not manage such as outboundFaxes/callNotes) is what keeps the
-    # API from rejecting the write for a missing/invalid category.
+    # touches. Sending the complete resource (every category, including any this
+    # tool does not manage) is what keeps the API from rejecting the write for a
+    # missing/invalid category.
     new_notif = copy.deepcopy(original)
 
     if 'advancedMode' in new_notif:
@@ -242,10 +247,12 @@ def update_single_extension():
     # list — the field the portal reads and writes. A blank email column leaves
     # the stored list untouched.
     cat_fields = {
-        'voicemails':   ('enable_vm',     'vm_emails'),
-        'missedCalls':  ('enable_missed', 'missed_emails'),
-        'inboundFaxes': ('enable_fax',    'fax_emails'),
-        'inboundTexts': ('enable_sms',    'sms_emails'),
+        'voicemails':    ('enable_vm',        'vm_emails'),
+        'missedCalls':   ('enable_missed',    'missed_emails'),
+        'inboundFaxes':  ('enable_fax',       'fax_emails'),
+        'inboundTexts':  ('enable_sms',       'sms_emails'),
+        'outboundFaxes': ('enable_outfax',    'outfax_emails'),
+        'callNotes':     ('enable_callnotes', 'callnotes_emails'),
     }
     for cat, (enable_key, emails_key) in cat_fields.items():
         block = new_notif.get(cat)
@@ -263,7 +270,7 @@ def update_single_extension():
     # on every notification category (empty where none is set). Ensure the same
     # shape so a basic->advanced flip doesn't leave a category without the field.
     if advanced:
-        for cat in ('voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts', 'outboundFaxes'):
+        for cat in ('voicemails', 'missedCalls', 'inboundFaxes', 'inboundTexts', 'outboundFaxes', 'callNotes'):
             block = new_notif.get(cat)
             if isinstance(block, dict) and 'advancedEmailAddresses' not in block:
                 block['advancedEmailAddresses'] = []
