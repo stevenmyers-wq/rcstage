@@ -1,0 +1,396 @@
+{
+  "extension_id": 414741125,
+  "raw_data": {
+    "1_devices_api": {
+      "navigation": {
+        "firstPage": {
+          "uri": "https://platform.ringcentral.com/restapi/v1.0/account/730560124/extension/414741125/device?page=1&perPage=100"
+        },
+        "lastPage": {
+          "uri": "https://platform.ringcentral.com/restapi/v1.0/account/730560124/extension/414741125/device?page=1&perPage=100"
+        }
+      },
+      "paging": {
+        "page": 1,
+        "pageEnd": 0,
+        "pageStart": 0,
+        "perPage": 100,
+        "totalElements": 1,
+        "totalPages": 1
+      },
+      "records": [
+        {
+          "emergency": {
+            "address": {
+              "buildingNumber": "420",
+              "city": "Hendra",
+              "country": "AU",
+              "countryId": "15",
+              "countryIsoCode": "AU",
+              "countryName": "Australia",
+              "customerName": "Eagers",
+              "state": "QLD",
+              "stateId": "771",
+              "stateIsoCode": "QLD",
+              "stateName": "Queensland",
+              "street": "Nudgee Road",
+              "streetType": "Rd",
+              "zip": "4011"
+            },
+            "addressEditableStatus": "MainDevice",
+            "addressStatus": "Valid",
+            "location": {
+              "addressFormatId": "1",
+              "addressFormatStatus": "Actual",
+              "id": "43771125",
+              "name": "EasyAuto Hendra"
+            },
+            "outOfCountry": false,
+            "visibility": "Public"
+          },
+          "emergencyServiceAddress": {
+            "buildingNumber": "420",
+            "city": "Hendra",
+            "country": "AU",
+            "countryId": "15",
+            "countryIsoCode": "AU",
+            "countryName": "Australia",
+            "customerName": "Eagers",
+            "outOfCountry": false,
+            "state": "QLD",
+            "stateId": "771",
+            "stateIsoCode": "QLD",
+            "stateName": "Queensland",
+            "street": "Nudgee Road",
+            "streetType": "Rd",
+            "zip": "4011"
+          },
+          "extension": {
+            "extensionNumber": "79959",
+            "id": 414741125,
+            "uri": "https://platform.ringcentral.com/restapi/v1.0/account/730560124/extension/414741125"
+          },
+          "hotDeskDevice": false,
+          "id": "1053796124",
+          "linePooling": "Host",
+          "name": "Existing Phone",
+          "phoneLines": [
+            {
+              "emergencyAddress": {
+                "localOnly": true,
+                "required": true
+              },
+              "id": "135825125",
+              "lineType": "Standalone",
+              "phoneInfo": {
+                "country": {
+                  "id": "15",
+                  "name": "Australia",
+                  "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/country/15"
+                },
+                "id": 578345125,
+                "paymentType": "Local",
+                "phoneNumber": "+61721409849",
+                "type": "VoiceFax",
+                "usageType": "DirectNumber"
+              }
+            }
+          ],
+          "site": {
+            "id": "main-site",
+            "name": "Main site"
+          },
+          "sku": "DV-0",
+          "status": "Offline",
+          "type": "OtherPhone",
+          "uri": "https://platform.ringcentral.com/restapi/v1.0/account/730560124/device/1053796124"
+        }
+      ],
+      "uri": "https://platform.ringcentral.com/restapi/v1.0/account/730560124/extension/414741125/device?page=1&perPage=100"
+    },
+    "2_v1_answering_rule_api": {
+      "error": 403
+    },
+    "3_v2_interaction_rules_api": {
+      "paging": {
+        "page": 1,
+        "perPage": 100,
+        "totalElements": 0,
+        "totalPages": 0
+      },
+      "records": []
+    },
+    "4_v2_state_rules_api": {
+      "paging": {
+        "page": 1,
+        "pageEnd": 2,
+        "pageStart": 0,
+        "perPage": 100,
+        "totalElements": 3,
+        "totalPages": 1
+      },
+      "records": [
+        {
+          "dispatching": {
+            "actions": [
+              {
+                "enabled": false,
+                "greeting": {
+                  "effectiveGreetingType": "Preset",
+                  "preset": {
+                    "id": "66048"
+                  }
+                },
+                "type": "PlayWelcomePromptAction"
+              },
+              {
+                "enabled": true,
+                "greeting": {
+                  "effectiveGreetingType": "Preset",
+                  "preset": {
+                    "id": "68867"
+                  }
+                },
+                "type": "PlayConnectingMessageAction"
+              },
+              {
+                "enabled": true,
+                "greeting": {
+                  "effectiveGreetingType": "Preset",
+                  "preset": {
+                    "id": "66310"
+                  }
+                },
+                "type": "PlayConnectingPromptAction"
+              },
+              {
+                "enabled": false,
+                "screening": "NoCallerId",
+                "screeningResult": "AskToAnswer",
+                "type": "ScreeningAction"
+              },
+              {
+                "duration": 40,
+                "enabled": true,
+                "targets": [
+                  {
+                    "device": {
+                      "id": "1053796124",
+                      "name": "Existing Phone",
+                      "phoneNumber": "+61721409849"
+                    },
+                    "name": "Existing Phone",
+                    "type": "DeviceRingTarget"
+                  }
+                ],
+                "type": "RingGroupAction"
+              },
+              {
+                "duration": 30,
+                "enabled": true,
+                "targets": [
+                  {
+                    "name": "My mobile apps",
+                    "type": "AllMobileRingTarget"
+                  }
+                ],
+                "type": "RingGroupAction"
+              },
+              {
+                "duration": 30,
+                "enabled": true,
+                "targets": [
+                  {
+                    "name": "My desktop",
+                    "type": "AllDesktopRingTarget"
+                  }
+                ],
+                "type": "RingGroupAction"
+              },
+              {
+                "ringingTargetType": "VoiceMailTerminatingTarget",
+                "targets": [
+                  {
+                    "name": "Voicemail",
+                    "prompt": {
+                      "greeting": {
+                        "effectiveGreetingType": "Preset",
+                        "preset": {
+                          "id": "590080"
+                        }
+                      }
+                    },
+                    "type": "VoiceMailTerminatingTarget"
+                  },
+                  {
+                    "dispatchingType": "Ringing",
+                    "name": "PlayAnnouncement",
+                    "prompt": {
+                      "greeting": {
+                        "effectiveGreetingType": "Preset",
+                        "preset": {
+                          "id": "66816"
+                        }
+                      }
+                    },
+                    "type": "PlayAnnouncementTerminatingTarget"
+                  }
+                ],
+                "type": "TerminatingAction"
+              }
+            ],
+            "type": "RingAtOnce"
+          },
+          "displayName": "Work Hours",
+          "id": "work-hours",
+          "state": {
+            "conditions": [
+              {
+                "schedule": {
+                  "triggers": [
+                    {
+                      "endTime": "23:59:59",
+                      "startTime": "00:00:00",
+                      "triggerType": "Daily"
+                    }
+                  ]
+                },
+                "type": "Schedule"
+              }
+            ],
+            "displayName": "Work Hours",
+            "enabled": true,
+            "id": "work-hours"
+          }
+        },
+        {
+          "dispatching": {
+            "actions": [
+              {
+                "targets": [
+                  {
+                    "name": "Voicemail",
+                    "prompt": {
+                      "greeting": {
+                        "effectiveGreetingType": "Preset",
+                        "preset": {
+                          "id": "590080"
+                        }
+                      }
+                    },
+                    "type": "VoiceMailTerminatingTarget"
+                  },
+                  {
+                    "dispatchingType": "Terminating",
+                    "name": "PlayAnnouncement",
+                    "prompt": {
+                      "greeting": {
+                        "effectiveGreetingType": "Preset",
+                        "preset": {
+                          "id": "66560"
+                        }
+                      }
+                    },
+                    "type": "PlayAnnouncementTerminatingTarget"
+                  },
+                  {
+                    "destination": {
+                      "phoneNumber": "+6117261721409849"
+                    },
+                    "dispatchingType": "Terminating",
+                    "name": "__EXTERNAL_NUMBER__",
+                    "type": "PhoneNumberTerminatingTarget"
+                  }
+                ],
+                "terminatingTargetType": "PhoneNumberTerminatingTarget",
+                "type": "TerminatingAction"
+              }
+            ],
+            "type": "Terminate"
+          },
+          "displayName": "Forward all calls",
+          "id": "forward-all-calls",
+          "state": {
+            "conditions": [
+              {
+                "schedule": {
+                  "triggers": [
+                    {
+                      "endTime": "23:59:59",
+                      "startTime": "00:00:00",
+                      "triggerType": "Daily"
+                    }
+                  ]
+                },
+                "type": "Schedule"
+              }
+            ],
+            "displayName": "Forward all calls",
+            "enabled": true,
+            "id": "forward-all-calls"
+          }
+        },
+        {
+          "dispatching": {
+            "actions": [
+              {
+                "targets": [
+                  {
+                    "name": "Voicemail",
+                    "prompt": {
+                      "greeting": {
+                        "effectiveGreetingType": "Preset",
+                        "preset": {
+                          "id": "590080"
+                        }
+                      }
+                    },
+                    "type": "VoiceMailTerminatingTarget"
+                  },
+                  {
+                    "dispatchingType": "Terminating",
+                    "name": "PlayAnnouncement",
+                    "prompt": {
+                      "greeting": {
+                        "effectiveGreetingType": "Preset",
+                        "preset": {
+                          "id": "66560"
+                        }
+                      }
+                    },
+                    "type": "PlayAnnouncementTerminatingTarget"
+                  }
+                ],
+                "terminatingTargetType": "VoiceMailTerminatingTarget",
+                "type": "TerminatingAction"
+              }
+            ],
+            "type": "Terminate"
+          },
+          "displayName": "Do not disturb",
+          "id": "dnd",
+          "state": {
+            "conditions": [
+              {
+                "schedule": {
+                  "triggers": [
+                    {
+                      "endTime": "23:59:59",
+                      "startTime": "00:00:00",
+                      "triggerType": "Daily"
+                    }
+                  ]
+                },
+                "type": "Schedule"
+              }
+            ],
+            "displayName": "Do not disturb",
+            "enabled": false,
+            "id": "dnd"
+          }
+        }
+      ]
+    }
+  },
+  "success": true
+}
