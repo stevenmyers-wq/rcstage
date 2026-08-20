@@ -583,48 +583,65 @@ def _device_currently_rings(dispatching, did):
     return False
 
 
-def _set_v2_device_toggle(dispatching, did, want):
+def _set_v2_device_toggle(dispatching, did, want, device_info=None):
     """Flips one device's ring toggle inside a V2 rule's dispatching (in place).
 
-    Returns one of: 'changed', 'nochange', 'cannot'. Enabling a device that has
-    no target yet appends a DeviceRingTarget to the first RingGroupAction; if the
-    rule has no RingGroupAction at all there is nowhere to add it -> 'cannot'."""
-    current = _device_currently_rings(dispatching, did)
-    if current == want:
+    RingCentral models each phone as its OWN single-target RingGroupAction: the
+    on/off toggle the admin portal shows is that ACTION's `enabled` flag, and the
+    DeviceRingTarget itself carries no `enabled` field. So we toggle the action,
+    not the target (an earlier version flipped a target-level flag RC ignores).
+
+    Returns 'changed', 'nochange', or 'cannot' (enable requested but the device
+    has no ring group and we can't synthesise one)."""
+    if _device_currently_rings(dispatching, did) == want:
         return 'nochange'
 
-    targets = list(_device_ring_targets(dispatching, did))
+    pairs = list(_device_ring_targets(dispatching, did))  # (action, target) for this device
 
     if want:
-        if targets:
-            # Re-enable the existing target(s) and their ring group.
-            for action, target in targets:
-                target['enabled'] = True
-                if action.get('enabled', True) is False:
-                    action['enabled'] = True
+        if pairs:
+            # Turn the device's ring group(s) back on.
+            for action, target in pairs:
+                action['enabled'] = True
+                if target.get('enabled') is False:
+                    target.pop('enabled', None)
             return 'changed'
-        # No target yet: add one to the first ring group (prefer an enabled one).
-        ring_groups = [a for a in dispatching.get('actions', [])
-                       if a.get('type') == 'RingGroupAction']
-        if not ring_groups:
-            return 'cannot'
-        target_group = next((a for a in ring_groups if a.get('enabled', True) is not False),
-                            ring_groups[0])
-        target_group.setdefault('targets', []).append({
-            'type': 'DeviceRingTarget',
-            'device': {'id': did},
-            'enabled': True,
-        })
-        if target_group.get('enabled', True) is False:
-            target_group['enabled'] = True
+        # Device isn't targeted by any ring group yet — synthesise one that mirrors
+        # RingCentral's own shape (a single-device RingGroupAction) and slot it in
+        # before the terminating action so voicemail still runs last.
+        target = {'type': 'DeviceRingTarget', 'device': {'id': did}}
+        if device_info:
+            if device_info.get('name'):
+                target['name'] = device_info['name']
+                target['device']['name'] = device_info['name']
+            if device_info.get('phoneNumber'):
+                target['device']['phoneNumber'] = device_info['phoneNumber']
+        new_action = {'type': 'RingGroupAction', 'enabled': True,
+                      'duration': 20, 'targets': [target]}
+        actions = dispatching.setdefault('actions', [])
+        idx = next((i for i, a in enumerate(actions)
+                    if a.get('type') == 'TerminatingAction'), len(actions))
+        actions.insert(idx, new_action)
         return 'changed'
 
-    # want == False: silence the device by disabling its target(s).
-    if not targets:
-        return 'nochange'
-    for _action, target in targets:
-        target['enabled'] = False
-    return 'changed'
+    # want == False: silence the device by disabling its ring group. A group can
+    # in principle carry more than one device target; only when this device is the
+    # ONLY one do we disable the whole action, otherwise we drop just this target.
+    changed = False
+    for action, target in pairs:
+        if action.get('enabled', True) is False:
+            continue
+        other_device_targets = [
+            t for t in action.get('targets', [])
+            if t.get('type') == 'DeviceRingTarget'
+            and str((t.get('device') or {}).get('id') or '') != did
+        ]
+        if other_device_targets:
+            action['targets'] = [t for t in action.get('targets', []) if t is not target]
+        else:
+            action['enabled'] = False
+        changed = True
+    return 'changed' if changed else 'nochange'
 
 
 def _apply_v2(ext_id, rule_id, device_wants, auth_data=None, task_id=None):
@@ -646,10 +663,20 @@ def _apply_v2(ext_id, rule_id, device_wants, auth_data=None, task_id=None):
         return False, 0, f"rule {rule_id} not found on V2 comm-handling — skipped."
 
     dispatching = _dispatching_of(rule)
+
+    # If enabling a device that has no ring group yet, we synthesise one and need
+    # its name/number to mirror RC's shape — fetch device metadata once, only when
+    # that case actually arises.
+    device_info_map = {}
+    if any(want and not list(_device_ring_targets(dispatching, did))
+           for did, want in device_wants.items()):
+        device_info_map = _fetch_device_info_map(ext_id, auth_data=auth_data, task_id=task_id)
+
     changed = 0
     notes = []
     for did, want in device_wants.items():
-        result = _set_v2_device_toggle(dispatching, did, want)
+        result = _set_v2_device_toggle(dispatching, did, want,
+                                       device_info=device_info_map.get(did))
         if result == 'changed':
             changed += 1
         elif result == 'cannot':
@@ -665,12 +692,27 @@ def _apply_v2(ext_id, rule_id, device_wants, auth_data=None, task_id=None):
     url = base.format(ext_id=ext_id) + f"/{rule_id}"
     resp = safe_api_call(url, method='PATCH', json_body={'dispatching': dispatching},
                          auth_data=auth_data, task_id=task_id, raw=True)
-    if resp is not None and getattr(resp, 'ok', False):
+    if resp is None or not getattr(resp, 'ok', False):
+        status = getattr(resp, 'status_code', '?')
+        text = ((getattr(resp, 'text', '') or '').strip())[:300]
+        return False, 0, f"V2 PATCH failed [{status}] {text or '(no body)'}"
+
+    # VERIFY: a 2xx from comm-handling doesn't guarantee the edit stuck (RC can
+    # accept then normalise/ignore an unsupported shape). Re-read the rule and
+    # confirm each device now matches what was asked before reporting success.
+    verify = safe_api_call(url, auth_data=auth_data, task_id=task_id)
+    if not isinstance(verify, dict):
         note = (" (" + "; ".join(notes) + ")") if notes else ""
-        return True, changed, f"updated {changed} device toggle(s) [{kind}]{note}."
-    status = getattr(resp, 'status_code', '?')
-    text = ((getattr(resp, 'text', '') or '').strip())[:300]
-    return False, 0, f"V2 PATCH failed [{status}] {text or '(no body)'}"
+        return True, changed, f"updated {changed} device toggle(s) [{kind}]{note} — could not re-read to verify."
+    vdisp = _dispatching_of(verify)
+    mismatched = [did for did, want in device_wants.items()
+                  if _device_currently_rings(vdisp, did) != want]
+    if mismatched:
+        return False, 0, (f"PATCH returned OK but {len(mismatched)} device(s) did not change "
+                          f"server-side (RingCentral rejected or normalised the edit): "
+                          f"{', '.join(mismatched)}.")
+    note = (" (" + "; ".join(notes) + ")") if notes else ""
+    return True, changed, f"updated {changed} device toggle(s) [{kind}]{note} — verified."
 
 
 def _apply_v1(ext_id, rule_id, device_wants, auth_data=None, task_id=None):
@@ -751,6 +793,27 @@ def fetch_physical_devices(ext_id, auth_data=None, task_id=None):
     recs = data.get('records', []) if isinstance(data, dict) else []
     return [str(d.get('id')) for d in recs
             if d.get('type') in RING_DEVICE_TYPES and d.get('id')]
+
+
+def _fetch_device_info_map(ext_id, auth_data=None, task_id=None):
+    """Maps device id -> {name, phoneNumber} for an extension, used to build a
+    faithful DeviceRingTarget when enabling a phone that has no ring group yet."""
+    data = safe_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}/device",
+                         auth_data=auth_data, task_id=task_id)
+    recs = data.get('records', []) if isinstance(data, dict) else []
+    out = {}
+    for d in recs:
+        did = str(d.get('id') or '')
+        if not did:
+            continue
+        phone = ''
+        for pl in (d.get('phoneLines') or []):
+            phone = (pl.get('phoneInfo') or {}).get('phoneNumber') or phone
+        out[did] = {
+            'name': d.get('name') or (d.get('model') or {}).get('name') or 'Device',
+            'phoneNumber': phone,
+        }
+    return out
 
 
 def resolve_default_rule(ext_id, auth_data=None, task_id=None):
