@@ -95,15 +95,11 @@ def extract_error(res):
 
 def _standard_endpoints(number_id, ext_id):
     """Assignment endpoints for regular (non-mobile) inventory numbers/DIDs.
-    The single PATCH mirrors the proven-mutable path used by the Cost Centres
-    tool (PATCH /restapi/v2/accounts/~/phone-numbers/{id})."""
-    ext_body = {"extension": {"id": ext_id}}
-    bulk_body = {"records": [{"id": number_id, "extension": {"id": ext_id}}]}
+    The V2 assign endpoint (PATCH /restapi/v2/accounts/~/phone-numbers/{id})
+    REQUIRES usageType; DirectNumber is correct when assigning to an extension."""
+    assign_body = {"usageType": "DirectNumber", "extension": {"id": ext_id}}
     return [
-        ("V2 Standard (Single PATCH)", f"/restapi/v2/accounts/~/phone-numbers/{number_id}", 'PATCH', ext_body),
-        ("V2 Standard (Bulk POST)",    "/restapi/v2/accounts/~/phone-numbers",              'POST',  bulk_body),
-        ("V2 Standard (Bulk PATCH)",   "/restapi/v2/accounts/~/phone-numbers",              'PATCH', bulk_body),
-        ("V1 Phone Number (PUT)",      f"/restapi/v1.0/account/~/phone-number/{number_id}",  'PUT',   ext_body),
+        ("V2 Assign (PATCH, with usageType)", f"/restapi/v2/accounts/~/phone-numbers/{number_id}", 'PATCH', assign_body),
     ]
 
 def _business_mobile_endpoints(number_id, ext_id):
@@ -270,7 +266,9 @@ def process_assignments(records, token):
 
         number_id = str(number_data.get('id', ''))
         endpoint = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
-        payload = {"extension": {"id": ext_id}}
+        # usageType is REQUIRED by the V2 assign endpoint; DirectNumber is the
+        # correct type when assigning an inventory number to an extension.
+        payload = {"usageType": "DirectNumber", "extension": {"id": ext_id}}
 
         try:
             res = rc_api_call(endpoint, method='PATCH', json=payload, token=token, return_response=True)
