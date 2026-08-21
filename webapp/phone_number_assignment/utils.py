@@ -207,5 +207,87 @@ def run_exhaustive_debug(phone, ext_num, token):
     logs.append("\n🛑 EXHAUSTED ALL ENDPOINTS — no resource accepted the assignment.")
     return logs
 
+def _clean_number(value):
+    return str(value).replace('+', '').replace(' ', '').replace('-', '').strip()
+
+def _row_value(row, *names):
+    """Case/space-insensitive lookup for a column across possible header names."""
+    normalised = {str(k).strip().lower(): v for k, v in row.items()}
+    for name in names:
+        v = normalised.get(name.strip().lower())
+        if v is not None and str(v).strip() and str(v).strip().lower() != 'nan':
+            return str(v).strip()
+    return ''
+
 def process_assignments(records, token):
-    return ["Batch processing is temporarily disabled while we run the Endpoint Diagnostic Sandbox below."]
+    """Assign each inventory number to its target extension via the V2 Standard
+    endpoint (PATCH /restapi/v2/accounts/~/phone-numbers/{id}) — the same
+    proven-mutable path used by the Cost Centres tool. One PATCH per row, with a
+    per-row result line."""
+    logs = []
+
+    # Build lookups once.
+    all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
+    number_by_clean = {}
+    for n in all_numbers:
+        n_phone = n.get('phoneNumber', '')
+        if n_phone:
+            number_by_clean[_clean_number(n_phone)] = n
+
+    all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
+    ext_id_by_num = {}
+    for e in all_exts:
+        ext_num = str(e.get('extensionNumber', '')).strip()
+        if ext_num:
+            ext_id_by_num[ext_num] = str(e['id'])
+
+    success = 0
+    failed = 0
+    skipped = 0
+
+    for i, row in enumerate(records, start=1):
+        phone = _row_value(row, 'Phone Number', 'PhoneNumber', 'Number')
+        ext_num = _row_value(row, 'Extension Number', 'ExtensionNumber', 'Extension')
+
+        if not phone and not ext_num:
+            continue  # blank row
+        if not phone or not ext_num:
+            skipped += 1
+            logs.append(f"⚠️ Row {i}: skipped — missing {'phone number' if not phone else 'extension number'}.")
+            continue
+
+        number_data = number_by_clean.get(_clean_number(phone))
+        if not number_data:
+            failed += 1
+            logs.append(f"❌ Row {i}: {phone} — not found in account inventory.")
+            continue
+
+        ext_id = ext_id_by_num.get(ext_num)
+        if not ext_id:
+            failed += 1
+            logs.append(f"❌ Row {i}: extension {ext_num} — not found in account.")
+            continue
+
+        number_id = str(number_data.get('id', ''))
+        endpoint = f'/restapi/v2/accounts/~/phone-numbers/{number_id}'
+        payload = {"extension": {"id": ext_id}}
+
+        try:
+            res = rc_api_call(endpoint, method='PATCH', json=payload, token=token, return_response=True)
+            status = getattr(res, 'status_code', 'Unknown')
+            if res and getattr(res, 'ok', False):
+                success += 1
+                logs.append(f"✅ Row {i}: {phone} → Ext {ext_num}.")
+            else:
+                failed += 1
+                logs.append(f"❌ Row {i}: {phone} → Ext {ext_num} — HTTP {status} - {extract_error(res)}")
+                if status == 429:
+                    time.sleep(2)
+        except Exception as e:
+            failed += 1
+            logs.append(f"❌ Row {i}: {phone} → Ext {ext_num} — Exception: {str(e)}")
+
+        time.sleep(0.1)
+
+    summary = f"Done. {success} assigned, {failed} failed, {skipped} skipped ({len(records)} row(s) read)."
+    return [summary] + logs

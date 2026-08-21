@@ -106,8 +106,33 @@ async function downloadPnaTemplate() {
 
 async function uploadPnaFile(input) {
     if (!input.files || !input.files[0]) return;
-    alert("Batch upload is currently disabled while you run the Endpoint Diagnostic Sandbox below. Once we confirm the correct endpoint, it will be reactivated.");
-    input.value = ''; 
+    const file = input.files[0];
+
+    logPna(`Uploading ${file.name} and applying assignments...`, "info");
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/phone_number_assignment/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || "Upload failed");
+        }
+
+        (data.logs || []).forEach(l => {
+            const type = l.includes('❌') ? 'error' : (l.includes('✅') ? 'success' : 'info');
+            logPna(l, type);
+        });
+        logPna("Batch processing complete.", "success");
+    } catch (e) {
+        logPna(`Upload Failed: ${e.message}`, "error");
+    } finally {
+        input.value = '';
+    }
 }
 
 document.getElementById('btn-run-debug').addEventListener('click', async () => {
