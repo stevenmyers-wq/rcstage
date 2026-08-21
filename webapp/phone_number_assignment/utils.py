@@ -93,17 +93,70 @@ def extract_error(res):
         pass
     return raw_text.strip() if raw_text.strip() else "Empty/Unknown Response"
 
+def _standard_endpoints(number_id, ext_id):
+    """Assignment endpoints for regular (non-mobile) inventory numbers/DIDs.
+    The single PATCH mirrors the proven-mutable path used by the Cost Centres
+    tool (PATCH /restapi/v2/accounts/~/phone-numbers/{id})."""
+    ext_body = {"extension": {"id": ext_id}}
+    bulk_body = {"records": [{"id": number_id, "extension": {"id": ext_id}}]}
+    return [
+        ("V2 Standard (Single PATCH)", f"/restapi/v2/accounts/~/phone-numbers/{number_id}", 'PATCH', ext_body),
+        ("V2 Standard (Bulk POST)",    "/restapi/v2/accounts/~/phone-numbers",              'POST',  bulk_body),
+        ("V2 Standard (Bulk PATCH)",   "/restapi/v2/accounts/~/phone-numbers",              'PATCH', bulk_body),
+        ("V1 Phone Number (PUT)",      f"/restapi/v1.0/account/~/phone-number/{number_id}",  'PUT',   ext_body),
+    ]
+
+def _business_mobile_endpoints(number_id, ext_id):
+    """Assignment endpoints for Business Mobile numbers (kept for comparison)."""
+    ext_body = {"extension": {"id": ext_id}}
+    bulk_body = {"records": [{"id": number_id, "extension": {"id": ext_id}}]}
+    return [
+        ("V2 Business Mobile (Bulk POST)",    "/restapi/v2/accounts/~/business-mobile-numbers",              'POST',  bulk_body),
+        ("V2 Business Mobile (Single PATCH)", f"/restapi/v2/accounts/~/business-mobile-numbers/{number_id}", 'PATCH', ext_body),
+        ("V2 Business Mobile (Bulk PUT)",     "/restapi/v2/accounts/~/business-mobile-numbers",              'PUT',   bulk_body),
+        ("V2 Business Mobile (Bulk PATCH)",   "/restapi/v2/accounts/~/business-mobile-numbers",              'PATCH', bulk_body),
+    ]
+
+def _probe_endpoints(endpoints, token, logs):
+    """Fire each candidate endpoint; return True on the first success."""
+    for name, ep, method, payload in endpoints:
+        logs.append(f"\n▶ Testing: {name} [{method} {ep}]")
+        try:
+            res = rc_api_call(ep, method=method, json=payload, token=token, return_response=True)
+            status = getattr(res, 'status_code', 'Unknown')
+            err = extract_error(res)
+
+            if res and getattr(res, 'ok', False):
+                logs.append("  ✅ SUCCESS! The API accepted the assignment.")
+                try:
+                    logs.append(f"  Response Body: {res.json()}")
+                except Exception:
+                    pass
+                return True
+            else:
+                logs.append(f"  ❌ HTTP {status} - {err}")
+                if status == 429:
+                    time.sleep(2)
+        except Exception as e:
+            logs.append(f"  ❌ Exception: {str(e)}")
+        time.sleep(1)
+    return False
+
 def run_exhaustive_debug(phone, ext_num, token):
     """
-    Tests the V2 Business Mobile Numbers endpoints you discovered.
+    Probes the assignment endpoints for a single number/extension pair.
+
+    Tries the STANDARD (non-mobile) endpoints first — these cover regular
+    inventory numbers/DIDs — then falls back to the Business Mobile endpoints
+    so the log shows exactly which resource (if any) accepts the assignment.
     """
-    logs = [f"🔍 Testing V2 Business Mobile Endpoints for {phone} -> Ext {ext_num}"]
-    
+    logs = [f"🔍 Testing assignment endpoints for {phone} -> Ext {ext_num}"]
+
     # 1. Resolve Number ID
     all_numbers = fetch_all_pages('/restapi/v2/accounts/~/phone-numbers', token)
     number_data = None
     clean_target = phone.replace('+', '').strip()
-    
+
     for n in all_numbers:
         n_phone = n.get('phoneNumber', '')
         if n_phone and clean_target in n_phone.replace('+', ''):
@@ -114,7 +167,9 @@ def run_exhaustive_debug(phone, ext_num, token):
         return logs + [f"❌ Phone number {phone} not found in account."]
 
     number_id = str(number_data.get('id', ''))
-    
+    num_type = number_data.get('type', 'Unknown')
+    usage_type = number_data.get('usageType', 'Unknown')
+
     # 2. Resolve Ext ID
     all_exts = fetch_all_pages('/restapi/v1.0/account/~/extension', token)
     ext_id = None
@@ -126,86 +181,30 @@ def run_exhaustive_debug(phone, ext_num, token):
     if not ext_id:
         return logs + [f"❌ Extension number {ext_num} not found in account."]
 
-    logs.append(f"ℹ️ Phone ID: {number_id} | Target Ext ID: {ext_id}")
-    logs.append("="*60)
+    logs.append(f"ℹ️ Phone ID: {number_id} | Type: {num_type} | Usage: {usage_type} | Target Ext ID: {ext_id}")
 
-    # 3. Test Endpoints based on your schema discovery
-    test_endpoints = [
-        (
-            "V2 Business Mobile (Bulk POST)", 
-            f"/restapi/v2/accounts/~/business-mobile-numbers",
-            'POST',
-            {
-                "records": [
-                    {
-                        "id": number_id,
-                        "extension": { "id": ext_id }
-                    }
-                ]
-            }
-        ),
-        (
-            "V2 Business Mobile (Single PATCH)", 
-            f"/restapi/v2/accounts/~/business-mobile-numbers/{number_id}",
-            'PATCH',
-            {
-                "extension": { "id": ext_id }
-            }
-        ),
-        (
-            "V2 Business Mobile (Bulk PUT)", 
-            f"/restapi/v2/accounts/~/business-mobile-numbers",
-            'PUT',
-            {
-                "records": [
-                    {
-                        "id": number_id,
-                        "extension": { "id": ext_id }
-                    }
-                ]
-            }
-        ),
-        (
-            "V2 Business Mobile (Bulk PATCH)", 
-            f"/restapi/v2/accounts/~/business-mobile-numbers",
-            'PATCH',
-            {
-                "records": [
-                    {
-                        "id": number_id,
-                        "extension": { "id": ext_id }
-                    }
-                ]
-            }
-        )
-    ]
+    is_mobile = 'mobile' in str(num_type).lower()
+    if is_mobile:
+        logs.append("ℹ️ Number reports as MOBILE — trying Business Mobile endpoints first.")
+        groups = [
+            ("BUSINESS MOBILE", _business_mobile_endpoints(number_id, ext_id)),
+            ("STANDARD (non-mobile)", _standard_endpoints(number_id, ext_id)),
+        ]
+    else:
+        logs.append("ℹ️ Number is NON-MOBILE — trying Standard endpoints first.")
+        groups = [
+            ("STANDARD (non-mobile)", _standard_endpoints(number_id, ext_id)),
+            ("BUSINESS MOBILE", _business_mobile_endpoints(number_id, ext_id)),
+        ]
 
-    for name, ep, method, payload in test_endpoints:
-        logs.append(f"\n▶ Testing: {name} [{method} {ep}]")
-        
-        try:
-            res = rc_api_call(ep, method=method, json=payload, token=token, return_response=True)
-            status = getattr(res, 'status_code', 'Unknown')
-            err = extract_error(res)
-            
-            if res and getattr(res, 'ok', False):
-                logs.append(f"  ✅ SUCCESS! The API accepted the assignment.")
-                # If it's the bulk endpoint, check the bulkItemSuccessful flag in the response
-                try:
-                    resp_json = res.json()
-                    logs.append(f"  Response Body: {resp_json}")
-                except:
-                    pass
-                return logs
-            else:
-                logs.append(f"  ❌ HTTP {status} - {err}")
-                if status == 429: time.sleep(2)
-        except Exception as e:
-            logs.append(f"  ❌ Exception: {str(e)}")
-            
-        time.sleep(1)
+    for group_name, endpoints in groups:
+        logs.append("=" * 60)
+        logs.append(f"— {group_name} endpoints —")
+        if _probe_endpoints(endpoints, token, logs):
+            logs.append(f"\n🎯 Working endpoint found in the {group_name} group. Bulk upload can be wired to it.")
+            return logs
 
-    logs.append("\n🛑 EXHAUSTED BUSINESS MOBILE ENDPOINTS.")
+    logs.append("\n🛑 EXHAUSTED ALL ENDPOINTS — no resource accepted the assignment.")
     return logs
 
 def process_assignments(records, token):

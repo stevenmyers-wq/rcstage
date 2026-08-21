@@ -34,8 +34,8 @@
     </div>
     
     <div class="card bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 mt-8 w-full shadow-inner !p-6">
-        <h3 class="text-heading text-lg mb-2 border-b border-slate-200 dark:border-slate-700 pb-3">3. V2 Business Mobile API Sandbox</h3>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Enter a target phone number and extension below. This tests if the newly discovered V2 Business Mobile endpoints can successfully process the assignment.</p>
+        <h3 class="text-heading text-lg mb-2 border-b border-slate-200 dark:border-slate-700 pb-3">3. Assignment Endpoint Sandbox</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Enter a target phone number and extension below. This probes the assignment endpoints for that number — the <strong>Standard (non-mobile)</strong> endpoints first for regular inventory numbers/DIDs, then the Business Mobile endpoints — and reports which resource (if any) accepts the assignment.</p>
         
         <div class="flex flex-col sm:flex-row gap-4 mb-6 w-full items-end">
             <div class="input-wrapper flex-1">
@@ -47,7 +47,7 @@
                 <input type="text" id="debug-ext" placeholder="e.g. 1105" class="input-field font-mono">
             </div>
             <button id="btn-run-debug" class="btn-danger w-full sm:w-auto px-6 h-[46px] whitespace-nowrap">
-                Run V2 API Test
+                Run Endpoint Test
             </button>
         </div>
         
@@ -120,7 +120,7 @@ document.getElementById('btn-run-debug').addEventListener('click', async () => {
     
     btn.disabled = true;
     btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Running Test...`;
-    logBox.innerHTML = '<div class="text-blue-300">Initializing test on V2 Business Mobile endpoints...</div>';
+    logBox.innerHTML = '<div class="text-blue-300">Initializing test on assignment endpoints (Standard non-mobile first)...</div>';
     
     try {
         const res = await fetch('/api/phone_number_assignment/debug', {
@@ -142,7 +142,7 @@ document.getElementById('btn-run-debug').addEventListener('click', async () => {
         logBox.innerHTML = `<div class="text-rose-400 font-bold">Network Error: ${e.message}</div>`;
     } finally {
         btn.disabled = false;
-        btn.innerHTML = "Run V2 API Test";
+        btn.innerHTML = "Run Endpoint Test";
     }
 });
 </script>
