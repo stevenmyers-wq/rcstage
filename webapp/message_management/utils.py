@@ -79,16 +79,22 @@ def fetch_target_endpoints():
 
     return {'records': filtered_records}
 
-def fetch_custom_greetings(ext_id):
+def fetch_custom_greetings(ext_id, ext_info=None):
     """
-    Fetch ALL active greetings. Maintains all 3 detection layers (V1 Answering Rules, 
+    Fetch ALL active greetings. Maintains all 3 detection layers (V1 Answering Rules,
     V2 CHaF State Rules, and Custom Media Pool) with deep logging.
+
+    ``ext_info`` lets a caller that has already fetched the extension record hand it
+    in so we don't re-request GET /extension/{id}. The bulk export does exactly this
+    for every endpoint, halving the extension lookups on a large archive run and
+    easing the RingCentral rate-limit pressure that stalls big exports.
     """
-    try:
-        ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
-    except Exception:
-        ext_info = None
-        
+    if ext_info is None:
+        try:
+            ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+        except Exception:
+            ext_info = None
+
     if not ext_info:
         return {'status': 'Error', 'records': []}
         
@@ -728,10 +734,12 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
             ext_name = ext_info.get('name', 'Unknown')
             ext_num = ext_info.get('extensionNumber', ext_id)
             ext_type = ext_info.get('type', 'Unknown')
-            
+
             safe_ext_name = re.sub(r'[^a-zA-Z0-9_\- ]', '', ext_name).strip()
-            
-            greetings = fetch_custom_greetings(ext_id)
+
+            # Reuse the record we just fetched instead of letting fetch_custom_greetings
+            # request GET /extension/{id} a second time for the same endpoint.
+            greetings = fetch_custom_greetings(ext_id, ext_info=ext_info)
             if greetings.get('status') == 'Success' and 'records' in greetings:
                 for g in greetings['records']:
                     if ignore_defaults and not g['is_custom']:
