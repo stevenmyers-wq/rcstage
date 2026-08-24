@@ -182,4 +182,8 @@ def create_app():
         from .deskphone_ring_time import routes as deskphone_ring_time_routes
         app.register_blueprint(deskphone_ring_time_routes.deskphone_ring_time_bp)
 
+        # Extension Deletion routes
+        from .extension_deletion import routes as extension_deletion_routes
+        app.register_blueprint(extension_deletion_routes.extension_deletion_bp)
+
     return app
