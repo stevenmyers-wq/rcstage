@@ -474,6 +474,21 @@ def run_cq_audit(task_id, queue_ids, token):
         succ, tz_resp = fetch_directory('/restapi/v1.0/dictionary/timezone', token)
         tz_map = {str(t['id']): t['name'] for t in tz_resp} if succ else {}
 
+        # One account-wide phone-number lookup, mapped to each number's owning extension id.
+        # A queue can legitimately have several numbers; scoping by the record's extension.id
+        # keeps each queue to only the numbers actually assigned to it.
+        phone_map = {}
+        succ, pn_records = fetch_directory('/restapi/v1.0/account/~/phone-number', token)
+        if succ:
+            for rec in pn_records:
+                if not isinstance(rec, dict):
+                    continue
+                ext = rec.get('extension') or {}
+                ext_id = str(ext.get('id', ''))
+                num = rec.get('phoneNumber')
+                if ext_id and num:
+                    phone_map.setdefault(ext_id, []).append(str(num))
+
         preset_dict = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         preset_id_to_name = {'Introductory': {}, 'ConnectingAudio': {}, 'HoldMusic': {}, 'InterruptPrompt': {}, 'Voicemail': {}}
         
@@ -506,6 +521,11 @@ def run_cq_audit(task_id, queue_ids, token):
             row["Extension"] = base.get('extensionNumber', '')
             row["Status"] = base.get('status', '').capitalize()
             row["Queue Email"] = base.get('contact', {}).get('email', '')
+
+            # Direct number(s) assigned to this queue (informational; never written on upload).
+            q_nums = phone_map.get(str(qid), [])
+            if q_nums:
+                row["Phone Number"] = ", ".join(dict.fromkeys(q_nums))
 
             # editableMemberStatus lives on the call-queue object, not the extension.
             succ_cq, cq_base = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}', token=token)
@@ -615,10 +635,15 @@ def run_cq_audit(task_id, queue_ids, token):
 
             succ, ah_rule = safe_api_call(f'/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule', token=token)
             if succ:
-                row["After Hours Behavior"] = ah_rule.get('callHandlingAction')
-                a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
-                if a_ext and a_ext != 'None':
-                    row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
+                ah_action = ah_rule.get('callHandlingAction')
+                row["After Hours Behavior"] = ah_action
+                # Only a TransferToExtension rule has a meaningful destination. RingCentral keeps
+                # a stale transfer object on take-messages-only / announcement rules, so ignore it
+                # unless the action actually transfers -- otherwise we report a phantom old dest.
+                if ah_action == 'TransferToExtension':
+                    a_ext = _safe_get_ah_transfer_id(ah_rule.get('transfer'))
+                    if a_ext and a_ext != 'None':
+                        row["After Hours Destination"] = ext_id_to_num.get(a_ext, a_ext)
                 
                 if not row.get("Voicemail Recipients"):
                     vm_recip_ah = str(ah_rule.get('voicemail', {}).get('recipient', {}).get('id', ''))
