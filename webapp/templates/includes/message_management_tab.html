@@ -201,6 +201,13 @@
             <div class="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner font-medium" id="export-note-ui">
                 <strong>Note:</strong> To ensure a clean and accurate audit, disabled slots (e.g. 'None') or completely unconfigured default slots are skipped entirely.
             </div>
+            <label class="flex items-start gap-3 cursor-pointer group">
+                <input type="checkbox" id="msg-export-transcribe" class="h-5 w-5 mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer bg-white dark:bg-slate-900">
+                <span class="text-sm text-slate-600 dark:text-slate-300">
+                    <span class="font-bold group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">Transcribe audio (speech-to-text)</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">Adds a Transcription column to the CSV with the spoken words of each clip. Slower — every audio file is run through Gemini STT.</span>
+                </span>
+            </label>
             <div class="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                 <button type="button" class="close-modal btn-secondary">Cancel</button>
                 <button id="btn-trigger-export" type="button" class="btn-success">Start Export</button>
@@ -942,6 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const extIds = Array.from(selectedIds);
         const total = extIds.length;
         const ignoreDefaults = toggleIgnoreDefaults.checked;
+        const transcribe = document.getElementById('msg-export-transcribe').checked;
 
         progressBar.style.width = `0%`;
         progressBar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300';
@@ -992,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch('/api/message_management/export', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ext_ids: batch, task_id: taskId, ignore_defaults: ignoreDefaults })
+                    body: JSON.stringify({ ext_ids: batch, task_id: taskId, ignore_defaults: ignoreDefaults, transcribe: transcribe })
                 });
                 clearInterval(pollInterval);
                 if (!res.ok) throw new Error(`server returned HTTP ${res.status}`);

@@ -79,16 +79,22 @@ def fetch_target_endpoints():
 
     return {'records': filtered_records}
 
-def fetch_custom_greetings(ext_id):
+def fetch_custom_greetings(ext_id, ext_info=None):
     """
-    Fetch ALL active greetings. Maintains all 3 detection layers (V1 Answering Rules, 
+    Fetch ALL active greetings. Maintains all 3 detection layers (V1 Answering Rules,
     V2 CHaF State Rules, and Custom Media Pool) with deep logging.
+
+    ``ext_info`` lets a caller that has already fetched the extension record hand it
+    in so we don't re-request GET /extension/{id}. The bulk export does exactly this
+    for every endpoint, halving the extension lookups on a large archive run and
+    easing the RingCentral rate-limit pressure that stalls big exports.
     """
-    try:
-        ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
-    except Exception:
-        ext_info = None
-        
+    if ext_info is None:
+        try:
+            ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
+        except Exception:
+            ext_info = None
+
     if not ext_info:
         return {'status': 'Error', 'records': []}
         
@@ -710,12 +716,46 @@ def generate_tts_audio_bytes(text, voice_name="Kore", style="professional and cl
     wav_buffer.seek(0)
     return wav_buffer
 
-def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
+def transcribe_audio_bytes(audio_bytes, mime_type='audio/wav'):
+    """Speech-to-text for a greeting clip via Gemini (same SDK/key already used for
+    TTS in this module, so no extra credentials or codec handling are needed).
+
+    Returns the spoken text, or '' when the clip has no intelligible speech (music,
+    silence, ring tones). Raises on a hard API/config error so the export can record
+    the failure against that one row without aborting the whole archive.
+    """
+    if not audio_bytes:
+        return ''
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in the environment.")
+
+    client = genai.Client(api_key=api_key)
+    prompt = (
+        "Transcribe the spoken words in this audio clip verbatim. "
+        "Return only the transcription text with no commentary, labels, or quotation marks. "
+        "If there is no intelligible speech (for example music, a ring tone, or silence), "
+        "return nothing at all."
+    )
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=[
+            prompt,
+            types.Part.from_bytes(data=audio_bytes, mime_type=mime_type or 'audio/wav'),
+        ],
+    )
+    return (getattr(response, 'text', '') or '').strip()
+
+def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False, transcribe=False):
     zip_buffer = io.BytesIO()
     csv_data = io.StringIO()
     csv_writer = csv.writer(csv_data)
-    csv_writer.writerow(['Endpoint Name', 'Extension Number', 'Endpoint Type', 'Rule / Context', 'Greeting Type', 'Source', 'Exported Filename', 'Original Text / Details'])
-    
+    header = ['Endpoint Name', 'Extension Number', 'Endpoint Type', 'Rule / Context', 'Greeting Type', 'Source', 'Exported Filename', 'Original Text / Details']
+    if transcribe:
+        header.append('Transcription (STT)')
+    csv_writer.writerow(header)
+
     total = len(ext_ids)
     if task_id:
         export_progress_store[task_id] = {'current': 0, 'total': total}
@@ -728,10 +768,12 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
             ext_name = ext_info.get('name', 'Unknown')
             ext_num = ext_info.get('extensionNumber', ext_id)
             ext_type = ext_info.get('type', 'Unknown')
-            
+
             safe_ext_name = re.sub(r'[^a-zA-Z0-9_\- ]', '', ext_name).strip()
-            
-            greetings = fetch_custom_greetings(ext_id)
+
+            # Reuse the record we just fetched instead of letting fetch_custom_greetings
+            # request GET /extension/{id} a second time for the same endpoint.
+            greetings = fetch_custom_greetings(ext_id, ext_info=ext_info)
             if greetings.get('status') == 'Success' and 'records' in greetings:
                 for g in greetings['records']:
                     if ignore_defaults and not g['is_custom']:
@@ -750,7 +792,8 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
                     
                     export_filename = ""
                     source = ""
-                    
+                    transcription = ""
+
                     if is_custom:
                         source = "Custom Audio"
                     elif g_id == 'tts':
@@ -761,22 +804,38 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False):
                     if g_id not in ['tts']:
                         try:
                             audio_bytes, mime = download_greeting_audio(
-                                ext_id, g_id, is_ivr=is_ivr, is_custom=is_custom, 
+                                ext_id, g_id, is_ivr=is_ivr, is_custom=is_custom,
                                 greeting_type=g_type, preset_uri=g.get('preset_uri'),
                                 skip_fallback=True
                             )
                             file_ext = 'mp3' if 'mpeg' in mime or 'mp3' in mime else 'wav'
                             export_filename = f"[{ext_num}] {safe_ext_name} - {safe_rule} - {g_type}.{file_ext}"
                             zip_file.writestr(export_filename, audio_bytes)
-                            
+
+                            # Optional speech-to-text of the clip we just downloaded.
+                            # A transcription failure must never sink the export, so it
+                            # is recorded per-row and we move on.
+                            if transcribe:
+                                try:
+                                    transcription = transcribe_audio_bytes(audio_bytes, mime)
+                                except Exception as te:
+                                    transcription = f"ERROR: {str(te)}"
+
                             time.sleep(0.5)
-                            
+
                         except Exception as e:
                             export_filename = f"ERROR: {str(e)}"
                     else:
                         export_filename = "N/A (Text-To-Speech String)"
+                        # The spoken content of a TTS greeting is already known text,
+                        # so surface it in the transcription column too for a complete
+                        # "what does this say" view.
+                        transcription = g_text
 
-                    csv_writer.writerow([ext_name, ext_num, ext_type, rule_name, g_type, source, export_filename, g_text])
+                    row = [ext_name, ext_num, ext_type, rule_name, g_type, source, export_filename, g_text]
+                    if transcribe:
+                        row.append(transcription)
+                    csv_writer.writerow(row)
             
             if task_id:
                 export_progress_store[task_id]['current'] = i + 1
