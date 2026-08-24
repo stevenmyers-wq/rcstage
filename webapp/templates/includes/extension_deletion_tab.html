@@ -1,0 +1,392 @@
+<div class="space-y-6 animate-fade-in w-full">
+
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Extension Deletion</h2>
+        <p class="text-subheading">Filter, review, and permanently delete extensions in bulk. Deletions are irreversible — you will review the full list and type <span class="font-mono font-bold">DELETE</span> before anything is removed.</p>
+    </div>
+
+    <!-- 1. FILTERS -->
+    <div class="card w-full mb-6">
+        <div class="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-2">
+            <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">1. Filters</h3>
+            <span id="exd-filter-badge" class="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1 rounded-full text-xs font-bold shadow-sm transition-colors duration-300">
+                Loading Filters...
+            </span>
+        </div>
+
+        <div id="exd-loading-indicator" class="flex items-center text-blue-600 dark:text-blue-400 text-sm mb-4 font-medium">
+            <div class="spinner w-4 h-4 mr-3"></div>
+            Fetching Account Metadata...
+        </div>
+
+        <div id="exd-filter-controls" class="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-50 pointer-events-none transition-opacity duration-300 w-full">
+            <div>
+                <label class="input-label">Filter by Site <span class="text-[10px] text-slate-400 normal-case ml-1">(tick any number; leave empty for all)</span></label>
+                <div id="exd-filter-site"></div>
+            </div>
+            <div>
+                <label class="input-label">Filter by Type <span class="text-[10px] text-slate-400 normal-case ml-1">(tick any number; leave empty for all)</span></label>
+                <div id="exd-filter-type"></div>
+            </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+            <button onclick="exdFindExtensions()" id="exd-find-btn" disabled class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+                Find Extensions
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. RESULTS / PREVIEW -->
+    <div id="exd-results-card" class="card w-full mb-6 hidden">
+        <div class="flex flex-wrap gap-3 justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-2">
+            <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Review Matches</h3>
+            <span id="exd-count-badge" class="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 px-3 py-1 rounded-full text-[10px] uppercase tracking-wide font-bold">0 found</span>
+        </div>
+
+        <div class="flex flex-wrap gap-3 items-center justify-between mb-3">
+            <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input type="checkbox" id="exd-select-all" class="w-4 h-4 accent-red-600">
+                Select all
+            </label>
+            <span id="exd-selected-count" class="text-sm text-slate-500 dark:text-slate-400">0 selected</span>
+        </div>
+
+        <div class="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+            <div class="max-h-96 overflow-y-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase text-[10px] tracking-wide sticky top-0">
+                        <tr>
+                            <th class="px-3 py-2 w-10"></th>
+                            <th class="px-3 py-2">Name</th>
+                            <th class="px-3 py-2">Ext #</th>
+                            <th class="px-3 py-2">Type</th>
+                            <th class="px-3 py-2">Site</th>
+                            <th class="px-3 py-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="exd-results-body" class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+            <button onclick="exdOpenConfirm()" id="exd-delete-open-btn" disabled class="w-full md:w-auto bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                Review &amp; Delete Selected
+            </button>
+        </div>
+    </div>
+
+    <!-- LOGS -->
+    <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg !p-0 overflow-hidden border-slate-700 w-full">
+        <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">DELETION LOG</span>
+            <div class="flex items-center gap-3">
+                <button id="exd-stop-btn" class="hidden text-xs font-semibold text-red-400 hover:text-red-300 transition-colors">■ Stop</button>
+                <button id="exd-result-btn" class="hidden text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors">⬇ Download results (.xlsx)</button>
+                <button onclick="document.getElementById('exdLogs').innerHTML='Ready for action...'" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
+            </div>
+        </div>
+        <div id="exd-progress-wrap" class="hidden px-4 pt-3">
+            <div class="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                <div id="exd-progress-bar" class="bg-red-500 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+            </div>
+        </div>
+        <div id="exdLogs" class="p-4 font-mono text-sm h-64 overflow-y-auto whitespace-pre-line text-slate-300 shadow-inner">
+            Ready for action...
+        </div>
+    </div>
+
+</div>
+
+<!-- CONFIRMATION MODAL -->
+<div id="exd-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center hidden p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700">
+        <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Confirm permanent deletion</h3>
+                <p class="text-xs text-red-600 dark:text-red-400 font-semibold">This cannot be undone.</p>
+            </div>
+        </div>
+
+        <div class="px-6 py-4 overflow-y-auto flex-grow">
+            <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                The following <span id="exd-confirm-count" class="font-bold">0</span> extension(s) will be <span class="font-bold text-red-600 dark:text-red-400">permanently deleted</span>:
+            </p>
+            <div class="border border-slate-200 dark:border-slate-700 rounded-lg max-h-56 overflow-y-auto mb-4">
+                <ul id="exd-confirm-list" class="divide-y divide-slate-100 dark:divide-slate-700 text-sm"></ul>
+            </div>
+            <label class="input-label">Type <span class="font-mono font-bold text-red-600 dark:text-red-400">DELETE</span> to confirm</label>
+            <input type="text" id="exd-confirm-input" autocomplete="off" placeholder="DELETE"
+                   class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-red-500 focus:border-red-500 font-mono tracking-widest uppercase">
+        </div>
+
+        <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+            <button onclick="exdCloseConfirm()" id="exd-cancel-btn" class="px-5 py-2 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+            <button onclick="exdRunDelete()" id="exd-confirm-btn" disabled class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                Permanently Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let exdSiteSel = null, exdTypeSel = null;
+    let exdRows = [];          // all matched rows currently in the table
+    let exdResultRows = null;  // downloadable results of the last run
+    let exdTaskId = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        exdFetchFilters();
+        if (window.UCResults) {
+            UCResults.attachButton(document.getElementById('exd-result-btn'), () => exdResultRows, 'Extension_Deletion_Results', 'Results');
+        }
+
+        const selectAll = document.getElementById('exd-select-all');
+        if (selectAll) selectAll.addEventListener('change', () => {
+            document.querySelectorAll('.exd-row-check').forEach(cb => { cb.checked = selectAll.checked; });
+            exdUpdateSelection();
+        });
+
+        const confirmInput = document.getElementById('exd-confirm-input');
+        if (confirmInput) confirmInput.addEventListener('input', () => {
+            document.getElementById('exd-confirm-btn').disabled = confirmInput.value.trim().toUpperCase() !== 'DELETE';
+        });
+
+        const stopBtn = document.getElementById('exd-stop-btn');
+        if (stopBtn) stopBtn.addEventListener('click', async () => {
+            if (!exdTaskId) return;
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stopping...';
+            exdLog('Stop requested — halting after the current extension...', 'info');
+            try { await fetch(`/api/extension_deletion/cancel?task_id=${exdTaskId}`, { method: 'POST' }); }
+            catch (e) { /* server loop also polls the flag */ }
+        });
+    });
+
+    function exdLog(msg, type = 'info') {
+        const box = document.getElementById('exdLogs');
+        if (!box) return;
+        if (box.textContent.trim() === 'Ready for action...') box.innerHTML = '';
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400'
+            : (type === 'success' ? 'text-green-400' : (type === 'warn' ? 'text-amber-400' : 'text-blue-300'));
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function exdFetchFilters() {
+        try {
+            const res = await fetch('/api/extension_deletion/filters');
+            if (!res.ok) throw new Error('Failed to load filters');
+            const data = await res.json();
+
+            exdSiteSel = CheckboxSelect.create(document.getElementById('exd-filter-site'), {
+                items: data.sites, searchable: true, searchPlaceholder: 'Search sites…', listHeightClass: 'h-40'
+            });
+            exdTypeSel = CheckboxSelect.create(document.getElementById('exd-filter-type'), {
+                items: data.categories, searchable: false, listHeightClass: 'h-40'
+            });
+
+            document.getElementById('exd-loading-indicator').classList.add('hidden');
+            document.getElementById('exd-filter-controls').classList.remove('opacity-50', 'pointer-events-none');
+            const badge = document.getElementById('exd-filter-badge');
+            badge.innerText = 'Filters Ready';
+            badge.className = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 px-3 py-1 rounded-full text-[10px] uppercase tracking-wide font-bold shadow-sm';
+            document.getElementById('exd-find-btn').disabled = false;
+        } catch (err) {
+            const badge = document.getElementById('exd-filter-badge');
+            badge.innerText = 'Error Loading Filters';
+            badge.className = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 rounded-full text-[10px] uppercase tracking-wide font-bold shadow-sm';
+            exdLog('Failed to load filters: ' + err.message, 'error');
+        }
+    }
+
+    async function exdFindExtensions() {
+        const btn = document.getElementById('exd-find-btn');
+        btn.disabled = true;
+        btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Searching...`;
+
+        const sites = exdSiteSel ? exdSiteSel.getSelected() : [];
+        const categories = exdTypeSel ? exdTypeSel.getSelected() : [];
+        exdLog(`Searching ${sites.length ? sites.length + ' site(s)' : 'all sites'}, ${categories.length ? categories.length + ' type(s)' : 'all types'}...`);
+
+        try {
+            const res = await fetch('/api/extension_deletion/find', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sites, categories })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Search failed');
+
+            exdRows = data.extensions || [];
+            exdRenderResults();
+            exdLog(`Found ${exdRows.length} extension(s) matching the filters.`, 'success');
+        } catch (e) {
+            exdLog('Search failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Find Extensions';
+        }
+    }
+
+    function exdEsc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function exdRenderResults() {
+        const body = document.getElementById('exd-results-body');
+        const card = document.getElementById('exd-results-card');
+        body.innerHTML = '';
+        document.getElementById('exd-select-all').checked = false;
+        document.getElementById('exd-count-badge').innerText = `${exdRows.length} found`;
+
+        if (!exdRows.length) {
+            body.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">No extensions match these filters.</td></tr>`;
+        } else {
+            exdRows.forEach((r, i) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-800/50';
+                tr.innerHTML =
+                    `<td class="px-3 py-2"><input type="checkbox" data-idx="${i}" class="exd-row-check w-4 h-4 accent-red-600"></td>` +
+                    `<td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-100">${exdEsc(r.name)}</td>` +
+                    `<td class="px-3 py-2 text-slate-500 dark:text-slate-400">${exdEsc(r.extensionNumber)}</td>` +
+                    `<td class="px-3 py-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${exdEsc(r.category)}</span></td>` +
+                    `<td class="px-3 py-2 text-slate-500 dark:text-slate-400">${exdEsc(r.site)}</td>` +
+                    `<td class="px-3 py-2 text-slate-500 dark:text-slate-400">${exdEsc(r.status)}</td>`;
+                body.appendChild(tr);
+            });
+            body.querySelectorAll('.exd-row-check').forEach(cb => cb.addEventListener('change', exdUpdateSelection));
+        }
+        card.classList.remove('hidden');
+        exdUpdateSelection();
+    }
+
+    function exdSelectedRows() {
+        return Array.from(document.querySelectorAll('.exd-row-check:checked')).map(cb => exdRows[parseInt(cb.dataset.idx, 10)]);
+    }
+
+    function exdUpdateSelection() {
+        const n = exdSelectedRows().length;
+        document.getElementById('exd-selected-count').innerText = `${n} selected`;
+        document.getElementById('exd-delete-open-btn').disabled = n === 0;
+    }
+
+    function exdOpenConfirm() {
+        const selected = exdSelectedRows();
+        if (!selected.length) return;
+        document.getElementById('exd-confirm-count').innerText = selected.length;
+        const list = document.getElementById('exd-confirm-list');
+        list.innerHTML = '';
+        selected.forEach(r => {
+            const li = document.createElement('li');
+            li.className = 'px-3 py-2 flex justify-between gap-3';
+            li.innerHTML =
+                `<span class="font-medium text-slate-700 dark:text-slate-200">${exdEsc(r.name)}` +
+                (r.extensionNumber ? ` <span class="text-slate-400">(Ext ${exdEsc(r.extensionNumber)})</span>` : '') + `</span>` +
+                `<span class="text-slate-400 text-xs whitespace-nowrap">${exdEsc(r.category)} · ${exdEsc(r.site)}</span>`;
+            list.appendChild(li);
+        });
+        const input = document.getElementById('exd-confirm-input');
+        input.value = '';
+        document.getElementById('exd-confirm-btn').disabled = true;
+        document.getElementById('exd-modal').classList.remove('hidden');
+        setTimeout(() => input.focus(), 50);
+    }
+
+    function exdCloseConfirm() {
+        document.getElementById('exd-modal').classList.add('hidden');
+    }
+
+    async function exdRunDelete() {
+        const selected = exdSelectedRows();
+        const confirm = document.getElementById('exd-confirm-input').value.trim().toUpperCase();
+        if (confirm !== 'DELETE' || !selected.length) return;
+
+        exdCloseConfirm();
+        exdTaskId = `exd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        exdResultRows = null;
+        document.getElementById('exd-result-btn').classList.add('hidden');
+
+        const stopBtn = document.getElementById('exd-stop-btn');
+        stopBtn.classList.remove('hidden'); stopBtn.disabled = false; stopBtn.textContent = '■ Stop';
+        const progWrap = document.getElementById('exd-progress-wrap');
+        const progBar = document.getElementById('exd-progress-bar');
+        progWrap.classList.remove('hidden'); progBar.style.width = '0%';
+        document.getElementById('exd-delete-open-btn').disabled = true;
+
+        exdLog(`Deleting ${selected.length} extension(s)...`, 'warn');
+        const results = [];
+
+        try {
+            const res = await fetch('/api/extension_deletion/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    confirm: 'DELETE',
+                    task_id: exdTaskId,
+                    extensions: selected.map(r => ({ id: r.id, name: r.name, extensionNumber: r.extensionNumber }))
+                })
+            });
+
+            if (!res.ok) {
+                let msg = 'Delete request failed';
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    let chunk;
+                    try { chunk = JSON.parse(line); } catch (e) { continue; }
+
+                    if (chunk.type === 'progress') {
+                        exdLog(chunk.message, chunk.status === 'deleted' ? 'success' : 'error');
+                        progBar.style.width = `${Math.round((chunk.current / Math.max(chunk.total, 1)) * 100)}%`;
+                        results.push({ Status: chunk.status === 'deleted' ? 'Deleted' : 'Failed', Detail: chunk.message });
+                    } else if (chunk.type === 'info') {
+                        exdLog(chunk.message, 'warn');
+                        results.push({ Status: 'Skipped', Detail: chunk.message });
+                    } else if (chunk.type === 'done') {
+                        progBar.style.width = '100%';
+                        exdLog(`Done. Deleted ${chunk.deleted}, failed ${chunk.failed}${chunk.cancelled ? ' (stopped early)' : ''}.`, chunk.failed ? 'warn' : 'success');
+                    } else if (chunk.type === 'error') {
+                        exdLog(chunk.message, 'error');
+                    }
+                }
+            }
+
+            exdResultRows = results;
+            document.getElementById('exd-result-btn').classList.toggle('hidden', results.length === 0);
+
+            // Remove successfully deleted rows from the live table.
+            const deletedIds = new Set(results.filter(r => r.Status === 'Deleted').map(r => {
+                const m = selected.find(s => r.Detail.includes(s.name)); return m ? m.id : null;
+            }).filter(Boolean));
+            if (deletedIds.size) {
+                exdRows = exdRows.filter(r => !deletedIds.has(r.id));
+                exdRenderResults();
+            }
+        } catch (e) {
+            exdLog('Delete failed: ' + e.message, 'error');
+        } finally {
+            exdTaskId = null;
+            stopBtn.classList.add('hidden');
+            exdUpdateSelection();
+        }
+    }
+</script>
