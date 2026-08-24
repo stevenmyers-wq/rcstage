@@ -304,6 +304,19 @@ def fetch_custom_greetings(ext_id, ext_info=None):
         'HoldMusic', 'InterruptPrompt', 'ConnectingAudio',
         'ConnectingMessage', 'Introductory',
     }
+    # Dedicated single-purpose endpoints (Announcement-Only = type 'Announcement',
+    # Message-Only = type 'Voicemail') keep their one greeting in the media pool and
+    # do NOT reliably surface it in the v1 answering-rule array, so LAYER 1 misses it
+    # and step 6 backfills it as Default even though a custom clip is applied — which
+    # is why activated Announcement/Message-Only greetings were being skipped from the
+    # export. The stale-copy risk that excludes these types on User/Department
+    # endpoints does not apply here: a single-slot endpoint has exactly one greeting,
+    # so the pool is authoritative for it. Rescue it only for those dedicated types.
+    pool_fallback_types = set(POOL_FALLBACK_TYPES)
+    if ext_type == 'Announcement':
+        pool_fallback_types.add('Announcement')
+    elif ext_type == 'Voicemail':
+        pool_fallback_types.add('Voicemail')
     try:
         custom_pool_resp = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/greeting', method='GET')
         pool_records = custom_pool_resp.get('records', []) if custom_pool_resp else []
@@ -311,7 +324,7 @@ def fetch_custom_greetings(ext_id, ext_info=None):
         # so the pool can never invent a greeting the endpoint doesn't have.
         expected_bh_slots = set(baseline_types.get(ext_type, {}).get('business-hours-rule', []))
 
-        for slot_type in POOL_FALLBACK_TYPES & expected_bh_slots:
+        for slot_type in pool_fallback_types & expected_bh_slots:
             # Keep any custom already resolved from the answering rule (LAYER 1) or
             # the V2 state (LAYER 2); only fill Default/preset slots from the pool.
             already_custom = any(
