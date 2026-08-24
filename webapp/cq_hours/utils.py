@@ -506,7 +506,16 @@ def run_cq_audit(task_id, queue_ids, token):
             row["Extension"] = base.get('extensionNumber', '')
             row["Status"] = base.get('status', '').capitalize()
             row["Queue Email"] = base.get('contact', {}).get('email', '')
-            
+
+            # Direct phone number(s) assigned to the queue -- informational (never written back
+            # on upload). Paginated in case a queue has several numbers.
+            succ_pn, pn_records = fetch_directory(f'/restapi/v1.0/account/~/extension/{qid}/phone-number', token)
+            if succ_pn:
+                nums = [str(r.get('phoneNumber')) for r in pn_records
+                        if isinstance(r, dict) and r.get('phoneNumber')]
+                if nums:
+                    row["Phone Number"] = ", ".join(dict.fromkeys(nums))
+
             # editableMemberStatus lives on the call-queue object, not the extension.
             succ_cq, cq_base = safe_api_call(f'/restapi/v1.0/account/~/call-queues/{qid}', token=token)
             editable = cq_base.get('editableMemberStatus') if succ_cq and isinstance(cq_base, dict) else None
