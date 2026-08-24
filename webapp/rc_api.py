@@ -1,8 +1,57 @@
+import time
 import requests
 from flask import session, current_app, has_request_context
 import logging
 
 logger = logging.getLogger(__name__)
+
+# RingCentral throttles with 429 (rate limit) and occasionally 503 (service
+# temporarily unavailable). Both are transient: the correct response is to wait
+# and retry, not to drop the call. Honour the Retry-After header when present,
+# otherwise fall back to exponential backoff.
+RATE_LIMIT_STATUSES = (429, 503)
+MAX_RATE_LIMIT_RETRIES = 5
+MAX_RATE_LIMIT_SLEEP = 60  # seconds; safety cap per wait
+
+
+def _retry_after_seconds(response, attempt):
+    """How long to wait before retrying a throttled request.
+
+    RingCentral returns a Retry-After header (in seconds) on 429; respect it so
+    we sleep exactly until the rate-limit window reopens. When it's missing or
+    unparseable, back off exponentially (1, 2, 4, 8 ...) capped to a sane max.
+    """
+    retry_after = None
+    try:
+        retry_after = response.headers.get('Retry-After')
+    except Exception:
+        retry_after = None
+    if retry_after:
+        try:
+            return max(1, min(int(float(retry_after)), MAX_RATE_LIMIT_SLEEP))
+        except (TypeError, ValueError):
+            pass
+    return min(2 ** attempt, MAX_RATE_LIMIT_SLEEP)
+
+
+def _rewind_files(kwargs):
+    """Best-effort rewind of any seekable file-like objects in a multipart
+    upload so a retried request re-sends the full body. In-memory bytes/str
+    payloads (the common case here) need nothing; this only matters if a caller
+    ever passes an open file handle."""
+    files = kwargs.get('files')
+    if not files:
+        return
+    entries = files.values() if isinstance(files, dict) else files
+    for entry in entries:
+        obj = entry
+        if isinstance(entry, (tuple, list)):
+            obj = entry[1] if len(entry) > 1 else None
+        try:
+            if hasattr(obj, 'seek'):
+                obj.seek(0)
+        except Exception:
+            pass
 
 def refresh_rc_token():
     refresh_token = session.get('rc_refresh_token')
@@ -88,25 +137,45 @@ def rc_api_call(endpoint, params=None, method='GET', raise_error=False, return_r
         headers['Content-Type'] = 'application/json'
 
     try:
-        response = requests.request(method=method, url=url, headers=headers, params=params, **kwargs)
-        
-        if response.status_code == 401 and has_request_context() and not token:
-            logger.info("Received 401 Unauthorized. Attempting to refresh token...")
-            new_auth = None
-            if session.get('sm_isolated_token'):
-                # Impersonation path: silently re-mint the customer bridge token
-                # (refreshing the employee token first if needed) so long-running
-                # work doesn't force the user to rebuild the bridge by hand.
-                from webapp.auth_utils import refresh_sm_isolated_token
-                if refresh_sm_isolated_token():
-                    new_auth = session.get('sm_isolated_token')
-            elif refresh_rc_token():
-                new_auth = session.get('rc_access_token')
+        response = None
+        did_token_refresh = False
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            response = requests.request(method=method, url=url, headers=headers, params=params, **kwargs)
 
-            if new_auth:
-                headers['Authorization'] = f"Bearer {new_auth}"
-                response = requests.request(method=method, url=url, headers=headers, params=params, **kwargs)
-        
+            if (response.status_code == 401 and has_request_context()
+                    and not token and not did_token_refresh):
+                did_token_refresh = True
+                logger.info("Received 401 Unauthorized. Attempting to refresh token...")
+                new_auth = None
+                if session.get('sm_isolated_token'):
+                    # Impersonation path: silently re-mint the customer bridge token
+                    # (refreshing the employee token first if needed) so long-running
+                    # work doesn't force the user to rebuild the bridge by hand.
+                    from webapp.auth_utils import refresh_sm_isolated_token
+                    if refresh_sm_isolated_token():
+                        new_auth = session.get('sm_isolated_token')
+                elif refresh_rc_token():
+                    new_auth = session.get('rc_access_token')
+
+                if new_auth:
+                    headers['Authorization'] = f"Bearer {new_auth}"
+                    response = requests.request(method=method, url=url, headers=headers, params=params, **kwargs)
+
+            # Rate limited / temporarily unavailable → wait for the window to
+            # reopen and retry, rather than dropping the call.
+            if (response.status_code in RATE_LIMIT_STATUSES
+                    and attempt < MAX_RATE_LIMIT_RETRIES):
+                wait = _retry_after_seconds(response, attempt)
+                logger.warning(
+                    f"RingCentral throttled [{response.status_code}] {method} {endpoint}; "
+                    f"waiting {wait}s before retry {attempt + 1}/{MAX_RATE_LIMIT_RETRIES}"
+                )
+                _rewind_files(kwargs)
+                time.sleep(wait)
+                continue
+
+            break
+
         if return_response: return response
         if response.status_code == 204: return {"success": True}
         if raise_error: response.raise_for_status()
