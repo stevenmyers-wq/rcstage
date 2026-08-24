@@ -159,8 +159,32 @@ def delete_extension(ext_id, token):
     return False, 'Rate limit exceeded after retries'
 
 
+def count_site_members(extensions, site_id, site_name):
+    """Count extensions currently assigned to a site (excluding the site itself).
+
+    RingCentral refuses to delete a site that still has extensions on it, so we
+    use this to skip a doomed delete and tell the operator exactly how many
+    extensions are in the way. Site names are unique within an account, so
+    matching on the resolved site name is reliable; the site extension itself is
+    excluded by id.
+    """
+    count = 0
+    for ext in extensions:
+        if str(ext.get('id', '')) == str(site_id):
+            continue  # the site extension itself, not a member
+        if _site_name(ext) == site_name:
+            count += 1
+    return count
+
+
 def delete_batch(ids, token, task_id=None):
     """Generator that deletes ``ids`` one by one, yielding progress dicts.
+
+    Sites are processed *after* every non-site extension, so if an operator
+    selects a site together with its members, the members are cleared first and
+    the (now empty) site deletes cleanly. Before deleting any site we re-check
+    the live account: a site that still has assigned extensions is skipped with
+    a clear message rather than firing a DELETE that RingCentral would reject.
 
     Cooperative stop: checks task_control between items so a Stop request skips
     every not-yet-deleted extension. Extensions already deleted cannot be
@@ -169,43 +193,69 @@ def delete_batch(ids, token, task_id=None):
     total = len(ids)
     yield {'type': 'start', 'total': total}
 
+    # Non-sites first, sites last (so a site's members are gone before we try
+    # the site). Order within each group is preserved.
+    non_sites = [i for i in ids if i.get('category') != 'Site']
+    sites = [i for i in ids if i.get('category') == 'Site']
+    plan = non_sites + sites
+
     deleted = 0
     failed = 0
+    skipped = 0
     cancelled = False
+    current = 0
+    site_snapshot = None  # live extension list, fetched lazily on the first site
 
     try:
-        for index, item in enumerate(ids, start=1):
+        for item in plan:
             if task_control.is_stopped(task_id):
                 cancelled = True
                 yield {'type': 'info',
-                       'message': f'Stopped by user — {total - (index - 1)} remaining extension(s) skipped.'}
+                       'message': f'Stopped by user — {total - current} remaining extension(s) skipped.'}
                 break
 
+            current += 1
             ext_id = str(item.get('id', '')).strip()
             name = item.get('name', 'Unknown')
             number = item.get('extensionNumber', '')
+            is_site = item.get('category') == 'Site'
             label = f"{name} (Ext {number})" if number else name
 
             if not ext_id:
                 failed += 1
-                yield {'type': 'progress', 'current': index, 'total': total,
+                yield {'type': 'progress', 'current': current, 'total': total, 'id': ext_id,
                        'status': 'failed', 'label': label,
                        'message': f'✖ {label}: missing extension id'}
                 continue
 
+            # Pre-flight guard for sites: skip (don't attempt) if still occupied.
+            if is_site:
+                if site_snapshot is None:
+                    # Fetched now — after the non-site deletions above — so the
+                    # count reflects members that this batch just removed.
+                    site_snapshot = fetch_all_extensions(token)
+                members = count_site_members(site_snapshot, ext_id, name)
+                if members > 0:
+                    skipped += 1
+                    yield {'type': 'progress', 'current': current, 'total': total, 'id': ext_id,
+                           'status': 'skipped', 'label': label,
+                           'message': (f'⏭️ Skipped {label}: site still has {members} assigned '
+                                       f'extension(s) — delete or reassign them first.')}
+                    continue
+
             success, msg = delete_extension(ext_id, token)
             if success:
                 deleted += 1
-                yield {'type': 'progress', 'current': index, 'total': total,
+                yield {'type': 'progress', 'current': current, 'total': total, 'id': ext_id,
                        'status': 'deleted', 'label': label,
                        'message': f'✅ Deleted {label}'}
             else:
                 failed += 1
-                yield {'type': 'progress', 'current': index, 'total': total,
+                yield {'type': 'progress', 'current': current, 'total': total, 'id': ext_id,
                        'status': 'failed', 'label': label,
                        'message': f'❌ {label}: {msg}'}
     finally:
         task_control.clear(task_id)
 
-    yield {'type': 'done', 'deleted': deleted, 'failed': failed,
+    yield {'type': 'done', 'deleted': deleted, 'failed': failed, 'skipped': skipped,
            'total': total, 'cancelled': cancelled}

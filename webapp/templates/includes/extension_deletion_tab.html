@@ -330,7 +330,7 @@
                 body: JSON.stringify({
                     confirm: 'DELETE',
                     task_id: exdTaskId,
-                    extensions: selected.map(r => ({ id: r.id, name: r.name, extensionNumber: r.extensionNumber }))
+                    extensions: selected.map(r => ({ id: r.id, name: r.name, extensionNumber: r.extensionNumber, category: r.category }))
                 })
             });
 
@@ -340,6 +340,7 @@
                 throw new Error(msg);
             }
 
+            const deletedIds = new Set();
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -355,15 +356,22 @@
                     try { chunk = JSON.parse(line); } catch (e) { continue; }
 
                     if (chunk.type === 'progress') {
-                        exdLog(chunk.message, chunk.status === 'deleted' ? 'success' : 'error');
+                        const logType = chunk.status === 'deleted' ? 'success'
+                            : (chunk.status === 'skipped' ? 'warn' : 'error');
+                        exdLog(chunk.message, logType);
                         progBar.style.width = `${Math.round((chunk.current / Math.max(chunk.total, 1)) * 100)}%`;
-                        results.push({ Status: chunk.status === 'deleted' ? 'Deleted' : 'Failed', Detail: chunk.message });
+                        const statusLabel = chunk.status === 'deleted' ? 'Deleted'
+                            : (chunk.status === 'skipped' ? 'Skipped' : 'Failed');
+                        results.push({ Status: statusLabel, Detail: chunk.message });
+                        if (chunk.status === 'deleted' && chunk.id) deletedIds.add(String(chunk.id));
                     } else if (chunk.type === 'info') {
                         exdLog(chunk.message, 'warn');
                         results.push({ Status: 'Skipped', Detail: chunk.message });
                     } else if (chunk.type === 'done') {
                         progBar.style.width = '100%';
-                        exdLog(`Done. Deleted ${chunk.deleted}, failed ${chunk.failed}${chunk.cancelled ? ' (stopped early)' : ''}.`, chunk.failed ? 'warn' : 'success');
+                        const skippedNote = chunk.skipped ? `, skipped ${chunk.skipped}` : '';
+                        exdLog(`Done. Deleted ${chunk.deleted}, failed ${chunk.failed}${skippedNote}${chunk.cancelled ? ' (stopped early)' : ''}.`,
+                               (chunk.failed || chunk.skipped) ? 'warn' : 'success');
                     } else if (chunk.type === 'error') {
                         exdLog(chunk.message, 'error');
                     }
@@ -373,12 +381,10 @@
             exdResultRows = results;
             document.getElementById('exd-result-btn').classList.toggle('hidden', results.length === 0);
 
-            // Remove successfully deleted rows from the live table.
-            const deletedIds = new Set(results.filter(r => r.Status === 'Deleted').map(r => {
-                const m = selected.find(s => r.Detail.includes(s.name)); return m ? m.id : null;
-            }).filter(Boolean));
+            // Remove successfully deleted rows from the live table (by id from
+            // the server, so skipped/failed rows correctly stay put).
             if (deletedIds.size) {
-                exdRows = exdRows.filter(r => !deletedIds.has(r.id));
+                exdRows = exdRows.filter(r => !deletedIds.has(String(r.id)));
                 exdRenderResults();
             }
         } catch (e) {
