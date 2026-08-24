@@ -263,9 +263,6 @@ def visualize_call_flow_multi_api():
                         'message': 'No entry points supplied.',
                         'api_log': []}), 400
 
-    # Guard against runaway requests
-    ids = ids[:15]
-
     try:
         graph_data, logs = generate_graph_flow_multi(ids, show_inactive=show_inactive)
         return jsonify({
@@ -288,7 +285,7 @@ def visualize_call_flow_separate_api():
     payload = request.get_json(silent=True) or {}
     ids = payload.get('ids') or []
     show_inactive = bool(payload.get('show_inactive', False))
-    ids = [str(i).strip() for i in ids if str(i).strip()][:15]
+    ids = [str(i).strip() for i in ids if str(i).strip()]
     if not ids:
         return jsonify({'status': 'error', 'message': 'No entry points supplied.'}), 400
 
