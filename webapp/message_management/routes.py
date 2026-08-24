@@ -117,11 +117,12 @@ def export_greetings():
         ext_ids = data.get('ext_ids', [])
         task_id = data.get('task_id')
         ignore_defaults = data.get('ignore_defaults', False)
-        
+        transcribe = data.get('transcribe', False)
+
         if not ext_ids:
             return jsonify({'error': 'No endpoints selected for export'}), 400
-            
-        zip_buffer = utils.bulk_export_greetings(ext_ids, task_id, ignore_defaults)
+
+        zip_buffer = utils.bulk_export_greetings(ext_ids, task_id, ignore_defaults, transcribe=transcribe)
         
         return send_file(
             zip_buffer,
