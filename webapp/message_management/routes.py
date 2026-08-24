@@ -123,12 +123,25 @@ def export_greetings():
             return jsonify({'error': 'No endpoints selected for export'}), 400
 
         zip_buffer = utils.bulk_export_greetings(ext_ids, task_id, ignore_defaults, transcribe=transcribe)
-        
-        return send_file(
-            zip_buffer,
+
+        # Stream the archive as a chunked response instead of send_file. Cloud Run
+        # rejects a *buffered* response body over 32 MiB with a 500 ("response size
+        # too large"), which is what large export batches were hitting. A streamed
+        # response (no Content-Length -> Transfer-Encoding: chunked) is exempt from
+        # that limit, so the whole batch ZIP can be returned regardless of size.
+        def _stream_zip(buf):
+            while True:
+                chunk = buf.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+
+        return Response(
+            _stream_zip(zip_buffer),
             mimetype='application/zip',
-            as_attachment=True,
-            download_name='RingCentral_Audio_Export.zip'
+            headers={
+                'Content-Disposition': 'attachment; filename="RingCentral_Audio_Export.zip"'
+            },
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
