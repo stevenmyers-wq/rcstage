@@ -762,9 +762,15 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False, transcri
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for i, ext_id in enumerate(ext_ids):
+          # One endpoint must never sink the whole batch. Everything for a single
+          # endpoint (its lookups, greeting scan and downloads) is wrapped so an
+          # unexpected error is recorded as a row and the export moves on, instead
+          # of raising out of the route and failing all endpoints in the batch with
+          # an opaque HTTP 500.
+          try:
             ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
             if not ext_info: continue
-            
+
             ext_name = ext_info.get('name', 'Unknown')
             ext_num = ext_info.get('extensionNumber', ext_id)
             ext_type = ext_info.get('type', 'Unknown')
@@ -836,10 +842,17 @@ def bulk_export_greetings(ext_ids, task_id=None, ignore_defaults=False, transcri
                     if transcribe:
                         row.append(transcription)
                     csv_writer.writerow(row)
-            
-            if task_id:
-                export_progress_store[task_id]['current'] = i + 1
-                    
+          except Exception as ext_err:
+              # Record the endpoint-level failure in the audit and keep going.
+              err_row = ['', ext_id, '', '', '', 'ERROR',
+                         f"ERROR processing endpoint: {str(ext_err)}", '']
+              if transcribe:
+                  err_row.append('')
+              csv_writer.writerow(err_row)
+          finally:
+              if task_id:
+                  export_progress_store[task_id]['current'] = i + 1
+
         zip_file.writestr("Greeting_Mapping_Audit.csv", csv_data.getvalue())
 
     zip_buffer.seek(0)
