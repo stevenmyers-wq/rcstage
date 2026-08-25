@@ -1114,9 +1114,28 @@ class CallFlowTracer:
                         return self._fac_rule_target(r, ext_id), True
                     return None, False   # present but off → FAC not active
 
-        # The dedicated resource is a user feature; only probe it for user traces so a
-        # queue/site 404 can't disable detection for downstream users.
-        if not probe_dedicated or self._fac_available is False:
+        # The remaining sources are user features; only probe them for user traces.
+        if not probe_dedicated:
+            return None, False
+
+        # 2) New Call Handling & Forwarding (CH&F) accounts: the FAC state lives in
+        #    the v2 comm-handling API. The rule carries state.enabled and a targets
+        #    array selected by terminatingTargetType (parsed by _v2_rule_target).
+        v2 = self.api(
+            f"/restapi/v2/accounts/~/extensions/{ext_id}"
+            f"/comm-handling/voice/state-rules/forward-all-calls"
+        )
+        if isinstance(v2, dict) and not v2.get("errorCode") and not v2.get("errors"):
+            enabled = (v2.get("state") or {}).get("enabled")
+            if enabled is None:
+                enabled = v2.get("enabled")
+            if enabled:
+                target, _matched = self._v2_rule_target(v2, ext_id)
+                return target, True
+            return None, False   # v2 is authoritative: FAC is off
+
+        # 3) Legacy accounts that expose the dedicated v1 resource.
+        if self._fac_available is False:
             return None, False
         fac = self.api(f"/restapi/v1.0/account/~/extension/{ext_id}/forward-all-calls")
         if fac is None or (isinstance(fac, dict) and fac.get("errorCode")):
