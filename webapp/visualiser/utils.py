@@ -983,6 +983,23 @@ class CallFlowTracer:
                 "target": self._v2_rule_target(rule, ext_id),
                 "enabled": bool(rule.get("enabled", True)),
             }
+
+        # Surface what v2 resolved in the api log (visible in the UI). If the v2
+        # payload shape differs from what we parse, this shows the raw state ids so
+        # the mapping can be corrected without extra instrumentation.
+        if result:
+            summary = ", ".join(f"{k}->{v.get('target')}" for k, v in result.items())
+        else:
+            seen_states = [str((r.get("state") or {}).get("id") or r.get("id"))
+                           for r in records if isinstance(r, dict)]
+            summary = f"no known states parsed; saw {seen_states}"
+        self.request_logs.append({
+            "method": "GET",
+            "endpoint": f"v2-state-rules:{ext_id}",
+            "status": "SUCCESS", "code": "200", "duration": "0ms",
+            "detail": f"CH&F v2 resolved: {summary}",
+        })
+
         self._v2_state_cache[ext_id] = result
         return result
 
