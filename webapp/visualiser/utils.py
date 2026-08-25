@@ -885,38 +885,142 @@ class CallFlowTracer:
     # fall back to the v1 shortcut when v2 is unavailable/unparseable. Both results
     # are logged ("Live AH/BH: …") so the source of each state is visible.
 
-    def _shortcut_rule_target(self, rule, ext_id):
-        """Resolve a v1 answering-rule object (shortcut endpoint) to a tracer target
-        id (extension id, ext_<number>, vm_<id>, announce_<id>), or None. Mirrors how
-        the queue audit interprets callHandlingAction."""
-        if not isinstance(rule, dict):
-            return None
-        action = rule.get("callHandlingAction", "")
+    # Forwarding-number types that represent the user's own primary/desk line (they
+    # ARE the user answering, not an onward forward) — skipped so a normal user
+    # doesn't explode into a node per device. Off-net forwards (Mobile/Home/Other)
+    # are kept and drawn.
+    _FWD_SKIP_TYPES = {"PhoneLine", "Outage"}
+
+    def _own_vm_target(self, rule, ext_id):
+        """The owning extension's own voicemail. A voicemail.recipient pointing at a
+        different extension is a stale leftover from a prior 'transfer to <mailbox>'
+        config, so honour it only when it is this extension."""
         vm_obj = rule.get("voicemail") or {}
-        if action == "PlayAnnouncementOnly":
-            return f"announce_{ext_id}"
-        if self._is_voicemail_action(action) or (vm_obj.get("enabled") and not action):
-            # "Send to voicemail" (TakeMessagesOnly) delivers to THIS extension's own
-            # mailbox (for a queue, the queue's voicemail). Routing to a *separate*
-            # mailbox is a transfer, not this action — so a voicemail.recipient that
-            # points at a different extension is a stale leftover from a previous
-            # "transfer to <mailbox>" config that RC didn't clear. Honour the recipient
-            # only when it is this extension; otherwise use the owner's own mailbox.
-            rec = vm_obj.get("recipient") or {}
+        rec = vm_obj.get("recipient") or {}
+        recip = None
+        if rec.get("id"):
+            recip = str(rec["id"])
+        elif rec.get("extensionNumber"):
+            recip = self.resolve_ext_number(rec["extensionNumber"])
+        if recip and recip != str(ext_id):
             recip = None
-            if rec.get("id"):
-                recip = str(rec["id"])
-            elif rec.get("extensionNumber"):
-                recip = self.resolve_ext_number(rec["extensionNumber"])
-            if recip and recip != str(ext_id):
-                recip = None
-            return f"vm_{recip or ext_id}"
-        target = self.extract_target(rule.get("transfer"))
+        return f"vm_{recip or ext_id}"
+
+    def _no_answer_targets(self, rule, ext_id, suffix):
+        """Where a call lands when nobody answers: voicemail when enabled, otherwise
+        the missedCall fallback (ConnectToExtension / ConnectToExternalNumber /
+        play-greeting-and-disconnect)."""
+        vm_obj = rule.get("voicemail") or {}
+        if vm_obj.get("enabled") is False:
+            missed = rule.get("missedCall") or {}
+            m_act = missed.get("actionType")
+            if m_act == "ConnectToExtension":
+                eid = str((missed.get("extension") or {}).get("id") or "")
+                return [(eid, suffix or "Missed call")] if eid else []
+            if m_act == "ConnectToExternalNumber":
+                num = missed.get("phoneNumber")
+                return [(f"ext_{num}", suffix or "Missed call")] if num else []
+            return []  # play greeting & disconnect — no onward node
+        return [(self._own_vm_target(rule, ext_id), suffix)]
+
+    def _rule_targets(self, rule, ext_id):
+        """Interpret an answering rule (v1 shape) into a list of (target, suffix)
+        destinations. Mirrors the RingEX UAT / custom-rules interpretation so user
+        call forwarding and custom call rules render instead of collapsing to
+        voicemail. Handles BusinessHours/AfterHours and Custom rules alike."""
+        if not isinstance(rule, dict):
+            return []
+        ext_id = str(ext_id)
+        action = rule.get("callHandlingAction", "") or ""
+
+        if action == "PlayAnnouncementOnly":
+            return [(f"announce_{ext_id}", "")]
+
+        if action == "UnconditionalForwarding":
+            num = (rule.get("unconditionalForwarding") or {}).get("phoneNumber")
+            return [(f"ext_{num}", "Forward")] if num else []
+
+        if action in ("TransferToExtension", "Transfer"):
+            t = self.extract_target(rule.get("transfer"))
+            if t == ext_id:
+                t = f"vm_{ext_id}"
+            return [(t, "")] if t else []
+
+        if action == "Bypass":
+            eid = str((rule.get("extension") or {}).get("id") or "")
+            return [(eid, "")] if eid else []
+
+        if action == "ForwardCalls":
+            # Rings the user's devices / forward numbers, then voicemail on no-answer.
+            # Draw the off-net forward numbers (Mobile/Home/Other); the desk line is
+            # the user answering, and voicemail is the no-answer terminus.
+            out, seen = [], set()
+            for fr in ((rule.get("forwarding") or {}).get("rules") or []):
+                if not isinstance(fr, dict):
+                    continue
+                for fn in (fr.get("forwardingNumbers") or []):
+                    if not isinstance(fn, dict):
+                        continue
+                    num = fn.get("phoneNumber")
+                    if not num or num in seen:
+                        continue
+                    if str(fn.get("type") or "") in self._FWD_SKIP_TYPES:
+                        continue
+                    seen.add(num)
+                    label = self.clean(fn.get("label") or fn.get("type") or "Forward")[:24]
+                    out.append((f"ext_{num}", label))
+            out += self._no_answer_targets(rule, ext_id, "No answer" if out else "")
+            return out
+
+        vm_obj = rule.get("voicemail") or {}
+        if self._is_voicemail_action(action) or (vm_obj.get("enabled") and not action):
+            return self._no_answer_targets(rule, ext_id, "")
+
+        # Fallback: honour any transfer / forwarding object present.
+        t = self.extract_target(rule.get("transfer")) or \
+            self.extract_target(rule.get("unconditionalForwarding"))
+        if t == ext_id:
+            t = f"vm_{ext_id}"
+        return [(t, "")] if t else []
+
+    def _target_label(self, target):
+        """Human label for a target id, for inactive-rule tooltips."""
         if not target:
-            target = self.extract_target(rule.get("unconditionalForwarding"))
-        if target == str(ext_id):
-            target = f"vm_{ext_id}"
-        return target
+            return "?"
+        if target.startswith("vm_"):
+            return "Voicemail"
+        if target.startswith("ext_"):
+            return target.replace("ext_", "")
+        if target.startswith("announce_"):
+            return "Announcement"
+        info = self.get_ext_info(target)
+        return self.clean(info.get("name", target)) if info else target
+
+    def _emit_targets(self, targets, nid, base_lbl, history,
+                      is_active, active_only, inactive_lines):
+        """Draw a rule's (target, suffix) destinations, or record them as inactive."""
+        if not is_active and active_only:
+            drew = False
+            for target, suffix in targets:
+                if not target:
+                    continue
+                drew = True
+                line = f"{base_lbl} → {self._target_label(target)}"
+                if suffix:
+                    line += f" ({suffix})"
+                inactive_lines.append(line)
+                if self.show_inactive:
+                    self.trace(target, nid, f"[Off] {base_lbl}", history, disabled=True)
+            if not drew:
+                inactive_lines.append(f"{base_lbl} (no destination)")
+            return
+        for target, suffix in targets:
+            if not target:
+                continue
+            edge = base_lbl if is_active else f"[Off] {base_lbl}"
+            if suffix:
+                edge = f"{edge}: {suffix}"
+            self.trace(target, nid, edge, history, disabled=not is_active)
 
     def _v2_active_target(self, action):
         """Return the active *terminating* target dict for a v2 action, or None.
@@ -1002,7 +1106,7 @@ class CallFlowTracer:
         result = {}
         log_bits = []
         for v2_state, v1_rule, key in wanted:
-            target = None
+            targets = []
             enabled = True
             src = None
 
@@ -1014,10 +1118,10 @@ class CallFlowTracer:
             if isinstance(v2, dict) and not v2.get("errorCode"):
                 t, matched = self._v2_rule_target(v2, ext_id)
                 if matched:
-                    target = t
+                    targets = [(t, "")] if t else []
                     enabled = bool(v2.get("enabled", True))
                     src = "v2"
-                    log_bits.append(f"{key}.v2->{target}")
+                    log_bits.append(f"{key}.v2->{t}")
                 else:
                     log_bits.append(f"{key}.v2?{self._v2_summary(v2)}")
             else:
@@ -1030,16 +1134,18 @@ class CallFlowTracer:
                     f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{v1_rule}"
                 )
                 if isinstance(sc, dict) and not sc.get("errorCode"):
-                    target = self._shortcut_rule_target(sc, ext_id)
+                    targets = self._rule_targets(sc, ext_id)
                     enabled = bool(sc.get("enabled", True))
                     src = "v1"
-                    log_bits.append(f"{key}.v1={sc.get('callHandlingAction')}->{target}")
+                    log_bits.append(
+                        f"{key}.v1={sc.get('callHandlingAction')}->"
+                        f"{[t for t, _ in targets]}")
                 else:
                     code = sc.get("errorCode") if isinstance(sc, dict) else "EMPTY"
                     log_bits.append(f"{key}.v1=ERR:{code}")
 
             if src is not None:
-                result[key] = {"target": target, "enabled": enabled}
+                result[key] = {"targets": targets, "enabled": enabled}
 
         # NOTE: the debug panel only renders `detail` for non-SUCCESS rows, so put
         # the summary in `endpoint` (always shown) to keep it visible.
@@ -1088,65 +1194,20 @@ class CallFlowTracer:
             else:
                 lbl = self.clean(r.get("name", r_type or "Rule"))[:28]
 
-            action = r.get("callHandlingAction", "")
-            vm_obj = r.get("voicemail") or {}
+            # Resolve every destination of the rule (forwarding, transfer, voicemail,
+            # announcement, missed-call fallback), so user call-forwarding and custom
+            # call rules render rather than collapsing to voicemail.
+            targets = self._rule_targets(r, ext_id)
 
-            # A "send to voicemail" (TakeMessagesOnly) rule → the owning extension's
-            # own mailbox. Take the action at face value: RC can leave a stale
-            # voicemail.recipient/transfer pointing at a previously-configured mailbox
-            # after the rule is switched to voicemail, so a recipient that isn't this
-            # extension is ignored in favour of the owner's own mailbox.
-            if self._is_voicemail_action(action) or (vm_obj.get("enabled") and not action):
-                rec = vm_obj.get("recipient") or {}
-                recip = None
-                if rec.get("id"):
-                    recip = str(rec["id"])
-                elif rec.get("extensionNumber"):
-                    recip = self.resolve_ext_number(rec["extensionNumber"])
-                if recip and recip != str(ext_id):
-                    recip = None
-                target = f"vm_{recip or ext_id}"
-            else:
-                target = self.extract_target(r.get("transfer"))
-                if not target:
-                    target = self.extract_target(r.get("unconditionalForwarding"))
-                # A rule that "transfers" to its own extension really means VM.
-                if target == str(ext_id):
-                    target = f"vm_{ext_id}"
-
-            # Live override: replace the (possibly stale) list target for the default
-            # states with what the shortcut endpoint reports — the same source the
-            # queue audit trusts. The shortcut is authoritative for these states, so
-            # override whenever it returned the state (a None target means no onward
-            # branch, e.g. Disconnect), never leaving the stale list value in place.
+            # Live override for the default states: prefer the shortcut/v2 result the
+            # queue audit trusts over a possibly-stale list value.
             if r_type in live_states:
-                target = live_states[r_type].get("target")
+                targets = live_states[r_type].get("targets", [])
                 is_active = live_states[r_type].get("enabled", is_active)
                 live_seen.add(r_type)
 
-            if not is_active and active_only:
-                if target:
-                    dest_label = target
-                    if target.startswith("vm_"):
-                        dest_label = "Voicemail"
-                    elif target.startswith("ext_"):
-                        dest_label = target.replace("ext_", "")
-                    else:
-                        dest_info = self.get_ext_info(target)
-                        if dest_info:
-                            dest_label = self.clean(dest_info.get("name", target))
-                    inactive_rule_lines.append(f"{lbl} → {dest_label}")
-                    # Optionally draw the disabled rule as a dashed branch too.
-                    if self.show_inactive:
-                        self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
-                else:
-                    inactive_rule_lines.append(f"{lbl} (no destination)")
-                continue
-
-            if target:
-                edge_lbl = lbl if is_active else f"[Off] {lbl}"
-                self.trace(target, nid, edge_lbl, history,
-                           disabled=not is_active)
+            self._emit_targets(targets, nid, lbl, history,
+                               is_active, active_only, inactive_rule_lines)
 
         # Draw any live states the list didn't carry (e.g. an after-hours rule the
         # list view omits).
@@ -1155,17 +1216,10 @@ class CallFlowTracer:
                 continue
             if skip_bh and r_type == "BusinessHours":
                 continue
-            target = info.get("target")
-            if not target:
-                continue
-            is_active = info.get("enabled", True)
             lbl = "After Hours" if r_type == "AfterHours" else "Business Hours"
-            if not is_active and active_only:
-                if self.show_inactive:
-                    self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
-                continue
-            edge_lbl = lbl if is_active else f"[Off] {lbl}"
-            self.trace(target, nid, edge_lbl, history, disabled=not is_active)
+            self._emit_targets(info.get("targets", []), nid, lbl, history,
+                               info.get("enabled", True), active_only,
+                               inactive_rule_lines)
 
         if inactive_rule_lines:
             for node in self.nodes:
@@ -1181,20 +1235,13 @@ class CallFlowTracer:
                            skip_bh=False, active_only=False):
         """Draw the well-known states from the shortcut endpoints when the detailed
         answering-rule list returned nothing. Mirrors the main loop's drawing rules."""
+        inactive_lines = []
         for r_type, info in live_states.items():
             if skip_bh and r_type == "BusinessHours":
                 continue
-            target = info.get("target")
-            if not target:
-                continue
-            is_active = info.get("enabled", True)
             lbl = "After Hours" if r_type == "AfterHours" else "Business Hours"
-            if not is_active and active_only:
-                if self.show_inactive:
-                    self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
-                continue
-            edge_lbl = lbl if is_active else f"[Off] {lbl}"
-            self.trace(target, nid, edge_lbl, history, disabled=not is_active)
+            self._emit_targets(info.get("targets", []), nid, lbl, history,
+                               info.get("enabled", True), active_only, inactive_lines)
 
     # ------------------------------------------------------------------
     # Entry point
