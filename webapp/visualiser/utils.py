@@ -947,61 +947,63 @@ class CallFlowTracer:
         if ext_id in self._v2_state_cache:
             return self._v2_state_cache[ext_id]
 
-        resp = self.api(
-            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
-        )
-        if resp is None or (isinstance(resp, dict) and resp.get("errorCode")):
-            # Feature off / endpoint unavailable → legacy account, stop probing.
-            self._v2_available = False
-            self._v2_state_cache[ext_id] = {}
-            return {}
-
-        records = None
-        if isinstance(resp, dict):
-            records = resp.get("records") or resp.get("rules")
-        elif isinstance(resp, list):
-            records = resp
-        if records is None:
-            self._v2_available = False
-            self._v2_state_cache[ext_id] = {}
-            return {}
-
-        self._v2_available = True
+        # State rules are read one state at a time (there is no list endpoint):
+        #   GET .../comm-handling/voice/state-rules/{state}
+        # The response is the single rule object (with its dispatching block).
+        states = (("after-hours", "AfterHours"), ("work-hours", "BusinessHours"))
         result = {}
-        for rule in records:
-            if not isinstance(rule, dict):
+        log_bits = []
+        any_ok = False
+        for state_id, key in states:
+            resp = self.api(
+                f"/restapi/v2/accounts/~/extensions/{ext_id}"
+                f"/comm-handling/voice/state-rules/{state_id}"
+            )
+            if resp is None:
+                log_bits.append(f"{state_id}=EMPTY")
                 continue
-            state_id = (rule.get("state") or {}).get("id") or rule.get("id") or ""
-            state_id = str(state_id).lower()
-            if state_id in ("work-hours", "business-hours"):
-                key = "BusinessHours"
-            elif state_id == "after-hours":
-                key = "AfterHours"
-            else:
-                continue  # custom/other states resolved via v1
-            result[key] = {
-                "target": self._v2_rule_target(rule, ext_id),
-                "enabled": bool(rule.get("enabled", True)),
-            }
+            if isinstance(resp, dict) and resp.get("errorCode"):
+                log_bits.append(f"{state_id}=ERR:{resp.get('errorCode')}")
+                continue
+            if not isinstance(resp, dict):
+                log_bits.append(f"{state_id}=?{type(resp).__name__}")
+                continue
+            any_ok = True
+            target = self._v2_rule_target(resp, ext_id)
+            result[key] = {"target": target, "enabled": bool(resp.get("enabled", True))}
+            # Include the raw target-type keys we saw so a shape mismatch is visible.
+            log_bits.append(f"{key}->{target or self._v2_debug_shape(resp)}")
 
-        # Surface what v2 resolved in the api log (visible in the UI). If the v2
-        # payload shape differs from what we parse, this shows the raw state ids so
-        # the mapping can be corrected without extra instrumentation.
-        if result:
-            summary = ", ".join(f"{k}->{v.get('target')}" for k, v in result.items())
-        else:
-            seen_states = [str((r.get("state") or {}).get("id") or r.get("id"))
-                           for r in records if isinstance(r, dict)]
-            summary = f"no known states parsed; saw {seen_states}"
+        # If neither state could be read, the account isn't on CH&F (or lacks the
+        # scope) — stop probing and fall back to v1 for the rest of the trace.
+        self._v2_available = bool(any_ok)
+
         self.request_logs.append({
             "method": "GET",
             "endpoint": f"v2-state-rules:{ext_id}",
-            "status": "SUCCESS", "code": "200", "duration": "0ms",
-            "detail": f"CH&F v2 resolved: {summary}",
+            "status": "SUCCESS" if any_ok else "EMPTY",
+            "code": "200" if any_ok else "0", "duration": "0ms",
+            "detail": f"CH&F v2: {', '.join(log_bits) if log_bits else 'no data'}",
         })
 
         self._v2_state_cache[ext_id] = result
         return result
+
+    def _v2_debug_shape(self, rule):
+        """Compact description of a v2 rule we couldn't map, so the api log reveals
+        the real structure to correct the parser against."""
+        disp = rule.get("dispatching") or {}
+        actions = disp.get("actions") or rule.get("actions") or []
+        shapes = []
+        if isinstance(actions, list):
+            for a in actions:
+                if not isinstance(a, dict):
+                    continue
+                ttt = a.get("terminatingTargetType") or a.get("activeTargetType")
+                types = [str(t.get("type")) for t in (a.get("targets") or [])
+                         if isinstance(t, dict)]
+                shapes.append(f"{a.get('type')}[ttt={ttt};targets={types}]")
+        return "UNMAPPED:" + ("|".join(shapes) if shapes else f"keys={list(rule.keys())}")
 
     def _trace_rules(self, ext_id, nid, history,
                      skip_bh=False, active_only=False):
