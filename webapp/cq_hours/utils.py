@@ -666,6 +666,36 @@ def run_cq_audit(task_id, queue_ids, token):
             if succ:
                 ah_action = ah_rule.get('callHandlingAction')
                 row["After Hours Behavior"] = ah_action
+
+                # DIAGNOSTIC (CQ_DEBUG only): dump exactly what RingCentral returns for this
+                # queue's after-hours handling. When a queue is set to "play announcement" but
+                # the audit/visualiser still report a transfer to an old extension, this shows
+                # whether the legacy after-hours-rule resource genuinely still carries the old
+                # TransferToExtension, and whether a separate (custom) rule now holds the
+                # announcement. Compares the shortcut endpoint against the full detailed list.
+                if CQ_DEBUG:
+                    print(f"[CQ_DEBUG] AH after-hours-rule ext={row.get('Extension')} "
+                          f"action={ah_action}: {json.dumps(ah_rule, default=str)[:2500]}", flush=True)
+                    _dl_succ, _dl = safe_api_call(
+                        f'/restapi/v1.0/account/~/extension/{qid}/answering-rule?view=Detailed&showInactive=true&enabledOnly=false',
+                        token=token)
+                    if _dl_succ and isinstance(_dl, dict):
+                        _summ = [
+                            {"id": r.get("id"), "type": r.get("type"), "name": r.get("name"),
+                             "enabled": r.get("enabled"), "callHandlingAction": r.get("callHandlingAction"),
+                             "transfer": r.get("transfer")}
+                            for r in _dl.get("records", [])
+                        ]
+                        print(f"[CQ_DEBUG] AH v1 rule list ext={row.get('Extension')}: "
+                              f"{json.dumps(_summ, default=str)[:3000]}", flush=True)
+                    # v2 New Call Handling & Forwarding: on migrated accounts the live rule
+                    # lives here, not on the v1 endpoints above. Dump it so we can confirm the
+                    # migration and read the exact v2 shape (dispatching/actions) to parse.
+                    _v2_succ, _v2 = safe_api_call(
+                        f'/restapi/v2/accounts/~/extensions/{qid}/comm-handling/voice/state-rules',
+                        token=token)
+                    print(f"[CQ_DEBUG] AH v2 state-rules ext={row.get('Extension')} "
+                          f"succ={_v2_succ}: {json.dumps(_v2, default=str)[:3500]}", flush=True)
                 # Only a TransferToExtension rule has a meaningful destination. RingCentral keeps
                 # a stale transfer object on take-messages-only / announcement rules, so ignore it
                 # unless the action actually transfers -- otherwise we report a phantom old dest.
