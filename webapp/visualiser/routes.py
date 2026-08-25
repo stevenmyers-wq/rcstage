@@ -1,6 +1,7 @@
 # webapp/visualiser/routes.py
 import sys
 import time
+import json
 from flask import Blueprint, jsonify, request, Response
 from webapp.auth_utils import is_authenticated, get_rc_access_token
 from webapp.usage_tracking import track_usage
@@ -13,6 +14,53 @@ from webapp.visualiser.utils import (
 from webapp.visualiser.vsdx_export import build_vsdx, build_vsdx_multi
 
 viz_bp = Blueprint('visualiser', __name__)
+
+
+@viz_bp.route('/api/rc/visualiser/debug/<ext_id>', methods=['GET'])
+def visualiser_debug_rules(ext_id):
+    """Diagnostic: dump the RAW RingCentral call-handling responses for one
+    extension id so we can see exactly what each endpoint returns for a queue's
+    after-hours / business-hours routing. Visit:
+        /api/rc/visualiser/debug/<internal-extension-id>
+    Returns pretty JSON with the v2 comm-handling state rules, the v1 shortcut
+    rules, and the v1 detailed list side by side. Read-only."""
+    if not is_authenticated() or not get_rc_access_token():
+        return jsonify({'status': 'error', 'message': 'Not authenticated.'}), 401
+
+    ext_id = str(ext_id).strip()
+
+    def _get(url):
+        # Cache-bust so we see the live value, and capture whatever comes back.
+        sep = '&' if '?' in url else '?'
+        try:
+            resp = rc_api_call(f"{url}{sep}_={int(time.time()*1000)}")
+            return resp
+        except Exception as e:
+            return {'__exception__': str(e)}
+
+    endpoints = {
+        'v2_after_hours':
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/after-hours",
+        'v2_work_hours':
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours",
+        'v2_states':
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/states",
+        'v1_after_hours_rule':
+            f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/after-hours-rule",
+        'v1_business_hours_rule':
+            f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule",
+        'v1_rules_list':
+            f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true",
+    }
+
+    out = {'ext_id': ext_id}
+    for key, url in endpoints.items():
+        out[key] = {'endpoint': url, 'response': _get(url)}
+
+    return Response(
+        json.dumps(out, indent=2, default=str),
+        mimetype='application/json',
+    )
 
 
 def fetch_all_pages(endpoint, params=None):
