@@ -29,6 +29,8 @@ class CallFlowTracer:
         self.entry_node_ids = []       # node ids that are graph entry points
         self.show_inactive = False     # also draw disabled/inactive rules
         self.notif_cache = {}          # ext_id -> voicemail notification email(s)
+        self._v2_state_cache = {}      # ext_id -> {ruleType: {target, enabled}}
+        self._v2_available = None      # None=unknown, True/False=account has CH&F v2
 
     # ------------------------------------------------------------------
     # API helpers
@@ -42,6 +44,7 @@ class CallFlowTracer:
         try:
             should_bust = (
                 "answering-rule" in endpoint or
+                "comm-handling" in endpoint or
                 ("/call-queues/" in endpoint and "overflow-settings" not in endpoint)
             )
             sep = "&" if "?" in endpoint else "?"
@@ -548,6 +551,18 @@ class CallFlowTracer:
                 self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             return nid
 
+        if ext_id.startswith("announce_"):
+            # A "play announcement (and disconnect)" terminating action — surfaced by
+            # the v2 call-handling read. Drawn as its own leaf so it's clearly not a
+            # transfer to an extension.
+            nid = self._next_id()
+            self.add_node(nid, "Announcement", "autoreceptionist",
+                          sublabel="Play Announcement",
+                          tooltip="Overview\nType: Announcement (play & disconnect)")
+            if parent_nid:
+                self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
+            return nid
+
         if ext_id in history:
             if ext_id in self.node_map and parent_nid:
                 self.add_edge(parent_nid, self.node_map[ext_id], edge_label + " ↩", disabled=disabled)
@@ -860,16 +875,152 @@ class CallFlowTracer:
     # Extension rule tracer
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # v2 New Call Handling & Forwarding (CH&F)
+    # ------------------------------------------------------------------
+    # RingCentral freezes the legacy v1 answering-rule resource when an account is
+    # migrated to New Call Handling & Forwarding, so v1 reports stale routing (e.g. an
+    # after-hours rule still shows a transfer to an old extension after it was changed
+    # to "play announcement"). The live rules live in the v2 comm-handling API. We read
+    # the well-known states from v2 and override the v1 target for those states; legacy
+    # accounts (no v2) fall through to v1 unchanged. Ref: RingCentral "User Call Handling
+    # APIs Migration Guidance".
+
+    def _v2_active_target(self, action):
+        """Return the active *terminating* target dict for a v2 action, or None.
+        Ringing targets (ring members/user) are ignored — we want the final
+        destination, matching v1's single callHandlingAction semantics."""
+        targets = action.get("targets")
+        if not isinstance(targets, list):
+            return None
+        ttt = action.get("terminatingTargetType") or action.get("activeTargetType")
+        if ttt:
+            for t in targets:
+                if not isinstance(t, dict):
+                    continue
+                tt = str(t.get("type", ""))
+                if tt == ttt or t.get("name") == ttt or tt.startswith(str(ttt)):
+                    return t
+        for t in targets:
+            if isinstance(t, dict) and "Terminating" in str(t.get("type", "")):
+                return t
+        return None
+
+    def _v2_rule_target(self, rule, ext_id):
+        """Resolve a v2 state rule's terminating destination to a tracer target id
+        (an extension id, ext_<number>, vm_<id>, or announce_<id>), or None."""
+        disp = rule.get("dispatching") or {}
+        actions = disp.get("actions") or rule.get("actions") or []
+        chosen = None
+        if isinstance(actions, list):
+            for a in actions:
+                if not isinstance(a, dict):
+                    continue
+                t = self._v2_active_target(a)
+                if t:
+                    chosen = t  # last terminating action decides the final destination
+        if not chosen:
+            return None
+        ttype = str(chosen.get("type", ""))
+        if "Extension" in ttype:
+            eid = str((chosen.get("extension") or {}).get("id", "") or "")
+            return eid or None
+        if "PhoneNumber" in ttype:
+            num = str((chosen.get("destination") or {}).get("phoneNumber", "") or "")
+            return f"ext_{num}" if num else None
+        if "VoiceMail" in ttype or "Voicemail" in ttype:
+            rec = chosen.get("recipient") or chosen.get("extension") or {}
+            rid = str(rec.get("id", "") or "")
+            return f"vm_{rid or ext_id}"
+        if "PlayAnnouncement" in ttype:
+            return f"announce_{ext_id}"
+        return None
+
+    def _v2_state_targets(self, ext_id):
+        """Return {ruleType: {'target', 'enabled'}} for the well-known states
+        (BusinessHours/AfterHours) from the v2 comm-handling API. Returns {} for
+        legacy (non-CH&F) accounts so callers fall back to v1 unchanged. The
+        account-wide availability is cached so legacy accounts cost one probe."""
+        ext_id = str(ext_id)
+        if self._v2_available is False:
+            return {}
+        if ext_id in self._v2_state_cache:
+            return self._v2_state_cache[ext_id]
+
+        resp = self.api(
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules"
+        )
+        if resp is None or (isinstance(resp, dict) and resp.get("errorCode")):
+            # Feature off / endpoint unavailable → legacy account, stop probing.
+            self._v2_available = False
+            self._v2_state_cache[ext_id] = {}
+            return {}
+
+        records = None
+        if isinstance(resp, dict):
+            records = resp.get("records") or resp.get("rules")
+        elif isinstance(resp, list):
+            records = resp
+        if records is None:
+            self._v2_available = False
+            self._v2_state_cache[ext_id] = {}
+            return {}
+
+        self._v2_available = True
+        result = {}
+        for rule in records:
+            if not isinstance(rule, dict):
+                continue
+            state_id = (rule.get("state") or {}).get("id") or rule.get("id") or ""
+            state_id = str(state_id).lower()
+            if state_id in ("work-hours", "business-hours"):
+                key = "BusinessHours"
+            elif state_id == "after-hours":
+                key = "AfterHours"
+            else:
+                continue  # custom/other states resolved via v1
+            result[key] = {
+                "target": self._v2_rule_target(rule, ext_id),
+                "enabled": bool(rule.get("enabled", True)),
+            }
+
+        # Surface what v2 resolved in the api log (visible in the UI). If the v2
+        # payload shape differs from what we parse, this shows the raw state ids so
+        # the mapping can be corrected without extra instrumentation.
+        if result:
+            summary = ", ".join(f"{k}->{v.get('target')}" for k, v in result.items())
+        else:
+            seen_states = [str((r.get("state") or {}).get("id") or r.get("id"))
+                           for r in records if isinstance(r, dict)]
+            summary = f"no known states parsed; saw {seen_states}"
+        self.request_logs.append({
+            "method": "GET",
+            "endpoint": f"v2-state-rules:{ext_id}",
+            "status": "SUCCESS", "code": "200", "duration": "0ms",
+            "detail": f"CH&F v2 resolved: {summary}",
+        })
+
+        self._v2_state_cache[ext_id] = result
+        return result
+
     def _trace_rules(self, ext_id, nid, history,
                      skip_bh=False, active_only=False):
         rules_resp = self.api(
             f"/restapi/v1.0/account/~/extension/{ext_id}"
             f"/answering-rule?view=Detailed&showInactive=true"
         )
+        # On CH&F-migrated accounts the v1 rules above are stale; these carry the
+        # live routing for the well-known states and override the v1 target below.
+        v2_states = self._v2_state_targets(ext_id)
+
         if not rules_resp or not rules_resp.get("records"):
+            # v1 returned nothing but v2 may still have live states to draw.
+            if v2_states:
+                self._trace_v2_only(ext_id, nid, history, v2_states, skip_bh, active_only)
             return
 
         inactive_rule_lines = []
+        v2_seen = set()
 
         for r in rules_resp["records"]:
             r_type = r.get("type")
@@ -909,6 +1060,15 @@ class CallFlowTracer:
                 if target == str(ext_id):
                     target = f"vm_{ext_id}"
 
+            # CH&F override: on migrated accounts the v1 values above are frozen at
+            # migration, so replace the target for well-known states with the live v2
+            # destination. Only override when v2 gives a concrete target, so an
+            # unparsed v2 rule never blanks an existing v1 branch.
+            if r_type in v2_states and v2_states[r_type].get("target"):
+                target = v2_states[r_type]["target"]
+                is_active = v2_states[r_type].get("enabled", is_active)
+                v2_seen.add(r_type)
+
             if not is_active and active_only:
                 if target:
                     dest_label = target
@@ -933,6 +1093,25 @@ class CallFlowTracer:
                 self.trace(target, nid, edge_lbl, history,
                            disabled=not is_active)
 
+        # Draw any live v2 states the v1 list didn't carry (e.g. an after-hours
+        # rule the migrated v1 view no longer returns).
+        for r_type, info in v2_states.items():
+            if r_type in v2_seen:
+                continue
+            if skip_bh and r_type == "BusinessHours":
+                continue
+            target = info.get("target")
+            if not target:
+                continue
+            is_active = info.get("enabled", True)
+            lbl = "After Hours" if r_type == "AfterHours" else "Business Hours"
+            if not is_active and active_only:
+                if self.show_inactive:
+                    self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
+                continue
+            edge_lbl = lbl if is_active else f"[Off] {lbl}"
+            self.trace(target, nid, edge_lbl, history, disabled=not is_active)
+
         if inactive_rule_lines:
             for node in self.nodes:
                 if node["data"]["id"] == nid:
@@ -942,6 +1121,25 @@ class CallFlowTracer:
                         (existing + "\n\n" + extra).strip() if existing else extra
                     )
                     break
+
+    def _trace_v2_only(self, ext_id, nid, history, v2_states,
+                       skip_bh=False, active_only=False):
+        """Draw well-known states from v2 when the v1 answering-rule list returned
+        nothing (fully migrated account). Mirrors the main loop's drawing rules."""
+        for r_type, info in v2_states.items():
+            if skip_bh and r_type == "BusinessHours":
+                continue
+            target = info.get("target")
+            if not target:
+                continue
+            is_active = info.get("enabled", True)
+            lbl = "After Hours" if r_type == "AfterHours" else "Business Hours"
+            if not is_active and active_only:
+                if self.show_inactive:
+                    self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
+                continue
+            edge_lbl = lbl if is_active else f"[Off] {lbl}"
+            self.trace(target, nid, edge_lbl, history, disabled=not is_active)
 
     # ------------------------------------------------------------------
     # Entry point
