@@ -254,6 +254,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
+                // The spreadsheet was consumed, so clear the file input and its
+                // sheet picker — the next run should start from a clean form.
+                fileUpload.value = '';
+                if (deviceSwapSheetPicker) deviceSwapSheetPicker.reset();
+                processFileBtn.disabled = true;
+
                 if (data.results && data.results.length > 0) {
                     data.results.forEach(result => {
                         const tr = document.createElement('tr');
@@ -357,6 +363,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     alert('Error: ' + data.error);
                     return;
                 }
+
+                // The spreadsheet was consumed, so clear the file input and its
+                // sheet picker — the next run should start from a clean form.
+                fileUpload.value = '';
+                if (swapSheetPicker) swapSheetPicker.reset();
+                processBtn.disabled = true;
 
                 if (data.results && data.results.length > 0) {
                     data.results.forEach(result => {

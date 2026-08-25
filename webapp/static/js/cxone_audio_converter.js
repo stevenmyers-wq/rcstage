@@ -259,6 +259,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Reset file inputs
       if (convertFileInput) convertFileInput.value = "";
       if (genFileInput) genFileInput.value = "";
+      if (genSheetPicker) genSheetPicker.reset();
 
       // Hide steps 2 and 3, reset indicators
       document.getElementById("step-2").classList.add("hidden");

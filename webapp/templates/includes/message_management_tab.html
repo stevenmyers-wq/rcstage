@@ -1137,6 +1137,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         finishProgress(total);
         setResultData(resultRows, 'Upload_Results');
+        // Clear the chosen audio file so reopening the modal starts fresh.
+        const uploadForm = document.getElementById('form-upload');
+        if (uploadForm) uploadForm.reset();
     }
 
     async function processBulkTts(text, voice, greetingType) {
@@ -1210,6 +1213,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         finishProgress(total);
         setResultData(resultRows, 'AI_Audio_Results');
+        // Clear the greeting text so reopening the modal starts fresh.
+        const ttsForm = document.getElementById('form-tts');
+        if (ttsForm) ttsForm.reset();
     }
 
     function finishProgress(total) {
@@ -1266,6 +1272,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!driveUrl) { alert('Please paste the Google Drive folder link.'); return; }
         processXlsxUpload(file, driveUrl, mmXlsxSheetPicker ? mmXlsxSheetPicker.value() : '');
     });
+
+    // Clears the bulk-upload inputs: the Drive link, the chosen spreadsheet, and
+    // the sheet-picker dropdown that hangs off the file input.
+    function resetXlsxForm() {
+        const form = document.getElementById('form-xlsx');
+        if (form) form.reset();
+        if (mmXlsxSheetPicker) mmXlsxSheetPicker.reset();
+    }
 
     // --- Per-user Google Drive authorization (OAuth access token via GIS) ---
     let _driveTokenClient = null;
@@ -1432,6 +1446,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
                 setResultData(rows, 'Bulk_XLSX_Upload_Results');
             }
+            // The run consumed the Drive link and spreadsheet, so clear the
+            // inputs (including the sheet picker) — reopening the modal should
+            // start fresh, not show the previous run's values.
+            resetXlsxForm();
             progressCloseBtn.classList.remove('hidden');
         } catch (err) {
             clearInterval(pollInterval);
