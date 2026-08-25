@@ -224,7 +224,6 @@
                     
                     statusDiv.className = "card !py-4 text-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60 block";
                     statusDiv.innerHTML = "<strong>✅ Mapping Engine Succeeded!</strong> Aggregated spreadsheet has been downloaded.";
-                    resetInputs();
                 } else {
                     const data = await response.json();
                     if(response.status === 401) {
@@ -238,7 +237,8 @@
                 statusDiv.innerHTML = `<strong>❌ File Compilation Fault:</strong> ${err.message}`;
             } finally {
                 submitBtn.innerHTML = 'Submit & Process Files';
-                checkInputs(); 
+                // Clear both source pickers whether the run succeeded or failed.
+                resetInputs();
             }
         });
     }

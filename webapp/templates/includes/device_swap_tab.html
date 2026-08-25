@@ -245,20 +245,20 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .then(response => response.json())
             .then(data => {
-                processFileBtn.disabled = false;
                 spinner.classList.add('hidden');
                 btnText.textContent = 'Process Bulk Update';
+
+                // The spreadsheet was consumed, so clear the file input and its
+                // sheet picker whether the run succeeded or failed — the next
+                // run should start from a clean form.
+                fileUpload.value = '';
+                if (deviceSwapSheetPicker) deviceSwapSheetPicker.reset();
+                processFileBtn.disabled = true;
 
                 if (data.error) {
                     alert('Error: ' + data.error);
                     return;
                 }
-
-                // The spreadsheet was consumed, so clear the file input and its
-                // sheet picker — the next run should start from a clean form.
-                fileUpload.value = '';
-                if (deviceSwapSheetPicker) deviceSwapSheetPicker.reset();
-                processFileBtn.disabled = true;
 
                 if (data.results && data.results.length > 0) {
                     data.results.forEach(result => {
@@ -292,9 +292,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             })
             .catch(error => {
-                processFileBtn.disabled = false;
                 spinner.classList.add('hidden');
                 btnText.textContent = 'Process Bulk Update';
+                fileUpload.value = '';
+                if (deviceSwapSheetPicker) deviceSwapSheetPicker.reset();
+                processFileBtn.disabled = true;
                 console.error('Error:', error);
                 alert('An unexpected error occurred while processing the file.');
             });
@@ -355,20 +357,20 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .then(response => response.json())
             .then(data => {
-                processBtn.disabled = false;
                 spinner.classList.add('hidden');
                 btnText.textContent = 'Process Bulk Swap';
+
+                // The spreadsheet was consumed, so clear the file input and its
+                // sheet picker whether the run succeeded or failed — the next
+                // run should start from a clean form.
+                fileUpload.value = '';
+                if (swapSheetPicker) swapSheetPicker.reset();
+                processBtn.disabled = true;
 
                 if (data.error) {
                     alert('Error: ' + data.error);
                     return;
                 }
-
-                // The spreadsheet was consumed, so clear the file input and its
-                // sheet picker — the next run should start from a clean form.
-                fileUpload.value = '';
-                if (swapSheetPicker) swapSheetPicker.reset();
-                processBtn.disabled = true;
 
                 if (data.results && data.results.length > 0) {
                     data.results.forEach(result => {
@@ -402,9 +404,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             })
             .catch(error => {
-                processBtn.disabled = false;
                 spinner.classList.add('hidden');
                 btnText.textContent = 'Process Bulk Swap';
+                fileUpload.value = '';
+                if (swapSheetPicker) swapSheetPicker.reset();
+                processBtn.disabled = true;
                 console.error('Error:', error);
                 alert('An unexpected error occurred while processing the file.');
             });

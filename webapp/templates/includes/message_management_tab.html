@@ -1168,6 +1168,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             logProgress(e.message, 'error');
             finishProgress(0);
+            const ttsForm = document.getElementById('form-tts');
+            if (ttsForm) ttsForm.reset();
             return;
         }
 
@@ -1446,10 +1448,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
                 setResultData(rows, 'Bulk_XLSX_Upload_Results');
             }
-            // The run consumed the Drive link and spreadsheet, so clear the
-            // inputs (including the sheet picker) — reopening the modal should
-            // start fresh, not show the previous run's values.
-            resetXlsxForm();
             progressCloseBtn.classList.remove('hidden');
         } catch (err) {
             clearInterval(pollInterval);
@@ -1461,6 +1459,10 @@ document.addEventListener('DOMContentLoaded', () => {
             progressPct.textContent = 'Failed';
             progressTitle.textContent = "Bulk Upload Failed";
             progressCloseBtn.classList.remove('hidden');
+        } finally {
+            // Clear the Drive link, spreadsheet, and sheet picker whether the run
+            // succeeded or failed — reopening the modal should start fresh.
+            resetXlsxForm();
         }
     }
 });
