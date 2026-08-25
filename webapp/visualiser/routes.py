@@ -51,6 +51,13 @@ def visualiser_debug_rules(ext_id):
             f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule",
         'v1_rules_list':
             f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed&showInactive=true",
+        # User-level "Forward all calls" (overrides normal handling when enabled).
+        'v1_forward_all_calls':
+            f"/restapi/v1.0/account/~/extension/{ext_id}/forward-all-calls",
+        'v2_forward_all_state':
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/states/forward-all-calls",
+        'v2_forward_all_rule':
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/forward-all-calls",
     }
 
     out = {'ext_id': ext_id}
