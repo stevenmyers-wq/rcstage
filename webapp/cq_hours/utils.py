@@ -344,6 +344,30 @@ def format_api_error(err_str):
     except:
         return str(err_str)
 
+def _cache_bust(endpoint):
+    """Append a unique query param so RingCentral serves a fresh read.
+
+    RC caches reads of answering-rule (and call-queue) resources, so a GET can
+    return the *previous* values for a short window after they change in the
+    portal -- e.g. an after-hours rule switched from Transfer-to-Extension to
+    Announcement still reads back as TransferToExtension. The Call Flow
+    Visualiser relies on the same trick; without it the audit reports stored
+    rather than live routing. time_ns() keeps the token unique even for reads
+    issued within the same second."""
+    sep = "&" if "?" in endpoint else "?"
+    return f"{endpoint}{sep}_={time.time_ns()}"
+
+
+def _should_cache_bust(endpoint):
+    # Individual answering-rule and call-queue resources are the cached ones.
+    # overflow-settings is excluded to match the visualiser (it isn't affected),
+    # and the plain /call-queues list has no trailing slash so it won't match.
+    return (
+        'answering-rule' in endpoint or
+        ('/call-queues/' in endpoint and 'overflow-settings' not in endpoint)
+    )
+
+
 def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_retries=4):
     if 'mock_' in str(endpoint):
         if method == 'GET':
@@ -354,6 +378,11 @@ def safe_api_call(endpoint, method='GET', json_payload=None, token=None, max_ret
             if 'managers' in str(endpoint): return True, {"records": []}
             return True, {"name": "New Queue", "status": "NotActivated", "contact": {}}
         return True, {}
+
+    # Defeat RC's read cache on the resources that serve stale values right after
+    # an update, so the audit reports live routing rather than the previous state.
+    if method == 'GET' and _should_cache_bust(endpoint):
+        endpoint = _cache_bust(endpoint)
 
     for attempt in range(max_retries):
         try:
