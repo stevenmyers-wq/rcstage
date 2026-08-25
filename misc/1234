@@ -1,29 +1,360 @@
-DEBUG LOG
-✅ 200 GET (767.88ms) /restapi/v1.0/account/~/extension/813738124
-✅ 200 GET (698.61ms) /restapi/v1.0/account/~/call-queues/813738124?_=1787655613
-✅ 200 GET (749.87ms) /restapi/v1.0/account/~/call-queues/813738124/members?_=1787655613
-✅ 200 GET (789.52ms) /restapi/v1.0/account/~/extension/814601124
-✅ 200 GET (763.65ms) /restapi/v1.0/account/~/extension/814583124
-✅ 200 GET (695.02ms) /restapi/v1.0/account/~/extension/814598124
-✅ 200 GET (710.78ms) /restapi/v1.0/account/~/extension/813738124/answering-rule/business-hours-rule?_=1787655616
-✅ 200 GET (690.34ms) /restapi/v1.0/account/~/extension/813738124/overflow-settings
-✅ 200 GET (709.83ms) /restapi/v1.0/account/~/extension/813738124/business-hours
-✅ 200 GET (786.05ms) /restapi/v1.0/account/~/phone-number?perPage=250&page=1
-✅ 200 GET (754.86ms) /restapi/v1.0/account/~/phone-number?perPage=250&page=2
-✅ 200 GET (630.5ms) /restapi/v1.0/account/~/phone-number?perPage=250&page=3
-✅ 200 GET (697.7ms) /restapi/v1.0/account/~/extension/813738124/notification-settings
-✅ 200 GET (707.78ms) /restapi/v1.0/account/~/extension/813738124/answering-rule?view=Detailed&showInactive=true&_=1787655621
-✅ 200 GET (1020.09ms) /restapi/v2/accounts/~/extensions/813738124/comm-handling/voice/state-rules/after-hours
-✅ 200 GET (693.49ms) /restapi/v1.0/account/~/extension/813738124/answering-rule/after-hours-rule?_=1787655623
-✅ 200 GET (0ms) Live AH/BH 813738124: AfterHours.v2?keys=['errors'], AfterHours.v1=TakeMessagesOnly->vm_813738124
-✅ 200 GET (773.6ms) /restapi/v1.0/account/~/extension/813485124
-✅ 200 GET (694.04ms) /restapi/v1.0/account/~/extension/813485124/notification-settings
-❌ CMN-468 GET (688.12ms) /restapi/v1.0/account/~/extension/813485124/answering-rule?view=Detailed&showInactive=true&_=1787655625
-↳ ERROR: This API is not available with enabled feature [NewCallHandlingAndForwarding].
-❌ CMN-468 GET (740.72ms) /restapi/v1.0/account/~/extension/813485124/forward-all-calls
-↳ ERROR: This API is not available with enabled feature [NewCallHandlingAndForwarding].
-✅ 200 GET (1024.11ms) /restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/after-hours
-❌ CMN-468 GET (714.97ms) /restapi/v1.0/account/~/extension/813485124/answering-rule/after-hours-rule?_=1787655628
-↳ ERROR: This API is not available with enabled feature [NewCallHandlingAndForwarding].
-✅ 200 GET (1157.5ms) /restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/work-hours
-✅ 200 GET (0ms) Live AH/BH 813485124: AfterHours.v2?keys=['errors'], AfterHours.v1=ERR:CMN-468, BusinessHours.v2->vm_813485124
+{
+  "ext_id": "813485124",
+  "v2_after_hours": {
+    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/after-hours",
+    "response": {
+      "errors": [
+        {
+          "errorCode": "CMN-444",
+          "message": "Resource for parameter [stateId]: [after-hours] is not found",
+          "parameterName": "stateId",
+          "parameterValue": "after-hours"
+        }
+      ]
+    }
+  },
+  "v2_work_hours": {
+    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/work-hours",
+    "response": {
+      "id": "work-hours",
+      "displayName": "Work Hours",
+      "dispatching": {
+        "actions": [
+          {
+            "type": "PlayWelcomePromptAction",
+            "greeting": {
+              "effectiveGreetingType": "Preset",
+              "preset": {
+                "id": "66048"
+              }
+            },
+            "enabled": false
+          },
+          {
+            "type": "PlayConnectingMessageAction",
+            "greeting": {
+              "effectiveGreetingType": "Preset",
+              "preset": {
+                "id": "68867"
+              }
+            },
+            "enabled": true
+          },
+          {
+            "type": "PlayConnectingPromptAction",
+            "greeting": {
+              "effectiveGreetingType": "Preset",
+              "preset": {
+                "id": "66310"
+              }
+            },
+            "enabled": true
+          },
+          {
+            "type": "ScreeningAction",
+            "screening": "NoCallerId",
+            "screeningResult": "AskToAnswer",
+            "enabled": false
+          },
+          {
+            "type": "RingGroupAction",
+            "enabled": true,
+            "targets": [
+              {
+                "type": "AllMobileRingTarget",
+                "name": "My mobile apps"
+              }
+            ],
+            "duration": 30
+          },
+          {
+            "type": "RingGroupAction",
+            "enabled": true,
+            "targets": [
+              {
+                "type": "AllDesktopRingTarget",
+                "name": "My desktop"
+              }
+            ],
+            "duration": 30
+          },
+          {
+            "type": "TerminatingAction",
+            "targets": [
+              {
+                "type": "VoiceMailTerminatingTarget",
+                "name": "Voicemail",
+                "prompt": {
+                  "greeting": {
+                    "effectiveGreetingType": "Preset",
+                    "preset": {
+                      "id": "590080"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "PlayAnnouncementTerminatingTarget",
+                "name": "PlayAnnouncement",
+                "prompt": {
+                  "greeting": {
+                    "effectiveGreetingType": "Preset",
+                    "preset": {
+                      "id": "66816"
+                    }
+                  }
+                },
+                "dispatchingType": "Ringing"
+              }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget"
+          }
+        ],
+        "type": "RingAtOnce"
+      },
+      "state": {
+        "id": "work-hours",
+        "enabled": true,
+        "displayName": "Work Hours",
+        "conditions": [
+          {
+            "type": "Schedule",
+            "schedule": {
+              "triggers": [
+                {
+                  "triggerType": "Daily",
+                  "startTime": "00:00:00",
+                  "endTime": "23:59:59"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "v2_states": {
+    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/states",
+    "response": {
+      "records": [
+        {
+          "id": "forward-all-calls",
+          "enabled": true,
+          "displayName": "Forward all calls",
+          "conditions": [
+            {
+              "type": "Schedule",
+              "schedule": {
+                "triggers": [
+                  {
+                    "triggerType": "Daily",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "work-hours",
+          "enabled": true,
+          "displayName": "Work Hours",
+          "conditions": [
+            {
+              "type": "Schedule",
+              "schedule": {
+                "triggers": [
+                  {
+                    "triggerType": "Daily",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "dnd",
+          "enabled": false,
+          "displayName": "Do not disturb",
+          "conditions": [
+            {
+              "type": "Schedule",
+              "schedule": {
+                "triggers": [
+                  {
+                    "triggerType": "Daily",
+                    "startTime": "00:00:00",
+                    "endTime": "23:59:59"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "paging": {
+        "perPage": 100,
+        "page": 1,
+        "pageStart": 0,
+        "pageEnd": 2,
+        "totalPages": 1,
+        "totalElements": 3
+      }
+    }
+  },
+  "v1_after_hours_rule": {
+    "endpoint": "/restapi/v1.0/account/~/extension/813485124/answering-rule/after-hours-rule",
+    "response": {
+      "errorCode": "CMN-468",
+      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+      "errors": [
+        {
+          "errorCode": "CMN-468",
+          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+          "featureName": "NewCallHandlingAndForwarding"
+        }
+      ],
+      "featureName": "NewCallHandlingAndForwarding"
+    }
+  },
+  "v1_business_hours_rule": {
+    "endpoint": "/restapi/v1.0/account/~/extension/813485124/answering-rule/business-hours-rule",
+    "response": {
+      "errorCode": "CMN-468",
+      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+      "errors": [
+        {
+          "errorCode": "CMN-468",
+          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+          "featureName": "NewCallHandlingAndForwarding"
+        }
+      ],
+      "featureName": "NewCallHandlingAndForwarding"
+    }
+  },
+  "v1_rules_list": {
+    "endpoint": "/restapi/v1.0/account/~/extension/813485124/answering-rule?view=Detailed&showInactive=true",
+    "response": {
+      "errorCode": "CMN-468",
+      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+      "errors": [
+        {
+          "errorCode": "CMN-468",
+          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+          "featureName": "NewCallHandlingAndForwarding"
+        }
+      ],
+      "featureName": "NewCallHandlingAndForwarding"
+    }
+  },
+  "v1_forward_all_calls": {
+    "endpoint": "/restapi/v1.0/account/~/extension/813485124/forward-all-calls",
+    "response": {
+      "errorCode": "CMN-468",
+      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+      "errors": [
+        {
+          "errorCode": "CMN-468",
+          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+          "featureName": "NewCallHandlingAndForwarding"
+        }
+      ],
+      "featureName": "NewCallHandlingAndForwarding"
+    }
+  },
+  "v2_forward_all_state": {
+    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/states/forward-all-calls",
+    "response": {
+      "id": "forward-all-calls",
+      "enabled": true,
+      "displayName": "Forward all calls",
+      "conditions": [
+        {
+          "type": "Schedule",
+          "schedule": {
+            "triggers": [
+              {
+                "triggerType": "Daily",
+                "startTime": "00:00:00",
+                "endTime": "23:59:59"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "v2_forward_all_rule": {
+    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/forward-all-calls",
+    "response": {
+      "id": "forward-all-calls",
+      "displayName": "Forward all calls",
+      "dispatching": {
+        "actions": [
+          {
+            "type": "TerminatingAction",
+            "targets": [
+              {
+                "type": "VoiceMailTerminatingTarget",
+                "name": "Voicemail",
+                "prompt": {
+                  "greeting": {
+                    "effectiveGreetingType": "Preset",
+                    "preset": {
+                      "id": "590080"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "PlayAnnouncementTerminatingTarget",
+                "name": "PlayAnnouncement",
+                "prompt": {
+                  "greeting": {
+                    "effectiveGreetingType": "Preset",
+                    "preset": {
+                      "id": "66560"
+                    }
+                  }
+                },
+                "dispatchingType": "Terminating"
+              },
+              {
+                "type": "PhoneNumberTerminatingTarget",
+                "name": "__EXTERNAL_NUMBER__",
+                "destination": {
+                  "phoneNumber": "+61272023873"
+                },
+                "dispatchingType": "Terminating"
+              }
+            ],
+            "terminatingTargetType": "PhoneNumberTerminatingTarget"
+          }
+        ],
+        "type": "Terminate"
+      },
+      "state": {
+        "id": "forward-all-calls",
+        "enabled": true,
+        "displayName": "Forward all calls",
+        "conditions": [
+          {
+            "type": "Schedule",
+            "schedule": {
+              "triggers": [
+                {
+                  "triggerType": "Daily",
+                  "startTime": "00:00:00",
+                  "endTime": "23:59:59"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
