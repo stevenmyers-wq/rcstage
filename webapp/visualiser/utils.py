@@ -874,20 +874,21 @@ class CallFlowTracer:
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # Live after-hours / business-hours (per-state shortcut endpoints)
+    # Live after-hours / business-hours routing
     # ------------------------------------------------------------------
-    # The detailed answering-rule LIST endpoint used below can return a stale rule
-    # on some accounts — e.g. an after-hours rule changed to "play announcement"
-    # still lists an old transfer to a now-invalid extension. The Call Queue audit
-    # avoids this by reading the per-state SHORTCUT endpoints
-    # (…/answering-rule/after-hours-rule and …/business-hours-rule), which report
-    # the live routing. We read the same shortcuts here and override the
-    # list-derived target for those states so the two tools stay consistent.
+    # The detailed answering-rule LIST endpoint used below is stale on New Call
+    # Handling & Forwarding (CH&F) accounts. The per-state v1 SHORTCUT endpoints
+    # (…/answering-rule/after-hours-rule) are live for SOME changes but not all —
+    # e.g. an after-hours "play announcement" shows live, but a switch to the
+    # queue's own voicemail can still read as an old transfer. The authoritative
+    # source is the v2 comm-handling API, so we read that per state first and only
+    # fall back to the v1 shortcut when v2 is unavailable/unparseable. Both results
+    # are logged ("Live AH/BH: …") so the source of each state is visible.
 
     def _shortcut_rule_target(self, rule, ext_id):
-        """Resolve a single answering-rule object (from a shortcut endpoint) to a
-        tracer target id (extension id, ext_<number>, vm_<id>, announce_<id>), or
-        None. Mirrors how the queue audit interprets callHandlingAction."""
+        """Resolve a v1 answering-rule object (shortcut endpoint) to a tracer target
+        id (extension id, ext_<number>, vm_<id>, announce_<id>), or None. Mirrors how
+        the queue audit interprets callHandlingAction."""
         if not isinstance(rule, dict):
             return None
         action = rule.get("callHandlingAction", "")
@@ -909,35 +910,128 @@ class CallFlowTracer:
             target = f"vm_{ext_id}"
         return target
 
+    def _v2_active_target(self, action):
+        """Return the active *terminating* target dict for a v2 action, or None.
+        Ringing targets (ring members) are ignored — we want the final destination."""
+        targets = action.get("targets")
+        if not isinstance(targets, list):
+            return None
+        ttt = action.get("terminatingTargetType") or action.get("activeTargetType")
+        if ttt:
+            for t in targets:
+                if not isinstance(t, dict):
+                    continue
+                tt = str(t.get("type", ""))
+                if tt == ttt or t.get("name") == ttt or tt.startswith(str(ttt)):
+                    return t
+        for t in targets:
+            if isinstance(t, dict) and "Terminating" in str(t.get("type", "")):
+                return t
+        return None
+
+    def _v2_rule_target(self, rule, ext_id):
+        """Map a v2 comm-handling state rule to (target, matched). matched=True means
+        the rule was understood (so v2 is authoritative even when target is None, e.g.
+        Disconnect); matched=False means fall back to the v1 shortcut."""
+        disp = rule.get("dispatching") or {}
+        actions = disp.get("actions") or rule.get("actions") or []
+        chosen = None
+        if isinstance(actions, list):
+            for a in actions:
+                if isinstance(a, dict):
+                    t = self._v2_active_target(a)
+                    if t:
+                        chosen = t  # last terminating action wins
+        if not chosen:
+            return (None, False)
+        ttype = str(chosen.get("type", ""))
+        if "Extension" in ttype:
+            eid = str((chosen.get("extension") or {}).get("id", "") or "")
+            return (eid or None, bool(eid))
+        if "PhoneNumber" in ttype:
+            num = str((chosen.get("destination") or {}).get("phoneNumber", "") or "")
+            return (f"ext_{num}" if num else None, bool(num))
+        if "VoiceMail" in ttype or "Voicemail" in ttype:
+            rec = chosen.get("recipient") or chosen.get("extension") or {}
+            rid = str(rec.get("id", "") or "")
+            return (f"vm_{rid or ext_id}", True)
+        if "PlayAnnouncement" in ttype:
+            return (f"announce_{ext_id}", True)
+        if "Disconnect" in ttype:
+            return (None, True)
+        return (None, False)
+
+    @staticmethod
+    def _v2_summary(rule):
+        disp = rule.get("dispatching") or {}
+        actions = disp.get("actions") or rule.get("actions") or []
+        bits = []
+        if isinstance(actions, list):
+            for a in actions:
+                if not isinstance(a, dict):
+                    continue
+                ttt = a.get("terminatingTargetType") or a.get("activeTargetType")
+                types = [str(t.get("type")) for t in (a.get("targets") or [])
+                         if isinstance(t, dict)]
+                bits.append(f"{a.get('type')}[ttt={ttt};{types}]")
+        return "|".join(bits) if bits else f"keys={list(rule.keys())}"
+
     def _live_state_targets(self, ext_id, skip_bh=False):
         """Return {ruleType: {'target','enabled'}} for AfterHours (and BusinessHours
-        when not skip_bh) read from the per-state answering-rule shortcut endpoints,
-        which report live routing where the detailed list can be stale."""
+        when not skip_bh). Prefer the v2 comm-handling state rule (authoritative on
+        CH&F accounts); fall back to the v1 answering-rule shortcut when v2 is
+        unavailable or unparseable."""
         ext_id = str(ext_id)
         cache_key = (ext_id, skip_bh)
         if cache_key in self._live_state_cache:
             return self._live_state_cache[cache_key]
 
-        wanted = [("after-hours-rule", "AfterHours")]
+        # (v2 state id, v1 shortcut rule id, result key)
+        wanted = [("after-hours", "after-hours-rule", "AfterHours")]
         if not skip_bh:
-            wanted.append(("business-hours-rule", "BusinessHours"))
+            wanted.append(("work-hours", "business-hours-rule", "BusinessHours"))
 
         result = {}
         log_bits = []
-        for rule_id, key in wanted:
-            resp = self.api(
-                f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{rule_id}"
+        for v2_state, v1_rule, key in wanted:
+            target = None
+            enabled = True
+            src = None
+
+            # 1) v2 comm-handling (authoritative on CH&F accounts)
+            v2 = self.api(
+                f"/restapi/v2/accounts/~/extensions/{ext_id}"
+                f"/comm-handling/voice/state-rules/{v2_state}"
             )
-            if not isinstance(resp, dict) or resp.get("errorCode"):
-                code = resp.get("errorCode") if isinstance(resp, dict) else "EMPTY"
-                log_bits.append(f"{key}=ERR:{code}")
-                continue
-            target = self._shortcut_rule_target(resp, ext_id)
-            result[key] = {
-                "target": target,
-                "enabled": bool(resp.get("enabled", True)),
-            }
-            log_bits.append(f"{key}={resp.get('callHandlingAction')}->{target}")
+            if isinstance(v2, dict) and not v2.get("errorCode"):
+                t, matched = self._v2_rule_target(v2, ext_id)
+                if matched:
+                    target = t
+                    enabled = bool(v2.get("enabled", True))
+                    src = "v2"
+                    log_bits.append(f"{key}.v2->{target}")
+                else:
+                    log_bits.append(f"{key}.v2?{self._v2_summary(v2)}")
+            else:
+                code = v2.get("errorCode") if isinstance(v2, dict) else "EMPTY"
+                log_bits.append(f"{key}.v2=ERR:{code}")
+
+            # 2) v1 shortcut fallback
+            if src is None:
+                sc = self.api(
+                    f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/{v1_rule}"
+                )
+                if isinstance(sc, dict) and not sc.get("errorCode"):
+                    target = self._shortcut_rule_target(sc, ext_id)
+                    enabled = bool(sc.get("enabled", True))
+                    src = "v1"
+                    log_bits.append(f"{key}.v1={sc.get('callHandlingAction')}->{target}")
+                else:
+                    code = sc.get("errorCode") if isinstance(sc, dict) else "EMPTY"
+                    log_bits.append(f"{key}.v1=ERR:{code}")
+
+            if src is not None:
+                result[key] = {"target": target, "enabled": enabled}
 
         self.request_logs.append({
             "method": "GET",
