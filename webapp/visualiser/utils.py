@@ -1053,6 +1053,30 @@ class CallFlowTracer:
         self._live_state_cache[cache_key] = result
         return result
 
+    def _forwarding_numbers(self, rule):
+        """Off-net forward numbers configured on a ForwardCalls rule (Mobile/Home/
+        Other), returned as [(ext_<number>, label)]. The owner's own desk line
+        (type PhoneLine/Outage) is the user answering, not an onward forward, so it
+        is skipped. Used to draw the user's call-forward destination as an extra
+        branch, in addition to whatever the rule already resolves to."""
+        if (rule.get("callHandlingAction") or "") != "ForwardCalls":
+            return []
+        out, seen = [], set()
+        for fr in ((rule.get("forwarding") or {}).get("rules") or []):
+            if not isinstance(fr, dict):
+                continue
+            for fn in (fr.get("forwardingNumbers") or []):
+                if not isinstance(fn, dict):
+                    continue
+                num = fn.get("phoneNumber")
+                if not num or num in seen:
+                    continue
+                if str(fn.get("type") or "") in ("PhoneLine", "Outage"):
+                    continue
+                seen.add(num)
+                out.append((f"ext_{num}", self.clean(fn.get("label") or fn.get("type") or "")[:24]))
+        return out
+
     def _trace_rules(self, ext_id, nid, history,
                      skip_bh=False, active_only=False):
         rules_resp = self.api(
@@ -1147,6 +1171,16 @@ class CallFlowTracer:
                 edge_lbl = lbl if is_active else f"[Off] {lbl}"
                 self.trace(target, nid, edge_lbl, history,
                            disabled=not is_active)
+
+            # Additionally draw the user's own call-forward destination(s). A
+            # ForwardCalls rule rings the user's devices AND any off-net forward
+            # numbers (mobile/home/etc.); those live in forwarding.rules, not in
+            # transfer, so they were previously invisible. This is additive — it
+            # never replaces the transfer/voicemail target above.
+            for fwd_target, fwd_label in self._forwarding_numbers(r):
+                base = f"Call Forward: {fwd_label}" if fwd_label else "Call Forward"
+                self.trace(fwd_target, nid, base if is_active else f"[Off] {base}",
+                           history, disabled=not is_active)
 
         # Draw any live states the list didn't carry (e.g. an after-hours rule the
         # list view omits).
