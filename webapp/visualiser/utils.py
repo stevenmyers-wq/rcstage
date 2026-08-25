@@ -30,6 +30,7 @@ class CallFlowTracer:
         self.show_inactive = False     # also draw disabled/inactive rules
         self.notif_cache = {}          # ext_id -> voicemail notification email(s)
         self._live_state_cache = {}    # (ext_id, skip_bh) -> {ruleType: {target, enabled}}
+        self._fac_available = None      # None=unknown, True/False=account exposes /forward-all-calls
 
     # ------------------------------------------------------------------
     # API helpers
@@ -865,7 +866,7 @@ class CallFlowTracer:
             if parent_nid:
                 self.add_edge(parent_nid, nid, edge_label, disabled=disabled)
             self._trace_rules(ext_id, nid, new_history,
-                              skip_bh=False, active_only=True)
+                              skip_bh=False, active_only=True, check_fac=True)
 
         return nid
 
@@ -1053,6 +1054,83 @@ class CallFlowTracer:
         self._live_state_cache[cache_key] = result
         return result
 
+    def _label_for(self, target):
+        """Short human label for a target id (for tooltips)."""
+        if not target:
+            return "?"
+        if target.startswith("vm_"):
+            return "Voicemail"
+        if target.startswith("announce_"):
+            return "Announcement"
+        if target.startswith("ext_"):
+            return target[4:]
+        info = self.get_ext_info(target)
+        return self.clean(info.get("name", target)) if info else target
+
+    def _add_tooltip(self, nid, line):
+        for node in self.nodes:
+            if node["data"]["id"] == nid:
+                existing = node["data"].get("tooltip", "")
+                node["data"]["tooltip"] = (
+                    (existing + "\n\n" + line).strip() if existing else line
+                )
+                break
+
+    def _fac_rule_target(self, rule, ext_id):
+        """Resolve a Forward-All-Calls rule's destination to a tracer target id."""
+        if not isinstance(rule, dict):
+            return None
+        t = self._shortcut_rule_target(rule, ext_id)
+        if t and t != f"vm_{ext_id}":     # a concrete forward / transfer
+            return t
+        num = (rule.get("unconditionalForwarding") or {}).get("phoneNumber") or \
+            rule.get("phoneNumber")
+        if num:
+            return f"ext_{num}"
+        ext = rule.get("extension") or (rule.get("transfer") or {}).get("extension") or {}
+        if ext.get("id"):
+            return str(ext["id"])
+        typ = str(rule.get("type") or "")
+        if "Announcement" in typ:
+            return f"announce_{ext_id}"
+        if typ in ("SendToVoicemail", "Voicemail", "TakeMessagesOnly"):
+            return f"vm_{ext_id}"
+        return t  # may be vm_{ext_id} or None
+
+    def _forward_all_target(self, ext_id, rules_resp, probe_dedicated=False):
+        """Return (target, enabled) for the user-level 'Forward all calls' setting.
+        When enabled it overrides normal call handling, so the caller draws only this
+        destination and suppresses the BH/AH/custom rules. Checks the ForwardAllCalls
+        rule in the answering-rule list first, then (for user traces) the dedicated
+        resource."""
+        if isinstance(rules_resp, dict):
+            for r in rules_resp.get("records") or []:
+                if not isinstance(r, dict):
+                    continue
+                rid = str(r.get("id") or "")
+                rtype = str(r.get("type") or "")
+                if rtype == "ForwardAllCalls" or rid == "forward-all-calls" or "ForwardAll" in rtype:
+                    if r.get("enabled"):
+                        return self._fac_rule_target(r, ext_id), True
+                    return None, False   # present but off → FAC not active
+
+        # The dedicated resource is a user feature; only probe it for user traces so a
+        # queue/site 404 can't disable detection for downstream users.
+        if not probe_dedicated or self._fac_available is False:
+            return None, False
+        fac = self.api(f"/restapi/v1.0/account/~/extension/{ext_id}/forward-all-calls")
+        if fac is None or (isinstance(fac, dict) and fac.get("errorCode")):
+            self._fac_available = False
+            return None, False
+        self._fac_available = True
+        if isinstance(fac, dict) and fac.get("enabled"):
+            for rl in (fac.get("rules") or [fac]):
+                t = self._fac_rule_target(rl, ext_id)
+                if t:
+                    return t, True
+            return None, True   # enabled but destination not resolvable
+        return None, False
+
     def _forwarding_numbers(self, rule):
         """Off-net forward numbers configured on a ForwardCalls rule (Mobile/Home/
         Other), returned as [(ext_<number>, label)]. The owner's own desk line
@@ -1078,11 +1156,24 @@ class CallFlowTracer:
         return out
 
     def _trace_rules(self, ext_id, nid, history,
-                     skip_bh=False, active_only=False):
+                     skip_bh=False, active_only=False, check_fac=False):
         rules_resp = self.api(
             f"/restapi/v1.0/account/~/extension/{ext_id}"
             f"/answering-rule?view=Detailed&showInactive=true"
         )
+
+        # "Forward all calls", when enabled, overrides all normal call handling — so
+        # draw only that destination and suppress the BH/AH/custom rules entirely.
+        fac_target, fac_on = self._forward_all_target(ext_id, rules_resp,
+                                                      probe_dedicated=check_fac)
+        if fac_on:
+            if fac_target:
+                self.trace(fac_target, nid, "Forward All Calls", history)
+                self._add_tooltip(nid, f"Forward All Calls → {self._label_for(fac_target)}")
+            else:
+                self._add_tooltip(nid, "Forward All Calls: enabled")
+            return
+
         # The detailed list above can be stale for the default states; the shortcut
         # endpoints carry the live routing and override the list target below.
         live_states = self._live_state_targets(ext_id, skip_bh)
@@ -1098,6 +1189,9 @@ class CallFlowTracer:
 
         for r in rules_resp["records"]:
             r_type = r.get("type")
+            # Forward-All-Calls is handled above (as an override); never draw it here.
+            if r_type == "ForwardAllCalls" or str(r.get("id") or "") == "forward-all-calls":
+                continue
             if skip_bh and r_type == "BusinessHours":
                 continue
 
