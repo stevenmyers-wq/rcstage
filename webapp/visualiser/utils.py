@@ -1033,11 +1033,14 @@ class CallFlowTracer:
             if src is not None:
                 result[key] = {"target": target, "enabled": enabled}
 
+        # NOTE: the debug panel only renders `detail` for non-SUCCESS rows, so put
+        # the summary in `endpoint` (always shown) to keep it visible.
+        summary = ', '.join(log_bits) if log_bits else 'none'
         self.request_logs.append({
             "method": "GET",
-            "endpoint": f"live-state-rules:{ext_id}",
+            "endpoint": f"Live AH/BH {ext_id}: {summary}",
             "status": "SUCCESS", "code": "200", "duration": "0ms",
-            "detail": f"Live AH/BH: {', '.join(log_bits) if log_bits else 'none'}",
+            "detail": summary,
         })
         self._live_state_cache[cache_key] = result
         return result
