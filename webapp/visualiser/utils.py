@@ -896,12 +896,20 @@ class CallFlowTracer:
         if action == "PlayAnnouncementOnly":
             return f"announce_{ext_id}"
         if self._is_voicemail_action(action) or (vm_obj.get("enabled") and not action):
+            # "Send to voicemail" (TakeMessagesOnly) delivers to THIS extension's own
+            # mailbox (for a queue, the queue's voicemail). Routing to a *separate*
+            # mailbox is a transfer, not this action — so a voicemail.recipient that
+            # points at a different extension is a stale leftover from a previous
+            # "transfer to <mailbox>" config that RC didn't clear. Honour the recipient
+            # only when it is this extension; otherwise use the owner's own mailbox.
             rec = vm_obj.get("recipient") or {}
             recip = None
             if rec.get("id"):
                 recip = str(rec["id"])
             elif rec.get("extensionNumber"):
                 recip = self.resolve_ext_number(rec["extensionNumber"])
+            if recip and recip != str(ext_id):
+                recip = None
             return f"vm_{recip or ext_id}"
         target = self.extract_target(rule.get("transfer"))
         if not target:
@@ -1083,9 +1091,11 @@ class CallFlowTracer:
             action = r.get("callHandlingAction", "")
             vm_obj = r.get("voicemail") or {}
 
-            # A "send to voicemail" rule → draw the recipient's Voicemail box
-            # (the recipient can be another extension, e.g. the call queue's own
-            # voicemail) instead of resolving a self-transfer into a loop back.
+            # A "send to voicemail" (TakeMessagesOnly) rule → the owning extension's
+            # own mailbox. Take the action at face value: RC can leave a stale
+            # voicemail.recipient/transfer pointing at a previously-configured mailbox
+            # after the rule is switched to voicemail, so a recipient that isn't this
+            # extension is ignored in favour of the owner's own mailbox.
             if self._is_voicemail_action(action) or (vm_obj.get("enabled") and not action):
                 rec = vm_obj.get("recipient") or {}
                 recip = None
@@ -1093,6 +1103,8 @@ class CallFlowTracer:
                     recip = str(rec["id"])
                 elif rec.get("extensionNumber"):
                     recip = self.resolve_ext_number(rec["extensionNumber"])
+                if recip and recip != str(ext_id):
+                    recip = None
                 target = f"vm_{recip or ext_id}"
             else:
                 target = self.extract_target(r.get("transfer"))
