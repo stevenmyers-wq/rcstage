@@ -772,6 +772,12 @@
         destroySeparate();
         clearPanels();
         sfCountEl.textContent = flows.length;
+
+        // The vertical/horizontal toggle applies to every per-flow canvas too
+        // (each is built via makeCy with the shared layoutDir), so surface it here
+        // as well — it was previously only revealed in the single-flow view.
+        layoutBtn.classList.remove('hidden');
+        layoutBtn.textContent = layoutDir === 'TB' ? '⇅ Vertical' : '⇄ Horizontal';
         const isDark = document.documentElement.classList.contains('dark');
         const showDescriptors = toggleDesc.checked;
         const titleById = {};
