@@ -17,15 +17,15 @@ from xml.sax.saxutils import escape as _xml_escape
 PXIN = 96.0  # px per inch — converts on-screen px layout to Visio inches
 
 COLOURS = {
-    'phone':            {'bg': '#3b82f6', 'br': '#1d4ed8'},
-    'autoreceptionist': {'bg': '#8b5cf6', 'br': '#6d28d9'},
-    'ivr':              {'bg': '#06b6d4', 'br': '#0891b2'},
-    'queue':            {'bg': '#f59e0b', 'br': '#b45309'},
-    'user':             {'bg': '#10b981', 'br': '#047857'},
-    'voicemail':        {'bg': '#64748b', 'br': '#475569'},
-    'external':         {'bg': '#f43f5e', 'br': '#be123c'},
-    'site':             {'bg': '#334155', 'br': '#0f172a'},
-    'unknown':          {'bg': '#94a3b8', 'br': '#475569'},
+    'phone':            {'bg': '#3b82f6', 'br': '#1d4ed8', 'lt': '#69a2ff'},
+    'autoreceptionist': {'bg': '#8b5cf6', 'br': '#6d28d9', 'lt': '#b191fb'},
+    'ivr':              {'bg': '#06b6d4', 'br': '#0891b2', 'lt': '#4fd6ec'},
+    'queue':            {'bg': '#f59e0b', 'br': '#b45309', 'lt': '#fbbf5a'},
+    'user':             {'bg': '#10b981', 'br': '#047857', 'lt': '#4ad6a6'},
+    'voicemail':        {'bg': '#64748b', 'br': '#475569', 'lt': '#94a3b8'},
+    'external':         {'bg': '#f43f5e', 'br': '#be123c', 'lt': '#fb7185'},
+    'site':             {'bg': '#334155', 'br': '#0f172a', 'lt': '#64748b'},
+    'unknown':          {'bg': '#94a3b8', 'br': '#475569', 'lt': '#cbd5e1'},
 }
 TYPE_LABEL = {
     'phone': 'Phone Number', 'autoreceptionist': 'Auto Receptionist',
@@ -33,6 +33,8 @@ TYPE_LABEL = {
     'voicemail': 'Voicemail', 'external': 'External Transfer',
     'site': 'Site', 'unknown': 'Unknown',
 }
+LEGEND_ORDER = ['phone', 'ivr', 'queue', 'autoreceptionist', 'user',
+                'external', 'voicemail', 'site', 'unknown']
 
 # Layout constants (px)
 H_GAP = 60
@@ -247,6 +249,43 @@ def _build_page_contents(graph_data, include_descriptors=False, render=None):
         total_w = max_x + MARGIN
         total_h = y + MARGIN
 
+    # ── Legend layout (a colour key drawn below the flow) ──
+    legend_types = []
+    _seen_lt = set()
+    for n in nodes:
+        ty = n.get('type')
+        if ty and ty != 'descriptor' and ty in COLOURS and ty not in _seen_lt:
+            _seen_lt.add(ty)
+            legend_types.append(ty)
+    legend_types.sort(key=lambda t: LEGEND_ORDER.index(t) if t in LEGEND_ORDER else 99)
+
+    LEG = None
+    if legend_types:
+        SW, ROWH, PADX, PADY, TITLE_H, GAP = 15, 26, 14, 12, 22, 26
+
+        def _entry_w(t):
+            return SW + 7 + int(len(TYPE_LABEL.get(t, t)) * 6.6) + GAP
+
+        avail = max(total_w - 2 * MARGIN - 2 * PADX, 340)
+        rows, rw = [[]], 0
+        for t in legend_types:
+            ew = _entry_w(t)
+            if rw + ew > avail and rows[-1]:
+                rows.append([])
+                rw = 0
+            rows[-1].append(t)
+            rw += ew
+        inner_w = max(sum(_entry_w(t) for t in r) for r in rows)
+        legend_w = inner_w + 2 * PADX
+        legend_h = PADY + TITLE_H + len(rows) * ROWH + PADY
+        legend_x = MARGIN
+        legend_y = total_h + 6  # just below the content, before the bottom margin
+        total_h = legend_y + legend_h + MARGIN
+        total_w = max(total_w, legend_x + legend_w + MARGIN)
+        LEG = dict(rows=rows, x=legend_x, y=legend_y, w=legend_w, h=legend_h,
+                   SW=SW, ROWH=ROWH, PADX=PADX, PADY=PADY, TITLE_H=TITLE_H,
+                   entry_w=_entry_w)
+
     page_w = total_w / PXIN
     page_h = total_h / PXIN
 
@@ -261,7 +300,7 @@ def _build_page_contents(graph_data, include_descriptors=False, render=None):
 
     def rect_shape(_id, x, y, w, h, fill, stroke, lw, text,
                    font_color='#FFFFFF', font_size=0.10, bold=True,
-                   dash=False, font_lines_left=False):
+                   dash=False, font_lines_left=False, grad=None, rounding=0.12):
         cxp, cyp = x + w / 2.0, y + h / 2.0
         vw, vh = w / PXIN, h / PXIN
         line_style = '<Cell N="LinePattern" V="2"/>' if dash else ''
@@ -271,15 +310,32 @@ def _build_page_contents(graph_data, include_descriptors=False, render=None):
                 f'<Cell N="Style" V="{1 if bold else 0}"/></Row></Section>')
         align = ('<Section N="Paragraph"><Row IX="0"><Cell N="HorzAlign" V="0"/></Row></Section>'
                  if font_lines_left else '')
+        # Optional top-lit gradient (grad = (topColor, bottomColor)). FillForegnd
+        # stays a solid base colour so importers that ignore the gradient section
+        # still render the node in its type colour.
+        if grad:
+            fill_cells = (
+                f'<Cell N="FillForegnd" V="{fill}"/><Cell N="FillBkgnd" V="{grad[1]}"/>'
+                f'<Cell N="FillPattern" V="1"/><Cell N="FillType" V="1"/>'
+                f'<Cell N="FillGradientDir" V="0"/><Cell N="FillGradientAngle" V="1.5708"/>'
+                f'<Section N="Gradient">'
+                f'<Row IX="1"><Cell N="GradientStopColor" V="{grad[0]}"/>'
+                f'<Cell N="GradientStopColorTrans" V="0"/><Cell N="GradientStopPosition" V="0"/></Row>'
+                f'<Row IX="2"><Cell N="GradientStopColor" V="{grad[1]}"/>'
+                f'<Cell N="GradientStopColorTrans" V="0"/><Cell N="GradientStopPosition" V="1"/></Row>'
+                f'</Section>'
+            )
+        else:
+            fill_cells = f'<Cell N="FillForegnd" V="{fill}"/><Cell N="FillPattern" V="1"/>'
         return (
             f'<Shape ID="{_id}" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
             f'<Cell N="PinX" V="{to_vx(cxp):.4f}"/><Cell N="PinY" V="{to_vy(cyp):.4f}"/>'
             f'<Cell N="Width" V="{vw:.4f}"/><Cell N="Height" V="{vh:.4f}"/>'
             f'<Cell N="LocPinX" V="{vw / 2:.4f}" F="Width*0.5"/>'
             f'<Cell N="LocPinY" V="{vh / 2:.4f}" F="Height*0.5"/>'
-            f'<Cell N="FillForegnd" V="{fill}"/><Cell N="FillPattern" V="1"/>'
+            f'{fill_cells}'
             f'<Cell N="LineColor" V="{stroke}"/><Cell N="LineWeight" V="{lw}"/>'
-            f'<Cell N="Rounding" V="0.08"/>{line_style}'
+            f'<Cell N="Rounding" V="{rounding}"/>{line_style}'
             f'{char}{align}'
             f'<Section N="Geometry" IX="0"><Cell N="NoFill" V="0"/><Cell N="NoLine" V="0"/>'
             f'<Row T="RelMoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
@@ -362,7 +418,8 @@ def _build_page_contents(graph_data, include_descriptors=False, render=None):
             lw = 0.03 if is_e else 0.014
             shapes.append(rect_shape(
                 sid, pos[n['id']]['x'], pos[n['id']]['y'], d['w'], d['h'],
-                c['bg'], stroke, lw, _esc('\n'.join(d['lines']))))
+                c['bg'], stroke, lw, _esc('\n'.join(d['lines'])),
+                grad=(c['lt'], c['bg'])))
         sid += 1
 
     # Whole-shape glue records so Lucid treats connectors as *attached* to the
@@ -403,6 +460,39 @@ def _build_page_contents(graph_data, include_descriptors=False, render=None):
                 label_pt=label_pt))
         glue(sid, id_of[s], id_of[t])
         sid += 1
+
+    # ── Legend: a bordered card with a colour swatch + label per node type ──
+    if LEG:
+        # container card
+        shapes.append(rect_shape(
+            sid, LEG['x'], LEG['y'], LEG['w'], LEG['h'], '#f8fafc', '#cbd5e1',
+            0.008, '', rounding=0.05))
+        sid += 1
+        # title
+        shapes.append(rect_shape(
+            sid, LEG['x'] + LEG['PADX'], LEG['y'] + 5, 140, LEG['TITLE_H'],
+            '#f8fafc', '#f8fafc', 0.001, _esc('LEGEND'),
+            font_color='#64748b', font_size=0.085, bold=True, font_lines_left=True))
+        sid += 1
+        row_top = LEG['y'] + LEG['PADY'] + LEG['TITLE_H']
+        for ri, row in enumerate(LEG['rows']):
+            cx = LEG['x'] + LEG['PADX']
+            ry = row_top + ri * LEG['ROWH']
+            for t in row:
+                c = COLOURS[t]
+                sw_y = ry + (LEG['ROWH'] - LEG['SW']) / 2.0
+                shapes.append(rect_shape(
+                    sid, cx, sw_y, LEG['SW'], LEG['SW'], c['bg'], c['br'],
+                    0.008, '', grad=(c['lt'], c['bg']), rounding=0.03))
+                sid += 1
+                lbl_w = LEG['entry_w'](t) - LEG['SW'] - 7
+                shapes.append(rect_shape(
+                    sid, cx + LEG['SW'] + 7, ry, lbl_w, LEG['ROWH'],
+                    '#f8fafc', '#f8fafc', 0.001, _esc(TYPE_LABEL.get(t, t)),
+                    font_color='#334155', font_size=0.082, bold=False,
+                    font_lines_left=True))
+                sid += 1
+                cx += LEG['entry_w'](t)
 
     page_contents = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
