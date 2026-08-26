@@ -20,6 +20,7 @@
   if (!bar) return;
 
   let lastState = null;
+  let lastReload = 0;
 
   function activeTab() {
     try { return (window.__tabShell && window.__tabShell.getActiveTabId()) || ''; }
@@ -60,10 +61,17 @@
 
     // When the bridge (re)connects after being absent/expired, refresh open
     // tool iframes so any gate screens fall away and tools see the new token.
-    if (state === 'bridged' && lastState && lastState !== 'bridged') {
-      if (window.__tabShell && window.__tabShell.reloadAll) window.__tabShell.reloadAll();
+    // Skip if a bridge-changed message already triggered a reload moments ago.
+    if (state === 'bridged' && lastState && lastState !== 'bridged'
+        && (Date.now() - lastReload) > 3000) {
+      reloadTabs();
     }
     lastState = state;
+  }
+
+  function reloadTabs() {
+    lastReload = Date.now();
+    if (window.__tabShell && window.__tabShell.reloadAll) window.__tabShell.reloadAll();
   }
 
   function escapeHtml(s) {
@@ -78,6 +86,17 @@
       if (res.ok) apply(await res.json());
     } catch (_) { /* best-effort; keep last shown state */ }
   }
+
+  // A tool iframe reports it just (re)bridged to a customer. Reload open tabs
+  // onto the new account and refresh the pill immediately, rather than waiting
+  // for the next poll — this is what makes the pill reappear after an
+  // exit-bridge / re-bridge cycle done inside a tab.
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin) return;
+    if (!e.data || e.data.type !== 'rcau-bridge-changed') return;
+    reloadTabs();
+    poll();
+  });
 
   poll();
   setInterval(poll, POLL_MS);
