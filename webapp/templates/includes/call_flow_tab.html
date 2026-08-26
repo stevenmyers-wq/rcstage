@@ -137,16 +137,60 @@
     }
 
     const COLOURS = {
-        phone:            { bg: '#3b82f6', border: '#1d4ed8' },
-        autoreceptionist: { bg: '#8b5cf6', border: '#6d28d9' },
-        ivr:              { bg: '#06b6d4', border: '#0891b2' },
-        queue:            { bg: '#f59e0b', border: '#b45309' },
-        user:             { bg: '#10b981', border: '#047857' },
-        voicemail:        { bg: '#64748b', border: '#475569' },
-        external:         { bg: '#f43f5e', border: '#be123c' },
-        site:             { bg: '#334155', border: '#0f172a' },
-        unknown:          { bg: '#94a3b8', border: '#475569' },
+        phone:            { bg: '#3b82f6', border: '#1d4ed8', lite: '#69a2ff' },
+        autoreceptionist: { bg: '#8b5cf6', border: '#6d28d9', lite: '#b191fb' },
+        ivr:              { bg: '#06b6d4', border: '#0891b2', lite: '#4fd6ec' },
+        queue:            { bg: '#f59e0b', border: '#b45309', lite: '#fbbf5a' },
+        user:             { bg: '#10b981', border: '#047857', lite: '#4ad6a6' },
+        voicemail:        { bg: '#64748b', border: '#475569', lite: '#94a3b8' },
+        external:         { bg: '#f43f5e', border: '#be123c', lite: '#fb7185' },
+        site:             { bg: '#334155', border: '#0f172a', lite: '#64748b' },
+        unknown:          { bg: '#94a3b8', border: '#475569', lite: '#cbd5e1' },
     };
+
+    // Friendly names for the per-flow colour legend.
+    const LEGEND_LABELS = {
+        phone: 'Phone / DID', autoreceptionist: 'Auto-Receptionist', ivr: 'IVR Menu',
+        queue: 'Call Queue', user: 'User / Extension', voicemail: 'Voicemail',
+        external: 'External Number', site: 'Site', unknown: 'Unknown',
+    };
+    const LEGEND_ORDER = ['phone','ivr','queue','autoreceptionist','user','external','voicemail','site','unknown'];
+
+    // Draw a compact colour legend in the corner of a rendered flow. Overlay only
+    // (does not appear in the raw PNG/Visio canvas export). container must be a
+    // position:relative element that survives re-renders.
+    function buildLegend(container, graphData) {
+        if (!container) return;
+        container.querySelectorAll('.cf-legend').forEach(e => e.remove());
+        const present = [...new Set((graphData.nodes || [])
+            .map(n => n.data && n.data.type).filter(Boolean))]
+            .filter(t => LEGEND_LABELS[t] && COLOURS[t]);
+        if (!present.length) return;
+        present.sort((a, b) => LEGEND_ORDER.indexOf(a) - LEGEND_ORDER.indexOf(b));
+        const isDark = document.documentElement.classList.contains('dark');
+        const box = document.createElement('div');
+        box.className = 'cf-legend';
+        box.style.cssText =
+            'position:absolute;left:12px;bottom:12px;z-index:20;pointer-events:none;' +
+            'display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;padding:9px 11px;' +
+            'border-radius:10px;font-size:10.5px;font-weight:600;font-family:Inter,system-ui,sans-serif;' +
+            'backdrop-filter:blur(6px);box-shadow:0 8px 24px -12px rgba(2,6,23,.5);' +
+            (isDark
+                ? 'background:rgba(14,22,38,.85);border:1px solid #1e2b41;color:#9fb0c8;'
+                : 'background:rgba(255,255,255,.9);border:1px solid #d9e1ec;color:#5b6b82;');
+        present.forEach(t => {
+            const row = document.createElement('span');
+            row.style.cssText = 'display:inline-flex;align-items:center;gap:6px;white-space:nowrap;';
+            const sw = document.createElement('span');
+            sw.style.cssText = 'width:11px;height:11px;border-radius:3px;flex:none;' +
+                'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);background:' +
+                `linear-gradient(160deg, ${COLOURS[t].lite}, ${COLOURS[t].border});`;
+            row.appendChild(sw);
+            row.appendChild(document.createTextNode(LEGEND_LABELS[t]));
+            box.appendChild(row);
+        });
+        container.appendChild(box);
+    }
 
     const TYPE_LABEL = {
         phone: 'Phone Number', autoreceptionist: 'Auto Receptionist', ivr: 'IVR Menu',
@@ -525,7 +569,14 @@
     function buildStylesheet() {
         const typeStyles = Object.entries(COLOURS).map(([type, c]) => ({
             selector: `node[type="${type}"]`,
-            style: { 'background-color': c.bg, 'border-color': c.border },
+            style: {
+                'background-fill': 'linear-gradient',
+                'background-gradient-stop-colors': `${c.lite} ${c.bg} ${c.border}`,
+                'background-gradient-stop-positions': '0 58 100',
+                'background-gradient-direction': 'to-bottom-right',
+                'border-color': c.border,
+                'text-outline-color': c.border,
+            },
         }));
         const isDark = document.documentElement.classList.contains('dark');
         const edgeColor = isDark ? '#94a3b8' : '#475569';
@@ -535,18 +586,23 @@
             {
                 selector: 'node',
                 style: {
-                    'shape': 'round-rectangle', 'corner-radius': 8, 'width': 248,
+                    'shape': 'round-rectangle', 'corner-radius': 12, 'width': 248,
                     'height': 'label', 'padding': '20px', 'label': 'data(displayLabel)',
                     'text-valign': 'center', 'text-halign': 'center', 'text-wrap': 'wrap',
                     'text-max-width': '200px', 'font-size': '11px', 'font-weight': '700',
                     'line-height': 1.35,
                     'font-family': 'Inter, system-ui, sans-serif', 'color': '#ffffff',
-                    'border-width': '2px', 'cursor': 'pointer', 'text-justification': 'center',
+                    'text-outline-width': 1.4, 'text-outline-opacity': 0.55,
+                    'border-width': '1.5px', 'cursor': 'pointer', 'text-justification': 'center',
                     'transition-property': 'opacity, border-width', 'transition-duration': '0.15s',
                 },
             },
             ...typeStyles,
-            { selector: 'node.entry', style: { 'border-width': '5px', 'border-color': '#facc15' } },
+            { selector: 'node.entry', style: {
+                'border-width': '3px', 'border-color': '#facc15',
+                'underlay-color': '#facc15', 'underlay-opacity': 0.35,
+                'underlay-padding': 7, 'underlay-shape': 'round-rectangle',
+            } },
             {
                 selector: 'node[type="descriptor"]',
                 style: {
@@ -716,6 +772,7 @@
 
         cy = makeCy(diagramDiv, graphData, showDescriptors, entryIdSet);
         wireInteractions(cy, wrapper);
+        buildLegend(wrapper, graphData);
 
         zoomControls.style.display = 'flex';
         printBtn.classList.remove('hidden');
@@ -838,6 +895,7 @@
 
             const cyInst = makeCy(diag, gd, showDescriptors, entrySet);
             wireInteractions(cyInst, wrap);
+            buildLegend(wrap, gd);
             setTimeout(() => cyInst.fit(undefined, 40), 60);
 
             fitB.onclick = () => cyInst.fit(undefined, 40);
