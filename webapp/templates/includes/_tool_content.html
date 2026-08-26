@@ -51,9 +51,17 @@
                         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({targetAccountId: id})
                     });
                     const data = await res.json();
-                    // Reload in place: inside the tab iframe this keeps embed=1 and
-                    // clears the gate; on a full page it re-renders the bridged tool.
-                    if (data.success) { window.location.reload(); }
+                    if (data.success) {
+                        if (window.parent && window.parent !== window) {
+                            // Inside a tab iframe: tell the shell so it refreshes the
+                            // bridge pill and reloads open tabs onto the new account.
+                            // (The shell reloads this iframe too, clearing the gate.)
+                            try { window.parent.postMessage({ type: 'rcau-bridge-changed' }, window.location.origin); } catch (e) { window.location.reload(); }
+                        } else {
+                            // Full-page render: just re-render the bridged tool.
+                            window.location.reload();
+                        }
+                    }
                     else { errDiv.innerText = data.error || "Bridge failed"; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "Bridge Connection"; }
                 } catch (e) { errDiv.innerText = "Network Error: " + e.message; errDiv.classList.remove('hidden'); btn.disabled = false; btn.innerText = "Bridge Connection"; }
             }

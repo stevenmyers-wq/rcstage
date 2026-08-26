@@ -156,6 +156,23 @@
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+
+    {% if EMBED %}
+    <!-- Tab (embed) density. Tools render inside a tab panel with less room than
+         a standalone page, so trim the generous full-page spacing to fit more on
+         screen. Scoped to embed only — the standalone full pages are unchanged. -->
+    <style>
+      .card { padding: 1rem !important; border-radius: 0.9rem !important; }
+      @media (min-width: 768px) { .card { padding: 1.25rem !important; } }
+      .text-display { font-size: 1.5rem !important; line-height: 1.9rem !important; }
+      .text-heading { font-size: 1.15rem !important; line-height: 1.6rem !important; }
+      .space-y-8 > * + * { margin-top: 1.25rem !important; }
+      .space-y-6 > * + * { margin-top: 1rem !important; }
+      .mt-12 { margin-top: 1.5rem !important; }
+      .py-12 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
+      .py-20 { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+    </style>
+    {% endif %}
   </head>
   <body>
     <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 w-96 hidden z-50 p-4 rounded-xl shadow-xl text-sm font-medium text-center transition-all"></div>
@@ -163,7 +180,7 @@
     {% if EMBED %}
     <!-- Embed mode: bare tool render, hosted inside an in-page tab iframe.
          No header / sidebar / status chrome — the parent window owns those. -->
-    <div class="p-4 md:p-6">
+    <div class="p-3 md:p-4">
       {% include 'includes/_tool_content.html' %}
     </div>
     {% else %}
@@ -325,7 +342,7 @@
 
           <!-- Main Content Area: in-page tab shell -->
           <div class="flex-1 w-full min-w-0">
-            <div id="tab-shell" class="card !p-0 overflow-hidden flex flex-col" style="min-height:72vh">
+            <div id="tab-shell" class="card !p-0 overflow-hidden flex flex-col" style="min-height:calc(100vh - 120px)">
               <div id="tab-bar" class="flex items-stretch gap-1 px-2 pt-2 bg-slate-100/70 dark:bg-slate-800/40 border-b border-slate-200/70 dark:border-slate-700/60 overflow-x-auto">
                 <!-- tab buttons injected by tab_shell.js -->
                 <button id="tab-new-btn" class="flex-shrink-0 ml-1 mb-2 px-3 py-2 rounded-lg text-sm font-bold text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 transition" title="Open a tool in a new tab">+ New tab</button>
