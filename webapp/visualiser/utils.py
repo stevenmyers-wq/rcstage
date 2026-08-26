@@ -962,7 +962,10 @@ class CallFlowTracer:
             num = str((chosen.get("destination") or {}).get("phoneNumber", "") or "")
             return (f"ext_{num}" if num else None, bool(num))
         if "VoiceMail" in ttype or "Voicemail" in ttype:
-            rec = chosen.get("recipient") or chosen.get("extension") or {}
+            # v2 interaction rules put the mailbox id under `mailbox`; state rules
+            # use `recipient`. Fall back to the owning extension's own mailbox.
+            rec = (chosen.get("mailbox") or chosen.get("recipient")
+                   or chosen.get("extension") or {})
             rid = str(rec.get("id", "") or "")
             return (f"vm_{rid or ext_id}", True)
         if "PlayAnnouncement" in ttype:
@@ -1178,41 +1181,49 @@ class CallFlowTracer:
     def _v2_custom_rules(self, ext_id):
         """Custom answering rules read from the v2 comm-handling API.
 
-        On New Call Handling & Forwarding (CH&F) accounts the v1 answering-rule
-        list is stale/empty, so a user's (or queue's) custom rules — specific
-        caller / scheduled / per-DID routing — never surface from that source.
-        The live copy lives in the v2 comm-handling custom-rules collection, the
-        same API we already trust for the after-hours / work-hours / forward-all
-        states. Returns a list of {'name','enabled','target'} for the rules whose
-        destination resolves. An empty list means either the extension has no
-        custom rules or the resource is unavailable (legacy account), in which
-        case the caller keeps the v1 detailed-list custom rules instead."""
+        On New Call Handling & Forwarding (CH&F) accounts a user's (or queue's)
+        custom rules — specific-caller / scheduled / per-DID routing — live as v2
+        "interaction rules", not in the v1 answering-rule list, so they never
+        surfaced in the tracer. This mirrors the proven custom-rules audit
+        (webapp/custom_rules/utils.fetch_v2_interaction_rules):
+
+          * the collection endpoint returns each rule with a `dispatchingRef`
+            reference rather than the inline `dispatching.actions`, so the target
+            is only resolvable from the per-rule GET — fetch each rule by id;
+          * a missing/erroring collection means the account isn't CH&F (legacy),
+            so return [] and let the caller keep the v1 detailed-list custom rules.
+
+        Returns a list of {'name','enabled','target'}."""
         ext_id = str(ext_id)
         if ext_id in self._v2_custom_cache:
             return self._v2_custom_cache[ext_id]
 
         out = []
-        resp = self.api(
-            f"/restapi/v2/accounts/~/extensions/{ext_id}"
-            f"/comm-handling/voice/custom-rules"
-        )
+        base = (f"/restapi/v2/accounts/~/extensions/{ext_id}"
+                f"/comm-handling/voice/interaction-rules")
+        resp = self.api(f"{base}?perPage=100&page=1")
         records = None
         if isinstance(resp, dict) and not resp.get("errorCode") and not resp.get("errors"):
-            records = resp.get("records")
-            if records is None and isinstance(resp.get("rules"), list):
-                records = resp["rules"]
-        elif isinstance(resp, list):
-            records = resp
+            records = resp.get("records") or []
 
         log_bits = []
         for rec in (records or []):
             if not isinstance(rec, dict):
                 continue
-            name = self.clean(rec.get("name", "")) or "Custom Rule"
-            enabled = rec.get("enabled")
+            rid = rec.get("id")
+            # The list record carries only a dispatchingRef; the per-rule GET is
+            # what returns the inline dispatching.actions the target resolver needs.
+            detail = rec
+            if rid:
+                full = self.api(f"{base}/{rid}")
+                if isinstance(full, dict) and not full.get("errorCode"):
+                    detail = full
+            name = self.clean(detail.get("name") or detail.get("displayName") or "") \
+                or "Custom Rule"
+            enabled = detail.get("enabled")
             if enabled is None:
-                enabled = (rec.get("state") or {}).get("enabled", True)
-            target, _matched = self._v2_rule_target(rec, ext_id)
+                enabled = True
+            target, _matched = self._v2_rule_target(detail, ext_id)
             out.append({"name": name, "enabled": bool(enabled), "target": target})
             log_bits.append(f"{name}{'' if enabled else '(off)'}->{target}")
 
