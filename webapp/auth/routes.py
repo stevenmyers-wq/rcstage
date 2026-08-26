@@ -8,7 +8,7 @@ from flask import (
     Blueprint, render_template, request, session, jsonify, redirect, url_for,
     current_app
 )
-from webapp.auth_utils import is_authenticated, get_rc_access_token, create_pkce_challenge, get_impersonation_token
+from webapp.auth_utils import is_authenticated, get_rc_access_token, create_pkce_challenge, get_impersonation_token, refresh_sm_isolated_token
 from webapp.rc_api import rc_api_call
 
 auth_bp = Blueprint('auth', __name__)
@@ -239,3 +239,36 @@ def sm_full_logout():
     session.pop('sm_employee_token', None)
     session.pop('sm_employee_refresh_token', None)
     return redirect(f"/?tab={target_tab}")
+
+@auth_bp.route('/api/sm_auth/status')
+def sm_auth_status():
+    """Live health of the customer bridge, polled by the frontend heartbeat.
+
+    States:
+      - 'none'    : no bridge established (no target selected yet)
+      - 'bridged' : a valid customer-scoped token is present
+      - 'expired' : a bridge was established but its token has died and could
+                    not be silently re-minted (employee refresh token gone too)
+
+    When the isolated token is missing but a target + employee token still
+    exist, we attempt a silent re-mint here so a merely-stale bridge reports
+    'bridged' again instead of nagging the user to reconnect.
+    """
+    target_id = session.get('sm_target_id')
+    target_name = session.get('sm_target_name')
+
+    # No bridge was ever set up in this session.
+    if not target_id:
+        return jsonify({'state': 'none', 'target_id': None, 'target_name': None}), 200
+
+    state = 'bridged' if session.get('sm_isolated_token') else None
+    if state is None:
+        # A target is set but the customer token is gone — try to recover it
+        # silently before declaring the bridge dead.
+        state = 'bridged' if refresh_sm_isolated_token() else 'expired'
+
+    return jsonify({
+        'state': state,
+        'target_id': target_id,
+        'target_name': target_name,
+    }), 200

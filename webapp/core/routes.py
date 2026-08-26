@@ -27,7 +27,10 @@ def index():
         USER_ROLE='Admin' if session.get('is_admin') else 'User',
         RC_REDIRECT_URI=rc_redirect_uri_clean,
         GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID", ""),
-        current_tab=request.args.get('tab', 'auth_rex')
+        current_tab=request.args.get('tab', 'auth_rex'),
+        # embed=1 renders only the tool content (no header/sidebar/status chrome)
+        # so a tool can be hosted inside an in-page tab iframe.
+        EMBED=request.args.get('embed') == '1'
     )
 
 @core_bp.route('/logout')
