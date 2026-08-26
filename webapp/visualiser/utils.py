@@ -31,6 +31,7 @@ class CallFlowTracer:
         self.notif_cache = {}          # ext_id -> voicemail notification email(s)
         self._live_state_cache = {}    # (ext_id, skip_bh) -> {ruleType: {target, enabled}}
         self._fac_available = None      # None=unknown, True/False=account exposes /forward-all-calls
+        self._v2_custom_cache = {}     # ext_id -> [{name, enabled, target}] (v2 comm-handling custom rules)
 
     # ------------------------------------------------------------------
     # API helpers
@@ -1174,6 +1175,77 @@ class CallFlowTracer:
                 out.append((f"ext_{num}", self.clean(fn.get("label") or fn.get("type") or "")[:24]))
         return out
 
+    def _v2_custom_rules(self, ext_id):
+        """Custom answering rules read from the v2 comm-handling API.
+
+        On New Call Handling & Forwarding (CH&F) accounts the v1 answering-rule
+        list is stale/empty, so a user's (or queue's) custom rules — specific
+        caller / scheduled / per-DID routing — never surface from that source.
+        The live copy lives in the v2 comm-handling custom-rules collection, the
+        same API we already trust for the after-hours / work-hours / forward-all
+        states. Returns a list of {'name','enabled','target'} for the rules whose
+        destination resolves. An empty list means either the extension has no
+        custom rules or the resource is unavailable (legacy account), in which
+        case the caller keeps the v1 detailed-list custom rules instead."""
+        ext_id = str(ext_id)
+        if ext_id in self._v2_custom_cache:
+            return self._v2_custom_cache[ext_id]
+
+        out = []
+        resp = self.api(
+            f"/restapi/v2/accounts/~/extensions/{ext_id}"
+            f"/comm-handling/voice/custom-rules"
+        )
+        records = None
+        if isinstance(resp, dict) and not resp.get("errorCode") and not resp.get("errors"):
+            records = resp.get("records")
+            if records is None and isinstance(resp.get("rules"), list):
+                records = resp["rules"]
+        elif isinstance(resp, list):
+            records = resp
+
+        log_bits = []
+        for rec in (records or []):
+            if not isinstance(rec, dict):
+                continue
+            name = self.clean(rec.get("name", "")) or "Custom Rule"
+            enabled = rec.get("enabled")
+            if enabled is None:
+                enabled = (rec.get("state") or {}).get("enabled", True)
+            target, _matched = self._v2_rule_target(rec, ext_id)
+            out.append({"name": name, "enabled": bool(enabled), "target": target})
+            log_bits.append(f"{name}{'' if enabled else '(off)'}->{target}")
+
+        # Surface the source in the debug panel (endpoint is always rendered).
+        summary = ", ".join(log_bits) if log_bits else "none"
+        self.request_logs.append({
+            "method": "GET",
+            "endpoint": f"Live Custom {ext_id}: {summary}",
+            "status": "SUCCESS", "code": "200", "duration": "0ms",
+            "detail": summary,
+        })
+        self._v2_custom_cache[ext_id] = out
+        return out
+
+    def _draw_v2_custom_rules(self, nid, history, v2_custom, active_only,
+                              inactive_rule_lines=None):
+        """Draw the v2 comm-handling custom rules onto `nid`, mirroring the main
+        loop's active/inactive handling so disabled rules land in the tooltip and
+        (optionally) as dashed branches."""
+        for cr in v2_custom:
+            target = cr.get("target")
+            is_active = cr.get("enabled", True)
+            lbl = ("Custom: " + cr["name"])[:28]
+            if not is_active and active_only:
+                if target and inactive_rule_lines is not None:
+                    inactive_rule_lines.append(f"{lbl} → {self._label_for(target)}")
+                if target and self.show_inactive:
+                    self.trace(target, nid, f"[Off] {lbl}", history, disabled=True)
+                continue
+            if target:
+                edge_lbl = lbl if is_active else f"[Off] {lbl}"
+                self.trace(target, nid, edge_lbl, history, disabled=not is_active)
+
     def _trace_rules(self, ext_id, nid, history,
                      skip_bh=False, active_only=False, check_fac=False):
         rules_resp = self.api(
@@ -1197,10 +1269,20 @@ class CallFlowTracer:
         # endpoints carry the live routing and override the list target below.
         live_states = self._live_state_targets(ext_id, skip_bh)
 
+        # Custom rules are stale/absent in the v1 list on CH&F accounts — the live
+        # copy lives in v2 comm-handling. When v2 returns any custom rules it is the
+        # authoritative source, so we draw those and suppress the v1 list's Custom
+        # rows (which would otherwise be stale or missing).
+        v2_custom = self._v2_custom_rules(ext_id)
+        v2_custom_authoritative = bool(v2_custom)
+
         if not rules_resp or not rules_resp.get("records"):
-            # No rules in the list, but the shortcuts may still have states to draw.
+            # No rules in the list, but the shortcuts / v2 custom rules may still
+            # have routing to draw.
             if live_states:
                 self._trace_states_only(ext_id, nid, history, live_states, skip_bh, active_only)
+            if v2_custom:
+                self._draw_v2_custom_rules(nid, history, v2_custom, active_only)
             return
 
         inactive_rule_lines = []
@@ -1212,6 +1294,10 @@ class CallFlowTracer:
             if r_type == "ForwardAllCalls" or str(r.get("id") or "") == "forward-all-calls":
                 continue
             if skip_bh and r_type == "BusinessHours":
+                continue
+            # v2 comm-handling is the live source for custom rules on CH&F accounts;
+            # its copy overrides the (stale) v1 list rows, drawn together below.
+            if r_type == "Custom" and v2_custom_authoritative:
                 continue
 
             is_active = r.get("enabled", True)
@@ -1313,6 +1399,12 @@ class CallFlowTracer:
                 continue
             edge_lbl = lbl if is_active else f"[Off] {lbl}"
             self.trace(target, nid, edge_lbl, history, disabled=not is_active)
+
+        # Draw the live v2 custom rules (CH&F accounts). Additive to the states
+        # above; the stale v1 Custom rows were skipped in the loop.
+        if v2_custom:
+            self._draw_v2_custom_rules(nid, history, v2_custom, active_only,
+                                       inactive_rule_lines)
 
         if inactive_rule_lines:
             for node in self.nodes:
