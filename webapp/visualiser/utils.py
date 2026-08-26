@@ -178,6 +178,75 @@ class CallFlowTracer:
         self.schedule_cache[ext_id] = result
         return result
 
+    def _queue_members(self, ext_id):
+        """Return the full roster for a call queue as a list of
+        (name, extensionNumber) tuples.
+
+        We report *every* assigned member regardless of their
+        acceptQueueCalls / acceptCurrentQueueCalls presence — being off does
+        not remove someone from the queue's membership.
+
+        Primary source is the /members roster (paginated). If that comes back
+        empty or errors (rate-limit, permission, transient failure — all of
+        which the plain /members call would otherwise swallow into "0
+        members"), we fall back to /presence, which also enumerates the full
+        roster (accept On or Off) and is what the User Status tab relies on.
+        """
+        members = []
+
+        page = 1
+        while page <= 20:  # safety cap (~20k members)
+            resp = self.api(
+                f"/restapi/v1.0/account/~/call-queues/{ext_id}"
+                f"/members?perPage=1000&page={page}"
+            )
+            if not resp or resp.get("errorCode") or not resp.get("records"):
+                break
+            for m in resp["records"]:
+                mi = self.get_ext_info(m["id"])
+                if mi:
+                    members.append(
+                        (self.clean(mi.get("name", "?")),
+                         mi.get("extensionNumber", "?"))
+                    )
+                else:
+                    members.append((self.clean(m.get("name", "?")),
+                                    m.get("extensionNumber", "?")))
+            if not (resp.get("navigation") or {}).get("nextPage"):
+                break
+            page += 1
+
+        if members:
+            return members
+
+        # Fallback: /presence enumerates the same roster (with accept flags we
+        # intentionally ignore) and succeeds where /members did not.
+        page = 1
+        while page <= 20:
+            resp = self.api(
+                f"/restapi/v1.0/account/~/call-queues/{ext_id}"
+                f"/presence?perPage=1000&page={page}"
+            )
+            if not resp or resp.get("errorCode") or not resp.get("records"):
+                break
+            for rec in resp["records"]:
+                member = rec.get("member") or {}
+                mid = member.get("id")
+                mi = self.get_ext_info(mid) if mid else None
+                if mi:
+                    members.append(
+                        (self.clean(mi.get("name", "?")),
+                         mi.get("extensionNumber", "?"))
+                    )
+                else:
+                    members.append((self.clean(member.get("name", "?")),
+                                    member.get("extensionNumber", "?")))
+            if not (resp.get("navigation") or {}).get("nextPage"):
+                break
+            page += 1
+
+        return members
+
     # ------------------------------------------------------------------
     # Direct-number enrichment
     # ------------------------------------------------------------------
@@ -619,17 +688,10 @@ class CallFlowTracer:
             member_count = 0
             tooltip_parts = []
 
-            m_resp = self.api(f"/restapi/v1.0/account/~/call-queues/{ext_id}/members")
-            if m_resp and m_resp.get("records"):
-                records = m_resp["records"]
-                member_count = len(records)
-                for m in records:
-                    mi = self.get_ext_info(m["id"])
-                    if mi:
-                        member_names.append(
-                            f"{self.clean(mi.get('name', '?'))} "
-                            f"x{mi.get('extensionNumber', '?')}"
-                        )
+            members = self._queue_members(ext_id)
+            member_count = len(members)
+            for m_name, m_ext in members:
+                member_names.append(f"{m_name} x{m_ext}")
 
             bh_rule = self.api(
                 f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/business-hours-rule"
