@@ -45,6 +45,8 @@ def visualiser_debug_rules(ext_id):
             f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/state-rules/work-hours",
         'v2_states':
             f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/states",
+        'v2_custom_rules':
+            f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/custom-rules",
         'v1_after_hours_rule':
             f"/restapi/v1.0/account/~/extension/{ext_id}/answering-rule/after-hours-rule",
         'v1_business_hours_rule':
