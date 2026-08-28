@@ -545,6 +545,43 @@ def _ivr_prompt_content_matches(record, file_data):
 
     return hashlib.sha256(resp.content).digest() == hashlib.sha256(file_data).digest()
 
+def _all_ivr_prompt_names():
+    """Every normalized name currently in the account-wide IVR prompt library.
+
+    Used to pick a collision-free name when auto-renaming an upload, so the new
+    prompt never clashes with an existing library entry (by 'name' or 'filename')."""
+    names = set()
+    page = 1
+    while True:
+        resp = rc_api_call(
+            '/restapi/v1.0/account/~/ivr-prompts',
+            params={'perPage': 1000, 'page': page}
+        )
+        if not resp or 'records' not in resp:
+            break
+        for rec in resp['records']:
+            for f in ('filename', 'name'):
+                norm = _normalize_prompt_name(rec.get(f))
+                if norm:
+                    names.add(norm)
+        if not resp.get('navigation', {}).get('nextPage'):
+            break
+        page += 1
+        time.sleep(0.05)
+    return names
+
+def _unique_ivr_prompt_name(base_name, taken):
+    """Return ``base_name``, or the first ``base_name (2)`` / ``(3)`` … variant
+    whose normalized form is not in ``taken`` (a set of normalized names)."""
+    if _normalize_prompt_name(base_name) not in taken:
+        return base_name
+    i = 2
+    while True:
+        candidate = f"{base_name} ({i})"
+        if _normalize_prompt_name(candidate) not in taken:
+            return candidate
+        i += 1
+
 def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=None):
     ext_info = rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', method='GET')
     ext_type = ext_info.get('type') if ext_info else None
@@ -575,22 +612,30 @@ def upload_custom_greeting(ext_id, file_obj, greeting_type_str, greeting_name=No
 
         if reusable:
             prompt_res = {'id': reusable['id'], 'reused': True, 'name': reusable.get('filename')}
-        elif existing_matches:
-            existing_label = (
-                existing_matches[0].get('filename')
-                or existing_matches[0].get('name')
-                or prompt_name
-            )
-            existing_ids = ', '.join(str(rec.get('id')) for rec in existing_matches if rec.get('id'))
-            raise ValueError(
-                f"An IVR prompt named '{existing_label}' already exists in the account "
-                f"prompt library (id {existing_ids}) with different audio. Rename your "
-                f"file, or delete/replace the existing prompt, before uploading."
-            )
         else:
-            data_payload = {'name': prompt_name}
-            files = { 'attachment': (filename, file_data, content_type) }
+            upload_name = prompt_name
+            renamed_from = None
+            if existing_matches:
+                # Same name, different audio. The IVR prompt library is account-wide
+                # and shared, so the existing entry may be assigned to other IVR
+                # menus — deleting it could break them. Instead, upload under a
+                # collision-free name and assign that, leaving the existing prompt
+                # untouched.
+                unique_name = _unique_ivr_prompt_name(prompt_name, _all_ivr_prompt_names())
+                if unique_name != prompt_name:
+                    renamed_from = prompt_name
+                    upload_name = unique_name
+
+            # Carry the (possibly new) name on both the payload and the attachment
+            # filename so future collision checks — which match either field — see it.
+            ext_suffix = ('.' + filename.rsplit('.', 1)[1]) if '.' in (filename or '') else ''
+            upload_filename = f"{upload_name}{ext_suffix}"
+            data_payload = {'name': upload_name}
+            files = { 'attachment': (upload_filename, file_data, content_type) }
             prompt_res = rc_api_call('/restapi/v1.0/account/~/ivr-prompts', method='POST', data=data_payload, files=files, raise_error=True)
+            if isinstance(prompt_res, dict) and renamed_from:
+                prompt_res['renamed_from'] = renamed_from
+                prompt_res['renamed_to'] = upload_name
 
         if prompt_res and 'id' in prompt_res:
             update_payload = { "prompt": { "mode": "Audio", "audio": { "id": prompt_res['id'] } } }
@@ -1305,8 +1350,10 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
                 result = upload_custom_greeting(ext['id'], upload_obj, code, greeting_name=greeting_name)
 
                 reused = isinstance(result, dict) and result.get('reused')
+                renamed_to = result.get('renamed_to') if isinstance(result, dict) else None
                 verb = 'reused existing prompt for' if reused else 'applied'
-                log(f"{row_label}: {verb} '{drive_file['name']}' → {ext.get('name', ext_num)}", 'success')
+                note = f" (name taken; saved as '{renamed_to}')" if renamed_to else ''
+                log(f"{row_label}: {verb} '{drive_file['name']}'{note} → {ext.get('name', ext_num)}", 'success')
         except Exception as e:
             log(f"{row_label}: {str(e)}", 'error')
         finally:
