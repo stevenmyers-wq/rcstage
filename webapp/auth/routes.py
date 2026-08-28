@@ -240,19 +240,44 @@ def sm_full_logout():
     session.pop('sm_employee_refresh_token', None)
     return redirect(f"/?tab={target_tab}")
 
+def _sm_isolated_token_is_live():
+    """Return True only if the stored customer-scoped token still works.
+
+    The token is a RingCentral impersonation access token that expires (and can
+    be revoked server-side). Nothing clears it from the session on expiry, so
+    its mere presence says nothing about whether the bridge is actually up. We
+    probe RingCentral with a cheap authenticated call and treat the same signal
+    the tool-call path uses — a 401 — as "dead", mirroring rc_api_call().
+    """
+    token = session.get('sm_isolated_token')
+    if not token:
+        return False
+    try:
+        resp = rc_api_call('/restapi/v1.0/account/~', token=token, return_response=True)
+    except Exception:
+        # Network hiccup — don't declare the bridge dead on a transient error.
+        # Fall back to presence so we don't nag on a blip; a genuinely expired
+        # token will surface as a 401 on the next successful poll.
+        return True
+    return resp is not None and resp.status_code < 400
+
+
 @auth_bp.route('/api/sm_auth/status')
 def sm_auth_status():
     """Live health of the customer bridge, polled by the frontend heartbeat.
 
     States:
       - 'none'    : no bridge established (no target selected yet)
-      - 'bridged' : a valid customer-scoped token is present
+      - 'bridged' : the customer-scoped token is present AND still valid
       - 'expired' : a bridge was established but its token has died and could
                     not be silently re-minted (employee refresh token gone too)
 
-    When the isolated token is missing but a target + employee token still
-    exist, we attempt a silent re-mint here so a merely-stale bridge reports
-    'bridged' again instead of nagging the user to reconnect.
+    Validity is verified with a live probe rather than mere token presence: an
+    expired/revoked isolated token lingers in the session until logout, so
+    checking only for its presence reports 'bridged' (green) forever even when
+    the bridge is down. If the probe fails we attempt a silent re-mint before
+    declaring the bridge dead, so a merely-stale bridge reports 'bridged' again
+    instead of nagging the user to reconnect.
     """
     target_id = session.get('sm_target_id')
     target_name = session.get('sm_target_name')
@@ -261,10 +286,11 @@ def sm_auth_status():
     if not target_id:
         return jsonify({'state': 'none', 'target_id': None, 'target_name': None}), 200
 
-    state = 'bridged' if session.get('sm_isolated_token') else None
-    if state is None:
-        # A target is set but the customer token is gone — try to recover it
-        # silently before declaring the bridge dead.
+    if _sm_isolated_token_is_live():
+        state = 'bridged'
+    else:
+        # Token missing or dead — try to recover it silently before declaring
+        # the bridge expired.
         state = 'bridged' if refresh_sm_isolated_token() else 'expired'
 
     return jsonify({
