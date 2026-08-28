@@ -226,18 +226,18 @@
         <form id="form-xlsx" class="p-6 space-y-6">
             <div class="text-sm text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 font-medium space-y-2">
                 <p class="font-bold">Apply many greetings at once from a spreadsheet.</p>
-                <p>Your sheet needs three columns: <span class="font-mono font-bold">EXT NUMBER</span>, <span class="font-mono font-bold">GREETING TYPE</span>, <span class="font-mono font-bold">GREETING NAME</span>. Each <span class="font-mono font-bold">GREETING NAME</span> must match an audio file's name inside the Drive folder below.</p>
+                <p>Your sheet needs <span class="font-mono font-bold">EXT NUMBER</span> and <span class="font-mono font-bold">GREETING TYPE</span>, plus an audio source for each row — <em>either</em> a <span class="font-mono font-bold">GREETING NAME</span> (a file in the Drive folder below) <em>or</em> <span class="font-mono font-bold">TTS</span> text (generated with AI). Fill only one per row; filling both is an error, and leaving both blank skips the slot. An optional <span class="font-mono font-bold">VOICE</span> column sets the AI voice for TTS rows.</p>
                 <a href="/api/message_management/xlsx_template" class="inline-flex items-center gap-1.5 font-bold underline hover:text-indigo-900 dark:hover:text-indigo-200">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                     Download template
                 </a>
-                <p class="text-xs !mt-1">Tip: select endpoints in the table and use <strong>⬇ Download Template (Selected)</strong> to get a sheet already filled with every greeting slot for those endpoints — just add the file names.</p>
+                <p class="text-xs !mt-1">Tip: select endpoints in the table and use <strong>⬇ Download Template (Selected)</strong> to get a sheet already filled with every greeting slot for those endpoints — just add a file name or TTS text to each.</p>
             </div>
 
             <div class="input-wrapper">
-                <label class="input-label">Google Drive Folder Link</label>
-                <input type="text" name="drive_url" placeholder="https://drive.google.com/drive/folders/..." required class="input-field focus:ring-indigo-500">
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">On Start, Google will ask you to <strong>authorize Drive access</strong> (read-only). The tool reads the folder <strong>as you</strong>, so any folder you can open in Drive works — no public sharing needed.</p>
+                <label class="input-label">Google Drive Folder Link <span class="text-slate-400 font-normal normal-case">(only needed for GREETING NAME rows)</span></label>
+                <input type="text" name="drive_url" placeholder="https://drive.google.com/drive/folders/..." class="input-field focus:ring-indigo-500">
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Required only if your sheet uses <span class="font-mono">GREETING NAME</span> file references. On Start, Google will ask you to <strong>authorize Drive access</strong> (read-only). The tool reads the folder <strong>as you</strong>, so any folder you can open in Drive works — no public sharing needed. Leave blank for a TTS-only sheet.</p>
             </div>
 
             <div class="input-wrapper">
@@ -1263,7 +1263,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = fd.get('file');
         const driveUrl = (fd.get('drive_url') || '').trim();
         if (!file || !file.name) { alert('Please choose a mapping spreadsheet.'); return; }
-        if (!driveUrl) { alert('Please paste the Google Drive folder link.'); return; }
+        // The Drive link is optional: a TTS-only sheet needs no folder. When a row
+        // references a GREETING NAME file without a link, the server reports it.
         processXlsxUpload(file, driveUrl, mmXlsxSheetPicker ? mmXlsxSheetPicker.value() : '');
     });
 
@@ -1325,13 +1326,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function processXlsxUpload(file, driveUrl, sheetName) {
-        // Acquire a per-user Drive token first, within the click gesture.
-        let driveToken;
-        try {
-            driveToken = await ensureDriveToken();
-        } catch (e) {
-            alert(e.message);
-            return;
+        // Acquire a per-user Drive token first, within the click gesture — but only
+        // when a Drive folder was supplied. A TTS-only sheet needs no Drive access,
+        // so it must not force a Google authorization popup.
+        const usesDrive = !!driveUrl;
+        if (usesDrive) {
+            try {
+                await ensureDriveToken();
+            } catch (e) {
+                alert(e.message);
+                return;
+            }
         }
 
         closeModal('modal-xlsx');
@@ -1345,7 +1350,9 @@ document.addEventListener('DOMContentLoaded', () => {
         progressBar.style.width = '0%';
         progressBar.className = 'bg-blue-500 h-full rounded-full transition-all duration-300';
         progressPct.textContent = '0/0';
-        logProgress('Google Drive authorized. Parsing spreadsheet and listing the folder...', 'info');
+        logProgress(usesDrive
+            ? 'Google Drive authorized. Parsing spreadsheet and listing the folder...'
+            : 'Parsing spreadsheet (TTS mode — no Drive folder needed)...', 'info');
 
         const taskId = 'xlsx_' + Date.now();
         mmXlsxStop = false;
@@ -1379,14 +1386,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             while (true) {
-                // Silently renews when the current token is near expiry.
-                const token = await ensureDriveToken();
+                // Silently renews when the current token is near expiry. Skipped
+                // for a TTS-only sheet, which carries no Drive token at all.
+                const token = usesDrive ? await ensureDriveToken() : '';
 
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('drive_url', driveUrl);
                 formData.append('task_id', taskId);
-                formData.append('drive_token', token);
+                if (token) formData.append('drive_token', token);
                 formData.append('cursor', String(cursor));
                 formData.append('chunk_size', String(CHUNK_SIZE));
                 if (sheetName) formData.append('sheet_name', sheetName);
