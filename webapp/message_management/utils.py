@@ -1536,7 +1536,10 @@ def _write_template_workbook(buffer, upload_df):
                 'input_message': f'Optional — only used for TTS rows. Defaults to {TTS_VOICES[0]}.',
                 'error_type': 'warning',
                 'error_title': 'Unknown voice',
-                'error_message': f'Pick one of: {", ".join(TTS_VOICES)}.',
+                # Keep this well under Excel's 255-char limit on validation messages:
+                # enumerating every voice here (30+) overflows it, and xlsxwriter then
+                # silently drops the whole dropdown. Point at the list instead.
+                'error_message': 'Pick a voice from the dropdown list (see the "Accepted Types" tab for the full set).',
             })
 
 
