@@ -1,0 +1,494 @@
+<div class="space-y-6 animate-fade-in w-full">
+
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Directory Visibility</h2>
+        <p class="text-subheading">Poll the connected account for every object that exposes <span class="font-semibold">company directory</span> visibility and audit whether each is <span class="font-semibold text-emerald-600 dark:text-emerald-400">Visible</span> or <span class="font-semibold text-amber-600 dark:text-amber-400">Hidden</span>. Visibility maps to RingCentral's <span class="font-mono text-xs">hidden</span> flag. Every directory-capable type is listed for the audit, but the API only lets you <span class="font-semibold">change</span> the flag on <span class="font-semibold">User</span>-type extensions — Call Queues, IVRs and the like are read-only here and must be changed in the Admin Portal. Toggle an editable object inline, or use the <span class="font-semibold">bulk XLSX</span> flow below.</p>
+    </div>
+
+    <!-- Directory status (poll) -->
+    <div class="card w-full">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Directory Status</h3>
+                <p id="dv-summary" class="text-sm text-slate-500 dark:text-slate-400">Poll the account to see the current Visible / Hidden state of every supported object.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <input id="dv-filter" type="text" placeholder="Filter by name / ext / type…" class="input-field !py-2 !text-sm hidden" style="max-width:16rem">
+                <button id="dv-results-download" class="hidden text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">⬇ Export (.xlsx)</button>
+                <button id="dv-refresh-btn" onclick="dvRefresh()" class="btn-primary !py-2 !px-5">Refresh Directory Status</button>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th class="py-2 pr-4">Ext</th>
+                        <th class="py-2 pr-4">Name</th>
+                        <th class="py-2 pr-4">Type</th>
+                        <th class="py-2 pr-4">Status</th>
+                        <th class="py-2 pr-4">Directory</th>
+                        <th class="py-2 pr-4 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="dv-table-body" class="divide-y divide-slate-100 dark:divide-slate-800">
+                    <tr><td colspan="6" class="py-8 text-center text-slate-400">Nothing loaded yet — click <span class="font-semibold">Refresh Directory Status</span>.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Bulk update via XLSX -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+
+        <!-- Step 1: Download template (pre-filled with current state) -->
+        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-500 transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">1. Download Template</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
+                A <span class="font-semibold">Directory Visibility</span> sheet pre-filled with every supported object and its current state. Edit the <span class="font-semibold">New Visibility</span> column (a <span class="font-semibold">Visible / Hidden</span> dropdown); rows left unchanged are skipped.
+            </p>
+            <button onclick="dvDownloadTemplate()" id="dvTemplateBtn" class="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
+                Download Template
+            </button>
+        </div>
+
+        <!-- Step 2: Upload & review -->
+        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white dark:group-hover:bg-purple-500 transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">2. Upload &amp; Review</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
+                Upload your edited sheet. Nothing changes yet — every row is matched to a live object (by Extension&nbsp;ID, then Extension number) so you can review the exact Visible ⇄ Hidden changes before applying them.
+            </p>
+            <label id="dvUploadLabel" class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-400 text-purple-600 dark:text-purple-400 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer block text-center">
+                Choose File to Review
+                <input type="file" class="hidden" accept=".xlsx,.csv" onchange="dvValidateFile(this)">
+            </label>
+            <p id="dvFileName" class="text-xs text-slate-400 mt-2 truncate w-full"></p>
+            <div id="dvSheetMount" class="mt-4 text-left"></div>
+        </div>
+
+    </div>
+
+    <!-- Bulk review / results table -->
+    <div id="dv-results-card" class="card w-full hidden">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Review Changes</h3>
+                <p id="dv-bulk-summary" class="text-sm text-slate-500 dark:text-slate-400">Review the proposed visibility changes below before applying them.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="dv-bulk-download" class="hidden text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">⬇ Download results (.xlsx)</button>
+                <button id="dv-apply-btn" onclick="dvApplyChanges()" disabled class="btn-success !py-2 !px-5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    Apply Changes
+                </button>
+                <button id="dv-stop-btn" class="hidden btn-secondary !py-2 !px-4 text-xs !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                    ■ Stop
+                </button>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th class="py-2 pr-4">Ext</th>
+                        <th class="py-2 pr-4">Name</th>
+                        <th class="py-2 pr-4">Type</th>
+                        <th class="py-2 pr-4">Current</th>
+                        <th class="py-2 pr-4">New</th>
+                        <th class="py-2 pr-4">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="dv-bulk-body" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Log console -->
+    <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg !p-0 overflow-hidden border-slate-700 w-full">
+        <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">DIRECTORY VISIBILITY LOG</span>
+            <button onclick="document.getElementById('dvLogs').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
+        </div>
+        <div id="dvLogs" class="p-4 font-mono text-sm h-56 overflow-y-auto whitespace-pre-line text-slate-300 shadow-inner">
+            Ready. Refresh the directory status, toggle objects inline, or download the template to bulk-update.
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function () {
+    // Last polled directory rows (for the inline toggle table + export).
+    let dvRows = [];
+    // Bulk-upload state.
+    let dvFile = null;
+    let dvBulkResultRows = [];
+    let dvTaskId = null;
+    let dvSheetPicker = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.SheetPicker) {
+            dvSheetPicker = SheetPicker.create(
+                document.getElementById('dvSheetMount'), { preferred: ['Directory Visibility'] }
+            );
+            dvSheetPicker.select.addEventListener('change', () => {
+                if (dvFile) dvRunBatch('preview');
+            });
+        }
+        if (window.UCResults) {
+            UCResults.attachButton(
+                document.getElementById('dv-results-download'),
+                () => dvRows.map(r => ({
+                    'Extension ID': r.id, Extension: r.extensionNumber, Name: r.name,
+                    Type: r.type, Status: r.status, Directory: r.visible ? 'Visible' : 'Hidden',
+                    'Editable (API)': r.editable ? 'Yes' : 'No (portal only)',
+                })), 'Directory_Visibility', 'Directory'
+            );
+            UCResults.attachButton(
+                document.getElementById('dv-bulk-download'),
+                () => dvBulkResultRows, 'Directory_Visibility_Results', 'Results'
+            );
+        }
+        const filter = document.getElementById('dv-filter');
+        if (filter) filter.addEventListener('input', dvApplyFilter);
+        const stopBtn = document.getElementById('dv-stop-btn');
+        if (stopBtn) {
+            stopBtn.addEventListener('click', async () => {
+                if (!dvTaskId) return;
+                stopBtn.disabled = true;
+                stopBtn.innerHTML = 'Stopping…';
+                dvLog('Stop requested — finishing the current change, then halting…', 'info');
+                try { await fetch(`/api/directory_visibility/cancel?task_id=${dvTaskId}`, { method: 'POST' }); }
+                catch (e) { /* worker also polls the flag */ }
+            });
+        }
+    });
+
+    function dvLog(msg, type) {
+        const box = document.getElementById('dvLogs');
+        if (!box) return;
+        if (box.children.length === 0 && box.textContent.trim()) box.innerHTML = '';
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400'
+            : type === 'success' ? 'text-green-400'
+            : type === 'warn' ? 'text-amber-400'
+            : type === 'skip' ? 'text-slate-400'
+            : 'text-blue-300';
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
+
+    // --- Directory status (poll) --------------------------------------------
+
+    window.dvRefresh = async function () {
+        const btn = document.getElementById('dv-refresh-btn');
+        const body = document.getElementById('dv-table-body');
+        btn.disabled = true;
+        btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Polling…`;
+        dvLog('Polling account directory visibility…', 'info');
+        try {
+            const res = await fetch('/api/directory_visibility/list');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load directory status');
+            dvRows = data.records || [];
+            dvRenderTable();
+            const s = data.summary || { total: dvRows.length, visible: 0, hidden: 0, portal_only: 0 };
+            dvSetSummary(s);
+            document.getElementById('dv-filter').classList.toggle('hidden', dvRows.length === 0);
+            document.getElementById('dv-results-download').classList.toggle('hidden', dvRows.length === 0);
+            dvLog(`Loaded ${s.total} object(s) — ${s.visible} Visible, ${s.hidden} Hidden${s.portal_only ? ` (${s.portal_only} portal-only)` : ''}.`, 'success');
+        } catch (e) {
+            dvLog('Error: ' + e.message, 'error');
+            body.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500">${escapeHtml(e.message)}</td></tr>`;
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Refresh Directory Status';
+        }
+    };
+
+    function dvVisBadge(visible) {
+        return visible
+            ? `<span class="badge badge-success">Visible</span>`
+            : `<span class="badge badge-warning">Hidden</span>`;
+    }
+
+    function dvRenderTable() {
+        const body = document.getElementById('dv-table-body');
+        if (!dvRows.length) {
+            body.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400">No objects on this account support directory visibility.</td></tr>`;
+            return;
+        }
+        body.innerHTML = '';
+        dvRows.forEach(r => body.appendChild(dvRowEl(r)));
+        dvApplyFilter();
+    }
+
+    function dvRowEl(r) {
+        const tr = document.createElement('tr');
+        tr.dataset.search = `${r.extensionNumber} ${r.name} ${r.type} ${r.status}`.toLowerCase();
+        // Only User-type objects can be changed via the API; the rest are audited
+        // read-only, so show a "Portal only" note instead of a toggle.
+        const action = r.editable
+            ? `<button class="btn-secondary !py-1 !px-3 text-xs ${r.visible
+                    ? '!text-amber-600 !border-amber-300 dark:!border-amber-800 hover:!bg-amber-50 dark:hover:!bg-amber-900/20'
+                    : '!text-emerald-600 !border-emerald-300 dark:!border-emerald-800 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20'}">${r.visible ? 'Hide' : 'Show'}</button>`
+            : `<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400" title="Only User-type extensions can be changed via the API — change this in the Admin Portal">Portal only</span>`;
+        tr.innerHTML = `
+            <td class="py-2 pr-4 font-mono text-slate-700 dark:text-slate-300">${escapeHtml(r.extensionNumber || '—')}</td>
+            <td class="py-2 pr-4 text-slate-700 dark:text-slate-200">${escapeHtml(r.name)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.type)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.status || '—')}</td>
+            <td class="py-2 pr-4 dv-vis-cell">${dvVisBadge(r.visible)}</td>
+            <td class="py-2 pr-4 text-right">${action}</td>`;
+        const btn = tr.querySelector('button');
+        if (btn) btn.addEventListener('click', () => dvToggle(r, tr, btn));
+        return tr;
+    }
+
+    async function dvToggle(r, tr, btn) {
+        const desiredHidden = r.visible; // visible -> hide; hidden -> show
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = `<div class="spinner w-3 h-3"></div>`;
+        try {
+            const res = await fetch('/api/directory_visibility/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: r.id, hidden: desiredHidden }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
+            r.hidden = desiredHidden;
+            r.visible = !desiredHidden;
+            tr.querySelector('.dv-vis-cell').innerHTML = dvVisBadge(r.visible);
+            tr.replaceWith(dvRowEl(r));
+            dvUpdateSummary();
+            dvLog(`Ext ${r.extensionNumber || r.id} (${r.name}) → ${r.visible ? 'Visible' : 'Hidden'}.`, 'success');
+        } catch (e) {
+            btn.disabled = false;
+            btn.innerHTML = original;
+            dvLog(`Ext ${r.extensionNumber || r.id}: ${e.message}`, 'error');
+            if (window.showMessage) showMessage(e.message, true);
+        }
+    }
+
+    function dvSetSummary(s) {
+        const portal = s.portal_only ? ` · ${s.portal_only} portal-only` : '';
+        document.getElementById('dv-summary').innerText =
+            `${s.total} object(s) audited · ${s.visible} Visible · ${s.hidden} Hidden${portal}`;
+    }
+
+    function dvUpdateSummary() {
+        const total = dvRows.length;
+        const visible = dvRows.filter(r => r.visible).length;
+        const portal_only = dvRows.filter(r => !r.editable).length;
+        dvSetSummary({ total, visible, hidden: total - visible, portal_only });
+    }
+
+    function dvApplyFilter() {
+        const q = (document.getElementById('dv-filter').value || '').trim().toLowerCase();
+        document.querySelectorAll('#dv-table-body tr').forEach(tr => {
+            if (!tr.dataset.search) return;
+            tr.style.display = (!q || tr.dataset.search.includes(q)) ? '' : 'none';
+        });
+    }
+
+    // --- Bulk XLSX update ----------------------------------------------------
+
+    window.dvDownloadTemplate = async function () {
+        const btn = document.getElementById('dvTemplateBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Building…`;
+        dvLog('Building template from current directory state…');
+        try {
+            const res = await fetch('/api/directory_visibility/template');
+            if (!res.ok) {
+                let msg = 'Template generation failed';
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Directory_Visibility_Template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            dvLog('Template downloaded. Edit New Visibility, then upload to review.', 'success');
+        } catch (e) {
+            dvLog('Template error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Download Template';
+        }
+    };
+
+    window.dvValidateFile = function (input) {
+        if (!input.files || !input.files[0]) return;
+        dvFile = input.files[0];
+        document.getElementById('dvFileName').innerText = 'Selected: ' + dvFile.name;
+        input.value = '';
+        if (dvSheetPicker) dvSheetPicker.update(dvFile);
+        dvRunBatch('preview');
+    };
+
+    window.dvApplyChanges = function () {
+        if (!dvFile) { dvLog('No reviewed file to apply. Please upload and review first.', 'error'); return; }
+        dvRunBatch('apply');
+    };
+
+    function dvStatusLabel(status, isPreview) {
+        if (status === 'error')   return { text: 'Error', cls: 'text-red-500 font-semibold' };
+        if (status === 'success') return isPreview
+            ? { text: 'Will change', cls: 'text-emerald-600 dark:text-emerald-400 font-semibold' }
+            : { text: 'Changed', cls: 'text-green-600 dark:text-green-400 font-semibold' };
+        return { text: 'No change', cls: 'text-slate-400' };
+    }
+
+    async function dvRunBatch(action) {
+        const isPreview = action !== 'apply';
+        const applyBtn = document.getElementById('dv-apply-btn');
+        const uploadLabel = document.getElementById('dvUploadLabel');
+        const tableBody = document.getElementById('dv-bulk-body');
+        const resultsCard = document.getElementById('dv-results-card');
+
+        resultsCard.classList.remove('hidden');
+        tableBody.innerHTML = '';
+        dvBulkResultRows = [];
+        document.getElementById('dv-bulk-download').classList.add('hidden');
+        applyBtn.disabled = true;
+        uploadLabel.classList.add('opacity-50', 'pointer-events-none');
+
+        const stopBtn = document.getElementById('dv-stop-btn');
+        dvTaskId = !isPreview ? `dv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` : null;
+        if (stopBtn) {
+            if (!isPreview) { stopBtn.classList.remove('hidden'); stopBtn.disabled = false; stopBtn.innerHTML = '■ Stop'; }
+            else { stopBtn.classList.add('hidden'); }
+        }
+        if (!isPreview) applyBtn.innerHTML = `<div class="spinner w-4 h-4 border-white mr-2"></div> Applying…`;
+
+        dvLog(isPreview ? `Validating ${dvFile.name}…` : 'Applying reviewed changes…', 'info');
+        const counts = { change: 0, noop: 0, error: 0, applied: 0 };
+
+        const formData = new FormData();
+        formData.append('file', dvFile);
+        formData.append('action', action);
+        if (dvTaskId) formData.append('task_id', dvTaskId);
+        if (dvSheetPicker) dvSheetPicker.appendTo(formData);
+
+        try {
+            const res = await fetch('/api/directory_visibility/upload', { method: 'POST', body: formData });
+            if (!res.ok) {
+                let msg = 'Upload failed';
+                try { msg = (await res.json()).message || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    let data;
+                    try { data = JSON.parse(line); } catch (e) { continue; }
+                    dvHandleChunk(data, isPreview, tableBody, counts);
+                }
+            }
+
+            const bits = [];
+            if (isPreview) {
+                bits.push(`${counts.change} change(s)`);
+                if (counts.noop) bits.push(`${counts.noop} unchanged`);
+                if (counts.error) bits.push(`${counts.error} error(s)`);
+                document.getElementById('dv-bulk-summary').innerText = bits.join(' · ');
+                dvLog(`Review complete — ${bits.join(', ')}.`, 'success');
+                applyBtn.disabled = counts.change === 0;
+                if (counts.change === 0) dvLog('Nothing to change.', 'skip');
+            } else {
+                bits.push(`${counts.applied} changed`);
+                if (counts.error) bits.push(`${counts.error} failed`);
+                if (counts.noop) bits.push(`${counts.noop} unchanged`);
+                document.getElementById('dv-bulk-summary').innerText = bits.join(' · ');
+                dvLog(`Apply complete — ${bits.join(', ')}.`, 'success');
+                applyBtn.disabled = true;
+                dvFile = null;
+                if (dvSheetPicker) dvSheetPicker.reset();
+                document.getElementById('dvFileName').innerText = '';
+                // Refresh the live status table so it reflects the applied changes.
+                dvRefresh();
+            }
+
+            dvBulkResultRows = dvCollectResultRows(tableBody);
+            document.getElementById('dv-bulk-download').classList.toggle('hidden', dvBulkResultRows.length === 0);
+        } catch (e) {
+            dvLog('Error: ' + e.message, 'error');
+        } finally {
+            dvTaskId = null;
+            const s2 = document.getElementById('dv-stop-btn');
+            if (s2) s2.classList.add('hidden');
+            uploadLabel.classList.remove('opacity-50', 'pointer-events-none');
+            applyBtn.innerText = 'Apply Changes';
+        }
+    }
+
+    function dvHandleChunk(data, isPreview, tableBody, counts) {
+        if (data.type === 'error') { dvLog(data.message, 'error'); return; }
+        if (data.type === 'start') { dvLog(data.message, 'info'); return; }
+        if (data.type === 'cancelled') { dvLog(data.message || 'Stopped by user.', 'skip'); return; }
+        if (data.type === 'done') return;
+        if (data.type !== 'progress') return;
+
+        const r = data.result || {};
+        if (r.status === 'info') {
+            counts.noop++;
+            // Still surface "already X / no change" rows so the review is complete.
+        }
+        if (r.status === 'success') counts[isPreview ? 'change' : 'applied']++;
+        else if (r.status === 'error') counts.error++;
+
+        const label = dvStatusLabel(r.status, isPreview);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="py-2 pr-4 font-mono text-slate-700 dark:text-slate-300">${escapeHtml(r.ext)}</td>
+            <td class="py-2 pr-4 text-slate-700 dark:text-slate-200">${escapeHtml(r.name)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.type)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.current)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.new)}</td>
+            <td class="py-2 pr-4 ${label.cls}" title="${escapeHtml(r.message)}">${escapeHtml(label.text)}</td>`;
+        tableBody.appendChild(tr);
+
+        const logType = r.status === 'error' ? 'error' : r.status === 'success' ? 'success' : 'skip';
+        dvLog(`Ext ${r.ext}: ${r.message}`, logType);
+    }
+
+    function dvCollectResultRows(tableBody) {
+        return Array.from(tableBody.children).map(tr => {
+            const c = tr.children;
+            return {
+                Extension: c[0].innerText, Name: c[1].innerText, Type: c[2].innerText,
+                Current: c[3].innerText, New: c[4].innerText, Status: c[5].innerText,
+            };
+        });
+    }
+})();
+</script>
