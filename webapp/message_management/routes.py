@@ -108,6 +108,29 @@ def generate_tts_audio_only():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@message_management_bp.route('/voices', methods=['GET'])
+@require_rc_token
+def list_voices():
+    """The AI voice catalogue that powers the AI Studio picker and preview player."""
+    return jsonify({'voices': utils.VOICE_CATALOG, 'default': utils.TTS_VOICES[0]})
+
+@message_management_bp.route('/voice_preview', methods=['GET'])
+@require_rc_token
+@track_usage('Message Management - Voice Preview')
+def voice_preview():
+    """Stream a short spoken sample of a voice so users can audition it inline
+    before committing it to a bulk generation. Clips are cached server-side."""
+    try:
+        voice = request.args.get('voice', '')
+        if not voice:
+            return jsonify({'error': 'Missing voice'}), 400
+        audio_buffer = utils.generate_voice_preview_bytes(voice)
+        return Response(audio_buffer.read(), mimetype='audio/wav')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @message_management_bp.route('/export', methods=['POST'])
 @require_rc_token
 @track_usage('Message Management - Bulk Export Archive')

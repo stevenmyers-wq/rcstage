@@ -1377,9 +1377,74 @@ ACCEPTED_TYPE_LABELS = [
     for label in TEMPLATE_SLOTS_BY_TYPE[ext_type]
 ]
 
-# AI voices offered for the TTS column, mirroring the AI Studio voice picker.
-# The first entry is the default applied when the VOICE cell is left blank.
-TTS_VOICES = ['Kore', 'Aoede', 'Charon', 'Puck']
+# AI voices offered across the AI Studio picker, the inline preview player and the
+# XLSX VOICE column — one source of truth so the three stay in sync. Every entry is
+# a Gemini prebuilt TTS voice; the module forces an Australian accent at synthesis
+# time (see generate_tts_audio_bytes), so `tone` describes delivery, not accent.
+# The first entry is the default applied when a VOICE cell is left blank.
+VOICE_CATALOG = [
+    # The original four, kept first and with their established labels for continuity.
+    {'name': 'Kore',   'label': 'Kore (Firm Female, AU)',   'tone': 'Firm'},
+    {'name': 'Aoede',  'label': 'Aoede (Warm Female, AU)',  'tone': 'Breezy'},
+    {'name': 'Charon', 'label': 'Charon (Calm Male, AU)',   'tone': 'Informative'},
+    {'name': 'Puck',   'label': 'Puck (Upbeat Male, AU)',   'tone': 'Upbeat'},
+    # The rest of the Gemini prebuilt voice set, labelled by their documented tone.
+    {'name': 'Zephyr',        'label': 'Zephyr (Bright, AU)',        'tone': 'Bright'},
+    {'name': 'Fenrir',        'label': 'Fenrir (Excitable, AU)',     'tone': 'Excitable'},
+    {'name': 'Leda',          'label': 'Leda (Youthful, AU)',        'tone': 'Youthful'},
+    {'name': 'Orus',          'label': 'Orus (Firm, AU)',            'tone': 'Firm'},
+    {'name': 'Callirrhoe',    'label': 'Callirrhoe (Easy-going, AU)','tone': 'Easy-going'},
+    {'name': 'Autonoe',       'label': 'Autonoe (Bright, AU)',       'tone': 'Bright'},
+    {'name': 'Enceladus',     'label': 'Enceladus (Breathy, AU)',    'tone': 'Breathy'},
+    {'name': 'Iapetus',       'label': 'Iapetus (Clear, AU)',        'tone': 'Clear'},
+    {'name': 'Umbriel',       'label': 'Umbriel (Easy-going, AU)',   'tone': 'Easy-going'},
+    {'name': 'Algieba',       'label': 'Algieba (Smooth, AU)',       'tone': 'Smooth'},
+    {'name': 'Despina',       'label': 'Despina (Smooth, AU)',       'tone': 'Smooth'},
+    {'name': 'Erinome',       'label': 'Erinome (Clear, AU)',        'tone': 'Clear'},
+    {'name': 'Algenib',       'label': 'Algenib (Gravelly, AU)',     'tone': 'Gravelly'},
+    {'name': 'Rasalgethi',    'label': 'Rasalgethi (Informative, AU)','tone': 'Informative'},
+    {'name': 'Laomedeia',     'label': 'Laomedeia (Upbeat, AU)',     'tone': 'Upbeat'},
+    {'name': 'Achernar',      'label': 'Achernar (Soft, AU)',        'tone': 'Soft'},
+    {'name': 'Alnilam',       'label': 'Alnilam (Firm, AU)',         'tone': 'Firm'},
+    {'name': 'Schedar',       'label': 'Schedar (Even, AU)',         'tone': 'Even'},
+    {'name': 'Gacrux',        'label': 'Gacrux (Mature, AU)',        'tone': 'Mature'},
+    {'name': 'Pulcherrima',   'label': 'Pulcherrima (Forward, AU)',  'tone': 'Forward'},
+    {'name': 'Achird',        'label': 'Achird (Friendly, AU)',      'tone': 'Friendly'},
+    {'name': 'Zubenelgenubi', 'label': 'Zubenelgenubi (Casual, AU)', 'tone': 'Casual'},
+    {'name': 'Vindemiatrix',  'label': 'Vindemiatrix (Gentle, AU)',  'tone': 'Gentle'},
+    {'name': 'Sadachbia',     'label': 'Sadachbia (Lively, AU)',     'tone': 'Lively'},
+    {'name': 'Sadaltager',    'label': 'Sadaltager (Knowledgeable, AU)','tone': 'Knowledgeable'},
+    {'name': 'Sulafat',       'label': 'Sulafat (Warm, AU)',         'tone': 'Warm'},
+]
+
+# Flat name list, kept for the XLSX VOICE-column validation and its help text.
+TTS_VOICES = [v['name'] for v in VOICE_CATALOG]
+VALID_VOICE_NAMES = set(TTS_VOICES)
+
+# A short, neutral line spoken for the inline voice previews. Kept generic so the
+# same clip works as a sample for any greeting slot.
+VOICE_PREVIEW_TEXT = "Hi, thanks for calling. Your call is important to us, and we'll be with you shortly."
+
+# Previews are identical for a given voice, so synthesise each one once and reuse it.
+# Bounded implicitly by the fixed voice catalog (at most one clip per voice).
+_voice_preview_cache = {}
+
+def generate_voice_preview_bytes(voice_name):
+    """Return a cached WAV sample of VOICE_PREVIEW_TEXT spoken in `voice_name`.
+
+    Used by the inline preview player in the AI Studio voice picker so users can
+    audition a voice before committing it to a bulk generation."""
+    if voice_name not in VALID_VOICE_NAMES:
+        raise ValueError(f"Unknown voice '{voice_name}'.")
+
+    cached = _voice_preview_cache.get(voice_name)
+    if cached is not None:
+        return io.BytesIO(cached)
+
+    buf = generate_tts_audio_bytes(VOICE_PREVIEW_TEXT, voice_name=voice_name)
+    data = buf.getvalue()
+    _voice_preview_cache[voice_name] = data
+    return io.BytesIO(data)
 
 # Friendly object-type label for the generated sheet's read-only TYPE column.
 # Matches the on-screen table's display names.
