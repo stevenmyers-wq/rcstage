@@ -1133,7 +1133,12 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const res = await fetch('/api/message_management/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (res.ok && data.success) { status = 'Success'; detail = 'Updated'; logProgress(`Success: Ext ${extId} updated.`, 'success'); }
+                if (res.ok && data.success) {
+                    status = 'Success'; detail = 'Updated';
+                    const renamedTo = data.result && data.result.renamed_to;
+                    if (renamedTo) { detail = `Updated (name taken; saved as "${renamedTo}")`; logProgress(`Success: Ext ${extId} updated — prompt name was taken, saved as "${renamedTo}".`, 'success'); }
+                    else { logProgress(`Success: Ext ${extId} updated.`, 'success'); }
+                }
                 else { status = 'Failed'; detail = data.error || 'API Error'; logProgress(`Failed: Ext ${extId} - ${detail}`, 'error'); }
             } catch (err) {
                 logProgress(`Error: Ext ${extId} - Network Failure`, 'error');
