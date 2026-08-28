@@ -50,7 +50,7 @@
       dot.className = 'w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0';
       const name = (data && data.target_name) || 'Customer';
       const id = (data && data.target_id) || '';
-      label.innerHTML = 'Bridged → <span class="text-blue-700 dark:text-blue-300">' +
+      label.innerHTML = 'Impersonated → <span class="text-blue-700 dark:text-blue-300">' +
         escapeHtml(String(name)) + '</span>' +
         (id ? ' <span class="text-xs font-mono font-medium opacity-60 ml-1">(' + escapeHtml(String(id)) + ')</span>' : '');
       label.className = 'font-bold text-slate-800 dark:text-slate-100 truncate';
