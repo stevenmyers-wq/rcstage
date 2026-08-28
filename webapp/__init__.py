@@ -186,4 +186,8 @@ def create_app():
         from .extension_deletion import routes as extension_deletion_routes
         app.register_blueprint(extension_deletion_routes.extension_deletion_bp)
 
+        # Company Directory Visibility routes
+        from .directory_visibility import routes as directory_visibility_routes
+        app.register_blueprint(directory_visibility_routes.directory_visibility_bp)
+
     return app
