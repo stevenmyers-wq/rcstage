@@ -220,8 +220,9 @@ def xlsx_upload():
         raw_chunk = request.form.get('chunk_size')
         chunk_size = _as_int(raw_chunk, None) if raw_chunk not in (None, '') else None
 
-        if not drive_url:
-            return jsonify({'error': 'Missing Google Drive folder link'}), 400
+        # The Drive folder link is optional: a sheet whose rows all use the TTS
+        # column needs no Drive access. When a row does name a Drive file,
+        # xlsx_bulk_upload raises a clear error if the link is missing.
 
         summary = utils.xlsx_bulk_upload(
             file_obj, drive_url, task_id, access_token=drive_token,

@@ -1107,6 +1107,12 @@ def _resolve_upload_columns(df):
     ext_col = find(['extnumber', 'extensionnumber', 'extension', 'ext', 'number'])
     type_col = find(['greetingtype', 'type'])
     name_col = find(['greetingname', 'name', 'filename', 'file', 'audiofile', 'audio'])
+    # Optional columns. TTS carries the text to synthesise for a row that uses AI
+    # generation instead of a Drive file; VOICE optionally overrides the voice.
+    # Both are absent on legacy (Drive-only) sheets, so neither is required.
+    tts_col = find(['tts', 'ttstext', 'ttsscript', 'aitext', 'aiscript',
+                    'aigeneration', 'texttospeech', 'greetingtext'])
+    voice_col = find(['voice', 'aivoice', 'voiceactor', 'ttsvoice'])
 
     missing = [
         label for label, col in
@@ -1116,7 +1122,7 @@ def _resolve_upload_columns(df):
     if missing:
         raise ValueError(f"Spreadsheet is missing required column(s): {', '.join(missing)}")
 
-    return ext_col, type_col, name_col
+    return ext_col, type_col, name_col, tts_col, voice_col
 
 def _prune_xlsx_cache(max_age_seconds=7200):
     """Drop stale per-task setup so abandoned uploads don't leak memory."""
@@ -1133,32 +1139,50 @@ def _prepare_xlsx_upload(file_storage, drive_url, access_token, sheet_name=None)
     across chunks."""
     import pandas as pd
 
-    folder_id = extract_drive_folder_id(drive_url)
-    if not folder_id:
-        raise ValueError("Could not read a Google Drive folder ID from the provided link.")
-
     df = pd.read_excel(file_storage, sheet_name=(sheet_name or 0), engine='openpyxl').dropna(how='all')
-    ext_col, type_col, name_col = _resolve_upload_columns(df)
-
-    drive_files = list_drive_folder_files(folder_id, access_token=access_token)
-    if not drive_files:
-        raise ValueError("No files were found in that Drive folder.")
+    ext_col, type_col, name_col, tts_col, voice_col = _resolve_upload_columns(df)
 
     rows = df.to_dict('records')
-    # Only rows that name an audio file are uploadable, so the progress total
-    # counts those alone. Rows with a blank GREETING NAME (e.g. the unfilled
-    # slots in a pre-populated "Download Selected" template) are not attempted
-    # and must not inflate the total or they would leave the bar short of 100%.
+
+    # A row applies audio one of two ways: a GREETING NAME (a Drive file) or TTS
+    # (AI-generated text). Only rows that fill one of those are uploadable, so the
+    # progress total counts those alone — blank rows (e.g. the unfilled slots in a
+    # pre-populated "Download Selected" template) must not inflate the total or the
+    # bar would stop short of 100%.
+    any_drive_row = any(_cell_str(row.get(name_col)) for row in rows)
     total = sum(
         1 for row in rows
-        if _cell_str(row.get(name_col))
+        if _cell_str(row.get(name_col)) or (tts_col and _cell_str(row.get(tts_col)))
     )
+
+    # The Drive folder is only needed when at least one row names a file. A
+    # TTS-only sheet can run without a Drive link or authorization at all.
+    name_index = {}
+    drive_configured = False
+    if any_drive_row:
+        # A link that's present but unreadable is a mistake worth surfacing loudly.
+        # A link left blank while some rows still reference files is not fatal: the
+        # TTS rows can proceed, and each Drive-name row fails individually with a
+        # clear "needs a Drive folder link" message (see the per-row branch below).
+        folder_id = extract_drive_folder_id(drive_url) if drive_url else None
+        if drive_url and not folder_id:
+            raise ValueError("Could not read a Google Drive folder ID from the provided link.")
+        if folder_id:
+            drive_files = list_drive_folder_files(folder_id, access_token=access_token)
+            if not drive_files:
+                raise ValueError("No files were found in that Drive folder.")
+            name_index = _drive_name_index(drive_files)
+            drive_configured = True
+
     return {
         'rows': rows,
         'ext_col': ext_col,
         'type_col': type_col,
         'name_col': name_col,
-        'name_index': _drive_name_index(drive_files),
+        'tts_col': tts_col,
+        'voice_col': voice_col,
+        'name_index': name_index,
+        'drive_configured': drive_configured,
         'ext_index': build_extension_number_index(),
         'total': total,
         'created': time.time(),
@@ -1192,7 +1216,9 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
 
     rows = ctx['rows']
     ext_col, type_col, name_col = ctx['ext_col'], ctx['type_col'], ctx['name_col']
+    tts_col, voice_col = ctx.get('tts_col'), ctx.get('voice_col')
     name_index, ext_index, total = ctx['name_index'], ctx['ext_index'], ctx['total']
+    drive_configured = ctx.get('drive_configured', False)
 
     if task_id and task_id not in xlsx_upload_progress_store:
         xlsx_upload_progress_store[task_id] = {'current': 0, 'total': total, 'logs': []}
@@ -1229,36 +1255,58 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
         ext_num = _cell_str(row.get(ext_col))
         type_label = _cell_str(row.get(type_col))
         greeting_name = _cell_str(row.get(name_col))
+        tts_text = _cell_str(row.get(tts_col)) if tts_col else ''
+        voice = (_cell_str(row.get(voice_col)) if voice_col else '') or 'Kore'
 
-        # No GREETING NAME means there is no audio file to apply, so skip the row
-        # silently: don't attempt an upload and don't log a "'' not found" error.
-        # This covers fully blank rows as well as the pre-populated template slots
-        # a user intentionally left unfilled. Kept in sync with the `total` count
-        # in _prepare_xlsx_upload, which likewise keys off GREETING NAME.
-        if not greeting_name:
+        # Each row applies audio one of two ways: a GREETING NAME (a Drive file)
+        # or TTS (AI-generated text). A row that fills neither has nothing to
+        # apply, so skip it silently — this covers fully blank rows and the
+        # pre-populated template slots a user intentionally left unfilled. Kept in
+        # sync with the `total` count in _prepare_xlsx_upload, which keys off the
+        # same two columns.
+        if not greeting_name and not tts_text:
             continue
 
         row_label = f"Ext {ext_num or '?'} / {type_label or '?'}"
         try:
+            # A row must pick exactly one method. Filling both is ambiguous, so
+            # fail it rather than silently guessing which the user meant.
+            if greeting_name and tts_text:
+                raise ValueError(
+                    "Row has both a GREETING NAME and TTS text — provide only one "
+                    "(a Drive file name or TTS text), not both."
+                )
+
             ext = ext_index.get(ext_num)
             if not ext:
                 raise ValueError(f"Extension number {ext_num} not found in account")
 
             code = resolve_greeting_type_label(type_label, ext.get('type'))
 
-            drive_file = _match_drive_file(name_index, greeting_name)
-            if not drive_file:
-                raise ValueError(f"'{greeting_name}' not found in the Drive folder")
+            if tts_text:
+                audio_buffer = generate_tts_audio_bytes(tts_text, voice_name=voice)
+                clip_name = f"TTS_{ext_num}_{code.split(':')[-1]}.wav"
+                upload_obj = _MemoryUpload(audio_buffer.read(), clip_name, 'audio/wav')
+                result = upload_custom_greeting(ext['id'], upload_obj, code, greeting_name=clip_name)
+                log(f"{row_label}: generated TTS ({voice}) → {ext.get('name', ext_num)}", 'success')
+            else:
+                if not drive_configured:
+                    raise ValueError(
+                        f"'{greeting_name}' needs a Google Drive folder link to be applied."
+                    )
+                drive_file = _match_drive_file(name_index, greeting_name)
+                if not drive_file:
+                    raise ValueError(f"'{greeting_name}' not found in the Drive folder")
 
-            audio_bytes = download_drive_file_bytes(drive_file['id'], access_token=access_token)
-            upload_obj = _MemoryUpload(
-                audio_bytes, drive_file['name'], _content_type_for(drive_file['name'])
-            )
-            result = upload_custom_greeting(ext['id'], upload_obj, code, greeting_name=greeting_name)
+                audio_bytes = download_drive_file_bytes(drive_file['id'], access_token=access_token)
+                upload_obj = _MemoryUpload(
+                    audio_bytes, drive_file['name'], _content_type_for(drive_file['name'])
+                )
+                result = upload_custom_greeting(ext['id'], upload_obj, code, greeting_name=greeting_name)
 
-            reused = isinstance(result, dict) and result.get('reused')
-            verb = 'reused existing prompt for' if reused else 'applied'
-            log(f"{row_label}: {verb} '{drive_file['name']}' → {ext.get('name', ext_num)}", 'success')
+                reused = isinstance(result, dict) and result.get('reused')
+                verb = 'reused existing prompt for' if reused else 'applied'
+                log(f"{row_label}: {verb} '{drive_file['name']}' → {ext.get('name', ext_num)}", 'success')
         except Exception as e:
             log(f"{row_label}: {str(e)}", 'error')
         finally:
@@ -1329,6 +1377,10 @@ ACCEPTED_TYPE_LABELS = [
     for label in TEMPLATE_SLOTS_BY_TYPE[ext_type]
 ]
 
+# AI voices offered for the TTS column, mirroring the AI Studio voice picker.
+# The first entry is the default applied when the VOICE cell is left blank.
+TTS_VOICES = ['Kore', 'Aoede', 'Charon', 'Puck']
+
 # Friendly object-type label for the generated sheet's read-only TYPE column.
 # Matches the on-screen table's display names.
 DISPLAY_TYPE_BY_TYPE = {
@@ -1344,6 +1396,13 @@ def _reference_sheet_df():
     """The per-endpoint-type cheat sheet written to the 'Accepted Types' tab."""
     import pandas as pd
     return pd.DataFrame([
+        {'Endpoint Type': 'HOW TO FILL A ROW',
+         'Accepted GREETING TYPE labels':
+            'Give each row ONE audio source: either GREETING NAME (a file name that '
+            'matches a clip in your Drive folder) OR TTS (text to synthesise with AI). '
+            'Filling both on the same row is an error. VOICE is optional and only '
+            f'applies to TTS rows (defaults to {TTS_VOICES[0]}; choices: '
+            f'{", ".join(TTS_VOICES)}). Leave both blank to skip a slot.'},
         {'Endpoint Type': 'User',
          'Accepted GREETING TYPE labels': '; '.join(TEMPLATE_SLOTS_BY_TYPE['User'])},
         {'Endpoint Type': 'Call Queue (Department)',
@@ -1399,6 +1458,22 @@ def _write_template_workbook(buffer, upload_df):
             'error_message': 'Not one of the accepted labels. See the "Accepted Types" tab for what applies to each endpoint type.',
         })
 
+        # Optional dropdown on the VOICE column (AI voices), when the sheet has one.
+        # The voice list lives in column B of the hidden Lists sheet.
+        if 'VOICE' in columns:
+            voice_idx = columns.index('VOICE')
+            for i, voice in enumerate(TTS_VOICES):
+                lists_ws.write(i, 1, voice)
+            upload_ws.data_validation(1, voice_idx, last_data_row, voice_idx, {
+                'validate': 'list',
+                'source': f'=Lists!$B$1:$B${len(TTS_VOICES)}',
+                'input_title': 'AI Voice',
+                'input_message': f'Optional — only used for TTS rows. Defaults to {TTS_VOICES[0]}.',
+                'error_type': 'warning',
+                'error_title': 'Unknown voice',
+                'error_message': f'Pick one of: {", ".join(TTS_VOICES)}.',
+            })
+
 
 def generate_upload_template():
     """Build a downloadable .xlsx template: an Upload sheet with the required
@@ -1407,12 +1482,25 @@ def generate_upload_template():
 
     buffer = io.BytesIO()
     upload_df = pd.DataFrame(
-        [{
-            'EXT NUMBER': 10118,
-            'GREETING TYPE': 'CQ - Business Hours - Voicemail',
-            'GREETING NAME': 'Generic_Service_Submenu.wav',
-        }],
-        columns=['EXT NUMBER', 'GREETING TYPE', 'GREETING NAME'],
+        [
+            # Method 1: a Drive file (GREETING NAME filled, TTS blank).
+            {
+                'EXT NUMBER': 10118,
+                'GREETING TYPE': 'CQ - Business Hours - Voicemail',
+                'GREETING NAME': 'Generic_Service_Submenu.wav',
+                'TTS': '',
+                'VOICE': '',
+            },
+            # Method 2: AI text-to-speech (TTS filled, GREETING NAME blank).
+            {
+                'EXT NUMBER': 10119,
+                'GREETING TYPE': 'CQ - Business Hours - Introductory Greeting',
+                'GREETING NAME': '',
+                'TTS': 'Thank you for calling. Please hold and the next available agent will be with you shortly.',
+                'VOICE': 'Kore',
+            },
+        ],
+        columns=['EXT NUMBER', 'GREETING TYPE', 'GREETING NAME', 'TTS', 'VOICE'],
     )
     _write_template_workbook(buffer, upload_df)
     buffer.seek(0)
@@ -1438,7 +1526,13 @@ def generate_selected_template(ext_ids):
     # ENDPOINT TYPE is purely informational and sits last: the upload parser binds
     # only EXT NUMBER / GREETING TYPE / GREETING NAME by header, so it's ignored on
     # re-upload regardless — trailing position just signals that at a glance.
-    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'SITE', 'GREETING TYPE', 'GREETING NAME', 'ENDPOINT TYPE']
+    # GREETING NAME and TTS are the two mutually-exclusive ways to fill a slot: a
+    # Drive file name, or AI text. VOICE optionally overrides the TTS voice. The
+    # upload parser binds only EXT NUMBER / GREETING TYPE / GREETING NAME / TTS /
+    # VOICE by header; ENDPOINT NAME / ENDPOINT TYPE / SITE are read-only reference
+    # columns it ignores.
+    columns = ['EXT NUMBER', 'ENDPOINT NAME', 'SITE', 'GREETING TYPE',
+               'GREETING NAME', 'TTS', 'VOICE', 'ENDPOINT TYPE']
     rows = []
     for ext_id in ext_ids:
         rec = by_id.get(str(ext_id))
@@ -1459,6 +1553,8 @@ def generate_selected_template(ext_ids):
                 'SITE': site_name,
                 'GREETING TYPE': label,
                 'GREETING NAME': '',
+                'TTS': '',
+                'VOICE': '',
             })
 
     if not rows:
