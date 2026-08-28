@@ -2,7 +2,7 @@
 
     <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <h2 class="text-heading mb-1">Directory Visibility</h2>
-        <p class="text-subheading">Poll the connected account for every object that supports <span class="font-semibold">company directory</span> visibility and see whether each is <span class="font-semibold text-emerald-600 dark:text-emerald-400">Visible</span> or <span class="font-semibold text-amber-600 dark:text-amber-400">Hidden</span>. Toggle any object inline, or use the <span class="font-semibold">bulk XLSX</span> flow below to change many at once. Visibility maps to RingCentral's <span class="font-mono text-xs">hidden</span> flag, which the API only lets you modify on <span class="font-semibold">User</span>-type extensions — so only those are listed.</p>
+        <p class="text-subheading">Poll the connected account for every object that exposes <span class="font-semibold">company directory</span> visibility and audit whether each is <span class="font-semibold text-emerald-600 dark:text-emerald-400">Visible</span> or <span class="font-semibold text-amber-600 dark:text-amber-400">Hidden</span>. Visibility maps to RingCentral's <span class="font-mono text-xs">hidden</span> flag. Every directory-capable type is listed for the audit, but the API only lets you <span class="font-semibold">change</span> the flag on <span class="font-semibold">User</span>-type extensions — Call Queues, IVRs and the like are read-only here and must be changed in the Admin Portal. Toggle an editable object inline, or use the <span class="font-semibold">bulk XLSX</span> flow below.</p>
     </div>
 
     <!-- Directory status (poll) -->
@@ -147,6 +147,7 @@
                 () => dvRows.map(r => ({
                     'Extension ID': r.id, Extension: r.extensionNumber, Name: r.name,
                     Type: r.type, Status: r.status, Directory: r.visible ? 'Visible' : 'Hidden',
+                    'Editable (API)': r.editable ? 'Yes' : 'No (portal only)',
                 })), 'Directory_Visibility', 'Directory'
             );
             UCResults.attachButton(
@@ -204,12 +205,11 @@
             if (!res.ok) throw new Error(data.error || 'Failed to load directory status');
             dvRows = data.records || [];
             dvRenderTable();
-            const s = data.summary || { total: dvRows.length, visible: 0, hidden: 0 };
-            document.getElementById('dv-summary').innerText =
-                `${s.total} object(s) support directory visibility · ${s.visible} Visible · ${s.hidden} Hidden`;
+            const s = data.summary || { total: dvRows.length, visible: 0, hidden: 0, portal_only: 0 };
+            dvSetSummary(s);
             document.getElementById('dv-filter').classList.toggle('hidden', dvRows.length === 0);
             document.getElementById('dv-results-download').classList.toggle('hidden', dvRows.length === 0);
-            dvLog(`Loaded ${s.total} object(s) — ${s.visible} Visible, ${s.hidden} Hidden.`, 'success');
+            dvLog(`Loaded ${s.total} object(s) — ${s.visible} Visible, ${s.hidden} Hidden${s.portal_only ? ` (${s.portal_only} portal-only)` : ''}.`, 'success');
         } catch (e) {
             dvLog('Error: ' + e.message, 'error');
             body.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500">${escapeHtml(e.message)}</td></tr>`;
@@ -239,21 +239,22 @@
     function dvRowEl(r) {
         const tr = document.createElement('tr');
         tr.dataset.search = `${r.extensionNumber} ${r.name} ${r.type} ${r.status}`.toLowerCase();
-        const toggleLabel = r.visible ? 'Hide' : 'Show';
-        const toggleCls = r.visible
-            ? '!text-amber-600 !border-amber-300 dark:!border-amber-800 hover:!bg-amber-50 dark:hover:!bg-amber-900/20'
-            : '!text-emerald-600 !border-emerald-300 dark:!border-emerald-800 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20';
+        // Only User-type objects can be changed via the API; the rest are audited
+        // read-only, so show a "Portal only" note instead of a toggle.
+        const action = r.editable
+            ? `<button class="btn-secondary !py-1 !px-3 text-xs ${r.visible
+                    ? '!text-amber-600 !border-amber-300 dark:!border-amber-800 hover:!bg-amber-50 dark:hover:!bg-amber-900/20'
+                    : '!text-emerald-600 !border-emerald-300 dark:!border-emerald-800 hover:!bg-emerald-50 dark:hover:!bg-emerald-900/20'}">${r.visible ? 'Hide' : 'Show'}</button>`
+            : `<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400" title="Only User-type extensions can be changed via the API — change this in the Admin Portal">Portal only</span>`;
         tr.innerHTML = `
             <td class="py-2 pr-4 font-mono text-slate-700 dark:text-slate-300">${escapeHtml(r.extensionNumber || '—')}</td>
             <td class="py-2 pr-4 text-slate-700 dark:text-slate-200">${escapeHtml(r.name)}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.type)}</td>
             <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${escapeHtml(r.status || '—')}</td>
             <td class="py-2 pr-4 dv-vis-cell">${dvVisBadge(r.visible)}</td>
-            <td class="py-2 pr-4 text-right">
-                <button class="btn-secondary !py-1 !px-3 text-xs ${toggleCls}">${toggleLabel}</button>
-            </td>`;
+            <td class="py-2 pr-4 text-right">${action}</td>`;
         const btn = tr.querySelector('button');
-        btn.addEventListener('click', () => dvToggle(r, tr, btn));
+        if (btn) btn.addEventListener('click', () => dvToggle(r, tr, btn));
         return tr;
     }
 
@@ -284,11 +285,17 @@
         }
     }
 
+    function dvSetSummary(s) {
+        const portal = s.portal_only ? ` · ${s.portal_only} portal-only` : '';
+        document.getElementById('dv-summary').innerText =
+            `${s.total} object(s) audited · ${s.visible} Visible · ${s.hidden} Hidden${portal}`;
+    }
+
     function dvUpdateSummary() {
         const total = dvRows.length;
         const visible = dvRows.filter(r => r.visible).length;
-        document.getElementById('dv-summary').innerText =
-            `${total} object(s) support directory visibility · ${visible} Visible · ${total - visible} Hidden`;
+        const portal_only = dvRows.filter(r => !r.editable).length;
+        dvSetSummary({ total, visible, hidden: total - visible, portal_only });
     }
 
     function dvApplyFilter() {
