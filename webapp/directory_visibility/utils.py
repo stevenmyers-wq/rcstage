@@ -42,6 +42,13 @@ from webapp import task_control
 # too, not just the visible ones.)
 USER_LIKE_TYPES = {'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser'}
 
+# Some extension types carry a `hidden` field in their payload but are not
+# company-directory contacts, so the flag is meaningless for them and reads as a
+# spurious (usually "Hidden") state — Site being the reported case (a Site is a
+# location container, never a directory entry). Exclude these from the audit
+# entirely rather than surface a misleading state.
+NON_DIRECTORY_TYPES = {'Site'}
+
 # Bulk template.
 TEMPLATE_SHEET = 'Directory Visibility'
 VISIBLE = 'Visible'
@@ -110,6 +117,10 @@ def build_visibility_rows(token):
         if 'hidden' not in ext:
             continue
         ext_type = ext.get('type') or ''
+        # …except types that carry the flag but aren't directory contacts (Sites),
+        # where the value is meaningless and would read as a false "Hidden".
+        if ext_type in NON_DIRECTORY_TYPES:
+            continue
         hidden = bool(ext['hidden'])
         rows.append({
             'id': ext.get('id'),
