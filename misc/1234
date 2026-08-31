@@ -1,360 +1,439 @@
-{
-  "ext_id": "813485124",
-  "v2_after_hours": {
-    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/after-hours",
-    "response": {
-      "errors": [
-        {
-          "errorCode": "CMN-444",
-          "message": "Resource for parameter [stateId]: [after-hours] is not found",
-          "parameterName": "stateId",
-          "parameterValue": "after-hours"
-        }
-      ]
-    }
-  },
-  "v2_work_hours": {
-    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/work-hours",
-    "response": {
-      "id": "work-hours",
-      "displayName": "Work Hours",
-      "dispatching": {
-        "actions": [
-          {
-            "type": "PlayWelcomePromptAction",
-            "greeting": {
-              "effectiveGreetingType": "Preset",
-              "preset": {
-                "id": "66048"
-              }
-            },
-            "enabled": false
-          },
-          {
-            "type": "PlayConnectingMessageAction",
-            "greeting": {
-              "effectiveGreetingType": "Preset",
-              "preset": {
-                "id": "68867"
-              }
-            },
-            "enabled": true
-          },
-          {
-            "type": "PlayConnectingPromptAction",
-            "greeting": {
-              "effectiveGreetingType": "Preset",
-              "preset": {
-                "id": "66310"
-              }
-            },
-            "enabled": true
-          },
-          {
-            "type": "ScreeningAction",
-            "screening": "NoCallerId",
-            "screeningResult": "AskToAnswer",
-            "enabled": false
-          },
-          {
-            "type": "RingGroupAction",
-            "enabled": true,
-            "targets": [
-              {
-                "type": "AllMobileRingTarget",
-                "name": "My mobile apps"
-              }
-            ],
-            "duration": 30
-          },
-          {
-            "type": "RingGroupAction",
-            "enabled": true,
-            "targets": [
-              {
-                "type": "AllDesktopRingTarget",
-                "name": "My desktop"
-              }
-            ],
-            "duration": 30
-          },
-          {
-            "type": "TerminatingAction",
-            "targets": [
-              {
-                "type": "VoiceMailTerminatingTarget",
-                "name": "Voicemail",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "590080"
-                    }
-                  }
-                }
-              },
-              {
-                "type": "PlayAnnouncementTerminatingTarget",
-                "name": "PlayAnnouncement",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "66816"
-                    }
-                  }
-                },
-                "dispatchingType": "Ringing"
-              }
-            ],
-            "ringingTargetType": "VoiceMailTerminatingTarget"
-          }
-        ],
-        "type": "RingAtOnce"
-      },
-      "state": {
-        "id": "work-hours",
-        "enabled": true,
-        "displayName": "Work Hours",
-        "conditions": [
-          {
-            "type": "Schedule",
-            "schedule": {
-              "triggers": [
-                {
-                  "triggerType": "Daily",
-                  "startTime": "00:00:00",
-                  "endTime": "23:59:59"
-                }
-              ]
-            }
-          }
-        ]
-      }
-    }
-  },
-  "v2_states": {
-    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/states",
-    "response": {
-      "records": [
-        {
-          "id": "forward-all-calls",
-          "enabled": true,
-          "displayName": "Forward all calls",
-          "conditions": [
-            {
-              "type": "Schedule",
-              "schedule": {
-                "triggers": [
-                  {
-                    "triggerType": "Daily",
-                    "startTime": "00:00:00",
-                    "endTime": "23:59:59"
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "id": "work-hours",
-          "enabled": true,
-          "displayName": "Work Hours",
-          "conditions": [
-            {
-              "type": "Schedule",
-              "schedule": {
-                "triggers": [
-                  {
-                    "triggerType": "Daily",
-                    "startTime": "00:00:00",
-                    "endTime": "23:59:59"
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "id": "dnd",
-          "enabled": false,
-          "displayName": "Do not disturb",
-          "conditions": [
-            {
-              "type": "Schedule",
-              "schedule": {
-                "triggers": [
-                  {
-                    "triggerType": "Daily",
-                    "startTime": "00:00:00",
-                    "endTime": "23:59:59"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "paging": {
-        "perPage": 100,
-        "page": 1,
-        "pageStart": 0,
-        "pageEnd": 2,
-        "totalPages": 1,
-        "totalElements": 3
-      }
-    }
-  },
-  "v1_after_hours_rule": {
-    "endpoint": "/restapi/v1.0/account/~/extension/813485124/answering-rule/after-hours-rule",
-    "response": {
-      "errorCode": "CMN-468",
-      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-      "errors": [
-        {
-          "errorCode": "CMN-468",
-          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-          "featureName": "NewCallHandlingAndForwarding"
-        }
-      ],
-      "featureName": "NewCallHandlingAndForwarding"
-    }
-  },
-  "v1_business_hours_rule": {
-    "endpoint": "/restapi/v1.0/account/~/extension/813485124/answering-rule/business-hours-rule",
-    "response": {
-      "errorCode": "CMN-468",
-      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-      "errors": [
-        {
-          "errorCode": "CMN-468",
-          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-          "featureName": "NewCallHandlingAndForwarding"
-        }
-      ],
-      "featureName": "NewCallHandlingAndForwarding"
-    }
-  },
-  "v1_rules_list": {
-    "endpoint": "/restapi/v1.0/account/~/extension/813485124/answering-rule?view=Detailed&showInactive=true",
-    "response": {
-      "errorCode": "CMN-468",
-      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-      "errors": [
-        {
-          "errorCode": "CMN-468",
-          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-          "featureName": "NewCallHandlingAndForwarding"
-        }
-      ],
-      "featureName": "NewCallHandlingAndForwarding"
-    }
-  },
-  "v1_forward_all_calls": {
-    "endpoint": "/restapi/v1.0/account/~/extension/813485124/forward-all-calls",
-    "response": {
-      "errorCode": "CMN-468",
-      "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-      "errors": [
-        {
-          "errorCode": "CMN-468",
-          "message": "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-          "featureName": "NewCallHandlingAndForwarding"
-        }
-      ],
-      "featureName": "NewCallHandlingAndForwarding"
-    }
-  },
-  "v2_forward_all_state": {
-    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/states/forward-all-calls",
-    "response": {
-      "id": "forward-all-calls",
-      "enabled": true,
-      "displayName": "Forward all calls",
-      "conditions": [
-        {
-          "type": "Schedule",
-          "schedule": {
-            "triggers": [
-              {
-                "triggerType": "Daily",
-                "startTime": "00:00:00",
-                "endTime": "23:59:59"
-              }
-            ]
-          }
-        }
-      ]
-    }
-  },
-  "v2_forward_all_rule": {
-    "endpoint": "/restapi/v2/accounts/~/extensions/813485124/comm-handling/voice/state-rules/forward-all-calls",
-    "response": {
-      "id": "forward-all-calls",
-      "displayName": "Forward all calls",
-      "dispatching": {
-        "actions": [
-          {
-            "type": "TerminatingAction",
-            "targets": [
-              {
-                "type": "VoiceMailTerminatingTarget",
-                "name": "Voicemail",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "590080"
-                    }
-                  }
-                }
-              },
-              {
-                "type": "PlayAnnouncementTerminatingTarget",
-                "name": "PlayAnnouncement",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "66560"
-                    }
-                  }
-                },
-                "dispatchingType": "Terminating"
-              },
-              {
-                "type": "PhoneNumberTerminatingTarget",
-                "name": "__EXTERNAL_NUMBER__",
-                "destination": {
-                  "phoneNumber": "+61272023873"
-                },
-                "dispatchingType": "Terminating"
-              }
-            ],
-            "terminatingTargetType": "PhoneNumberTerminatingTarget"
-          }
-        ],
-        "type": "Terminate"
-      },
-      "state": {
-        "id": "forward-all-calls",
-        "enabled": true,
-        "displayName": "Forward all calls",
-        "conditions": [
-          {
-            "type": "Schedule",
-            "schedule": {
-              "triggers": [
-                {
-                  "triggerType": "Daily",
-                  "startTime": "00:00:00",
-                  "endTime": "23:59:59"
-                }
-              ]
-            }
-          }
-        ]
-      }
-    }
-  }
+[9:53:37 AM] Processing 148 row(s)...
+[9:53:40 AM] ❌ Ext 90043: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
 }
+[9:53:40 AM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
+[9:53:43 AM] ❌ Ext 90026: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:53:43 AM] ↳ ⚠️ Ext 90026: greeting file 'nan' was not among the uploaded audio files.
+[9:53:46 AM] ❌ Ext 90152: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:53:46 AM] ↳ ⚠️ Ext 90152: greeting file 'nan' was not among the uploaded audio files.
+[9:53:49 AM] ❌ Ext 90059: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:53:49 AM] ↳ ⚠️ Ext 90059: greeting file 'nan' was not among the uploaded audio files.
+[9:53:52 AM] ❌ Ext 90153: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:53:52 AM] ↳ ⚠️ Ext 90153: greeting file 'nan' was not among the uploaded audio files.
+[9:53:55 AM] ❌ Ext 90051: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:53:55 AM] ↳ ⚠️ Ext 90051: greeting file 'nan' was not among the uploaded audio files.
+[9:53:57 AM] ❌ Ext 90050: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:53:57 AM] ↳ ⚠️ Ext 90050: greeting file 'nan' was not among the uploaded audio files.
+[9:54:00 AM] ❌ Ext 90035: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:00 AM] ↳ ⚠️ Ext 90035: greeting file 'nan' was not among the uploaded audio files.
+[9:54:02 AM] ❌ Ext 90060: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:02 AM] ↳ ⚠️ Ext 90060: greeting file 'nan' was not among the uploaded audio files.
+[9:54:05 AM] ❌ Ext 90126: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:05 AM] ↳ ⚠️ Ext 90126: greeting file 'nan' was not among the uploaded audio files.
+[9:54:08 AM] ❌ Ext 90150: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:08 AM] ↳ ⚠️ Ext 90150: greeting file 'nan' was not among the uploaded audio files.
+[9:54:11 AM] ❌ Ext 90187: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:11 AM] ↳ ⚠️ Ext 90187: greeting file 'nan' was not among the uploaded audio files.
+[9:54:14 AM] ❌ Ext 90144: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:14 AM] ↳ ⚠️ Ext 90144: greeting file 'nan' was not among the uploaded audio files.
+[9:54:16 AM] ❌ Ext 90163: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:16 AM] ↳ ⚠️ Ext 90163: greeting file 'nan' was not among the uploaded audio files.
+[9:54:18 AM] ❌ Ext 90209: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:18 AM] ↳ ⚠️ Ext 90209: greeting file 'nan' was not among the uploaded audio files.
+[9:54:21 AM] ❌ Ext 90218: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:21 AM] ↳ ⚠️ Ext 90218: greeting file 'nan' was not among the uploaded audio files.
+[9:54:24 AM] ❌ Ext 90175: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:24 AM] ↳ ⚠️ Ext 90175: greeting file 'nan' was not among the uploaded audio files.
+[9:54:26 AM] ❌ Ext 90210: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:26 AM] ↳ ⚠️ Ext 90210: greeting file 'nan' was not among the uploaded audio files.
+[9:54:29 AM] ❌ Ext 90061: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:29 AM] ↳ ⚠️ Ext 90061: greeting file 'nan' was not among the uploaded audio files.
+[9:54:32 AM] ❌ Ext 90062: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:32 AM] ↳ ⚠️ Ext 90062: greeting file 'nan' was not among the uploaded audio files.
+[9:54:35 AM] ❌ Ext 90195: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:35 AM] ↳ ⚠️ Ext 90195: greeting file 'nan' was not among the uploaded audio files.
+[9:54:38 AM] ❌ Ext 90113: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:38 AM] ↳ ⚠️ Ext 90113: greeting file 'nan' was not among the uploaded audio files.
+[9:54:41 AM] ❌ Ext 90196: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:41 AM] ↳ ⚠️ Ext 90196: greeting file 'nan' was not among the uploaded audio files.
+[9:54:43 AM] ❌ Ext 90034: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:43 AM] ↳ ⚠️ Ext 90034: greeting file 'nan' was not among the uploaded audio files.
+[9:54:45 AM] ❌ Ext 90030: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:45 AM] ↳ ⚠️ Ext 90030: greeting file 'nan' was not among the uploaded audio files.
+[9:54:48 AM] ❌ Ext 90197: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:48 AM] ↳ ⚠️ Ext 90197: greeting file 'nan' was not among the uploaded audio files.
+[9:54:51 AM] ❌ Ext 90160: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:51 AM] ↳ ⚠️ Ext 90160: greeting file 'nan' was not among the uploaded audio files.
+[9:54:54 AM] ❌ Ext 90198: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:54 AM] ↳ ⚠️ Ext 90198: greeting file 'nan' was not among the uploaded audio files.
+[9:54:55 AM] Stop requested — halting after the current rule...
+[9:54:57 AM] ❌ Ext 90070: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-424",
+"message" : "The parameter [condition counts] cannot be shorter than [1] characters",
+"parameterName" : "condition counts",
+"parameterValue" : "1"
+} ]
+}
+[9:54:57 AM] ↳ ⚠️ Ext 90070: greeting file 'nan' was not among the uploaded audio files.
+[9:54:57 AM] ■ Stopped by user — remaining rows were skipped.
+[9:54:57 AM] ■ Stopped — 0 rule(s) written.
