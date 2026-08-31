@@ -1,12 +1,20 @@
-{
-  "ext_requested": "90043",
-  "ext_id": 501149125,
-  "v1_answering_rules": {
-    "status": 403,
-    "body": "{\n  \"errorCode\" : \"CMN-468\",\n  \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-468\",\n    \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n    \"featureName\" : \"NewCallHandlingAndForwarding\"\n  } ],\n  \"featureName\" : \"NewCallHandlingAndForwarding\"\n}"
-  },
-  "v2_interaction_rules_list": {
-    "status": 404,
-    "body": "{\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-102\",\n    \"message\" : \"States not found\"\n  } ]\n}"
-  }
-}
+Ready for action...
+[5:39:49 PM] Starting Audit... this may take a while depending on account size.
+[5:39:51 PM] Scanning 244 extension(s) for custom rules...
+[5:45:48 PM] Audit Complete! 1 row(s). Downloading file...
+[7:23:27 PM] Uploading custom_rules_template (14).xlsx...
+[7:23:28 PM] Processing 1 row(s)...
+[7:23:31 PM] ❌ Ext 90043: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 POST /restapi/v2/accounts/~/extensions/501149125/comm-handling/voice/interaction-rules [404] {
+"errors" : [ {
+"errorCode" : "CMN-102",
+"message" : "States not found"
+} ]
+} · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 30}, {"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 30}, {"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61419192766"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
+[7:23:31 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
+[7:23:31 PM] ✔ Finished — 0 rule(s) written.
