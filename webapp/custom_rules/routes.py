@@ -479,16 +479,24 @@ def update_rules():
                         # custom rule, the interaction-rules endpoint 404s ("States
                         # not found") until its call-handling states are read/
                         # materialised — mirroring the admin UI, which GETs
-                        # state-rules and interaction-rules before it POSTs. Best
-                        # effort: ignore the responses, just wake the resource.
+                        # state-rules and interaction-rules before it POSTs.
+                        # Capture the primer status codes so the debug output shows
+                        # (a) that the GETs actually ran and (b) whether the states
+                        # resource itself answers 200 or is the thing 404-ing.
+                        prime_log = ""
                         if not is_update:
                             ch = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling"
-                            rc_api_call(f"{ch}/voice/state-rules", return_response=True)
-                            rc_api_call(f"{ch}/voice/interaction-rules", return_response=True)
+                            sr = rc_api_call(f"{ch}/voice/state-rules", return_response=True)
+                            ir = rc_api_call(f"{ch}/voice/interaction-rules", return_response=True)
+                            prime_log = (
+                                f"GET state-rules [{getattr(sr, 'status_code', '?')}] "
+                                f"GET interaction-rules [{getattr(ir, 'status_code', '?')}]"
+                            )
                         v2_resp = rc_api_call(v2_url, method=v2_method, json=v2_payload, return_response=True)
                         if v2_resp is not None and getattr(v2_resp, 'ok', False):
                             written_rule_id = written_rule_id or _resp_id(v2_resp)
-                            yield prog(f"✅ {v2_method} Rule Ext {raw_ext_num} (V2)", "success")
+                            prime_note = f" ({prime_log})" if prime_log else ""
+                            yield prog(f"✅ {v2_method} Rule Ext {raw_ext_num} (V2){prime_note}", "success")
                             written_ok = True
                         else:
                             v2_status = getattr(v2_resp, 'status_code', '?')
@@ -501,9 +509,11 @@ def update_rules():
                                 v2_sent = json.dumps(v2_payload)
                             except Exception:
                                 v2_sent = str(v2_payload)
+                            prime_note = f"{prime_log} · " if prime_log else ""
                             yield prog(
                                 f"❌ Ext {raw_ext_num}: write failed. "
                                 f"V1 [{v1_status}] {v1_body or '(no body)'} · "
+                                f"{prime_note}"
                                 f"V2 {v2_method} {v2_url} [{v2_status}] {v2_body or '(no body)'} · "
                                 f"V2 sent: {v2_sent}", "error")
                     except Exception as v2_err:
