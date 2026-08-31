@@ -1,16 +1,12 @@
-[5:10:04 PM] Uploading custom_rules_template (14).xlsx...
-[5:10:05 PM] Processing 1 row(s)...
-[5:10:08 PM] ❌ Ext 90043: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [404] {
-"errors" : [ {
-"errorCode" : "CMN-102",
-"message" : "No scripts found"
-} ]
-} · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61419192766"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
-[5:10:08 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
-[5:10:08 PM] ✔ Finished — 0 rule(s) written.
+{
+  "ext_requested": "90043",
+  "ext_id": 501149125,
+  "v1_answering_rules": {
+    "status": 403,
+    "body": "{\n  \"errorCode\" : \"CMN-468\",\n  \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-468\",\n    \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n    \"featureName\" : \"NewCallHandlingAndForwarding\"\n  } ],\n  \"featureName\" : \"NewCallHandlingAndForwarding\"\n}"
+  },
+  "v2_interaction_rules_list": {
+    "status": 404,
+    "body": "{\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-102\",\n    \"message\" : \"States not found\"\n  } ]\n}"
+  }
+}
