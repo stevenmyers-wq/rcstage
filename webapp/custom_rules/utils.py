@@ -429,6 +429,16 @@ def _schedule_v1_to_v2(schedule):
     return schedule
 
 
+def _vm_fallback_target(vm_prompt):
+    """The VoiceMailTerminatingTarget that every TerminatingAction must carry on
+    New Call Handling accounts. A rule without it is rejected with 'Must have
+    Terminating Action with VoiceMailTerminatingTarget'. Shape mirrors a
+    live-created rule (name + prompt, no mailbox/dispatchingType) so it acts as
+    the ringing fallback while the real destination is the terminating target;
+    with no mailbox it defaults to the owning extension's own voicemail."""
+    return {"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": vm_prompt}
+
+
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=None):
     if user_devices is None: user_devices = []
     v2 = {
@@ -478,10 +488,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
             "type": "TerminatingAction",
             "targets": [{
                 "type": "VoiceMailTerminatingTarget",
+                "name": "Voicemail",
                 "mailbox": {"id": owner_ext_id},
                 "dispatchingType": "Terminating",
                 "prompt": vm_prompt
-            }]
+            }],
+            "terminatingTargetType": "VoiceMailTerminatingTarget"
         })
         v2["dispatching"]["actions"] = actions
 
@@ -490,22 +502,34 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
         formatted_dest = format_phone(dest_num)
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
-            "targets": [{
-                "type": "PhoneNumberTerminatingTarget",
-                "destination": {"phoneNumber": formatted_dest},
-                "dispatchingType": "Terminating"
-            }]
+            "targets": [
+                _vm_fallback_target(vm_prompt),
+                {
+                    "type": "PhoneNumberTerminatingTarget",
+                    "name": "__EXTERNAL_NUMBER__",
+                    "destination": {"phoneNumber": formatted_dest},
+                    "dispatchingType": "Terminating"
+                }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "terminatingTargetType": "PhoneNumberTerminatingTarget"
         })
 
     elif v1_act == "TransferToExtension":
         target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
-            "targets": [{
-                "type": "ExtensionTerminatingTarget",
-                "extension": {"id": target_ext_id},
-                "dispatchingType": "Terminating"
-            }]
+            "targets": [
+                _vm_fallback_target(vm_prompt),
+                {
+                    "type": "ExtensionTerminatingTarget",
+                    "name": "Extension",
+                    "extension": {"id": target_ext_id},
+                    "dispatchingType": "Terminating"
+                }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "terminatingTargetType": "ExtensionTerminatingTarget"
         })
 
     elif v1_act == "TakeMessagesOnly":
@@ -514,21 +538,29 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
             "type": "TerminatingAction",
             "targets": [{
                 "type": "VoiceMailTerminatingTarget",
+                "name": "Voicemail",
                 "mailbox": {"id": vm_recipient_id},
                 "prompt": vm_prompt,
                 "dispatchingType": "Terminating"
-            }]
+            }],
+            "terminatingTargetType": "VoiceMailTerminatingTarget"
         })
 
     elif v1_act == "PlayAnnouncementOnly":
-         v2["dispatching"]["actions"].append({
-             "type": "TerminatingAction",
-             "targets": [{
-                 "type": "PlayAnnouncementTerminatingTarget",
-                 "prompt": vm_prompt,
-                 "dispatchingType": "Terminating"
-             }]
-         })
+        v2["dispatching"]["actions"].append({
+            "type": "TerminatingAction",
+            "targets": [
+                _vm_fallback_target(vm_prompt),
+                {
+                    "type": "PlayAnnouncementTerminatingTarget",
+                    "name": "PlayAnnouncement",
+                    "prompt": vm_prompt,
+                    "dispatchingType": "Terminating"
+                }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "terminatingTargetType": "PlayAnnouncementTerminatingTarget"
+        })
 
     return v2
 
