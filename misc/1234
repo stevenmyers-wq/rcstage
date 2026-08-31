@@ -1,292 +1,84 @@
-{
-  "ext_requested": "90050",
-  "ext_id": 814861124,
-  "v1_answering_rules": {
-    "status": 403,
-    "body": "{\n  \"errorCode\" : \"CMN-468\",\n  \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-468\",\n    \"message\" : \"This API is not available with enabled feature [NewCallHandlingAndForwarding].\",\n    \"featureName\" : \"NewCallHandlingAndForwarding\"\n  } ],\n  \"featureName\" : \"NewCallHandlingAndForwarding\"\n}"
-  },
-  "v2_interaction_rules_list": {
-    "records": [
-      {
-        "id": "180042124",
-        "conditions": [
-          {
-            "type": "Schedule",
-            "schedule": {
-              "triggers": [
-                {
-                  "triggerType": "Daily",
-                  "startTime": "00:00:00",
-                  "endTime": "23:59:59"
-                }
-              ]
-            }
-          }
-        ],
-        "dispatching": {
-          "actions": [
-            {
-              "type": "PlayWelcomePromptAction",
-              "greeting": {
-                "effectiveGreetingType": "Preset",
-                "preset": {
-                  "id": "66048"
-                }
-              },
-              "enabled": false
-            },
-            {
-              "type": "PlayConnectingMessageAction",
-              "greeting": {
-                "effectiveGreetingType": "Preset",
-                "preset": {
-                  "id": "68867"
-                }
-              },
-              "enabled": true
-            },
-            {
-              "type": "PlayConnectingPromptAction",
-              "greeting": {
-                "effectiveGreetingType": "Preset",
-                "preset": {
-                  "id": "66310"
-                }
-              },
-              "enabled": true
-            },
-            {
-              "type": "ScreeningAction",
-              "screening": "NoCallerId",
-              "screeningResult": "AskToAnswer",
-              "enabled": false
-            },
-            {
-              "type": "RingGroupAction",
-              "enabled": true,
-              "targets": [
-                {
-                  "type": "AllMobileRingTarget",
-                  "name": "My mobile apps"
-                }
-              ],
-              "duration": 30
-            },
-            {
-              "type": "RingGroupAction",
-              "enabled": true,
-              "targets": [
-                {
-                  "type": "AllDesktopRingTarget",
-                  "name": "My desktop"
-                }
-              ],
-              "duration": 30
-            },
-            {
-              "type": "TerminatingAction",
-              "targets": [
-                {
-                  "type": "VoiceMailTerminatingTarget",
-                  "name": "Voicemail",
-                  "prompt": {
-                    "greeting": {
-                      "effectiveGreetingType": "Preset",
-                      "preset": {
-                        "id": "590080"
-                      }
-                    }
-                  }
-                },
-                {
-                  "type": "PlayAnnouncementTerminatingTarget",
-                  "name": "PlayAnnouncement",
-                  "prompt": {
-                    "greeting": {
-                      "effectiveGreetingType": "Preset",
-                      "preset": {
-                        "id": "66816"
-                      }
-                    }
-                  },
-                  "dispatchingType": "Ringing"
-                },
-                {
-                  "type": "ExtensionTerminatingTarget",
-                  "name": "Extension",
-                  "extension": {
-                    "id": "453945125"
-                  },
-                  "dispatchingType": "Terminating"
-                },
-                {
-                  "type": "PlayAnnouncementTerminatingTarget",
-                  "name": "PlayAnnouncement",
-                  "prompt": {
-                    "greeting": {
-                      "effectiveGreetingType": "Preset",
-                      "preset": {
-                        "id": "66560"
-                      }
-                    }
-                  },
-                  "dispatchingType": "Terminating"
-                }
-              ],
-              "ringingTargetType": "VoiceMailTerminatingTarget",
-              "terminatingTargetType": "ExtensionTerminatingTarget"
-            }
-          ],
-          "type": "Terminate"
-        },
-        "enabled": true,
-        "displayName": "test1"
-      }
-    ],
-    "paging": {
-      "perPage": 100,
-      "page": 1,
-      "pageStart": 0,
-      "pageEnd": 0,
-      "totalPages": 1,
-      "totalElements": 1
-    }
-  },
-  "v2_interaction_rules_detailed": [
-    {
-      "id": "180042124",
-      "conditions": [
-        {
-          "type": "Schedule",
-          "schedule": {
-            "triggers": [
-              {
-                "triggerType": "Daily",
-                "startTime": "00:00:00",
-                "endTime": "23:59:59"
-              }
-            ]
-          }
-        }
-      ],
-      "dispatching": {
-        "actions": [
-          {
-            "type": "PlayWelcomePromptAction",
-            "greeting": {
-              "effectiveGreetingType": "Preset",
-              "preset": {
-                "id": "66048"
-              }
-            },
-            "enabled": false
-          },
-          {
-            "type": "PlayConnectingMessageAction",
-            "greeting": {
-              "effectiveGreetingType": "Preset",
-              "preset": {
-                "id": "68867"
-              }
-            },
-            "enabled": true
-          },
-          {
-            "type": "PlayConnectingPromptAction",
-            "greeting": {
-              "effectiveGreetingType": "Preset",
-              "preset": {
-                "id": "66310"
-              }
-            },
-            "enabled": true
-          },
-          {
-            "type": "ScreeningAction",
-            "screening": "NoCallerId",
-            "screeningResult": "AskToAnswer",
-            "enabled": false
-          },
-          {
-            "type": "RingGroupAction",
-            "enabled": true,
-            "targets": [
-              {
-                "type": "AllMobileRingTarget",
-                "name": "My mobile apps"
-              }
-            ],
-            "duration": 30
-          },
-          {
-            "type": "RingGroupAction",
-            "enabled": true,
-            "targets": [
-              {
-                "type": "AllDesktopRingTarget",
-                "name": "My desktop"
-              }
-            ],
-            "duration": 30
-          },
-          {
-            "type": "TerminatingAction",
-            "targets": [
-              {
-                "type": "VoiceMailTerminatingTarget",
-                "name": "Voicemail",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "590080"
-                    }
-                  }
-                }
-              },
-              {
-                "type": "PlayAnnouncementTerminatingTarget",
-                "name": "PlayAnnouncement",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "66816"
-                    }
-                  }
-                },
-                "dispatchingType": "Ringing"
-              },
-              {
-                "type": "ExtensionTerminatingTarget",
-                "name": "Extension",
-                "extension": {
-                  "id": "453945125"
-                },
-                "dispatchingType": "Terminating"
-              },
-              {
-                "type": "PlayAnnouncementTerminatingTarget",
-                "name": "PlayAnnouncement",
-                "prompt": {
-                  "greeting": {
-                    "effectiveGreetingType": "Preset",
-                    "preset": {
-                      "id": "66560"
-                    }
-                  }
-                },
-                "dispatchingType": "Terminating"
-              }
-            ],
-            "ringingTargetType": "VoiceMailTerminatingTarget",
-            "terminatingTargetType": "ExtensionTerminatingTarget"
-          }
-        ],
-        "type": "Terminate"
-      },
-      "enabled": true,
-      "displayName": "test1"
-    }
-  ]
+Ready for action...
+[4:04:20 PM] Uploading custom_rules_template (14).xlsx...
+[4:04:20 PM] Processing 148 row(s)...
+[4:04:23 PM] ❌ Ext 90043: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-414",
+"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+} ]
 }
+[4:04:23 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
+[4:04:26 PM] ❌ Ext 90026: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-414",
+"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+} ]
+}
+[4:04:26 PM] ↳ ⚠️ Ext 90026: greeting file 'nan' was not among the uploaded audio files.
+[4:04:30 PM] ❌ Ext 90152: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-414",
+"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+} ]
+}
+[4:04:30 PM] ↳ ⚠️ Ext 90152: greeting file 'nan' was not among the uploaded audio files.
+[4:04:33 PM] ❌ Ext 90059: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-414",
+"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+} ]
+}
+[4:04:33 PM] ↳ ⚠️ Ext 90059: greeting file 'nan' was not among the uploaded audio files.
+[4:04:37 PM] ❌ Ext 90153: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-414",
+"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+} ]
+}
+[4:04:37 PM] ↳ ⚠️ Ext 90153: greeting file 'nan' was not among the uploaded audio files.
+[4:04:39 PM] Stop requested — halting after the current rule...
+[4:04:40 PM] ❌ Ext 90051: write failed. V1 [403] {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"errors" : [ {
+"errorCode" : "CMN-468",
+"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
+"featureName" : "NewCallHan · V2 [400] {
+"errors" : [ {
+"errorCode" : "CMN-414",
+"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+} ]
+}
+[4:04:40 PM] ↳ ⚠️ Ext 90051: greeting file 'nan' was not among the uploaded audio files.
+[4:04:40 PM] ■ Stopped by user — remaining rows were skipped.
+[4:04:40 PM] ■ Stopped — 0 rule(s) written.
