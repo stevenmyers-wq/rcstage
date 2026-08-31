@@ -274,6 +274,15 @@ def build_v1_payload(row, ext_id):
 
 # --- 3. V2 TRANSFORMER ---
 
+# On New Call Handling accounts the V2 interaction-rules write rejects a greeting
+# of effectiveGreetingType "Default" (CMN-414: effectiveGreetingType "should be
+# specified"). A terminating target must carry a concrete greeting, so "no
+# override" is expressed as the account's standard default-voicemail preset —
+# id 590080, the value every live rule on the account carries for its VoiceMail
+# target (test1, forward-all-calls and work-hours all use it).
+DEFAULT_VM_GREETING = {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}
+
+
 def sanitize_v2_greeting(greeting):
     """Reduces a V2 greeting object (as returned by a rule GET) to the minimal,
     writable shape, so it can be re-sent on a PUT without read-only fields.
@@ -288,7 +297,7 @@ def sanitize_v2_greeting(greeting):
         return {"effectiveGreetingType": "Custom", "custom": {"id": greeting['custom']['id']}}
     if egt == 'Preset' and (greeting.get('preset') or {}).get('id'):
         return {"effectiveGreetingType": "Preset", "preset": {"id": greeting['preset']['id']}}
-    return {"effectiveGreetingType": "Default"}
+    return dict(DEFAULT_VM_GREETING)
 
 
 def get_existing_v2_greeting(ext_id, rule_id):
@@ -470,11 +479,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
 
     # --- 3. Actions - Strict Schema ---
     v1_act = v1_payload.get("callHandlingAction")
-    # Greeting: use the caller-provided greeting (a preserved existing greeting,
-    # an explicit Default, or a freshly uploaded Custom). Falling back to Default
-    # instead of a hardcoded preset means the tool no longer silently replaces a
-    # queue/user's custom voicemail greeting with preset 590080.
-    vm_prompt = {"greeting": vm_greeting or {"effectiveGreetingType": "Default"}}
+    # Greeting for terminating targets. A preserved existing greeting (vm_greeting,
+    # already sanitised to a writable Custom/Preset) wins so we don't clobber a
+    # queue/user's custom voicemail. When there's none to preserve (a new rule),
+    # fall back to the account default-voicemail preset rather than "Default",
+    # which New Call Handling rejects on write (CMN-414).
+    vm_prompt = {"greeting": vm_greeting or dict(DEFAULT_VM_GREETING)}
 
     if v1_act == "ForwardCalls":
         v2["dispatching"]["type"] = "RingAndTerminate"
