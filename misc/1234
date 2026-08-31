@@ -1,83 +1,10 @@
 Ready for action...
-[8:58:02 PM] Uploading custom_rules_template (14).xlsx...
-[8:58:03 PM] Processing 1 row(s)...
-[8:58:08 PM] ❌ Ext 90043: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · GET state-rules [404] GET interaction-rules [404] · V2 POST /restapi/v2/accounts/~/extensions/501149125/comm-handling/voice/interaction-rules [404] {
+[9:16:19 PM] Forward All Calls: enabling on Ext 90043 → 61419192766...
+[9:16:22 PM] ↳ GET forward-all-calls rule [404] — building dispatching from scratch
+[9:16:22 PM] ↳ PATCH forward-all-calls rule [404] {
 "errors" : [ {
 "errorCode" : "CMN-102",
-"message" : "States not found"
+"message" : "No scripts found"
 } ]
-} · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 30}, {"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 30}, {"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61419192766"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
-[8:58:08 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
-[8:58:08 PM] ✔ Finished — 0 rule(s) written.
-
-
-
-
-
-
-
-Thanks for pasting the code! Looking closely at your logic, I can see exactly why you are getting that stubborn CMN-102 "States not found" error.
-
-You have two distinct bugs combining to cause this failure: one in your routes.py priming logic, and a structural flaw in how utils.py generates the V2 payload.
-
-Here is the breakdown of what is going wrong and the exact code to fix it.
-
-1. The Primer Bug (routes.py)
-In my previous message, I mentioned that you need to GET /states to wake up the extension's routing backend.
-
-If you look at your priming logic around line 407 in routes.py, you are querying state-rules and interaction-rules, but you completely skipped the actual /states endpoint:
-
-Python
-# YOUR CURRENT CODE:
-ch = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling"
-sr = rc_api_call(f"{ch}/voice/state-rules", return_response=True)
-ir = rc_api_call(f"{ch}/voice/interaction-rules", return_response=True)
-RingCentral's backend relies strictly on the /states endpoint being accessed to generate the base BusinessHours and AfterHours foundation.
-
-The Fix:
-Update your primer block to hit the /states endpoint first.
-
-Python
-if not is_update:
-    ch = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling"
-    
-    # You MUST GET /states to initialize the backend
-    st = rc_api_call(f"{ch}/states", return_response=True) 
-    sr = rc_api_call(f"{ch}/voice/state-rules", return_response=True)
-    ir = rc_api_call(f"{ch}/voice/interaction-rules", return_response=True)
-    
-    prime_log = (
-        f"GET states [{getattr(st, 'status_code', '?')}] "
-        f"GET state-rules [{getattr(sr, 'status_code', '?')}] "
-        f"GET interaction-rules [{getattr(ir, 'status_code', '?')}]"
-    )
-2. The Missing Interaction Bug (utils.py)
-In the V2 API, an "Interaction Rule" absolutely must contain an Interaction condition. If you post a rule to /interaction-rules that only contains a Schedule condition, RingCentral interprets it as a base State Rule, realizes you posted it to the wrong endpoint, and throws States not found or validation errors.
-
-If a user leaves "Caller ID" and "Called Number" blank in your spreadsheet, it means "Any Caller / Any Number". However, around line 721 in utils.py, you actively prevent the empty Interaction block from being added to the payload:
-
-Python
-# YOUR CURRENT CODE:
-# Only append the Interaction block if we actually have data, preventing empty array errors
-if "to" in interaction_cond or "from" in interaction_cond:
-    v2["conditions"].append(interaction_cond)
-The Fix:
-You must append the Interaction condition, even if it has no to or from data. An empty interaction block tells the V2 API "apply this to all incoming calls".
-
-Change that block to simply:
-
-Python
-# Always append the Interaction block. Without it, the V2 API rejects the rule.
-v2["conditions"].append(interaction_cond)
-3. A Warning on the "Daily" Trigger (utils.py)
-I see in your _schedule_v1_to_v2 function (around line 616) that you reverse-engineered the RingCentral admin portal's HAR traffic and discovered it uses a "triggerType": "Daily" for 24/7 rules.
-
-While the internal UI uses this, Daily is entirely undocumented in the public RingCentral API (which officially only supports Weekly and Range). The public API gateway is notoriously fickle and will sometimes quietly strip or explicitly reject undocumented payload shapes.
-
-If you apply the two fixes above and you still get errors on 24/7 rules, remove the uniform check and fall back to sending a standard Weekly trigger mapping all seven days from 00:00:00 to 23:59:59.
+}
+[9:16:22 PM] ❌ Could not set the forward target (HTTP 404).
