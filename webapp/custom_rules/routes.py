@@ -469,10 +469,19 @@ def update_rules():
                         else:
                             v2_status = getattr(v2_resp, 'status_code', '?')
                             v2_body = ((getattr(v2_resp, 'text', '') or '').strip())[:400]
+                            # Echo the exact payload we sent so a failure can be
+                            # diagnosed against a known-good rule without another
+                            # round-trip (the response body only names the offending
+                            # parameter, not the value we sent for it).
+                            try:
+                                v2_sent = json.dumps(v2_payload)
+                            except Exception:
+                                v2_sent = str(v2_payload)
                             yield prog(
                                 f"❌ Ext {raw_ext_num}: write failed. "
                                 f"V1 [{v1_status}] {v1_body or '(no body)'} · "
-                                f"V2 [{v2_status}] {v2_body or '(no body)'}", "error")
+                                f"V2 [{v2_status}] {v2_body or '(no body)'} · "
+                                f"V2 sent: {v2_sent}", "error")
                     except Exception as v2_err:
                         yield prog(f"❌ V2 Error Ext {raw_ext_num}: {str(v2_err)}", "error")
 
