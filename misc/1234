@@ -1,84 +1,32 @@
 Ready for action...
-[4:04:20 PM] Uploading custom_rules_template (14).xlsx...
-[4:04:20 PM] Processing 148 row(s)...
-[4:04:23 PM] ❌ Ext 90043: write failed. V1 [403] {
+[5:06:19 PM] Uploading custom_rules_template (14).xlsx...
+[5:06:19 PM] Processing 148 row(s)...
+[5:06:22 PM] ❌ Ext 90043: write failed. V1 [403] {
 "errorCode" : "CMN-468",
 "message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
 "errors" : [ {
 "errorCode" : "CMN-468",
 "message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [400] {
+"featureName" : "NewCallHan · V2 [404] {
 "errors" : [ {
-"errorCode" : "CMN-414",
-"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+"errorCode" : "CMN-102",
+"message" : "States not found"
 } ]
-}
-[4:04:23 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
-[4:04:26 PM] ❌ Ext 90026: write failed. V1 [403] {
+} · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61419192766"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
+[5:06:22 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
+[5:06:24 PM] Stop requested — halting after the current rule...
+[5:06:26 PM] ❌ Ext 90026: write failed. V1 [403] {
 "errorCode" : "CMN-468",
 "message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
 "errors" : [ {
 "errorCode" : "CMN-468",
 "message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [400] {
+"featureName" : "NewCallHan · V2 [403] {
 "errors" : [ {
-"errorCode" : "CMN-414",
-"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
+"errorCode" : "CHF-211",
+"message" : "One target with the type AllMobileRingTarget is allowed"
 } ]
-}
-[4:04:26 PM] ↳ ⚠️ Ext 90026: greeting file 'nan' was not among the uploaded audio files.
-[4:04:30 PM] ❌ Ext 90152: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [400] {
-"errors" : [ {
-"errorCode" : "CMN-414",
-"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
-} ]
-}
-[4:04:30 PM] ↳ ⚠️ Ext 90152: greeting file 'nan' was not among the uploaded audio files.
-[4:04:33 PM] ❌ Ext 90059: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [400] {
-"errors" : [ {
-"errorCode" : "CMN-414",
-"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
-} ]
-}
-[4:04:33 PM] ↳ ⚠️ Ext 90059: greeting file 'nan' was not among the uploaded audio files.
-[4:04:37 PM] ❌ Ext 90153: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [400] {
-"errors" : [ {
-"errorCode" : "CMN-414",
-"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
-} ]
-}
-[4:04:37 PM] ↳ ⚠️ Ext 90153: greeting file 'nan' was not among the uploaded audio files.
-[4:04:39 PM] Stop requested — halting after the current rule...
-[4:04:40 PM] ❌ Ext 90051: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [400] {
-"errors" : [ {
-"errorCode" : "CMN-414",
-"message" : "Parameter [$dispatching.actions.targets.prompt.greeting.effectiveGreetingType] should be specified: [Parameter should be exist]"
-} ]
-}
-[4:04:40 PM] ↳ ⚠️ Ext 90051: greeting file 'nan' was not among the uploaded audio files.
-[4:04:40 PM] ■ Stopped by user — remaining rows were skipped.
-[4:04:40 PM] ■ Stopped — 0 rule(s) written.
+} · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61413001840"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
+[5:06:26 PM] ↳ ⚠️ Ext 90026: greeting file 'nan' was not among the uploaded audio files.
+[5:06:26 PM] ■ Stopped by user — remaining rows were skipped.
+[5:06:26 PM] ■ Stopped — 0 rule(s) written.
