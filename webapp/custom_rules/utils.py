@@ -127,22 +127,38 @@ def resolve_type_filter(filter_labels):
 
 # --- 1. BASIC FORMATTERS ---
 
-def parse_time_range(range_str):
-    """Parses '8:00 AM - 5:00 PM' or multiple '8:00 AM - 12:00 PM, 1:00 PM - 5:00 PM' into API format."""
-    if pd.isna(range_str) or not str(range_str).strip(): return None
-    try:
-        ranges = []
-        for part in str(range_str).split(','):
-            if '-' not in part: continue
-            start, end = part.split('-')
-            fmt_in, fmt_out = "%I:%M %p", "%H:%M"
-            ranges.append({
-                "from": datetime.strptime(start.strip(), fmt_in).strftime(fmt_out),
-                "to": datetime.strptime(end.strip(), fmt_in).strftime(fmt_out)
-            })
-        return ranges if ranges else None
-    except: 
+def _parse_clock(t):
+    """Parse a single clock value into 'HH:MM', tolerant of how people actually
+    type times in a sheet. All of these work: '9:00 AM', '9:00am', '9am',
+    '12:00AM', '09:00', '17:00'. Returns None if it can't be parsed."""
+    s = str(t).strip().upper()
+    if not s:
         return None
+    # Insert a space before AM/PM when omitted ('12:00AM' -> '12:00 AM') and
+    # collapse any surrounding whitespace, since strptime's '%p' needs the space.
+    s = re.sub(r'\s*([AP]\.?M\.?)$', r' \1', s).replace('.', '')
+    s = re.sub(r'\s+', ' ', s).strip()
+    for fmt in ("%I:%M %p", "%I %p", "%H:%M"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%H:%M")
+        except ValueError:
+            continue
+    return None
+
+
+def parse_time_range(range_str):
+    """Parses '8:00 AM - 5:00 PM' or multiple '8:00 AM - 12:00 PM, 1:00 PM - 5:00 PM'
+    into API format. Tolerant of spacing/case ('12:00am-12:00am', '9am - 5pm') and
+    of 24-hour input ('00:00-23:59')."""
+    if pd.isna(range_str) or not str(range_str).strip(): return None
+    ranges = []
+    for part in str(range_str).split(','):
+        if '-' not in part: continue
+        start, end = part.split('-', 1)
+        f, t = _parse_clock(start), _parse_clock(end)
+        if f is not None and t is not None:
+            ranges.append({"from": f, "to": t})
+    return ranges if ranges else None
 
 def parse_specific_dates(date_str):
     """Parses '2024-12-25 00:00 to 2024-12-26 23:59' into API format."""
