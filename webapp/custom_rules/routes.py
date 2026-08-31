@@ -199,6 +199,31 @@ def forward_all_calls():
     rule_url = f"{ch}/voice/state-rules/forward-all-calls"
     state_url = f"{ch}/states/forward-all-calls"
 
+    def diagnose():
+        """On a 404, characterise WHY: does the extension expose any comm-handling
+        states at all, and what type of extension is it? Appends findings to the
+        step log so a failure explains itself without a separate debug round-trip."""
+        s = rc_api_call(f"{ch}/states", return_response=True)
+        s_status = getattr(s, 'status_code', '?')
+        if getattr(s, 'ok', False):
+            try:
+                ids = [st.get('id') for st in ((s.json() or {}).get('records') or [])]
+            except Exception:
+                ids = []
+            note(f"GET comm-handling/states [{s_status}] → states: {ids or '(none)'}",
+                 bool(ids))
+        else:
+            note(f"GET comm-handling/states [{s_status}] — no call-handling states on this extension",
+                 False)
+        ext = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}", return_response=True)
+        if getattr(ext, 'ok', False):
+            try:
+                ej = ext.json() or {}
+                note(f"Extension type: type={ej.get('type')} "
+                     f"subType={ej.get('subType')} status={ej.get('status')}", None)
+            except Exception:
+                pass
+
     try:
         if enable:
             phone = format_phone(raw_number) if raw_number else None
@@ -211,18 +236,21 @@ def forward_all_calls():
             #    object on PATCH, and this keeps its greeting/voicemail defaults).
             r = rc_api_call(rule_url, return_response=True)
             r_status = getattr(r, 'status_code', '?')
-            dispatching = None
-            if getattr(r, 'ok', False):
-                try:
-                    dispatching = (r.json() or {}).get('dispatching')
-                except Exception:
-                    dispatching = None
-                note(f"GET forward-all-calls rule [{r_status}]", True)
-            else:
-                # Fall back to a built-from-scratch dispatching; the PATCH below
-                # will still tell us if the state genuinely isn't available.
-                note(f"GET forward-all-calls rule [{r_status}] — building dispatching from scratch",
-                     False)
+            if not getattr(r, 'ok', False):
+                # A PATCH cannot create a state rule that doesn't exist, so a 404
+                # here is terminal — skip the doomed write and explain why.
+                body = ((getattr(r, 'text', '') or '').strip())[:300]
+                note(f"GET forward-all-calls rule [{r_status}] {body}", False)
+                diagnose()
+                return jsonify({"ok": False, "ext_id": ext_id, "steps": steps,
+                                "error": (f"Ext {raw_ext} has no 'forward-all-calls' state rule "
+                                          f"(HTTP {r_status}). This extension has no voice "
+                                          f"call-handling provisioned — see the steps above.")}), 502
+            try:
+                dispatching = (r.json() or {}).get('dispatching')
+            except Exception:
+                dispatching = None
+            note(f"GET forward-all-calls rule [{r_status}]", True)
 
             dispatching = apply_phone_forward_to_dispatching(dispatching, phone,
                                                              target_name=f"Forward {phone}")
@@ -260,6 +288,7 @@ def forward_all_calls():
         if not getattr(ps, 'ok', False):
             body = ((getattr(ps, 'text', '') or '').strip())[:400]
             note(f"PATCH forward-all-calls state (disable) [{ps_status}] {body}", False)
+            diagnose()
             return jsonify({"ok": False, "ext_id": ext_id, "steps": steps,
                             "error": f"Could not disable the state (HTTP {ps_status})."}), 502
         note(f"PATCH forward-all-calls state (disable) [{ps_status}]", True)
