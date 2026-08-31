@@ -283,6 +283,78 @@ def build_v1_payload(row, ext_id):
 DEFAULT_VM_GREETING = {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}
 
 
+# --- Forward-All-Calls state helpers -------------------------------------
+# The 'forward-all-calls' state is a Default state that always exists on a
+# migrated (New Call Handling) user extension, so — unlike custom/interaction
+# rules — its rule can be read and PATCHed without the states first being
+# materialised. RingCentral requires the FULL dispatching object on a PATCH,
+# so the robust approach is read-modify-write: GET the current rule, swap in
+# the forward target, PATCH it back. That also preserves the state's existing,
+# already-valid greeting/voicemail defaults (avoiding the greeting errors that
+# a hand-built body runs into).
+
+def fac_daily_all_day_conditions():
+    """24/7 schedule for the forward-all-calls state (Daily 00:00:00-23:59:59).
+    FAC states accept only 'Daily' or 'Range' triggers."""
+    return [{
+        "type": "Schedule",
+        "schedule": {"triggers": [
+            {"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}
+        ]},
+    }]
+
+
+def apply_phone_forward_to_dispatching(dispatching, phone_e164, target_name="Forward"):
+    """Mutate an existing state-rule `dispatching` so an incoming call is
+    forwarded (terminated) to an external phone number, preserving the other
+    default targets (voicemail, announcement) already present.
+
+    Returns the mutated dispatching. If `dispatching` is falsy/malformed, builds
+    a minimal Terminate dispatching from scratch with a voicemail fallback."""
+    if not isinstance(dispatching, dict):
+        dispatching = {}
+    dispatching['type'] = "Terminate"
+    actions = dispatching.get('actions')
+    if not isinstance(actions, list):
+        actions = []
+        dispatching['actions'] = actions
+
+    action = next((a for a in actions
+                   if isinstance(a, dict) and a.get('type') == "TerminatingAction"), None)
+    if action is None:
+        action = {
+            "type": "TerminatingAction",
+            "targets": [
+                {"type": "VoiceMailTerminatingTarget", "name": "Voicemail",
+                 "prompt": {"greeting": dict(DEFAULT_VM_GREETING)}},
+            ],
+        }
+        actions.append(action)
+
+    targets = action.get('targets')
+    if not isinstance(targets, list):
+        targets = []
+        action['targets'] = targets
+
+    phone_target = next((t for t in targets
+                         if isinstance(t, dict) and t.get('type') == "PhoneNumberTerminatingTarget"), None)
+    if phone_target is None:
+        targets.append({
+            "type": "PhoneNumberTerminatingTarget",
+            "name": target_name,
+            "destination": {"phoneNumber": phone_e164},
+            "dispatchingType": "Terminating",
+        })
+    else:
+        phone_target['destination'] = {"phoneNumber": phone_e164}
+        phone_target['dispatchingType'] = "Terminating"
+        if not phone_target.get('name'):
+            phone_target['name'] = target_name
+
+    action['terminatingTargetType'] = "PhoneNumberTerminatingTarget"
+    return dispatching
+
+
 def sanitize_v2_greeting(greeting):
     """Reduces a V2 greeting object (as returned by a rule GET) to the minimal,
     writable shape, so it can be re-sent on a PUT without read-only fields.
