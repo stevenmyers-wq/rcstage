@@ -1,7 +1,6 @@
-Ready for action...
-[5:06:19 PM] Uploading custom_rules_template (14).xlsx...
-[5:06:19 PM] Processing 148 row(s)...
-[5:06:22 PM] ❌ Ext 90043: write failed. V1 [403] {
+[5:10:04 PM] Uploading custom_rules_template (14).xlsx...
+[5:10:05 PM] Processing 1 row(s)...
+[5:10:08 PM] ❌ Ext 90043: write failed. V1 [403] {
 "errorCode" : "CMN-468",
 "message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
 "errors" : [ {
@@ -10,23 +9,8 @@ Ready for action...
 "featureName" : "NewCallHan · V2 [404] {
 "errors" : [ {
 "errorCode" : "CMN-102",
-"message" : "States not found"
+"message" : "No scripts found"
 } ]
 } · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61419192766"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
-[5:06:22 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
-[5:06:24 PM] Stop requested — halting after the current rule...
-[5:06:26 PM] ❌ Ext 90026: write failed. V1 [403] {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"errors" : [ {
-"errorCode" : "CMN-468",
-"message" : "This API is not available with enabled feature [NewCallHandlingAndForwarding].",
-"featureName" : "NewCallHan · V2 [403] {
-"errors" : [ {
-"errorCode" : "CHF-211",
-"message" : "One target with the type AllMobileRingTarget is allowed"
-} ]
-} · V2 sent: {"displayName": "Forward", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+61413001840"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
-[5:06:26 PM] ↳ ⚠️ Ext 90026: greeting file 'nan' was not among the uploaded audio files.
-[5:06:26 PM] ■ Stopped by user — remaining rows were skipped.
-[5:06:26 PM] ■ Stopped — 0 rule(s) written.
+[5:10:08 PM] ↳ ⚠️ Ext 90043: greeting file 'nan' was not among the uploaded audio files.
+[5:10:08 PM] ✔ Finished — 0 rule(s) written.
