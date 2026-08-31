@@ -480,7 +480,7 @@ def update_rules():
                             yield prog(
                                 f"❌ Ext {raw_ext_num}: write failed. "
                                 f"V1 [{v1_status}] {v1_body or '(no body)'} · "
-                                f"V2 [{v2_status}] {v2_body or '(no body)'} · "
+                                f"V2 {v2_method} {v2_url} [{v2_status}] {v2_body or '(no body)'} · "
                                 f"V2 sent: {v2_sent}", "error")
                     except Exception as v2_err:
                         yield prog(f"❌ V2 Error Ext {raw_ext_num}: {str(v2_err)}", "error")
