@@ -16,6 +16,7 @@ from .utils import (
     extension_site_id, FILTER_GROUPS,
     get_existing_v2_greeting, get_existing_v1_conditions, get_existing_v2_conditions,
     fetch_v2_interaction_rules, THIS_EXTENSION,
+    apply_phone_forward_to_dispatching, fac_daily_all_day_conditions,
 )
 
 
@@ -161,6 +162,113 @@ def debug_rules():
 
     return current_app.response_class(
         json.dumps(out, indent=2), mimetype='application/json')
+
+
+# --- FORWARD ALL CALLS (STATE) ROUTE ---
+@custom_rules_bp.route('/api/custom_rules/forward_all_calls', methods=['POST'])
+@require_rc_token
+@track_usage('Custom Rules Forward All Calls')
+def forward_all_calls():
+    """Turn on (or off) the extension's 'Forward All Calls' state, forwarding to
+    an external number 24/7.
+
+    Unlike custom/interaction rules, 'forward-all-calls' is a Default state that
+    exists on every migrated user extension, so it does not hit the "States not
+    found" wall. We read-modify-write the state RULE (set the phone target while
+    preserving the existing voicemail/greeting defaults), then enable/disable the
+    STATE. Returns a JSON log with the raw status codes of each RingCentral call
+    so a failure is diagnosable without another round-trip."""
+    data = request.get_json(silent=True) or {}
+    raw_ext = str(data.get('ext') or '').strip()
+    enable = bool(data.get('enabled', True))
+    raw_number = str(data.get('number') or '').strip()
+
+    steps = []
+
+    def note(msg, ok=None):
+        steps.append({"msg": msg, "ok": ok})
+
+    if not raw_ext:
+        return jsonify({"ok": False, "error": "Extension number is required."}), 400
+
+    ext_id = get_extension_id(raw_ext)
+    if not ext_id:
+        return jsonify({"ok": False, "error": f"Extension {raw_ext} not found."}), 404
+
+    ch = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling"
+    rule_url = f"{ch}/voice/state-rules/forward-all-calls"
+    state_url = f"{ch}/states/forward-all-calls"
+
+    try:
+        if enable:
+            phone = format_phone(raw_number) if raw_number else None
+            if not phone:
+                return jsonify({"ok": False,
+                                "error": "A valid destination number is required to enable forwarding."}), 400
+
+            # 1) Read the current forward-all-calls rule so we can modify and
+            #    re-send its complete dispatching (RingCentral requires the full
+            #    object on PATCH, and this keeps its greeting/voicemail defaults).
+            r = rc_api_call(rule_url, return_response=True)
+            r_status = getattr(r, 'status_code', '?')
+            dispatching = None
+            if getattr(r, 'ok', False):
+                try:
+                    dispatching = (r.json() or {}).get('dispatching')
+                except Exception:
+                    dispatching = None
+                note(f"GET forward-all-calls rule [{r_status}]", True)
+            else:
+                # Fall back to a built-from-scratch dispatching; the PATCH below
+                # will still tell us if the state genuinely isn't available.
+                note(f"GET forward-all-calls rule [{r_status}] — building dispatching from scratch",
+                     False)
+
+            dispatching = apply_phone_forward_to_dispatching(dispatching, phone,
+                                                             target_name=f"Forward {phone}")
+
+            # 2) Write the rule (set the forward-to-number target).
+            pr = rc_api_call(rule_url, method='PATCH', json={"dispatching": dispatching},
+                             return_response=True)
+            pr_status = getattr(pr, 'status_code', '?')
+            if not getattr(pr, 'ok', False):
+                body = ((getattr(pr, 'text', '') or '').strip())[:400]
+                note(f"PATCH forward-all-calls rule [{pr_status}] {body}", False)
+                return jsonify({"ok": False, "ext_id": ext_id, "steps": steps,
+                                "error": f"Could not set the forward target (HTTP {pr_status})."}), 502
+            note(f"PATCH forward-all-calls rule [{pr_status}]", True)
+
+            # 3) Enable the state with a 24/7 daily schedule.
+            ps = rc_api_call(state_url, method='PATCH',
+                             json={"enabled": True, "conditions": fac_daily_all_day_conditions()},
+                             return_response=True)
+            ps_status = getattr(ps, 'status_code', '?')
+            if not getattr(ps, 'ok', False):
+                body = ((getattr(ps, 'text', '') or '').strip())[:400]
+                note(f"PATCH forward-all-calls state (enable) [{ps_status}] {body}", False)
+                return jsonify({"ok": False, "ext_id": ext_id, "steps": steps,
+                                "error": f"Set the target but could not enable the state (HTTP {ps_status})."}), 502
+            note(f"PATCH forward-all-calls state (enable) [{ps_status}]", True)
+
+            return jsonify({"ok": True, "ext_id": ext_id, "steps": steps,
+                            "message": f"Ext {raw_ext}: forwarding all calls to {phone} (24/7)."})
+
+        # Disable: just turn the state off; leave the configured target in place.
+        ps = rc_api_call(state_url, method='PATCH', json={"enabled": False},
+                         return_response=True)
+        ps_status = getattr(ps, 'status_code', '?')
+        if not getattr(ps, 'ok', False):
+            body = ((getattr(ps, 'text', '') or '').strip())[:400]
+            note(f"PATCH forward-all-calls state (disable) [{ps_status}] {body}", False)
+            return jsonify({"ok": False, "ext_id": ext_id, "steps": steps,
+                            "error": f"Could not disable the state (HTTP {ps_status})."}), 502
+        note(f"PATCH forward-all-calls state (disable) [{ps_status}]", True)
+        return jsonify({"ok": True, "ext_id": ext_id, "steps": steps,
+                        "message": f"Ext {raw_ext}: Forward All Calls turned off."})
+
+    except Exception as e:
+        note(f"Exception: {e}", False)
+        return jsonify({"ok": False, "ext_id": ext_id, "steps": steps, "error": str(e)}), 500
 
 
 # --- AUDIT ROUTE ---
