@@ -175,12 +175,16 @@
         }
     };
 
-    window.validateExtFile = function (input) {
+    window.validateExtFile = async function (input) {
         if (!input.files || !input.files[0]) return;
         euFile = input.files[0];
         document.getElementById('euFileName').innerText = 'Selected: ' + euFile.name;
         input.value = '';
-        if (euSheetPicker) euSheetPicker.update(euFile);
+        // Wait for the worksheet dropdown to populate (and settle on the
+        // preferred/first sheet) before validating, so the checks run against
+        // the chosen sheet instead of racing the picker and silently using the
+        // backend's first-sheet default.
+        if (euSheetPicker) await euSheetPicker.update(euFile);
         runExtBatch('preview');
     };
 
