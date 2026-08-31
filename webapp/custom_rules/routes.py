@@ -474,6 +474,17 @@ def update_rules():
                                 v2_payload['conditions'] = existing_conditions
                         # V2 requires PUT for updating existing rules, or POST for new
                         v2_method = "PUT" if is_update else "POST"
+                        # Prime the extension's comm-handling before creating the
+                        # first custom rule. On an extension that has never had a
+                        # custom rule, the interaction-rules endpoint 404s ("States
+                        # not found") until its call-handling states are read/
+                        # materialised — mirroring the admin UI, which GETs
+                        # state-rules and interaction-rules before it POSTs. Best
+                        # effort: ignore the responses, just wake the resource.
+                        if not is_update:
+                            ch = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling"
+                            rc_api_call(f"{ch}/voice/state-rules", return_response=True)
+                            rc_api_call(f"{ch}/voice/interaction-rules", return_response=True)
                         v2_resp = rc_api_call(v2_url, method=v2_method, json=v2_payload, return_response=True)
                         if v2_resp is not None and getattr(v2_resp, 'ok', False):
                             written_rule_id = written_rule_id or _resp_id(v2_resp)
