@@ -368,6 +368,51 @@ def fetch_v2_interaction_rules(ext_id):
     return detailed
 
 
+# Weekday keys as they appear in a V1 `weeklyRanges` block.
+_WEEKDAY_KEYS = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')
+
+
+def _is_full_day_range(rng):
+    """A single time range that spans a whole day. RingCentral stores end-of-day
+    as 23:59, but a range entered as 00:00-00:00 (midnight to midnight) is also
+    treated as all-day by the classic API, so accept both."""
+    return rng.get('from') == '00:00' and rng.get('to') in ('23:59', '00:00')
+
+
+def _is_all_day_all_week(schedule):
+    """True when a V1 schedule means 'every day, all day' — all seven weekdays
+    present, each covering the full day, and no specific-date ranges."""
+    if schedule.get('ranges'):
+        return False
+    weekly = schedule.get('weeklyRanges') or {}
+    if set(weekly) != set(_WEEKDAY_KEYS):
+        return False
+    for day in _WEEKDAY_KEYS:
+        ranges = weekly.get(day) or []
+        if len(ranges) != 1 or not _is_full_day_range(ranges[0]):
+            return False
+    return True
+
+
+def _schedule_v1_to_v2(schedule):
+    """Convert a V1 answering-rule schedule (weeklyRanges/ranges with HH:MM
+    from/to) into the V2 comm-handling schedule (triggers[]) that New Call
+    Handling (NewCallHandlingAndForwarding) accounts require — the V1
+    answering-rule API is disabled on those accounts, so the V2 interaction-rules
+    write is the only path, and it rejects the legacy weeklyRanges shape.
+
+    Only the 'all day, every day' (24/7) case is converted for now: it maps to a
+    single Daily trigger spanning 00:00:00-23:59:59, the exact shape RingCentral
+    stores for a full-day rule (confirmed against a live interaction-rules GET).
+    Partial weekly schedules and specific-date ranges are left in their V1 shape
+    until their trigger schemas are confirmed."""
+    if _is_all_day_all_week(schedule):
+        return {"triggers": [
+            {"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}
+        ]}
+    return schedule
+
+
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=None):
     if user_devices is None: user_devices = []
     v2 = {
@@ -394,7 +439,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
     if "schedule" in v1_payload:
         v2["conditions"].append({
             "type": "Schedule",
-            "schedule": v1_payload["schedule"]
+            "schedule": _schedule_v1_to_v2(v1_payload["schedule"])
         })
 
     # --- 3. Actions - Strict Schema ---
