@@ -420,13 +420,16 @@ def _schedule_v1_to_v2(schedule):
     the V2 interaction-rules write is the only path and it rejects the legacy
     weeklyRanges shape.
 
-    Per the RingCentral API docs, an interaction-rule Schedule condition supports
-    the Weekly and Range trigger types (the Daily type is state-only). So:
+    An interaction-rule Schedule condition supports Daily, Weekly and Range
+    triggers. A captured admin-UI create (HAR) proves the all-day case is a
+    single Daily trigger, not a weekday-keyed Weekly object:
 
-      - weeklyRanges -> a single Weekly trigger whose `ranges` object is keyed by
-        weekday, each entry {startTime, endTime} in HH:MM:SS. A full day
-        (00:00-23:59 or 00:00-00:00) becomes 00:00:00-23:59:59, so 'all day every
-        day' is all seven weekdays at 00:00:00-23:59:59.
+      - weeklyRanges that are the SAME single window every day -> one Daily
+        trigger {triggerType, startTime, endTime}. All-day (00:00-23:59 or
+        00:00-00:00 on every weekday) is one Daily 00:00:00-23:59:59 — the exact
+        shape the UI sends and the API accepts.
+      - weeklyRanges that differ by weekday -> a Weekly trigger whose `ranges`
+        object is keyed by weekday, each entry {startTime, endTime} in HH:MM:SS.
       - ranges (specific dates) -> a Range trigger with startDateTime/endDateTime.
 
     Falls back to the original schedule if there's nothing convertible."""
@@ -449,7 +452,23 @@ def _schedule_v1_to_v2(schedule):
             if out:
                 wk[day] = out
         if wk:
-            triggers.append({"triggerType": "Weekly", "ranges": wk})
+            # If every weekday carries the identical single window, this is a
+            # uniform daily schedule (the all-day 24/7 case included) — collapse
+            # it to one Daily trigger, which is what the admin UI sends and the
+            # API accepts. Only fall back to Weekly when days genuinely differ.
+            windows = list(wk.values())
+            uniform = (
+                len(wk) == len(_WEEKDAY_KEYS)
+                and all(len(w) == 1 for w in windows)
+                and len({(w[0]['startTime'], w[0]['endTime']) for w in windows}) == 1
+            )
+            if uniform:
+                win = windows[0][0]
+                triggers.append({"triggerType": "Daily",
+                                 "startTime": win['startTime'],
+                                 "endTime": win['endTime']})
+            else:
+                triggers.append({"triggerType": "Weekly", "ranges": wk})
 
     for r in (schedule.get('ranges') or []):
         frm, to = r.get('from'), r.get('to')
