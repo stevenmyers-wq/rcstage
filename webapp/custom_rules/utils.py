@@ -438,6 +438,26 @@ def _schedule_v1_to_v2(schedule):
     return schedule
 
 
+def _ring_group_actions(user_devices):
+    """The mobile / desktop (+ per-device) ring groups a user interaction rule
+    must carry. RingCentral rejects a rule with no AllMobileRingTarget
+    (CHF-211 "One target with the type AllMobileRingTarget is allowed"), so the
+    official create sample always includes them. Kept DISABLED here: the call is
+    forwarded/terminated immediately rather than ringing the user's own devices
+    first, matching an unconditional forward / transfer."""
+    actions = [
+        {"type": "RingGroupAction", "enabled": False,
+         "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 30},
+        {"type": "RingGroupAction", "enabled": False,
+         "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 30},
+    ]
+    for dev in (user_devices or []):
+        actions.append({"type": "RingGroupAction", "enabled": False,
+                        "targets": [{"type": "DeviceRingTarget", "device": {"id": dev['id']}}],
+                        "duration": 30})
+    return actions
+
+
 def _vm_fallback_target(vm_prompt):
     """The VoiceMailTerminatingTarget that every TerminatingAction must carry on
     New Call Handling accounts. A rule without it is rejected with 'Must have
@@ -510,6 +530,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
     elif v1_act == "UnconditionalForwarding":
         dest_num = v1_payload.get("unconditionalForwarding", {}).get("phoneNumber")
         formatted_dest = format_phone(dest_num)
+        v2["dispatching"]["actions"].extend(_ring_group_actions(user_devices))
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
             "targets": [
@@ -527,6 +548,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
 
     elif v1_act == "TransferToExtension":
         target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
+        v2["dispatching"]["actions"].extend(_ring_group_actions(user_devices))
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
             "targets": [
@@ -544,6 +566,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
 
     elif v1_act == "TakeMessagesOnly":
         vm_recipient_id = v1_payload.get("voicemail", {}).get("recipient", {}).get("id")
+        v2["dispatching"]["actions"].extend(_ring_group_actions(user_devices))
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
             "targets": [{
@@ -557,6 +580,7 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
         })
 
     elif v1_act == "PlayAnnouncementOnly":
+        v2["dispatching"]["actions"].extend(_ring_group_actions(user_devices))
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
             "targets": [
