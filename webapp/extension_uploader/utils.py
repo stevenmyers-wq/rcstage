@@ -15,9 +15,18 @@ from webapp import task_control
 # extension `type` used when POSTing a new extension. These were confirmed with
 # the operator; every row is still validated live against the account during
 # preview, so any type the account rejects surfaces before anything is created.
+#
+# "Virtual User" maps to the ordinary `User` type. A "virtual user" in the sense
+# operators mean -- a user seat with no phone -- is just a User extension that
+# never gets a digital line assigned; RingCentral makes a user virtual by
+# withholding the digital line, not by a distinct type. The dedicated
+# `VirtualUser` API type is a separate licensed seat that most service plans
+# reject outright ("Invalid user type [VirtualUser] for current account service
+# plan"), so creating these as `User` is what actually produces the intended
+# deskless, forwarding-capable extension.
 USER_TYPE_MAP = {
     'User': 'User',
-    'Virtual User': 'VirtualUser',
+    'Virtual User': 'User',
     'Message Only': 'Voicemail',
     'Announcement Only': 'Announcement',
     'Limited Extension': 'Limited',
@@ -25,18 +34,9 @@ USER_TYPE_MAP = {
 
 # Ordered fallback API types tried when the account's service plan rejects the
 # primary type with "Invalid user type [X] for current account service plan".
-# RingCentral exposes several equivalent "user" types (User, DigitalUser,
-# VirtualUser, FlexibleUser) and which ones a createExtension is allowed to use
-# depends on the account's service plan.
-#
-# IMPORTANT: FlexibleUser is deliberately NOT a fallback for VirtualUser. Despite
-# both being deskless/no-digital-line seats, a FlexibleUser (the "Video Pro"-style
-# seat on newer flexible plans) has NO call-handling: it exposes none of the
-# comm-handling states or rules, so it cannot forward calls, run custom answering
-# rules, or even hold a Forward-All-Calls state. Silently substituting it for a
-# VirtualUser produced extensions that looked created but could never forward.
-# So we no longer auto-substitute it; when a plan rejects VirtualUser the row is
-# reported (see preflight_row) rather than created as a forwarding-incapable seat.
+# Currently empty: every friendly type maps to a base seat (User / Voicemail /
+# Announcement / Limited) that accounts support directly, so no substitution is
+# needed. Kept as the hook for any future type that a plan might reject.
 USER_TYPE_FALLBACKS = {}
 
 # The template's dropdown order for the User Type column.
@@ -661,8 +661,8 @@ def validate_new_extension(plan, token, invalid_types=None):
     """Dry-run an extension via POST extension/validate (creates nothing).
 
     Tries the plan's primary type then any service-plan fallbacks, so a type the
-    account's plan rejects (e.g. VirtualUser -> FlexibleUser) is resolved here,
-    at review time, exactly as Create will resolve it. `invalid_types` is an
+    account's plan rejects is resolved to a supported one here, at review time,
+    exactly as Create will resolve it. `invalid_types` is an
     optional set reused across rows to remember which primary types this account's
     plan has already rejected, so each is validated at most once per batch.
 
@@ -719,18 +719,6 @@ def preflight_row(plan, token, free_cache, invalid_types=None):
             f"Try a different extension number within the account's range."
         )
     if state == 'badtype':
-        if api_type == 'VirtualUser':
-            # The only deskless type this plan tends to accept is FlexibleUser,
-            # which has no call handling (can't forward / no answering rules), so
-            # we no longer substitute it. Tell the operator what to do instead.
-            return False, (
-                f"RingCentral rejected the Virtual User type for this account's "
-                f"service plan ({vmsg}). This plan's only deskless alternative is a "
-                f"Flexible (Video) user, which has no call handling and cannot "
-                f"forward calls — so it was not created. Use the 'User' type, or "
-                f"enable a Virtual User licence on the account, for a "
-                f"forwarding-capable extension."
-            )
         tried = ', '.join([api_type] + USER_TYPE_FALLBACKS.get(api_type, []))
         return False, (
             f"RingCentral rejected the user type for this account's service plan "
@@ -941,9 +929,9 @@ def process_upload_batch(records, token, is_preview=True, task_id=None):
 
         if is_preview:
             # Preflight against the live account so a number RingCentral would
-            # reject (EXT-250) or a user type its service plan doesn't support
-            # (VirtualUser -> FlexibleUser) is flagged here, at review time,
-            # rather than only when Create is clicked.
+            # reject (EXT-250) or a user type its service plan doesn't support is
+            # flagged here, at review time, rather than only when Create is
+            # clicked.
             ok, pf_msg = preflight_row(plan, token, free_cache, invalid_types)
             if not ok:
                 yield progress("error", pf_msg)
