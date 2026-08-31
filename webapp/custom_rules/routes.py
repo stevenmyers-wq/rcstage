@@ -202,27 +202,37 @@ def forward_all_calls():
     def diagnose():
         """On a 404, characterise WHY: does the extension expose any comm-handling
         states at all, and what type of extension is it? Appends findings to the
-        step log so a failure explains itself without a separate debug round-trip."""
+        step log and returns a human-readable cause hint (or None) so the terminal
+        error can name the real reason without a separate debug round-trip."""
         s = rc_api_call(f"{ch}/states", return_response=True)
         s_status = getattr(s, 'status_code', '?')
+        has_states = False
         if getattr(s, 'ok', False):
             try:
                 ids = [st.get('id') for st in ((s.json() or {}).get('records') or [])]
             except Exception:
                 ids = []
-            note(f"GET comm-handling/states [{s_status}] → states: {ids or '(none)'}",
-                 bool(ids))
+            has_states = bool(ids)
+            note(f"GET comm-handling/states [{s_status}] → states: {ids or '(none)'}", has_states)
         else:
             note(f"GET comm-handling/states [{s_status}] — no call-handling states on this extension",
                  False)
+        type_str = ''
         ext = rc_api_call(f"/restapi/v1.0/account/~/extension/{ext_id}", return_response=True)
         if getattr(ext, 'ok', False):
             try:
                 ej = ext.json() or {}
+                type_str = f"{ej.get('type')} {ej.get('subType') or ''}".lower()
                 note(f"Extension type: type={ej.get('type')} "
                      f"subType={ej.get('subType')} status={ej.get('status')}", None)
             except Exception:
                 pass
+        # A deskless "Flexible"/"Video" seat exposes no call handling at all.
+        if 'flexible' in type_str or 'video' in type_str or not has_states:
+            return ("This extension has no call handling — typically a Flexible "
+                    "(Video) user seat, which cannot forward calls or hold answering "
+                    "rules. Recreate it as a Virtual User or full User to forward calls.")
+        return None
 
     try:
         if enable:
@@ -241,11 +251,12 @@ def forward_all_calls():
                 # here is terminal — skip the doomed write and explain why.
                 body = ((getattr(r, 'text', '') or '').strip())[:300]
                 note(f"GET forward-all-calls rule [{r_status}] {body}", False)
-                diagnose()
+                hint = diagnose()
+                msg = (f"Ext {raw_ext} has no 'forward-all-calls' state rule "
+                       f"(HTTP {r_status}). ")
+                msg += hint or "This extension has no voice call-handling provisioned — see the steps above."
                 return jsonify({"ok": False, "ext_id": ext_id, "steps": steps,
-                                "error": (f"Ext {raw_ext} has no 'forward-all-calls' state rule "
-                                          f"(HTTP {r_status}). This extension has no voice "
-                                          f"call-handling provisioned — see the steps above.")}), 502
+                                "error": msg}), 502
             try:
                 dispatching = (r.json() or {}).get('dispatching')
             except Exception:

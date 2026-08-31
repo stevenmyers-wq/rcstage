@@ -27,15 +27,17 @@ USER_TYPE_MAP = {
 # primary type with "Invalid user type [X] for current account service plan".
 # RingCentral exposes several equivalent "user" types (User, DigitalUser,
 # VirtualUser, FlexibleUser) and which ones a createExtension is allowed to use
-# depends on the account's service plan. In particular the newer flexible plans
-# expose the video-capable, no-digital-line user (shown as "Video Pro" in the
-# portal) as FlexibleUser rather than the legacy VirtualUser. When a plan rejects
-# the primary type, the create/validate is retried with each fallback in turn and
-# the substitution is surfaced to the operator so they can confirm the created
-# extension in the portal.
-USER_TYPE_FALLBACKS = {
-    'VirtualUser': ['FlexibleUser'],
-}
+# depends on the account's service plan.
+#
+# IMPORTANT: FlexibleUser is deliberately NOT a fallback for VirtualUser. Despite
+# both being deskless/no-digital-line seats, a FlexibleUser (the "Video Pro"-style
+# seat on newer flexible plans) has NO call-handling: it exposes none of the
+# comm-handling states or rules, so it cannot forward calls, run custom answering
+# rules, or even hold a Forward-All-Calls state. Silently substituting it for a
+# VirtualUser produced extensions that looked created but could never forward.
+# So we no longer auto-substitute it; when a plan rejects VirtualUser the row is
+# reported (see preflight_row) rather than created as a forwarding-incapable seat.
+USER_TYPE_FALLBACKS = {}
 
 # The template's dropdown order for the User Type column.
 USER_TYPES = ['User', 'Virtual User', 'Message Only', 'Announcement Only', 'Limited Extension']
@@ -717,6 +719,18 @@ def preflight_row(plan, token, free_cache, invalid_types=None):
             f"Try a different extension number within the account's range."
         )
     if state == 'badtype':
+        if api_type == 'VirtualUser':
+            # The only deskless type this plan tends to accept is FlexibleUser,
+            # which has no call handling (can't forward / no answering rules), so
+            # we no longer substitute it. Tell the operator what to do instead.
+            return False, (
+                f"RingCentral rejected the Virtual User type for this account's "
+                f"service plan ({vmsg}). This plan's only deskless alternative is a "
+                f"Flexible (Video) user, which has no call handling and cannot "
+                f"forward calls — so it was not created. Use the 'User' type, or "
+                f"enable a Virtual User licence on the account, for a "
+                f"forwarding-capable extension."
+            )
         tried = ', '.join([api_type] + USER_TYPE_FALLBACKS.get(api_type, []))
         return False, (
             f"RingCentral rejected the user type for this account's service plan "
