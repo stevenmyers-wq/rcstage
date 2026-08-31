@@ -143,6 +143,19 @@ def debug_rules():
         else:
             out["v2_interaction_rules_list"] = {
                 "status": getattr(v2list, 'status_code', '?'), "body": getattr(v2list, 'text', '')}
+
+        # Call-handling STATES + state-rules — to interpret a "States not found"
+        # (CMN-102) rejection on the interaction-rules endpoint: does this
+        # extension actually expose the comm-handling states the custom-rule
+        # resource hangs off, or is it a bare/virtual extension without them?
+        ch = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling"
+        for label, url in (
+            ("v2_states", f"{ch}/states"),
+            ("v2_state_rules", f"{ch}/voice/state-rules"),
+        ):
+            r = rc_api_call(url, return_response=True)
+            out[label] = r.json() if getattr(r, 'ok', False) else {
+                "status": getattr(r, 'status_code', '?'), "body": getattr(r, 'text', '')}
     except Exception as e:
         out["error"] = str(e)
 
