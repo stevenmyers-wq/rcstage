@@ -127,22 +127,38 @@ def resolve_type_filter(filter_labels):
 
 # --- 1. BASIC FORMATTERS ---
 
-def parse_time_range(range_str):
-    """Parses '8:00 AM - 5:00 PM' or multiple '8:00 AM - 12:00 PM, 1:00 PM - 5:00 PM' into API format."""
-    if pd.isna(range_str) or not str(range_str).strip(): return None
-    try:
-        ranges = []
-        for part in str(range_str).split(','):
-            if '-' not in part: continue
-            start, end = part.split('-')
-            fmt_in, fmt_out = "%I:%M %p", "%H:%M"
-            ranges.append({
-                "from": datetime.strptime(start.strip(), fmt_in).strftime(fmt_out),
-                "to": datetime.strptime(end.strip(), fmt_in).strftime(fmt_out)
-            })
-        return ranges if ranges else None
-    except: 
+def _parse_clock(t):
+    """Parse a single clock value into 'HH:MM', tolerant of how people actually
+    type times in a sheet. All of these work: '9:00 AM', '9:00am', '9am',
+    '12:00AM', '09:00', '17:00'. Returns None if it can't be parsed."""
+    s = str(t).strip().upper()
+    if not s:
         return None
+    # Insert a space before AM/PM when omitted ('12:00AM' -> '12:00 AM') and
+    # collapse any surrounding whitespace, since strptime's '%p' needs the space.
+    s = re.sub(r'\s*([AP]\.?M\.?)$', r' \1', s).replace('.', '')
+    s = re.sub(r'\s+', ' ', s).strip()
+    for fmt in ("%I:%M %p", "%I %p", "%H:%M"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%H:%M")
+        except ValueError:
+            continue
+    return None
+
+
+def parse_time_range(range_str):
+    """Parses '8:00 AM - 5:00 PM' or multiple '8:00 AM - 12:00 PM, 1:00 PM - 5:00 PM'
+    into API format. Tolerant of spacing/case ('12:00am-12:00am', '9am - 5pm') and
+    of 24-hour input ('00:00-23:59')."""
+    if pd.isna(range_str) or not str(range_str).strip(): return None
+    ranges = []
+    for part in str(range_str).split(','):
+        if '-' not in part: continue
+        start, end = part.split('-', 1)
+        f, t = _parse_clock(start), _parse_clock(end)
+        if f is not None and t is not None:
+            ranges.append({"from": f, "to": t})
+    return ranges if ranges else None
 
 def parse_specific_dates(date_str):
     """Parses '2024-12-25 00:00 to 2024-12-26 23:59' into API format."""
@@ -413,6 +429,16 @@ def _schedule_v1_to_v2(schedule):
     return schedule
 
 
+def _vm_fallback_target(vm_prompt):
+    """The VoiceMailTerminatingTarget that every TerminatingAction must carry on
+    New Call Handling accounts. A rule without it is rejected with 'Must have
+    Terminating Action with VoiceMailTerminatingTarget'. Shape mirrors a
+    live-created rule (name + prompt, no mailbox/dispatchingType) so it acts as
+    the ringing fallback while the real destination is the terminating target;
+    with no mailbox it defaults to the owning extension's own voicemail."""
+    return {"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": vm_prompt}
+
+
 def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=None):
     if user_devices is None: user_devices = []
     v2 = {
@@ -462,10 +488,12 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
             "type": "TerminatingAction",
             "targets": [{
                 "type": "VoiceMailTerminatingTarget",
+                "name": "Voicemail",
                 "mailbox": {"id": owner_ext_id},
                 "dispatchingType": "Terminating",
                 "prompt": vm_prompt
-            }]
+            }],
+            "terminatingTargetType": "VoiceMailTerminatingTarget"
         })
         v2["dispatching"]["actions"] = actions
 
@@ -474,22 +502,34 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
         formatted_dest = format_phone(dest_num)
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
-            "targets": [{
-                "type": "PhoneNumberTerminatingTarget",
-                "destination": {"phoneNumber": formatted_dest},
-                "dispatchingType": "Terminating"
-            }]
+            "targets": [
+                _vm_fallback_target(vm_prompt),
+                {
+                    "type": "PhoneNumberTerminatingTarget",
+                    "name": "__EXTERNAL_NUMBER__",
+                    "destination": {"phoneNumber": formatted_dest},
+                    "dispatchingType": "Terminating"
+                }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "terminatingTargetType": "PhoneNumberTerminatingTarget"
         })
 
     elif v1_act == "TransferToExtension":
         target_ext_id = v1_payload.get("transfer", {}).get("extension", {}).get("id")
         v2["dispatching"]["actions"].append({
             "type": "TerminatingAction",
-            "targets": [{
-                "type": "ExtensionTerminatingTarget",
-                "extension": {"id": target_ext_id},
-                "dispatchingType": "Terminating"
-            }]
+            "targets": [
+                _vm_fallback_target(vm_prompt),
+                {
+                    "type": "ExtensionTerminatingTarget",
+                    "name": "Extension",
+                    "extension": {"id": target_ext_id},
+                    "dispatchingType": "Terminating"
+                }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "terminatingTargetType": "ExtensionTerminatingTarget"
         })
 
     elif v1_act == "TakeMessagesOnly":
@@ -498,21 +538,29 @@ def transform_v1_to_v2(v1_payload, owner_ext_id, user_devices=None, vm_greeting=
             "type": "TerminatingAction",
             "targets": [{
                 "type": "VoiceMailTerminatingTarget",
+                "name": "Voicemail",
                 "mailbox": {"id": vm_recipient_id},
                 "prompt": vm_prompt,
                 "dispatchingType": "Terminating"
-            }]
+            }],
+            "terminatingTargetType": "VoiceMailTerminatingTarget"
         })
 
     elif v1_act == "PlayAnnouncementOnly":
-         v2["dispatching"]["actions"].append({
-             "type": "TerminatingAction",
-             "targets": [{
-                 "type": "PlayAnnouncementTerminatingTarget",
-                 "prompt": vm_prompt,
-                 "dispatchingType": "Terminating"
-             }]
-         })
+        v2["dispatching"]["actions"].append({
+            "type": "TerminatingAction",
+            "targets": [
+                _vm_fallback_target(vm_prompt),
+                {
+                    "type": "PlayAnnouncementTerminatingTarget",
+                    "name": "PlayAnnouncement",
+                    "prompt": vm_prompt,
+                    "dispatchingType": "Terminating"
+                }
+            ],
+            "ringingTargetType": "VoiceMailTerminatingTarget",
+            "terminatingTargetType": "PlayAnnouncementTerminatingTarget"
+        })
 
     return v2
 
