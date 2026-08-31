@@ -404,37 +404,66 @@ def _is_full_day_range(rng):
     return rng.get('from') == '00:00' and rng.get('to') in ('23:59', '00:00')
 
 
-def _is_all_day_all_week(schedule):
-    """True when a V1 schedule means 'every day, all day' — all seven weekdays
-    present, each covering the full day, and no specific-date ranges."""
-    if schedule.get('ranges'):
-        return False
-    weekly = schedule.get('weeklyRanges') or {}
-    if set(weekly) != set(_WEEKDAY_KEYS):
-        return False
-    for day in _WEEKDAY_KEYS:
-        ranges = weekly.get(day) or []
-        if len(ranges) != 1 or not _is_full_day_range(ranges[0]):
-            return False
-    return True
+def _hhmm_to_hms(hhmm, is_end=False):
+    """'09:00' -> '09:00:00'. End-of-day '23:59' becomes '23:59:59' so a full day
+    is covered with no gap."""
+    hhmm = str(hhmm)
+    if is_end and hhmm == '23:59':
+        return '23:59:59'
+    return f'{hhmm}:00'
 
 
 def _schedule_v1_to_v2(schedule):
     """Convert a V1 answering-rule schedule (weeklyRanges/ranges with HH:MM
-    from/to) into the V2 comm-handling schedule (triggers[]) that New Call
-    Handling (NewCallHandlingAndForwarding) accounts require — the V1
-    answering-rule API is disabled on those accounts, so the V2 interaction-rules
-    write is the only path, and it rejects the legacy weeklyRanges shape.
+    from/to) into the V2 comm-handling schedule that New Call Handling interaction
+    rules require — the V1 answering-rule API is disabled on those accounts, so
+    the V2 interaction-rules write is the only path and it rejects the legacy
+    weeklyRanges shape.
 
-    Only the 'all day, every day' (24/7) case is converted for now: it maps to a
-    single Daily trigger spanning 00:00:00-23:59:59, the exact shape RingCentral
-    stores for a full-day rule (confirmed against a live interaction-rules GET).
-    Partial weekly schedules and specific-date ranges are left in their V1 shape
-    until their trigger schemas are confirmed."""
-    if _is_all_day_all_week(schedule):
-        return {"triggers": [
-            {"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}
-        ]}
+    Per the RingCentral API docs, an interaction-rule Schedule condition supports
+    the Weekly and Range trigger types (the Daily type is state-only). So:
+
+      - weeklyRanges -> a single Weekly trigger whose `ranges` object is keyed by
+        weekday, each entry {startTime, endTime} in HH:MM:SS. A full day
+        (00:00-23:59 or 00:00-00:00) becomes 00:00:00-23:59:59, so 'all day every
+        day' is all seven weekdays at 00:00:00-23:59:59.
+      - ranges (specific dates) -> a Range trigger with startDateTime/endDateTime.
+
+    Falls back to the original schedule if there's nothing convertible."""
+    triggers = []
+
+    weekly = schedule.get('weeklyRanges') or {}
+    if weekly:
+        wk = {}
+        for day, ranges in weekly.items():
+            out = []
+            for r in (ranges or []):
+                frm, to = r.get('from'), r.get('to')
+                if frm is None or to is None:
+                    continue
+                if _is_full_day_range(r):
+                    out.append({"startTime": "00:00:00", "endTime": "23:59:59"})
+                else:
+                    out.append({"startTime": _hhmm_to_hms(frm),
+                                "endTime": _hhmm_to_hms(to, is_end=True)})
+            if out:
+                wk[day] = out
+        if wk:
+            triggers.append({"triggerType": "Weekly", "ranges": wk})
+
+    for r in (schedule.get('ranges') or []):
+        frm, to = r.get('from'), r.get('to')
+        if not frm or not to:
+            continue
+        # V1 date ranges are ISO 8601 with a trailing Z / millis; the V2 Range
+        # trigger wants a plain local date-time (no zone marker, no fraction).
+        triggers.append({"triggerType": "Range", "ranges": [
+            {"startDateTime": str(frm).replace('Z', '').split('.')[0],
+             "endDateTime": str(to).replace('Z', '').split('.')[0]}
+        ]})
+
+    if triggers:
+        return {"triggers": triggers}
     return schedule
 
 
