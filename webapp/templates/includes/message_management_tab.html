@@ -74,6 +74,12 @@
         </div>
 
         <div class="w-full sm:w-auto">
+            <button id="msg-reset-filters" class="btn-secondary w-full h-[52px] text-sm px-6" title="Deselect the Type and Site filters and clear the search box.">
+                Reset Filters
+            </button>
+        </div>
+
+        <div class="w-full sm:w-auto">
             <button id="msg-refresh-endpoints" class="btn-secondary w-full h-[52px] text-sm px-6">
                 Refresh List
             </button>
@@ -524,6 +530,17 @@ document.addEventListener('DOMContentLoaded', () => {
         loadEndpoints();
     });
 
+    // Deselect every entry in the Type and Site filters and clear the search box,
+    // then re-render in place — no reload, and the table row selection is kept.
+    document.getElementById('msg-reset-filters').addEventListener('click', () => {
+        selectedTypes.clear();
+        selectedSites.clear();
+        searchInput.value = '';
+        renderMultiSelectList('filter-type', typeOptions, selectedTypes, 'All Types', renderTable);
+        populateSiteFilter();
+        renderTable();
+    });
+
     document.querySelectorAll('.msg-sort-header').forEach(header => {
         header.addEventListener('click', (e) => {
             const col = e.currentTarget.dataset.sort;
@@ -630,6 +647,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedTypesSet.size === 1 || modalId === 'modal-export') {
             const extType = Array.from(selectedTypesSet)[0];
             if (modalId !== 'modal-export') updateGreetingDropdowns(extType);
+            // Clear the single-file picker on every open so a file chosen for a
+            // previously selected endpoint doesn't silently carry over to a
+            // different one. (The bulk XLSX flow already gets a fresh input.)
+            if (modalId === 'modal-upload') {
+                const uploadFileInput = document.querySelector('#form-upload input[type="file"]');
+                if (uploadFileInput) uploadFileInput.value = '';
+            }
             openModal(modalId);
         }
     }
