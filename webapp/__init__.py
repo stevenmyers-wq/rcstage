@@ -110,9 +110,9 @@ def create_app():
         from .device_audit import routes as device_audit_routes
         app.register_blueprint(device_audit_routes.device_audit_bp)
 
-        # User Timezone Audit routes
-        from .user_timezone_audit import routes as user_timezone_audit_routes
-        app.register_blueprint(user_timezone_audit_routes.user_timezone_audit_bp)
+        # Extension Timezone routes
+        from .extension_timezone import routes as extension_timezone_routes
+        app.register_blueprint(extension_timezone_routes.extension_timezone_bp)
 
         # D365 + RingCX Demo routes
         from .d365_ringcx import routes as d365_ringcx_routes

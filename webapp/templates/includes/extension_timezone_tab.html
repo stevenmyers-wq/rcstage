@@ -1,7 +1,7 @@
 <div class="space-y-6 animate-fade-in w-full">
     <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
-        <h2 class="text-heading mb-1">User Timezone Audit</h2>
-        <p class="text-subheading">Check every user's timezone against the site they're assigned to, then bulk-correct the mismatches.</p>
+        <h2 class="text-heading mb-1">Extension Timezone</h2>
+        <p class="text-subheading">Check every extension's timezone against the site it's assigned to, then bulk-correct the mismatches. Covers users, call queues and other extensions that accept a timezone.</p>
     </div>
 
     <!-- Step 1: Run audit + download editable export -->
@@ -10,9 +10,41 @@
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">1</span>
             <div>
                 <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Run the audit</h3>
-                <p class="text-slate-500 dark:text-slate-400 text-sm">Scans every user, compares their timezone to their site's timezone, and produces an editable spreadsheet. Mismatches are highlighted and sorted to the top.</p>
+                <p class="text-slate-500 dark:text-slate-400 text-sm">Scans every timezone-bearing extension (users, call queues and more), compares each extension's timezone to its site's timezone, and produces an editable spreadsheet. Mismatches are highlighted and sorted to the top.</p>
             </div>
         </div>
+
+        <!-- Filters: which sites and extension types to audit -->
+        <div class="grid gap-4 sm:grid-cols-2 mb-5">
+            <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Sites</span>
+                    <div class="text-xs">
+                        <button type="button" data-select-all="tz-site-filters" class="text-blue-600 dark:text-blue-400 hover:underline">All</button>
+                        <span class="text-slate-300 dark:text-slate-600">|</span>
+                        <button type="button" data-select-none="tz-site-filters" class="text-blue-600 dark:text-blue-400 hover:underline">None</button>
+                    </div>
+                </div>
+                <div id="tz-site-filters" class="space-y-1.5 max-h-44 overflow-y-auto pr-1 text-sm text-slate-600 dark:text-slate-300">
+                    <p class="text-slate-400 text-xs">Loading sites…</p>
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Extension Types</span>
+                    <div class="text-xs">
+                        <button type="button" data-select-all="tz-type-filters" class="text-blue-600 dark:text-blue-400 hover:underline">All</button>
+                        <span class="text-slate-300 dark:text-slate-600">|</span>
+                        <button type="button" data-select-none="tz-type-filters" class="text-blue-600 dark:text-blue-400 hover:underline">None</button>
+                    </div>
+                </div>
+                <div id="tz-type-filters" class="space-y-1.5 max-h-44 overflow-y-auto pr-1 text-sm text-slate-600 dark:text-slate-300">
+                    <p class="text-slate-400 text-xs">Loading types…</p>
+                </div>
+            </div>
+        </div>
+        <p class="text-xs text-slate-400 dark:text-slate-500 -mt-3 mb-4">Leave a group with nothing ticked to include everything in it.</p>
 
         <div class="flex flex-wrap items-center gap-3">
             <button id="tz-run-audit-btn" class="btn-primary !py-2.5">Run Audit</button>
@@ -21,7 +53,7 @@
 
         <div id="tz-audit-progress-wrap" class="hidden mt-5">
             <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                <span id="tz-audit-progress-label">Scanning users…</span>
+                <span id="tz-audit-progress-label">Scanning extensions…</span>
                 <span id="tz-audit-progress-count">0 / 0</span>
             </div>
             <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -37,7 +69,7 @@
             <span class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">2</span>
             <div>
                 <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Edit &amp; upload to correct</h3>
-                <p class="text-slate-500 dark:text-slate-400 text-sm">Edit the <span class="font-semibold">User Timezone</span> column in the downloaded file (e.g. set it to match the Site Timezone), then upload it here. <span class="font-semibold">Preview</span> shows what will change; <span class="font-semibold">Apply</span> writes the updates. Rows already correct are skipped.</p>
+                <p class="text-slate-500 dark:text-slate-400 text-sm">Edit the <span class="font-semibold">Extension Timezone</span> column in the downloaded file (e.g. set it to match the Site Timezone), then upload it here. <span class="font-semibold">Preview</span> shows what will change; <span class="font-semibold">Apply</span> writes the updates. Rows already correct are skipped.</p>
             </div>
         </div>
 
@@ -69,7 +101,7 @@
                 <thead>
                     <tr class="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                         <th class="py-2 pr-3">Ext</th>
-                        <th class="py-2 pr-3">User</th>
+                        <th class="py-2 pr-3">Name</th>
                         <th class="py-2 pr-3">From</th>
                         <th class="py-2 pr-3">To</th>
                         <th class="py-2 pr-3 text-right">Status</th>
@@ -91,7 +123,54 @@ document.addEventListener('DOMContentLoaded', () => {
     const notify = (msg, isErr) => {
         if (typeof showMessage === 'function') showMessage(msg, !!isErr);
     };
-    const handle401 = () => { window.location.href = '/api/sm_auth/logout?tab=user_timezone_audit'; };
+    const handle401 = () => { window.location.href = '/api/sm_auth/logout?tab=extension_timezone'; };
+
+    // ---- Audit filters (Sites + Extension Types) -----------------------
+    const siteFilters = $('tz-site-filters');
+    const typeFilters = $('tz-type-filters');
+
+    const renderOptions = (container, items) => {
+        if (!Array.isArray(items) || !items.length) {
+            container.innerHTML = '<p class="text-slate-400 text-xs">None available.</p>';
+            return;
+        }
+        container.innerHTML = items.map(it => `
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" value="${it.value}" checked
+                       class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500">
+                <span>${it.label}</span>
+            </label>`).join('');
+    };
+
+    const selectedValues = (container) =>
+        Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(c => c.value);
+
+    (async () => {
+        try {
+            const res = await fetch('/api/extension_timezone/filters');
+            if (res.status === 401) return handle401();
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error || 'Failed to load filters.');
+            renderOptions(siteFilters, (d.sites || []).map(s => ({ value: s.id, label: s.name })));
+            renderOptions(typeFilters, (d.types || []).map(t => ({ value: t.value, label: t.label })));
+        } catch (err) {
+            siteFilters.innerHTML = typeFilters.innerHTML =
+                '<p class="text-amber-500 text-xs">Could not load filters — the audit will include everything.</p>';
+        }
+    })();
+
+    document.querySelectorAll('[data-select-all]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const box = $(btn.getAttribute('data-select-all'));
+            box.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = true; });
+        });
+    });
+    document.querySelectorAll('[data-select-none]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const box = $(btn.getAttribute('data-select-none'));
+            box.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = false; });
+        });
+    });
 
     // ---- Step 1: Run audit ---------------------------------------------
     const dl = $('tz-audit-download');
@@ -110,10 +189,17 @@ document.addEventListener('DOMContentLoaded', () => {
         progWrap.classList.remove('hidden');
         progBar.style.width = '0%';
         progCount.textContent = '0 / 0';
-        progLabel.textContent = 'Scanning users…';
+        progLabel.textContent = 'Scanning extensions…';
 
         try {
-            const res = await fetch('/api/user_timezone_audit/audit', { method: 'POST' });
+            const res = await fetch('/api/extension_timezone/audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sites: selectedValues(siteFilters),
+                    types: selectedValues(typeFilters),
+                }),
+            });
             if (res.status === 401) return handle401();
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.error || 'Failed to start audit.');
@@ -130,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function pollAudit(taskId) {
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`/api/user_timezone_audit/audit/status?task_id=${taskId}`);
+                const res = await fetch(`/api/extension_timezone/audit/status?task_id=${taskId}`);
                 const d = await res.json();
                 const total = d.total || 0;
                 const cur = d.current || 0;
@@ -141,11 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     clearInterval(interval);
                     progBar.style.width = '100%';
                     progLabel.textContent = 'Audit complete.';
-                    dl.href = `/api/user_timezone_audit/audit/download?task_id=${taskId}`;
+                    dl.href = `/api/extension_timezone/audit/download?task_id=${taskId}`;
                     dl.classList.remove('hidden');
                     auditSummary.textContent = d.mismatches > 0
-                        ? `${d.mismatches} user(s) have a timezone that doesn't match their site.`
-                        : 'All users match their site timezone. 🎉';
+                        ? `${d.mismatches} extension(s) have a timezone that doesn't match their site.`
+                        : 'All extensions match their site timezone. 🎉';
                     auditSummary.className = 'mt-3 text-sm font-medium ' +
                         (d.mismatches > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400');
                     auditSummary.classList.remove('hidden');
@@ -205,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fd = new FormData();
         fd.append('file', fileInput.files[0]);
         try {
-            const res = await fetch('/api/user_timezone_audit/sheets', { method: 'POST', body: fd });
+            const res = await fetch('/api/extension_timezone/sheets', { method: 'POST', body: fd });
             const sheets = await res.json();
             if (Array.isArray(sheets) && sheets.length && sheets[0] !== 'CSV Format (No Sheets)') {
                 sheetSelect.innerHTML = sheets.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -244,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!sheetWrap.classList.contains('hidden')) fd.append('sheet_name', sheetSelect.value);
 
         try {
-            const res = await fetch('/api/user_timezone_audit/upload', { method: 'POST', body: fd });
+            const res = await fetch('/api/extension_timezone/upload', { method: 'POST', body: fd });
             if (res.status === 401) return handle401();
             if (!res.ok) {
                 const e = await res.json().catch(() => ({}));
@@ -319,8 +405,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!uploadTaskId) return;
         cancelBtn.disabled = true;
         try {
-            await fetch(`/api/user_timezone_audit/cancel?task_id=${uploadTaskId}`, { method: 'POST' });
-            notify('Stop requested — finishing the current user…', false);
+            await fetch(`/api/extension_timezone/cancel?task_id=${uploadTaskId}`, { method: 'POST' });
+            notify('Stop requested — finishing the current extension…', false);
         } catch (err) {
             notify('Could not send stop request.', true);
         } finally {

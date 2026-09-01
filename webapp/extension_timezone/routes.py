@@ -9,10 +9,10 @@ from webapp.usage_tracking import track_usage
 from webapp import task_control
 from . import utils
 
-user_timezone_audit_bp = Blueprint(
-    'user_timezone_audit_bp', __name__, url_prefix='/api/user_timezone_audit'
+extension_timezone_bp = Blueprint(
+    'extension_timezone_bp', __name__, url_prefix='/api/extension_timezone'
 )
-user_timezone_audit_bp.add_url_rule(
+extension_timezone_bp.add_url_rule(
     '/cancel', 'cancel', task_control.cancel_view, methods=['POST']
 )
 
@@ -21,22 +21,46 @@ user_timezone_audit_bp.add_url_rule(
 # Audit (streamed background job)
 # ---------------------------------------------------------------------------
 
-@user_timezone_audit_bp.route('/audit', methods=['POST'])
+@extension_timezone_bp.route('/filters', methods=['GET'])
 @require_rc_token
-@track_usage('User Timezone Audit - Run')
+def get_filters():
+    """Options for the audit's Site and Extension Type multi-select tick boxes."""
+    token = get_rc_access_token()
+    if not token:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        sites = utils.list_sites(token)
+    except Exception as e:
+        return jsonify({"error": f"Failed to load sites: {str(e)}"}), 500
+    return jsonify({"sites": sites, "types": utils.type_filter_options()})
+
+
+@extension_timezone_bp.route('/audit', methods=['POST'])
+@require_rc_token
+@track_usage('Extension Timezone - Run')
 def start_audit():
     token = get_rc_access_token()
     if not token:
         return jsonify({"success": False, "error": "Unauthorized"}), 401
 
+    body = request.get_json(silent=True) or {}
+    type_labels = body.get('types') or []
+    site_ids = body.get('sites') or []
+    if not isinstance(type_labels, list):
+        type_labels = []
+    if not isinstance(site_ids, list):
+        site_ids = []
+
     task_id = f"tz_audit_{int(time.time())}"
     threading.Thread(
-        target=utils.run_timezone_audit, args=(task_id, token), daemon=True
+        target=utils.run_timezone_audit,
+        args=(task_id, token, type_labels, site_ids),
+        daemon=True,
     ).start()
     return jsonify({"success": True, "task_id": task_id})
 
 
-@user_timezone_audit_bp.route('/audit/status', methods=['GET'])
+@extension_timezone_bp.route('/audit/status', methods=['GET'])
 def audit_status():
     task_id = request.args.get('task_id')
     data = utils.audit_progress_store.get(task_id, {})
@@ -50,7 +74,7 @@ def audit_status():
     })
 
 
-@user_timezone_audit_bp.route('/audit/download', methods=['GET'])
+@extension_timezone_bp.route('/audit/download', methods=['GET'])
 def audit_download():
     task_id = request.args.get('task_id')
     data = utils.audit_progress_store.get(task_id, {})
@@ -59,7 +83,7 @@ def audit_download():
         return send_file(
             mem,
             as_attachment=True,
-            download_name='User_Timezone_Audit.xlsx',
+            download_name='Extension_Timezone_Audit.xlsx',
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
     return "File not ready or expired", 404
@@ -69,7 +93,7 @@ def audit_download():
 # Update (streamed upload -> preview / apply)
 # ---------------------------------------------------------------------------
 
-@user_timezone_audit_bp.route('/sheets', methods=['POST'])
+@extension_timezone_bp.route('/sheets', methods=['POST'])
 def get_sheets():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded."}), 400
@@ -83,9 +107,9 @@ def get_sheets():
         return jsonify({"error": f"Failed to parse sheets: {str(e)}"}), 400
 
 
-@user_timezone_audit_bp.route('/upload', methods=['POST'])
+@extension_timezone_bp.route('/upload', methods=['POST'])
 @require_rc_token
-@track_usage('User Timezone Audit - Update')
+@track_usage('Extension Timezone - Update')
 def upload_update():
     token = get_rc_access_token()
     if not token:
@@ -107,10 +131,12 @@ def upload_update():
         else:
             df = pd.read_excel(file)
 
-        missing = [c for c in ("Extension Number", "User Timezone") if c not in df.columns]
-        if missing:
+        if "Extension Number" not in df.columns:
             return jsonify({"type": "error",
-                            "message": f"File is missing required column(s): {', '.join(missing)}."}), 400
+                            "message": "File is missing required column: Extension Number."}), 400
+        if "Extension Timezone" not in df.columns and "User Timezone" not in df.columns:
+            return jsonify({"type": "error",
+                            "message": "File is missing required column: Extension Timezone."}), 400
 
         df = df.fillna('')
         records = df.to_dict('records')
