@@ -190,4 +190,8 @@ def create_app():
         from .directory_visibility import routes as directory_visibility_routes
         app.register_blueprint(directory_visibility_routes.directory_visibility_bp)
 
+        # Extension PIN routes
+        from .extension_pin import routes as extension_pin_routes
+        app.register_blueprint(extension_pin_routes.extension_pin_bp)
+
     return app

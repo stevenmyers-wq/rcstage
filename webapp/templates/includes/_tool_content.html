@@ -5,7 +5,7 @@
    The inline "Active Context" banner is hidden under EMBED because the outer
    chrome's live bridge pill is the single source of truth there. #}
 
-{% set sm_auth_tabs = ['air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'deskphone_ring_time', 'device_audit', 'device_ringing_audit', 'device_swap', 'directory_visibility', 'extension_deletion', 'extension_number_changer', 'extension_uploader', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'site_allocation', 'port_mapping', 'user_status', 'user_templates', 'user_timezone_audit'] %}
+{% set sm_auth_tabs = ['air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'deskphone_ring_time', 'device_audit', 'device_ringing_audit', 'device_swap', 'directory_visibility', 'extension_deletion', 'extension_number_changer', 'extension_pin', 'extension_uploader', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'site_allocation', 'port_mapping', 'user_status', 'user_templates', 'user_timezone_audit'] %}
 
 {% if current_tab in sm_auth_tabs %}
     {% if not session.get('sm_employee_token') %}
@@ -91,6 +91,7 @@
             {% elif current_tab == 'directory_visibility' %} {% include 'includes/directory_visibility_tab.html' %}
             {% elif current_tab == 'extension_deletion' %} {% include 'includes/extension_deletion_tab.html' %}
             {% elif current_tab == 'extension_number_changer' %} {% include 'includes/extension_number_changer_tab.html' %}
+            {% elif current_tab == 'extension_pin' %} {% include 'includes/extension_pin_tab.html' %}
             {% elif current_tab == 'extension_uploader' %} {% include 'includes/extension_uploader_tab.html' %}
             {% elif current_tab == 'phone_number_assignment' %} {% include 'includes/phone_number_assignment_tab.html' %}
             {% elif current_tab == 'renamer' %} {% include 'includes/extension_renamer_tab.html' %}
