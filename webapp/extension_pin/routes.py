@@ -44,11 +44,15 @@ def update_pin():
 
     if not ext_id:
         return jsonify({"error": "Missing id"}), 400
-    # The mailbox PIN is numeric; RingCentral enforces the length / complexity
-    # rules for the account, so only the basic shape is checked here and RC's
-    # own error is surfaced for anything it rejects.
+    # RingCentral enforces the full PIN ruleset (no >2 repeating / >3 consecutive
+    # digits, not contained in the account/contact number, etc.) and returns a
+    # specific error, so only the cheap shape checks — digits-only and the
+    # documented 6–10 digit length — are done here; everything else is surfaced
+    # from RC's own response.
     if not pin.isdigit():
-        return jsonify({"error": "PIN must contain digits only"}), 400
+        return jsonify({"error": "PIN must contain only digits"}), 400
+    if not (6 <= len(pin) <= 10):
+        return jsonify({"error": "PIN must be 6–10 digits long"}), 400
 
     try:
         ok, msg = utils.set_pin(ext_id, pin, token)

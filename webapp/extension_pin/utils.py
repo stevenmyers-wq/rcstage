@@ -7,6 +7,18 @@ in to check messages / log into the phone system by phone. It is write-only:
 RingCentral never returns the current PIN, so this tool only ever *sets* a new
 one on the extensions the operator ticks.
 
+The PIN lives on the extension *credentials* sub-resource, not on the main
+extension body, so it is written with::
+
+    PUT /restapi/v1.0/account/~/extension/{extensionId}/credentials
+    {"ivrPin": "<pin>"}
+
+(the same resource also carries the login password / secret question, which this
+tool never touches). RingCentral enforces the PIN rules server-side — 6–10
+digits, digits only, no more than 2 repeating or 3 consecutive digits, etc. —
+and rejects some extension types entirely (EXT-406). Those errors are surfaced
+verbatim per-extension rather than pre-judged here.
+
 The list endpoint simply enumerates every account extension (Users, Call
 Queues, IVR menus, …) so the UI can offer Type / Site filters and a tick-box
 selection; the update endpoint pushes ``{"ivrPin": "<pin>"}`` to each chosen
@@ -116,12 +128,14 @@ def _error_message(resp):
 def set_pin(ext_id, pin, token):
     """Set an extension's mailbox PIN (RingCentral ``ivrPin``).
 
-    updateExtension accepts a partial body, so only the PIN is sent. Returns
-    (ok, message) — message is RingCentral's error text on failure. The PIN is
+    Writes only the PIN to the extension's credentials sub-resource (the login
+    password / secret question on the same resource are left untouched). Returns
+    (ok, message) — message is RingCentral's error text on failure (e.g. a PIN
+    rule violation or EXT-406 for an unsupported extension type). The PIN is
     write-only in the API, so a success just confirms RingCentral accepted it.
     """
     resp = rc_api_call(
-        f"/restapi/v1.0/account/~/extension/{ext_id}",
+        f"/restapi/v1.0/account/~/extension/{ext_id}/credentials",
         method='PUT', json={'ivrPin': str(pin)},
         token=token, return_response=True,
     )

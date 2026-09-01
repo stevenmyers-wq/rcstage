@@ -29,14 +29,14 @@
     <div class="card w-full">
         <div class="mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
             <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Set PIN</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400">Enter the new mailbox PIN and apply it to every ticked extension. RingCentral enforces the account's PIN length &amp; complexity rules — any rejection is reported per-extension in the log below.</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Enter the new mailbox PIN and apply it to every ticked extension. RingCentral requires <span class="font-semibold">6–10 digits</span> and enforces further complexity rules (no more than 2 repeating or 3 consecutive digits, not derived from the phone number, etc.); some extension types can't hold credentials at all. Any rejection is reported per-extension in the log below.</p>
         </div>
 
         <div class="flex flex-col sm:flex-row sm:items-end gap-4">
             <div class="input-wrapper flex-grow">
-                <label for="ep-pin" class="input-label">New Mailbox PIN <span class="normal-case font-medium ml-1 tracking-normal">(digits only)</span></label>
+                <label for="ep-pin" class="input-label">New Mailbox PIN <span class="normal-case font-medium ml-1 tracking-normal">(6–10 digits)</span></label>
                 <input id="ep-pin" type="text" inputmode="numeric" autocomplete="off" pattern="[0-9]*"
-                       placeholder="e.g. 123456"
+                       maxlength="10" placeholder="e.g. 837201"
                        class="input-field font-mono tracking-widest" />
             </div>
             <button id="ep-apply-btn" onclick="epApply()" disabled
@@ -165,14 +165,16 @@
         const hint = document.getElementById('ep-apply-hint');
         const pin = (document.getElementById('ep-pin').value || '').trim();
         const count = epSelectedIds().length;
+        const pinValid = /^\d{6,10}$/.test(pin);
 
         let msg;
         if (count === 0) msg = 'Nothing ticked yet.';
         else if (!pin) msg = `${count} ticked — enter a PIN to enable Apply.`;
+        else if (!pinValid) msg = `${count} ticked — PIN must be 6–10 digits.`;
         else msg = `Will set PIN on ${count} ticked extension(s).`;
         hint.innerText = msg;
 
-        applyBtn.disabled = !(count > 0 && pin.length > 0);
+        applyBtn.disabled = !(count > 0 && pinValid);
     }
 
     // --- Apply ------------------------------------------------------------
@@ -188,7 +190,7 @@
     window.epApply = async function () {
         const ids = epSelectedIds();
         const pin = (document.getElementById('ep-pin').value || '').trim();
-        if (ids.length === 0 || !pin) return;
+        if (ids.length === 0 || !/^\d{6,10}$/.test(pin)) return;
 
         const applyBtn = document.getElementById('ep-apply-btn');
         const stopBtn = document.getElementById('ep-stop-btn');
