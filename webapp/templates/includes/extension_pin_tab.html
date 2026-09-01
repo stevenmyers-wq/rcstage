@@ -20,8 +20,22 @@
             Fetching extension list…
         </div>
 
-        <div id="ep-picker-wrap" class="opacity-50 pointer-events-none transition-opacity duration-300">
-            <div id="ep-picker"></div>
+        <div id="ep-picker-wrap" class="space-y-6 opacity-50 pointer-events-none transition-opacity duration-300">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="input-wrapper">
+                    <label class="input-label">Filter by Type <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                    <div id="ep-filter-type"></div>
+                </div>
+                <div class="input-wrapper">
+                    <label class="input-label">Filter by Site <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                    <div id="ep-filter-site"></div>
+                </div>
+            </div>
+
+            <div class="input-wrapper">
+                <label class="input-label">Extensions <span class="normal-case font-medium ml-1 tracking-normal">(tick the ones to update)</span></label>
+                <div id="ep-picker"></div>
+            </div>
         </div>
     </div>
 
@@ -68,8 +82,13 @@
 (function () {
     // Every account extension (raw rows from the list endpoint).
     let epRows = [];
-    // CheckboxSelect instance backing the tick-box selection.
-    let epPicker = null;
+    // CheckboxSelect instances: the two tick-box filters and the extension list.
+    let epPicker = null, epTypeFilter = null, epSiteFilter = null;
+    // Master set of ticked extension IDs, tracked outside the picker so ticks
+    // survive Type / Site filter changes (which swap the picker's visible items).
+    const epSelected = new Set();
+    // Rows currently shown in the picker after the active Type / Site filters.
+    let epFiltered = [];
     // Set by Stop; the per-extension apply loop checks it between calls.
     let epStopRequested = false;
 
@@ -137,27 +156,63 @@
             mount.innerHTML = '<p class="text-sm text-red-500">Selection component failed to load.</p>';
             return;
         }
+        epSelected.clear();
+
+        const types = Array.from(new Set(epRows.map(r => r.type).filter(Boolean))).sort();
+        const sites = Array.from(new Set(epRows.map(r => r.site).filter(Boolean))).sort();
+
+        epTypeFilter = CheckboxSelect.create(document.getElementById('ep-filter-type'), {
+            items: types, searchable: false, listHeightClass: 'h-32', onChange: epApplyFilters,
+        });
+        epSiteFilter = CheckboxSelect.create(document.getElementById('ep-filter-site'), {
+            items: sites, searchable: true, searchPlaceholder: 'Search sites…',
+            listHeightClass: 'h-32', onChange: epApplyFilters,
+        });
+
+        epFiltered = epRows.slice();
         epPicker = CheckboxSelect.create(mount, {
-            items: epRows,
+            items: epFiltered,
             getValue: r => String(r.id),
             getLabel: r => `${r.extensionNumber ? r.extensionNumber + ' — ' : ''}${r.name}`,
             getSub: r => `${r.type}${r.site ? ' · ' + r.site : ''}`,
             searchable: true,
             searchPlaceholder: 'Search name / extension…',
             listHeightClass: 'h-80',
-            filters: [
-                { get: r => r.type, label: 'Types', allLabel: 'All Types' },
-                { get: r => r.site, label: 'Sites', allLabel: 'All Sites' },
-            ],
-            onChange: epUpdateApplyState,
+            onChange: epSyncSelection,
         });
+        epUpdateApplyState();
+    }
+
+    // Recompute the picker's visible rows from the ticked Type / Site filters
+    // (an empty filter means "all"), preserving ticks via the master set.
+    function epApplyFilters() {
+        if (!epPicker) return;
+        const selTypes = epTypeFilter ? epTypeFilter.getSelected() : [];
+        const selSites = epSiteFilter ? epSiteFilter.getSelected() : [];
+        epFiltered = epRows.filter(r =>
+            (selTypes.length === 0 || selTypes.includes(r.type)) &&
+            (selSites.length === 0 || selSites.includes(r.site))
+        );
+        epPicker.setItems(epFiltered);
+        // Restore ticks for whichever of the newly-visible rows are in the master set.
+        epPicker.setSelected(Array.from(epSelected));
+        epUpdateApplyState();
+    }
+
+    // Fold the picker's current ticks back into the master set. Only the rows
+    // currently visible (epFiltered) can change here; ticks on rows hidden by
+    // the active filter are left untouched.
+    function epSyncSelection() {
+        const visibleIds = new Set(epFiltered.map(r => String(r.id)));
+        visibleIds.forEach(id => epSelected.delete(id));
+        epPicker.getSelected().forEach(id => epSelected.add(id));
         epUpdateApplyState();
     }
 
     // --- Apply gate -------------------------------------------------------
 
     function epSelectedIds() {
-        return epPicker ? epPicker.getSelected() : [];
+        return Array.from(epSelected);
     }
 
     function epUpdateApplyState() {

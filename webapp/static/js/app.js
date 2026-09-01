@@ -277,11 +277,20 @@ window.CheckboxSelect = (function () {
             rebuildFilterOptions();
             renderList();
         }
+        // Replace the current ticks with `values` (restricted to present items).
+        // Does not fire onChange — the caller is driving the state. Handy when an
+        // external filter swaps the item set but selections are tracked outside.
+        function setSelected(values) {
+            selected.clear();
+            const valid = new Set(items.map(getValue));
+            (values || []).forEach(v => { const s = String(v); if (valid.has(s)) selected.add(s); });
+            renderList();
+        }
         function clear() { selected.clear(); renderList(); onChange(getSelected()); }
 
         rebuildFilterOptions();
         renderList();
-        return { getSelected, getSelectedItems, setItems, clear, el: wrap };
+        return { getSelected, getSelectedItems, setItems, setSelected, clear, el: wrap };
     }
 
     return { create };
