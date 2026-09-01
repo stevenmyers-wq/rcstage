@@ -1,10 +1,137 @@
-Ready for action...
-[9:16:19 PM] Forward All Calls: enabling on Ext 90043 → 61419192766...
-[9:16:22 PM] ↳ GET forward-all-calls rule [404] — building dispatching from scratch
-[9:16:22 PM] ↳ PATCH forward-all-calls rule [404] {
-"errors" : [ {
-"errorCode" : "CMN-102",
-"message" : "No scripts found"
-} ]
+User Credentials
+ 
+Update User CredentialsInternal
+Updates extension user credentials.
+
+App Scope
+EditUserCredentials
+
+Feature Flag
+EditCredentials
+
+Usage Plan Group
+Medium
+
+ 
+Sign in to try it out
+put
+https://platform-dpwdevxmn.int.rclabenv.com/restapi/v1.0/account/accountId/extension/extensionId/credentials
+Path Params
+Description
+Input
+
+accountId*
+Internal identifier of the RingCentral account
+(can be set to "~" to indicate that the account associated with current authorization session should be used)
+
+~
+extensionId*
+Internal identifier of the RingCentral extension/user
+(can be set to "~" to indicate that the extension associated with current authorization session should be used)
+
+~
+Body Params
+Description
+Input
+
+password
+User password of an extension
+
+ivrPin
+User pin of an extension
+
+secretQuestion
+id
+Internal identifier of a secret question
+
+uri
+Link to a secret question resource
+
+answer
+Answer to a secret question
+
+Response body
+
+200
+Successful response
+
+Response content type: application/json
+
+{
+secretQuestion	
+object
+
+Secret question of an extension user
+
+{
+uri	
+string<uri>
+
+Link to the secret question
+
+id	
+string
+
+Internal identifier of a question
+
+questionType	
+integer<int64>
+
+Internal identifier of a question type
+
+languageId	
+string
+
+Internal identifier of a question language
+
+questionText	
+string
+
+Text of a secret question shown to the end user
+
+showInSignUp	
+boolean
+
+Specifies if the question is used during sign-up
+
+deprecated	
+boolean
+
+Specifies if the question is deprecated
+
 }
-[9:16:22 PM] ❌ Could not set the forward target (HTTP 404).
+}
+Error Codes
+HTTP Code	Error Code	Error Message
+400	EXT-413	Credentials changing is not allowed
+400	EXT-414	Parameter [${parameterName}] is not applicable for current queue as queue managers are selected from user list.
+400	EXT-475	Secret question is no longer in use
+400	IVR-211	Changing and validation for IVR PIN is prohibited
+400	IVR-300	IVR pin too short: at least 6 digits required
+400	IVR-301	IVR pin too long: up to 10 digits supported
+400	IVR-302	IVR pin must contain only digits
+400	IVR-303	IVR pin must not contain more than 2 repeating digits
+400	IVR-304	IVR pin must not contain more than 3 consecutive digits in direct or reverse order
+400	IVR-305	IVR pin must not be a string where all odd and even digits are the same
+400	IVR-306	IVR pin must not consist of digit pairs
+400	IVR-308	IVR pin must not be contained in account main phone number
+400	IVR-309	IVR pin must not be contained in contact phone number
+400	PWD-001	Password must contain at least one letter
+400	PWD-002	Password must contain at least one number
+400	PWD-004	Password must not contain more than 3 consecutive ascending or descending characters
+400	PWD-005	Password too short: at least [${minPasswordLength}] characters required
+400	PWD-006	Password too long: up to 32 characters supported
+400	PWD-007	Password must not contain more than 2 repeating characters
+400	PWD-010	Password must not contain user first name
+400	PWD-011	Password must not contain user last name
+400	PWD-012	Password must not contain company name
+400	PWD-013	Password must not contain contact email
+400	PWD-014	Password must not contain illegal characters
+400	PWD-015	Password must not be the same as one of the [${numberOfLastUsedPasswords}] last used passwords
+400	PWD-016	Password must contain at least one lower case letter
+400	PWD-017	Password must contain at least one upper case letter and special character
+403	CMN-419	In order to call this API endpoint for another extension, one of the following permissions [${permissionsName}] have to be granted with extended scope to the authorized user.
+403	EXT-406	Credentials are not applicable for current extensionType: [${extensionType}]
+503	CMN-211	Service is overloaded, please retry later
+Get User Credentials
+Validate User Credentials
