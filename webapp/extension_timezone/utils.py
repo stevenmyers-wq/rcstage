@@ -22,14 +22,14 @@ audit_progress_store = {}
 TYPE_FILTER_GROUPS = [
     ('User', ['User', 'DigitalUser', 'FlexibleUser']),
     ('Call Queue', ['Department']),
-    ('Announcement', ['Announcement']),
-    ('Voicemail', ['Voicemail']),
-    ('Shared Lines', ['SharedLinesGroup']),
-    ('Paging Group', ['PagingOnly']),
-    ('IVR Menu', ['IvrMenu']),
-    ('Limited Extension', ['Limited']),
-    ('Park Location', ['ParkLocation']),
+    ('Message Only', ['Voicemail']),
+    ('Announcement Only', ['Announcement']),
+    ('Site', ['Site']),
 ]
+
+# RC extension types that represent a site itself. A site's timezone is its own
+# regional setting, so it is compared against itself (never a false mismatch).
+SITE_TYPES = {'Site'}
 
 TIMEZONE_EXTENSION_TYPES = {t for _, raws in TYPE_FILTER_GROUPS for t in raws}
 
@@ -133,10 +133,48 @@ def fetch_timezone_extensions(token, types=None, sites=None):
     for e in _paged("/restapi/v1.0/account/~/extension", token):
         if e.get('type') not in types or not e.get('id'):
             continue
+        # The Main Site has no extension number and is handled as a synthetic
+        # row (see run_timezone_audit); skip the numberless site record here so
+        # it isn't listed twice.
+        if e.get('type') in SITE_TYPES and not str(e.get('extensionNumber', '')).strip():
+            continue
         if site_set is not None and _site_id_of(e) not in site_set:
             continue
         out.append(e)
     return out
+
+
+def resolve_main_site(token):
+    """Returns (site_id, tz_name, tz_id) for the account's Main Site.
+
+    The Main Site is identified in /account/~/sites by ``code == 'main-site'``
+    (or the name 'Main Site'); its regional timezone falls back to the
+    account-level regional settings when the site record omits it. ``site_id``
+    is the real id when known, else the 'main-site' alias.
+    """
+    site_id = MAIN_SITE_ID
+    tz = None
+    for s in _paged("/restapi/v1.0/account/~/sites", token):
+        is_main = (s.get('code') == 'main-site'
+                   or str(s.get('name', '')).strip().lower() == 'main site')
+        if is_main:
+            site_id = str(s.get('id')) or MAIN_SITE_ID
+            tz = (s.get('regionalSettings') or {}).get('timezone')
+            if not tz and site_id != MAIN_SITE_ID:
+                detail = rc_api_call(
+                    f"/restapi/v1.0/account/~/sites/{site_id}",
+                    token=token, raise_error=False
+                )
+                if detail:
+                    tz = (detail.get('regionalSettings') or {}).get('timezone')
+            break
+
+    if not tz:
+        account = rc_api_call("/restapi/v1.0/account/~", token=token, raise_error=False)
+        tz = (account or {}).get('regionalSettings', {}).get('timezone')
+
+    tz = tz or {}
+    return site_id, str(tz.get('name', '')), str(tz.get('id', ''))
 
 
 def build_site_timezone_map(token):
@@ -272,7 +310,15 @@ def run_timezone_audit(task_id, token, type_labels=None, site_ids=None):
                 continue
 
             ext_tz_name = str(detail.get('regionalSettings', {}).get('timezone', {}).get('name', ''))
-            site_name, site_tz_name = _resolve_site(detail.get('site'), site_map)
+            ext_type = detail.get('type') or ext.get('type')
+
+            if ext_type in SITE_TYPES:
+                # A site's timezone is its own regional setting — it is its own
+                # "site", so it is compared against itself (never a mismatch).
+                site_name = detail.get('name', '')
+                site_tz_name = ext_tz_name
+            else:
+                site_name, site_tz_name = _resolve_site(detail.get('site'), site_map)
 
             if ext_tz_name.strip() != site_tz_name.strip():
                 mismatches += 1
@@ -280,10 +326,28 @@ def run_timezone_audit(task_id, token, type_labels=None, site_ids=None):
             rows.append({
                 "Extension Name": detail.get('name', ''),
                 "Extension Number": str(detail.get('extensionNumber', '')),
-                "Extension Type": _type_label(detail.get('type') or ext.get('type')),
+                "Extension Type": _type_label(ext_type),
                 "Site": site_name,
                 "Site Timezone": site_tz_name,
                 "Extension Timezone": ext_tz_name,
+            })
+
+        # The Main Site has no extension number, so it isn't returned by
+        # /extension. Add it as a synthetic Site row when the Site type and the
+        # Main Site both pass the audit filters. Its Extension Number carries
+        # the 'main-site' sentinel so it can be targeted on upload.
+        label_set = set(type_labels or [])
+        site_selected = (not label_set) or ('Site' in label_set)
+        main_selected = (not site_ids) or (MAIN_SITE_ID in set(site_ids))
+        if site_selected and main_selected:
+            _mid, main_tz, _tzid = resolve_main_site(token)
+            rows.append({
+                "Extension Name": "Main Site",
+                "Extension Number": MAIN_SITE_ID,
+                "Extension Type": _type_label('Site'),
+                "Site": "Main Site",
+                "Site Timezone": main_tz,
+                "Extension Timezone": main_tz,
             })
 
         store['mismatches'] = mismatches
@@ -389,6 +453,45 @@ def update_timezone_batch(records, token, is_preview=False, task_id=None):
         if not ext_num:
             errors += 1
             yield emit("error", "Missing Extension Number.")
+            continue
+
+        # The Main Site has no extension number; it carries the 'main-site'
+        # sentinel and is updated through the Sites API rather than /extension.
+        if ext_num.lower() == MAIN_SITE_ID:
+            new_tz_id = _resolve_timezone_id(desired_raw, name_to_id, tz_records)
+            if not new_tz_id:
+                errors += 1
+                yield emit("error", f"Unrecognised timezone: '{desired_raw}'.")
+                continue
+            new_tz_name = next((str(t.get('name', '')) for t in tz_records
+                                if str(t.get('id')) == new_tz_id), desired_raw)
+            site_id, cur_tz_name, cur_tz_id = resolve_main_site(token)
+
+            if cur_tz_id == new_tz_id:
+                skipped += 1
+                yield emit("skipped", "Already set — no change.", cur_tz_name, new_tz_name)
+                continue
+            if is_preview:
+                yield emit("pending", "Will update.", cur_tz_name, new_tz_name)
+                continue
+
+            payload = {"regionalSettings": {"timezone": {"id": new_tz_id}}}
+            resp = rc_api_call(
+                f"/restapi/v1.0/account/~/sites/{site_id}",
+                method="PUT", json=payload, token=token, return_response=True
+            )
+            time.sleep(0.05)
+            if resp is not None and getattr(resp, 'ok', False):
+                updated += 1
+                yield emit("applied", "Timezone updated.", cur_tz_name, new_tz_name)
+            else:
+                errors += 1
+                err_text = ""
+                try:
+                    err_text = str(resp.json().get('message', '')) if resp is not None else ""
+                except Exception:
+                    err_text = getattr(resp, 'text', '') if resp is not None else ""
+                yield emit("error", f"Update failed. {err_text}".strip(), cur_tz_name, new_tz_name)
             continue
 
         ext_id = ext_map.get(ext_num)
