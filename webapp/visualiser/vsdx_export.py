@@ -558,6 +558,34 @@ def _assemble_package(pages):
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         'xml:space="preserve">' + ''.join(page_els) + '</Pages>'
     )
+    # A single default style sheet (ID 0 = "No Style") that carries line, fill
+    # and text props. Every shape and the PageSheet reference LineStyle/FillStyle/
+    # TextStyle="0" and DocumentSettings references Default*Style="0"; Visio treats
+    # a reference to a non-existent style sheet as a corrupt document and refuses
+    # to open it (Lucid silently ignores the dangling reference). Shapes still
+    # override every visual cell locally, so this only satisfies the reference.
+    style_sheets = (
+        '<StyleSheets>'
+        '<StyleSheet ID="0" NameU="No Style" Name="No Style">'
+        '<Cell N="EnableLineProps" V="1"/><Cell N="EnableFillProps" V="1"/>'
+        '<Cell N="EnableTextProps" V="1"/>'
+        '<Cell N="LineWeight" V="0.01041666666666667"/><Cell N="LineColor" V="0"/>'
+        '<Cell N="LinePattern" V="1"/><Cell N="Rounding" V="0"/>'
+        '<Cell N="LineCap" V="0"/><Cell N="BeginArrow" V="0"/><Cell N="EndArrow" V="0"/>'
+        '<Cell N="BeginArrowSize" V="2"/><Cell N="EndArrowSize" V="2"/>'
+        '<Cell N="LineColorTrans" V="0"/>'
+        '<Cell N="FillForegnd" V="1"/><Cell N="FillBkgnd" V="0"/><Cell N="FillPattern" V="1"/>'
+        '<Cell N="ShdwForegnd" V="0"/><Cell N="ShdwBkgnd" V="1"/><Cell N="ShdwPattern" V="0"/>'
+        '<Cell N="FillForegndTrans" V="0"/><Cell N="FillBkgndTrans" V="0"/>'
+        '<Cell N="ShdwForegndTrans" V="0"/><Cell N="ShdwBkgndTrans" V="0"/>'
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Font" V="Calibri"/><Cell N="Color" V="0"/><Cell N="Style" V="0"/>'
+        '<Cell N="Size" V="0.1666666666666667"/><Cell N="ColorTrans" V="0"/>'
+        '</Row></Section>'
+        '<Section N="Paragraph"><Row IX="0"><Cell N="HorzAlign" V="1"/></Row></Section>'
+        '</StyleSheet>'
+        '</StyleSheets>'
+    )
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main" '
@@ -566,7 +594,7 @@ def _assemble_package(pages):
         '<DocumentSettings TopPage="0" DefaultTextStyle="0" DefaultLineStyle="0" '
         'DefaultFillStyle="0" DefaultGuideStyle="0">'
         '<GlueSettings>9</GlueSettings><SnapSettings>65847</SnapSettings>'
-        '</DocumentSettings><Colors/><FaceNames/><StyleSheets/></VisioDocument>'
+        '</DocumentSettings><Colors/><FaceNames/>' + style_sheets + '</VisioDocument>'
     )
     content_types = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -614,10 +642,25 @@ def _assemble_package(pages):
         'visio/pages/_rels/pages.xml.rels': pages_rels,
     })
 
+    # Write parts in a deterministic OPC order. Visio expects [Content_Types].xml
+    # (and the package relationships) to come first in the archive and will refuse
+    # a package that leads with a page part; Lucid tolerates any order. Any parts
+    # not named here (the page*.xml) follow in insertion order.
+    order = [
+        '[Content_Types].xml',
+        '_rels/.rels',
+        'docProps/core.xml',
+        'visio/document.xml',
+        'visio/_rels/document.xml.rels',
+        'visio/pages/pages.xml',
+        'visio/pages/_rels/pages.xml.rels',
+    ]
+    ordered_names = order + [n for n in parts if n not in order]
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
-        for name, data in parts.items():
-            z.writestr(name, data)
+        for name in ordered_names:
+            z.writestr(name, parts[name])
     return buf.getvalue()
 
 
