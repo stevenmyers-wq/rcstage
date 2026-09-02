@@ -10,20 +10,67 @@ from webapp import task_control
 # the same reasoning). Keyed by task_id.
 audit_progress_store = {}
 
-# Extension types that represent an actual person (a "user"). These are the
-# only extensions whose regional timezone is meaningful to compare against the
-# site they belong to.
-USER_TYPES = {'User', 'DigitalUser', 'FlexibleUser'}
+# Extension types that carry an editable ``regionalSettings.timezone`` and can
+# therefore be audited against — and updated to match — the site they belong
+# to. This covers people (users), call queues, and the other shared/system
+# extensions RingCentral exposes a timezone for via the extension API.
+#
+# Single source of truth: each group is a (friendly label, [raw RC types])
+# pair. The friendly label is what the audit shows and what the audit's
+# "Extension Type" filter offers as a tick box; the raw types are the values
+# RingCentral returns on an extension. Everything below is derived from this.
+TYPE_FILTER_GROUPS = [
+    ('User', ['User', 'DigitalUser', 'FlexibleUser']),
+    ('Call Queue', ['Department']),
+    ('Announcement', ['Announcement']),
+    ('Voicemail', ['Voicemail']),
+    ('Shared Lines', ['SharedLinesGroup']),
+    ('Paging Group', ['PagingOnly']),
+    ('IVR Menu', ['IvrMenu']),
+    ('Limited Extension', ['Limited']),
+    ('Park Location', ['ParkLocation']),
+]
+
+TIMEZONE_EXTENSION_TYPES = {t for _, raws in TYPE_FILTER_GROUPS for t in raws}
+
+# Friendly label for each raw RC type. Anything unlisted falls back to itself.
+EXTENSION_TYPE_LABELS = {t: label for label, raws in TYPE_FILTER_GROUPS for t in raws}
+
+# Friendly label -> set of raw RC types, used to expand a selected filter label.
+_LABEL_TO_TYPES = {label: set(raws) for label, raws in TYPE_FILTER_GROUPS}
+
+
+def _type_label(raw_type):
+    return EXTENSION_TYPE_LABELS.get(str(raw_type), str(raw_type or ''))
+
+
+def type_filter_options():
+    """Returns the ordered list of {'value','label'} extension-type tick boxes
+    offered by the audit filter. Value and label are the same friendly string."""
+    return [{'value': label, 'label': label} for label, _ in TYPE_FILTER_GROUPS]
+
+
+def _expand_type_labels(labels):
+    """Expands selected friendly type labels to the set of raw RC types. An
+    empty/falsey selection means 'all auditable types'."""
+    if not labels:
+        return set(TIMEZONE_EXTENSION_TYPES)
+    raws = set()
+    for label in labels:
+        raws |= _LABEL_TO_TYPES.get(str(label), set())
+    return raws or set(TIMEZONE_EXTENSION_TYPES)
+
 
 # The exact column order used for both the audit export and the update upload.
 # Keeping them identical means the file the operator downloads is the same file
 # they edit and upload back.
 TEMPLATE_COLUMNS = [
-    "User Name",
+    "Extension Name",
     "Extension Number",
+    "Extension Type",
     "Site",
     "Site Timezone",
-    "User Timezone",
+    "Extension Timezone",
 ]
 
 
@@ -50,10 +97,46 @@ def _paged(endpoint, token):
         time.sleep(0.05)
 
 
-def fetch_user_extensions(token):
-    """Returns the list of user-type extensions (basic list records)."""
-    return [e for e in _paged("/restapi/v1.0/account/~/extension", token)
-            if e.get('type') in USER_TYPES and e.get('id')]
+# The alias used for the account's primary ("Main") site everywhere in this
+# module, including as the filter value for the Main Site tick box.
+MAIN_SITE_ID = 'main-site'
+
+
+def _site_id_of(obj):
+    """Effective site id for an extension/list record, defaulting to the Main
+    Site alias when no site is set."""
+    return str((obj.get('site') or {}).get('id', '')) or MAIN_SITE_ID
+
+
+def list_sites(token):
+    """Returns an ordered list of {'id','name'} for every site, including the
+    Main Site alias. Used to populate the audit's Site filter tick boxes."""
+    sites = [{'id': MAIN_SITE_ID, 'name': 'Main Site'}]
+    for s in _paged("/restapi/v1.0/account/~/sites", token):
+        sid = str(s.get('id'))
+        if sid == MAIN_SITE_ID:
+            continue
+        sites.append({'id': sid, 'name': s.get('name', '') or sid})
+    return sites
+
+
+def fetch_timezone_extensions(token, types=None, sites=None):
+    """Returns the list of extensions (basic list records) worth auditing.
+
+    ``types`` is a set of raw RC extension types to include (defaults to every
+    auditable type). ``sites`` is a set of site ids to include; an empty/None
+    set means every site.
+    """
+    types = types or TIMEZONE_EXTENSION_TYPES
+    site_set = set(sites) if sites else None
+    out = []
+    for e in _paged("/restapi/v1.0/account/~/extension", token):
+        if e.get('type') not in types or not e.get('id'):
+            continue
+        if site_set is not None and _site_id_of(e) not in site_set:
+            continue
+        out.append(e)
+    return out
 
 
 def build_site_timezone_map(token):
@@ -61,7 +144,7 @@ def build_site_timezone_map(token):
 
     The account's primary site is keyed under the well-known 'main-site' alias
     (and its real id, when known) using the account-level regional settings,
-    so users on the Main Site can always be resolved.
+    so extensions on the Main Site can always be resolved.
     """
     site_map = {}
     for s in _paged("/restapi/v1.0/account/~/sites", token):
@@ -117,15 +200,15 @@ def _build_audit_workbook(rows):
     df = pd.DataFrame(rows, columns=TEMPLATE_COLUMNS)
 
     if not df.empty:
-        mismatch = df["Site Timezone"].astype(str).str.strip() != df["User Timezone"].astype(str).str.strip()
+        mismatch = df["Site Timezone"].astype(str).str.strip() != df["Extension Timezone"].astype(str).str.strip()
         df["_sort"] = (~mismatch).astype(int)  # mismatches (False->0) first
         df.sort_values(by=["_sort", "Site", "Extension Number"], inplace=True)
         df.drop(columns=["_sort"], inplace=True)
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='User Timezone Audit')
-        ws = writer.sheets['User Timezone Audit']
+        df.to_excel(writer, index=False, sheet_name='Extension Timezone Audit')
+        ws = writer.sheets['Extension Timezone Audit']
 
         for column in ws.columns:
             length = max(len(str(cell.value) or "") for cell in column)
@@ -137,11 +220,11 @@ def _build_audit_workbook(rows):
         red = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
         headers = [c.value for c in ws[1]]
         site_col = headers.index("Site Timezone") + 1
-        user_col = headers.index("User Timezone") + 1
+        ext_col = headers.index("Extension Timezone") + 1
         for row in range(2, ws.max_row + 1):
             site_tz = str(ws.cell(row=row, column=site_col).value or "").strip()
-            user_tz = str(ws.cell(row=row, column=user_col).value or "").strip()
-            if site_tz != user_tz:
+            ext_tz = str(ws.cell(row=row, column=ext_col).value or "").strip()
+            if site_tz != ext_tz:
                 for col in range(1, ws.max_column + 1):
                     ws.cell(row=row, column=col).fill = red
 
@@ -149,22 +232,30 @@ def _build_audit_workbook(rows):
     return output.getvalue()
 
 
-def run_timezone_audit(task_id, token):
-    """Background worker: builds the per-user timezone-vs-site audit and stores
-    the resulting workbook in ``audit_progress_store`` for download."""
+def run_timezone_audit(task_id, token, type_labels=None, site_ids=None):
+    """Background worker: builds the per-extension timezone-vs-site audit and
+    stores the resulting workbook in ``audit_progress_store`` for download.
+
+    ``type_labels`` and ``site_ids`` are the audit filter selections (friendly
+    extension-type labels and site ids). An empty selection means 'all'.
+    """
     audit_progress_store[task_id] = {
         'current': 0, 'total': 0, 'status': 'running', 'file_ready': False, 'mismatches': 0
     }
     try:
         site_map = build_site_timezone_map(token)
-        users = fetch_user_extensions(token)
+        extensions = fetch_timezone_extensions(
+            token,
+            types=_expand_type_labels(type_labels),
+            sites=set(site_ids) if site_ids else None,
+        )
 
         store = audit_progress_store[task_id]
-        store['total'] = len(users)
+        store['total'] = len(extensions)
 
         rows = []
         mismatches = 0
-        for idx, ext in enumerate(users):
+        for idx, ext in enumerate(extensions):
             if task_control.is_stopped(task_id):
                 store['status'] = 'cancelled'
                 task_control.clear(task_id)
@@ -180,18 +271,19 @@ def run_timezone_audit(task_id, token):
             if not detail:
                 continue
 
-            user_tz_name = str(detail.get('regionalSettings', {}).get('timezone', {}).get('name', ''))
+            ext_tz_name = str(detail.get('regionalSettings', {}).get('timezone', {}).get('name', ''))
             site_name, site_tz_name = _resolve_site(detail.get('site'), site_map)
 
-            if user_tz_name.strip() != site_tz_name.strip():
+            if ext_tz_name.strip() != site_tz_name.strip():
                 mismatches += 1
 
             rows.append({
-                "User Name": detail.get('name', ''),
+                "Extension Name": detail.get('name', ''),
                 "Extension Number": str(detail.get('extensionNumber', '')),
+                "Extension Type": _type_label(detail.get('type') or ext.get('type')),
                 "Site": site_name,
                 "Site Timezone": site_tz_name,
-                "User Timezone": user_tz_name,
+                "Extension Timezone": ext_tz_name,
             })
 
         store['mismatches'] = mismatches
@@ -233,16 +325,25 @@ def _resolve_timezone_id(raw, name_to_id, records):
     return None
 
 
-def _get(row, key):
-    val = row.get(key, '')
-    if val is None:
-        return ''
-    return str(val).strip()
+def _get(row, *keys):
+    """Returns the first non-empty value across the given column names.
+
+    Multiple keys support backward compatibility with files exported by the
+    older 'User Timezone Audit' tool (e.g. 'User Timezone' / 'User Name').
+    """
+    for key in keys:
+        val = row.get(key, '')
+        if val is None:
+            continue
+        val = str(val).strip()
+        if val:
+            return val
+    return ''
 
 
 def update_timezone_batch(records, token, is_preview=False, task_id=None):
     """Generator yielding NDJSON-friendly progress dicts while previewing or
-    applying user timezone changes from an uploaded audit file."""
+    applying extension timezone changes from an uploaded audit file."""
     total = len(records)
     yield {"type": "start", "total": total,
            "message": "Loading account directories..."}
@@ -258,7 +359,7 @@ def update_timezone_batch(records, token, is_preview=False, task_id=None):
         yield {"type": "error", "message": "Failed to load the timezone dictionary."}
         return
 
-    # Build an extension-number -> id map for user extensions.
+    # Build an extension-number -> id map across every extension in the account.
     ext_map = {}
     for e in _paged("/restapi/v1.0/account/~/extension", token):
         num = str(e.get('extensionNumber', '')).strip()
@@ -274,9 +375,9 @@ def update_timezone_batch(records, token, is_preview=False, task_id=None):
             task_control.clear(task_id)
             return
 
-        name = _get(row, "User Name")
+        name = _get(row, "Extension Name", "User Name")
         ext_num = _get(row, "Extension Number").split('.')[0]
-        desired_raw = _get(row, "User Timezone")
+        desired_raw = _get(row, "Extension Timezone", "User Timezone")
 
         def emit(status, message, from_tz="", to_tz=""):
             return {
@@ -293,7 +394,7 @@ def update_timezone_batch(records, token, is_preview=False, task_id=None):
         ext_id = ext_map.get(ext_num)
         if not ext_id:
             errors += 1
-            yield emit("error", f"No user extension found for number {ext_num}.")
+            yield emit("error", f"No extension found for number {ext_num}.")
             continue
 
         new_tz_id = _resolve_timezone_id(desired_raw, name_to_id, tz_records)
