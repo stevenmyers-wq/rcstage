@@ -41,6 +41,7 @@ class UATGenerator:
         # 'complex' emits every case; 'standard' trims to happy-path routing plus ring timers and audio.
         self.complexity = complexity if complexity in ('standard', 'complex') else 'complex'
         self.ext_map = self._build_ext_map()
+        self.main_company_number = None
         self.phone_numbers_map = self._build_phone_numbers_map()
         self.queue_to_process = [{
             "id": str(start_ext_id),
@@ -89,7 +90,13 @@ class UATGenerator:
                 ext_obj = safe_dict(r, 'extension')
                 ext_id = str(ext_obj.get('id', ''))
                 phone_number = r.get('phoneNumber')
-                
+
+                # Capture the account's main company number so UAT connectivity
+                # steps can name the actual number to dial, not just "the Main
+                # Company Number".
+                if phone_number and r.get('usageType') == 'MainCompanyNumber' and not self.main_company_number:
+                    self.main_company_number = phone_number
+
                 if ext_id and phone_number:
                     if ext_id not in num_map:
                         num_map[ext_id] = []
@@ -293,7 +300,8 @@ class UATGenerator:
                     for did in dids:
                         self.add_case(f"{prefix}1. Connectivity", f"External Routing (DID)", f"Dial the assigned DID {did} from a non RingCentral phone.", f"Call connects via the PSTN to {cname}.")
                 else:
-                    self.add_case(f"{prefix}1. Connectivity", "External Routing (No DID)", f"Dial the Main Company Number and enter extension {cext}.", f"Call successfully routes to {cname}.")
+                    main_num = f" ({self.main_company_number})" if self.main_company_number else ""
+                    self.add_case(f"{prefix}1. Connectivity", "External Routing (No DID)", f"Dial the Main Company Number{main_num} and enter extension {cext}.", f"Call successfully routes to {cname}.")
 
             # ---------------------------------------------------------
             # 2. SCHEDULE BOUNDARIES
