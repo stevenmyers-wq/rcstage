@@ -22,14 +22,12 @@ audit_progress_store = {}
 TYPE_FILTER_GROUPS = [
     ('User', ['User', 'DigitalUser', 'FlexibleUser']),
     ('Call Queue', ['Department']),
-    ('Announcement', ['Announcement']),
-    ('Voicemail', ['Voicemail']),
-    ('Shared Lines', ['SharedLinesGroup']),
-    ('Paging Group', ['PagingOnly']),
-    ('IVR Menu', ['IvrMenu']),
-    ('Limited Extension', ['Limited']),
-    ('Park Location', ['ParkLocation']),
+    ('Site', ['Site']),
 ]
+
+# RC extension types that represent a site itself. A site's timezone is its own
+# regional setting, so it is compared against itself (never a false mismatch).
+SITE_TYPES = {'Site'}
 
 TIMEZONE_EXTENSION_TYPES = {t for _, raws in TYPE_FILTER_GROUPS for t in raws}
 
@@ -272,7 +270,15 @@ def run_timezone_audit(task_id, token, type_labels=None, site_ids=None):
                 continue
 
             ext_tz_name = str(detail.get('regionalSettings', {}).get('timezone', {}).get('name', ''))
-            site_name, site_tz_name = _resolve_site(detail.get('site'), site_map)
+            ext_type = detail.get('type') or ext.get('type')
+
+            if ext_type in SITE_TYPES:
+                # A site's timezone is its own regional setting — it is its own
+                # "site", so it is compared against itself (never a mismatch).
+                site_name = detail.get('name', '')
+                site_tz_name = ext_tz_name
+            else:
+                site_name, site_tz_name = _resolve_site(detail.get('site'), site_map)
 
             if ext_tz_name.strip() != site_tz_name.strip():
                 mismatches += 1
@@ -280,7 +286,7 @@ def run_timezone_audit(task_id, token, type_labels=None, site_ids=None):
             rows.append({
                 "Extension Name": detail.get('name', ''),
                 "Extension Number": str(detail.get('extensionNumber', '')),
-                "Extension Type": _type_label(detail.get('type') or ext.get('type')),
+                "Extension Type": _type_label(ext_type),
                 "Site": site_name,
                 "Site Timezone": site_tz_name,
                 "Extension Timezone": ext_tz_name,
