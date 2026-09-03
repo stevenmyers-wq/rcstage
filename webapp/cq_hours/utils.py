@@ -1858,6 +1858,10 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                                 v_needs_update |= check_diff(changes, f"{_tcol} Email", _old_a, _new_a)
 
                 if (v_needs_update or manager_override) and not vm_skip and not is_preview:
+                    # Final guard: emailRecipients is a read-only field RingCentral
+                    # rejects (CMN-101). Strip it immediately before the PUT so nothing
+                    # built above can reintroduce it.
+                    new_notif.pop('emailRecipients', None)
                     put_succ, err = safe_api_call(f'/restapi/v1.0/account/~/extension/{q_id}/notification-settings', method='PUT', json_payload=new_notif, token=token)
                     
                     if not put_succ and ('includeAttachment' in str(err) or 'markAsRead' in str(err) or 'includeTranscription' in str(err)):
@@ -1871,13 +1875,13 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                         else:
                             has_error = True
                             logs.append(f"Notifications Error: {format_api_error(err2)}")
-                            _debug_dump(logs, 'Notifications PUT (retry) failed', payload=new_notif, err=err2)
+                            _debug_dump(logs, 'Notifications PUT (retry) failed [build:emailRecipients-fix]', payload=new_notif, err=err2)
                     elif put_succ:
                         logs.append("Notifications Updated")
                     else:
                         has_error = True
                         logs.append(f"Notifications Error: {format_api_error(err)}")
-                        _debug_dump(logs, 'Notifications PUT failed', payload=new_notif, err=err)
+                        _debug_dump(logs, 'Notifications PUT failed [build:emailRecipients-fix]', payload=new_notif, err=err)
 
         if not logs and not changes: 
             res_dict = {"ext": ext_num, "status": "info", "message": "No valid changes found in row.", "changes": changes}
