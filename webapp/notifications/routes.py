@@ -228,19 +228,26 @@ def update_single_extension():
     # missing/invalid category.
     new_notif = copy.deepcopy(original)
 
+    # 'emailRecipients' is a read-only echo of the recipients RingCentral derives
+    # for a queue whose notifications go to its queue managers. Sending it back in
+    # the PUT is what made editing any toggle on a manager queue fail (e.g. turning
+    # Missed Call notifications OFF). Drop it unconditionally -- RingCentral
+    # recomputes it from 'includeManagers'. (extension_uploader and the cq_hours
+    # updater drop this same read-only field before writing.)
+    new_notif.pop('emailRecipients', None)
+
     if 'advancedMode' in new_notif:
         new_notif['advancedMode'] = requested_advanced
     advanced = bool(new_notif.get('advancedMode', False))
 
-    # Queue managers vs advanced mode: RingCentral rejects advanced mode while
-    # queue managers are selected from the user list (EXT-465, "Advanced mode is
-    # not available when queue managers are selected from user list"). When we
-    # enable advanced mode, de-select the managers so our uploaded per-category
-    # addresses take effect instead.
-    if advanced and new_notif.get('emailRecipients'):
-        new_notif.pop('emailRecipients', None)
-        if 'includeManagers' in new_notif:
-            new_notif['includeManagers'] = False
+    # Advanced mode is incompatible with queue managers selected from the user
+    # list (EXT-465, "Advanced mode is not available when queue managers are
+    # selected from user list"). When we enable advanced mode, de-select the
+    # managers so our uploaded per-category addresses take delivery instead. In
+    # basic mode we leave 'includeManagers' as-is, so manager delivery is
+    # preserved while the individual category toggles below still apply.
+    if advanced and 'includeManagers' in new_notif:
+        new_notif['includeManagers'] = False
 
     # Top-level 'emailAddresses' is the basic-mode global recipient list. In
     # advanced mode the portal leaves it as-is (it is harmless there), so we only
@@ -268,7 +275,14 @@ def update_single_extension():
             continue
         enable_val = data.get(enable_key)
         if enable_val not in (None, ''):
-            block['notifyByEmail'] = parse_bool(enable_val)
+            enabled = parse_bool(enable_val)
+            block['notifyByEmail'] = enabled
+            # A category's queue managers can't receive a notification type that
+            # has been turned off; leaving 'includeManagers' set on a now-disabled
+            # category is a conflicting state RingCentral rejects. Clear it for the
+            # category being switched off so the toggle actually takes effect.
+            if not enabled and block.get('includeManagers'):
+                block['includeManagers'] = False
         if advanced:
             emails_val = data.get(emails_key)
             if emails_val not in (None, ''):
