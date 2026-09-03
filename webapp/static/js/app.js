@@ -145,6 +145,11 @@ window.CheckboxSelect = (function () {
         const searchable = config.searchable !== false;
         const listHeightClass = config.listHeightClass || 'h-56';
         const onChange = config.onChange || function () {};
+        // Optional predicate consulted on top of the search box / filter dropdowns
+        // so a caller can hide items from an external control (e.g. another
+        // CheckboxSelect used as a filter). Selections are unaffected — hidden
+        // ticks are preserved, exactly like the built-in search filter.
+        const externalFilter = typeof config.externalFilter === 'function' ? config.externalFilter : null;
 
         let items = Array.isArray(config.items) ? config.items.slice() : [];
         const selected = new Set();
@@ -218,6 +223,7 @@ window.CheckboxSelect = (function () {
         function visibleItems() {
             const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
             return items.filter(it => {
+                if (externalFilter && !externalFilter(it)) return false;
                 for (const { def, el } of filterSelects) {
                     if (el.value && def.get(it) !== el.value) return false;
                 }
@@ -297,7 +303,10 @@ window.CheckboxSelect = (function () {
 
         rebuildFilterOptions();
         renderList();
-        return { getSelected, getSelectedItems, setItems, setSelected, clear, el: wrap };
+        // refresh() re-applies the current filters (including any externalFilter)
+        // and re-renders without touching selections — call it when an external
+        // control the externalFilter depends on has changed.
+        return { getSelected, getSelectedItems, setItems, setSelected, clear, refresh: renderList, el: wrap };
     }
 
     return { create };

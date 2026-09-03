@@ -21,15 +21,27 @@
             <span id="cid-load-summary" class="text-sm text-slate-500 dark:text-slate-400"></span>
         </div>
 
-        <!-- Tick list (rendered by CheckboxSelect: search + Site filter) -->
-        <div id="cid-user-picker" class="mb-5">
-            <p class="text-slate-400 text-sm italic">Click <span class="font-semibold">Load Users</span> to begin.</p>
+        <!-- Site filter (searchable + tickable). Tick sites to narrow the user list. -->
+        <div class="mb-4">
+            <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Filter by site</label>
+            <div id="cid-site-picker">
+                <p class="text-slate-400 text-sm italic">Load users to choose sites. Leave all unticked to include every site.</p>
+            </div>
         </div>
 
-        <!-- CLI to apply -->
+        <!-- User tick list (rendered by CheckboxSelect: searchable) -->
+        <div class="mb-5">
+            <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Users</label>
+            <div id="cid-user-picker">
+                <p class="text-slate-400 text-sm italic">Click <span class="font-semibold">Load Users</span> to begin.</p>
+            </div>
+        </div>
+
+        <!-- CLI to apply (searchable) -->
         <div class="grid gap-4 sm:grid-cols-2 items-end mb-4">
             <div>
                 <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Caller ID to apply</label>
+                <input id="cid-number-search" type="text" placeholder="Search numbers by digits, label or type…" class="input-field !py-2 mb-2" disabled>
                 <select id="cid-number-select" class="input-field !py-2" disabled>
                     <option value="">Load users to populate numbers…</option>
                 </select>
@@ -202,10 +214,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mode A: In-tool tick selection
     // =====================================================================
     let picker = null;
+    let sitesPicker = null;
+    let selectedSiteNames = new Set();
     let cidNumbers = [];
     let selTaskId = null;
 
     const numberSelect = $('cid-number-select');
+    const numberSearch = $('cid-number-search');
+
+    // Rebuild the caller ID dropdown, filtered by the search box, preserving the
+    // current selection when it still matches.
+    function renderNumberOptions() {
+        const q = (numberSearch.value || '').trim().toLowerCase();
+        const prev = numberSelect.value;
+        if (!cidNumbers.length) {
+            numberSelect.innerHTML = '<option value="">No caller ID numbers found on this account</option>';
+            refreshPreviewEnabled();
+            return;
+        }
+        const matches = cidNumbers.filter(n =>
+            !q || `${n.phoneNumber} ${n.label} ${n.usageType}`.toLowerCase().includes(q));
+        numberSelect.innerHTML = ['<option value="">Select a number…</option>']
+            .concat(matches.map(n => {
+                const extra = [n.label, n.usageType].filter(Boolean).join(' · ');
+                return `<option value="${esc(n.id)}">${esc(n.phoneNumber)}${extra ? ' — ' + esc(extra) : ''}</option>`;
+            })).join('');
+        if (prev && matches.some(n => n.id === prev)) numberSelect.value = prev;
+        refreshPreviewEnabled();
+    }
+    numberSearch.addEventListener('input', renderNumberOptions);
     const previewBtn = $('cid-preview-btn');
     const applyBtn = $('cid-apply-btn');
     const cancelBtn = $('cid-cancel-btn');
@@ -235,7 +272,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const users = d.records || [];
             cidNumbers = d.numbers || [];
 
-            // Build (or refresh) the tick list with a Site filter and search.
+            // Site filter: a searchable, tickable list of the sites present among
+            // the loaded users. Ticking sites narrows the user list below; leaving
+            // it empty includes every site.
+            const siteMount = $('cid-site-picker');
+            siteMount.innerHTML = '';
+            selectedSiteNames = new Set();
+            const siteNames = Array.from(new Set(users.map(u => u.site).filter(Boolean))).sort();
+            sitesPicker = CheckboxSelect.create(siteMount, {
+                items: siteNames,
+                getValue: (s) => s,
+                getLabel: (s) => s,
+                searchPlaceholder: 'Search sites…',
+                listHeightClass: 'h-32',
+                onChange: (vals) => {
+                    selectedSiteNames = new Set(vals);
+                    if (picker) picker.refresh();
+                    refreshPreviewEnabled();
+                },
+            });
+
+            // User tick list, searchable and filtered by the ticked sites.
             const mount = $('cid-user-picker');
             mount.innerHTML = '';
             picker = CheckboxSelect.create(mount, {
@@ -243,24 +300,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 getValue: (u) => u.id,
                 getLabel: (u) => `${u.extensionNumber || '—'} · ${u.name}`,
                 getSub: (u) => u.site,
-                getFilter: (u) => u.site,
-                filterLabel: 'Sites',
                 searchPlaceholder: 'Search by name or extension…',
+                externalFilter: (u) => selectedSiteNames.size === 0 || selectedSiteNames.has(u.site),
                 onChange: refreshPreviewEnabled,
             });
 
-            // Populate the caller ID dropdown.
-            if (!cidNumbers.length) {
-                numberSelect.innerHTML = '<option value="">No caller ID numbers found on this account</option>';
-                numberSelect.disabled = true;
-            } else {
-                numberSelect.innerHTML = ['<option value="">Select a number…</option>']
-                    .concat(cidNumbers.map(n => {
-                        const extra = [n.label, n.usageType].filter(Boolean).join(' · ');
-                        return `<option value="${esc(n.id)}">${esc(n.phoneNumber)}${extra ? ' — ' + esc(extra) : ''}</option>`;
-                    })).join('');
-                numberSelect.disabled = false;
-            }
+            // Populate the searchable caller ID dropdown.
+            numberSelect.disabled = !cidNumbers.length;
+            numberSearch.disabled = !cidNumbers.length;
+            renderNumberOptions();
 
             $('cid-load-summary').textContent = `${users.length} user(s) loaded · ${cidNumbers.length} number(s) available.`;
             refreshPreviewEnabled();
