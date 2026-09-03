@@ -1703,6 +1703,16 @@ def update_cq_batch(records, token, is_preview=False, wipe_members=False, task_i
                 new_notif = copy.deepcopy(orig_notif)
                 for field in _READ_ONLY: new_notif.pop(field, None)
 
+                # 'emailRecipients' is a read-only echo of the queue managers
+                # RingCentral derives for the queue (selected from the user list).
+                # Echoing it back on the PUT is rejected with CMN-101 "Parameter
+                # [emailRecipients] value is invalid", which blocked editing any
+                # notification toggle (e.g. turning Missed Calls OFF) on a queue
+                # that has managers selected -- even when the notification recipient
+                # is a specified email. Drop it; RC recomputes it from
+                # includeManagers. (extension_uploader drops this same field.)
+                new_notif.pop('emailRecipients', None)
+
                 if 'voicemails' not in new_notif:
                     new_notif['voicemails'] = {}
 
