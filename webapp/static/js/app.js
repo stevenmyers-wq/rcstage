@@ -7,29 +7,36 @@ function initTheme() {
     const lightIcon = document.getElementById('theme-toggle-light-icon');
     const htmlElement = document.documentElement;
 
-    // Check localStorage or system preference
-    if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        htmlElement.classList.add('dark');
-        if (lightIcon) lightIcon.classList.remove('hidden');
-    } else {
-        htmlElement.classList.remove('dark');
-        if (darkIcon) darkIcon.classList.remove('hidden');
+    // Apply the current theme (from localStorage, falling back to the system
+    // preference) to this document and sync the toggle icons. Safe to call
+    // repeatedly.
+    function applyTheme() {
+        const isDark = localStorage.getItem('color-theme') === 'dark'
+            || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        htmlElement.classList.toggle('dark', isDark);
+        if (darkIcon) darkIcon.classList.toggle('hidden', isDark);
+        if (lightIcon) lightIcon.classList.toggle('hidden', !isDark);
     }
+
+    applyTheme();
 
     if (themeToggleBtn) {
         themeToggleBtn.addEventListener('click', () => {
-            darkIcon.classList.toggle('hidden');
-            lightIcon.classList.toggle('hidden');
-
-            if (htmlElement.classList.contains('dark')) {
-                htmlElement.classList.remove('dark');
-                localStorage.setItem('color-theme', 'light');
-            } else {
-                htmlElement.classList.add('dark');
-                localStorage.setItem('color-theme', 'dark');
-            }
+            const nextDark = !htmlElement.classList.contains('dark');
+            localStorage.setItem('color-theme', nextDark ? 'dark' : 'light');
+            applyTheme();
         });
     }
+
+    // Tool tabs render in same-origin iframes that each run initTheme() once at
+    // load. When the theme changes in another document (the parent shell's
+    // toggle, or another browser tab), the localStorage write fires a 'storage'
+    // event here — re-apply so open tabs follow the new theme instead of staying
+    // stuck on whatever they loaded with. The 'storage' event only fires in
+    // *other* documents, so this never double-handles the toggle click above.
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'color-theme' || e.key === null) applyTheme();
+    });
 }
 
 // --- Shared: download an operation's result listing as .xlsx ---------------
