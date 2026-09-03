@@ -192,14 +192,22 @@ def update_single_extension():
         if not val: return []
         return [e.strip() for e in val.split(';') if e.strip()]
 
-    requested_advanced = str(data.get('advanced_mode', 'FALSE')).upper() == 'TRUE'
+    # Advanced Mode is optional per row. Only when the column carries an explicit
+    # value do we change the queue's mode; a blank column must leave the stored
+    # mode untouched. Forcing it (blank -> FALSE) silently flipped advanced-mode
+    # "specified emails" queues to basic -- which drops the per-category addresses
+    # they rely on and makes RingCentral reject the write, so turning a single
+    # toggle (e.g. Missed Calls) OFF failed for a change the row never asked for.
+    adv_raw = data.get('advanced_mode', None)
+    advanced_specified = adv_raw is not None and str(adv_raw).strip() != ''
+    requested_advanced = str(adv_raw).upper() == 'TRUE'
 
     # In advanced mode, notifications are driven entirely by the per-category
     # advanced email addresses (the top-level global list is ignored). If
     # Advanced Mode is TRUE but every advanced email field is blank, the row
     # can't produce a valid, meaningful update — reject it up front with a
     # clear message instead of sending it to RingCentral.
-    if requested_advanced:
+    if advanced_specified and requested_advanced:
         advanced_email_fields = ('vm_emails', 'fax_emails', 'sms_emails', 'missed_emails',
                                  'outfax_emails', 'callnotes_emails')
         if all(not str(data.get(f) or '').strip() for f in advanced_email_fields):
@@ -236,7 +244,9 @@ def update_single_extension():
     # updater drop this same read-only field before writing.)
     new_notif.pop('emailRecipients', None)
 
-    if 'advancedMode' in new_notif:
+    # Only change the mode when the row explicitly asked; otherwise keep whatever
+    # the queue already has (see the advanced_specified note above).
+    if advanced_specified and 'advancedMode' in new_notif:
         new_notif['advancedMode'] = requested_advanced
     advanced = bool(new_notif.get('advancedMode', False))
 
@@ -323,9 +333,25 @@ def update_single_extension():
     if put_resp and getattr(put_resp, 'ok', False):
         return jsonify({"status": "success"})
 
+    # Surface the concrete RingCentral error(s) -- code, message, and the parameter
+    # RC flagged -- so failures like EXT-414/EXT-465 ("Parameter [...] is not
+    # applicable ... queue managers are selected from user list") name the actual
+    # parameter instead of a generic "Update failed".
     msg = "Update failed"
     try:
-        msg = put_resp.json().get('message', msg)
+        body = put_resp.json()
+        errs = body.get('errors') or []
+        parts = []
+        for e in errs:
+            code = e.get('errorCode') or e.get('code') or ''
+            emsg = e.get('message') or ''
+            param = e.get('parameterName')
+            piece = " ".join(p for p in (code, emsg) if p).strip()
+            if param and param not in piece:
+                piece = f"{piece} [{param}]".strip()
+            if piece:
+                parts.append(piece)
+        msg = " | ".join(parts) if parts else body.get('message', msg)
     except Exception:
         pass
     return jsonify({"status": "error", "message": msg})
