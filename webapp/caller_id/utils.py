@@ -33,10 +33,11 @@ from webapp import task_control
 # ---------------------------------------------------------------------------
 # Which extensions / features we work with
 # ---------------------------------------------------------------------------
-# Caller ID is a user concept, so the tick-list and template surface the User
-# family of extension types. (Other object types either have no outbound CLI or
-# are managed elsewhere in the Admin Portal.)
-USER_LIKE_TYPES = {'User', 'DigitalUser', 'VirtualUser', 'FlexibleUser'}
+# Caller ID is a user concept, so the tick-list and template surface user
+# extensions: standard Users and Limited extensions (the two types that place
+# outbound calls and carry an editable CLI). Other object types either have no
+# outbound CLI or are managed elsewhere in the Admin Portal.
+USER_LIKE_TYPES = {'User', 'Limited'}
 
 # The outbound calling features a number is always written to when a caller ID is
 # applied, even if they are currently Blocked / CurrentLocation. These all accept
