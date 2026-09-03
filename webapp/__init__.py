@@ -194,4 +194,8 @@ def create_app():
         from .extension_pin import routes as extension_pin_routes
         app.register_blueprint(extension_pin_routes.extension_pin_bp)
 
+        # Caller ID routes
+        from .caller_id import routes as caller_id_routes
+        app.register_blueprint(caller_id_routes.caller_id_bp)
+
     return app

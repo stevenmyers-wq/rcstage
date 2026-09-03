@@ -5,7 +5,7 @@
    The inline "Active Context" banner is hidden under EMBED because the outer
    chrome's live bridge pill is the single source of truth there. #}
 
-{% set sm_auth_tabs = ['air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'deskphone_ring_time', 'device_audit', 'device_ringing_audit', 'device_swap', 'directory_visibility', 'extension_deletion', 'extension_number_changer', 'extension_pin', 'extension_uploader', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'site_allocation', 'port_mapping', 'user_status', 'user_templates', 'extension_timezone'] %}
+{% set sm_auth_tabs = ['air_management', 'presence', 'bulk_opening', 'call_flow', 'cost_centres', 'custom_rules', 'deskphone_ring_time', 'device_audit', 'device_ringing_audit', 'device_swap', 'directory_visibility', 'extension_deletion', 'extension_number_changer', 'extension_pin', 'extension_uploader', 'renamer', 'live_events', 'message_management', 'personal_address_book', 'notifications', 'phone_number_assignment', 'ringex_uat', 'sip_fetcher', 'account_migration', 'cq_hours', 'site_allocation', 'port_mapping', 'user_status', 'user_templates', 'extension_timezone', 'caller_id'] %}
 
 {% if current_tab in sm_auth_tabs %}
     {% if not session.get('sm_employee_token') %}
@@ -108,6 +108,7 @@
             {% elif current_tab == 'user_status' %} {% include 'includes/user_status_tab.html' %}
             {% elif current_tab == 'user_templates' %} {% include 'includes/user_templates_tab.html' %}
             {% elif current_tab == 'extension_timezone' %} {% include 'includes/extension_timezone_tab.html' %}
+            {% elif current_tab == 'caller_id' %} {% include 'includes/caller_id_tab.html' %}
             {% endif %}
         </div>
     {% endif %}

@@ -1,0 +1,449 @@
+<div class="space-y-6 animate-fade-in w-full">
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Caller ID</h2>
+        <p class="text-subheading">Set the outbound caller ID (CLI) for your users. Pick users in-tool and apply one number to all of them, or download the spreadsheet, edit the <span class="font-semibold">New Caller ID</span> column and upload it back. The chosen number is written to each user's calling features (RingOut, the mobile app, call log and more); features left blocked or on current location aren't touched.</p>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- Mode A: In-tool tick selection                                    -->
+    <!-- ================================================================= -->
+    <div class="card !p-6">
+        <div class="flex items-start gap-3 mb-4">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">A</span>
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Select users &amp; apply a caller ID</h3>
+                <p class="text-slate-500 dark:text-slate-400 text-sm">Load the account's users, filter by <span class="font-semibold">site</span> or search by <span class="font-semibold">name / extension</span>, tick the ones to change, choose the caller ID number, then <span class="font-semibold">Preview</span> and <span class="font-semibold">Apply</span>.</p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+            <button id="cid-load-btn" class="btn-primary !py-2.5">Load Users</button>
+            <span id="cid-load-summary" class="text-sm text-slate-500 dark:text-slate-400"></span>
+        </div>
+
+        <!-- Tick list (rendered by CheckboxSelect: search + Site filter) -->
+        <div id="cid-user-picker" class="mb-5">
+            <p class="text-slate-400 text-sm italic">Click <span class="font-semibold">Load Users</span> to begin.</p>
+        </div>
+
+        <!-- CLI to apply -->
+        <div class="grid gap-4 sm:grid-cols-2 items-end mb-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Caller ID to apply</label>
+                <select id="cid-number-select" class="input-field !py-2" disabled>
+                    <option value="">Load users to populate numbers…</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <button id="cid-preview-btn" class="btn-success !py-2.5" disabled>Preview Changes</button>
+            <button id="cid-apply-btn" class="btn-primary !py-2.5 hidden" disabled>Apply Caller ID</button>
+            <button id="cid-cancel-btn" class="btn-danger !py-2.5 hidden">Stop</button>
+        </div>
+
+        <div id="cid-sel-progress-wrap" class="hidden mt-5">
+            <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <span id="cid-sel-progress-label">Processing…</span>
+                <span id="cid-sel-progress-count">0 / 0</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div id="cid-sel-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+            </div>
+        </div>
+
+        <div id="cid-sel-results-wrap" class="hidden mt-5 overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th class="py-2 pr-3">Ext</th>
+                        <th class="py-2 pr-3">Name</th>
+                        <th class="py-2 pr-3">From</th>
+                        <th class="py-2 pr-3">To</th>
+                        <th class="py-2 pr-3 text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="cid-sel-results-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- Mode B: Bulk via template                                         -->
+    <!-- ================================================================= -->
+    <div class="card !p-6">
+        <div class="flex items-start gap-3 mb-4">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">B</span>
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Bulk update from a spreadsheet</h3>
+                <p class="text-slate-500 dark:text-slate-400 text-sm">Download a template pre-filled with every user. Edit the <span class="font-semibold">New Caller ID</span> column (use a number from the <span class="font-semibold">Caller ID Numbers</span> sheet), then upload it. <span class="font-semibold">Preview</span> shows what will change; <span class="font-semibold">Apply</span> writes it. Rows left blank or already set are skipped.</p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+            <button id="cid-template-btn" class="btn-secondary !py-2.5">Download Template</button>
+        </div>
+
+        <input type="file" id="cid-file-input" accept=".xlsx,.xls,.csv" class="block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/40 dark:file:text-blue-300 mb-3">
+        <div id="cid-sheet-mount" class="mb-3"></div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <button id="cid-up-preview-btn" class="btn-success !py-2.5" disabled>Preview Changes</button>
+            <button id="cid-up-apply-btn" class="btn-primary !py-2.5 hidden" disabled>Apply Updates</button>
+            <button id="cid-up-cancel-btn" class="btn-danger !py-2.5 hidden">Stop</button>
+        </div>
+
+        <div id="cid-up-progress-wrap" class="hidden mt-5">
+            <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <span id="cid-up-progress-label">Processing…</span>
+                <span id="cid-up-progress-count">0 / 0</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div id="cid-up-progress-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+            </div>
+        </div>
+
+        <div id="cid-up-results-wrap" class="hidden mt-5 overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th class="py-2 pr-3">Ext</th>
+                        <th class="py-2 pr-3">Name</th>
+                        <th class="py-2 pr-3">From</th>
+                        <th class="py-2 pr-3">To</th>
+                        <th class="py-2 pr-3 text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="cid-up-results-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const loadBtn = document.getElementById('cid-load-btn');
+    if (!loadBtn) return;
+
+    // ---- Shared helpers -------------------------------------------------
+    const $ = (id) => document.getElementById(id);
+    const notify = (msg, isErr) => { if (typeof showMessage === 'function') showMessage(msg, !!isErr); };
+    const handle401 = () => { window.location.href = '/api/sm_auth/logout?tab=caller_id'; };
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const badge = (status) => {
+        const map = {
+            applied: ['badge-success', 'Applied'],
+            pending: ['badge-info', 'Pending'],
+            skipped: ['badge-neutral', 'Skipped'],
+            error: ['badge-warning', 'Error'],
+        };
+        const [cls, label] = map[status] || ['badge-neutral', status];
+        return `<span class="badge ${cls}">${label}</span>`;
+    };
+
+    // Render one NDJSON stream into a results table + progress bar. Returns a
+    // promise resolving to the final "done" summary (or null).
+    async function streamInto(res, { bar, count, label, body }, accent) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let done = null;
+        let sawPending = false;
+        while (true) {
+            const { done: finished, value } = await reader.read();
+            if (finished) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                let msg; try { msg = JSON.parse(line); } catch (e) { continue; }
+                if (msg.type === 'row') {
+                    const total = msg.total || 0;
+                    count.textContent = `${msg.current} / ${total}`;
+                    bar.style.width = total ? `${Math.round((msg.current / total) * 100)}%` : '5%';
+                    if (msg.status === 'pending') sawPending = true;
+                    body.insertAdjacentHTML('beforeend', `
+                        <tr class="border-b border-slate-100 dark:border-slate-800">
+                            <td class="py-2 pr-3 font-mono">${esc(msg.ext || '')}</td>
+                            <td class="py-2 pr-3">${esc(msg.name || '')}</td>
+                            <td class="py-2 pr-3 text-slate-500">${esc(msg.from || '—')}</td>
+                            <td class="py-2 pr-3">${esc(msg.to || '—')}</td>
+                            <td class="py-2 pr-3 text-right">${badge(msg.status)}</td>
+                        </tr>`);
+                } else if (msg.type === 'done') {
+                    bar.style.width = '100%';
+                    label.textContent = msg.is_preview ? 'Preview complete.' : 'Update complete.';
+                    done = Object.assign({ sawPending }, msg);
+                } else if (msg.type === 'cancelled') {
+                    label.textContent = 'Stopped.';
+                    notify(msg.message || 'Stopped.', true);
+                } else if (msg.type === 'error') {
+                    label.textContent = 'Error.';
+                    notify(msg.message || 'An error occurred.', true);
+                }
+            }
+        }
+        return done;
+    }
+
+    function summaryText(d) {
+        const parts = [];
+        if (!d.is_preview) parts.push(`${d.updated} updated`);
+        else parts.push(`${d.updated || (d.total - (d.skipped || 0) - (d.errors || 0))} to change`);
+        parts.push(`${d.skipped || 0} unchanged`);
+        if (d.errors) parts.push(`${d.errors} error(s)`);
+        return parts.join(', ');
+    }
+
+    // =====================================================================
+    // Mode A: In-tool tick selection
+    // =====================================================================
+    let picker = null;
+    let cidNumbers = [];
+    let selTaskId = null;
+
+    const numberSelect = $('cid-number-select');
+    const previewBtn = $('cid-preview-btn');
+    const applyBtn = $('cid-apply-btn');
+    const cancelBtn = $('cid-cancel-btn');
+    const selBar = $('cid-sel-progress-bar');
+    const selCount = $('cid-sel-progress-count');
+    const selLabel = $('cid-sel-progress-label');
+    const selWrap = $('cid-sel-progress-wrap');
+    const selResultsWrap = $('cid-sel-results-wrap');
+    const selResultsBody = $('cid-sel-results-body');
+
+    function refreshPreviewEnabled() {
+        const hasUsers = picker && picker.getSelected().length > 0;
+        const hasNumber = !!numberSelect.value;
+        previewBtn.disabled = !(hasUsers && hasNumber);
+    }
+
+    loadBtn.addEventListener('click', async () => {
+        loadBtn.disabled = true;
+        const original = loadBtn.innerHTML;
+        loadBtn.innerHTML = '<div class="spinner border-white w-5 h-5"></div> Loading…';
+        try {
+            const res = await fetch('/api/caller_id/extensions');
+            if (res.status === 401) return handle401();
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error || 'Failed to load users.');
+
+            const users = d.records || [];
+            cidNumbers = d.numbers || [];
+
+            // Build (or refresh) the tick list with a Site filter and search.
+            const mount = $('cid-user-picker');
+            mount.innerHTML = '';
+            picker = CheckboxSelect.create(mount, {
+                items: users,
+                getValue: (u) => u.id,
+                getLabel: (u) => `${u.extensionNumber || '—'} · ${u.name}`,
+                getSub: (u) => u.site,
+                getFilter: (u) => u.site,
+                filterLabel: 'Sites',
+                searchPlaceholder: 'Search by name or extension…',
+                onChange: refreshPreviewEnabled,
+            });
+
+            // Populate the caller ID dropdown.
+            if (!cidNumbers.length) {
+                numberSelect.innerHTML = '<option value="">No caller ID numbers found on this account</option>';
+                numberSelect.disabled = true;
+            } else {
+                numberSelect.innerHTML = ['<option value="">Select a number…</option>']
+                    .concat(cidNumbers.map(n => {
+                        const extra = [n.label, n.usageType].filter(Boolean).join(' · ');
+                        return `<option value="${esc(n.id)}">${esc(n.phoneNumber)}${extra ? ' — ' + esc(extra) : ''}</option>`;
+                    })).join('');
+                numberSelect.disabled = false;
+            }
+
+            $('cid-load-summary').textContent = `${users.length} user(s) loaded · ${cidNumbers.length} number(s) available.`;
+            refreshPreviewEnabled();
+        } catch (err) {
+            notify(err.message, true);
+        } finally {
+            loadBtn.disabled = false;
+            loadBtn.innerHTML = original;
+        }
+    });
+
+    numberSelect.addEventListener('change', refreshPreviewEnabled);
+
+    async function runSelection(action) {
+        const targets = picker ? picker.getSelectedItems().map(u => ({
+            id: u.id, extensionNumber: u.extensionNumber, name: u.name,
+        })) : [];
+        if (!targets.length) return notify('Select at least one user.', true);
+        if (!numberSelect.value) return notify('Select a caller ID number.', true);
+
+        selTaskId = `cid_sel_${Date.now()}`;
+        const activeBtn = action === 'preview' ? previewBtn : applyBtn;
+        previewBtn.disabled = true; applyBtn.disabled = true;
+        const originalHtml = activeBtn.innerHTML;
+        activeBtn.innerHTML = `<div class="spinner w-5 h-5 border-white"></div> ${action === 'preview' ? 'Analysing…' : 'Applying…'}`;
+        if (action === 'apply') cancelBtn.classList.remove('hidden');
+
+        selResultsBody.innerHTML = '';
+        selResultsWrap.classList.remove('hidden');
+        selWrap.classList.remove('hidden');
+        selBar.style.width = '0%';
+        selBar.className = (action === 'preview' ? 'bg-emerald-500' : 'bg-blue-600') + ' h-full rounded-full transition-all duration-300';
+        selCount.textContent = '0 / 0';
+        selLabel.textContent = action === 'preview' ? 'Previewing…' : 'Applying…';
+
+        try {
+            const res = await fetch('/api/caller_id/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action, task_id: selTaskId,
+                    numberId: numberSelect.value, targets,
+                }),
+            });
+            if (res.status === 401) return handle401();
+            if (!res.ok) {
+                const e = await res.json().catch(() => ({}));
+                throw new Error(e.message || 'Request rejected.');
+            }
+            const d = await streamInto(res, { bar: selBar, count: selCount, label: selLabel, body: selResultsBody }, 'blue');
+            if (d) {
+                notify(`${d.is_preview ? 'Preview' : 'Update'} complete — ${summaryText(d)}.`, d.errors > 0);
+                if (d.is_preview && d.sawPending) { applyBtn.classList.remove('hidden'); applyBtn.disabled = false; }
+                if (!d.is_preview) applyBtn.classList.add('hidden');
+            }
+        } catch (err) {
+            notify(err.message || 'Network error.', true);
+        } finally {
+            activeBtn.innerHTML = originalHtml;
+            previewBtn.disabled = false;
+            cancelBtn.classList.add('hidden');
+        }
+    }
+
+    previewBtn.addEventListener('click', () => runSelection('preview'));
+    applyBtn.addEventListener('click', () => runSelection('apply'));
+    cancelBtn.addEventListener('click', async () => {
+        if (!selTaskId) return;
+        cancelBtn.disabled = true;
+        try { await fetch(`/api/caller_id/cancel?task_id=${selTaskId}`, { method: 'POST' }); notify('Stop requested…', false); }
+        catch (e) { notify('Could not send stop request.', true); }
+        finally { cancelBtn.disabled = false; }
+    });
+
+    // =====================================================================
+    // Mode B: Bulk template
+    // =====================================================================
+    const templateBtn = $('cid-template-btn');
+    const fileInput = $('cid-file-input');
+    const upPreviewBtn = $('cid-up-preview-btn');
+    const upApplyBtn = $('cid-up-apply-btn');
+    const upCancelBtn = $('cid-up-cancel-btn');
+    const upBar = $('cid-up-progress-bar');
+    const upCount = $('cid-up-progress-count');
+    const upLabel = $('cid-up-progress-label');
+    const upWrap = $('cid-up-progress-wrap');
+    const upResultsWrap = $('cid-up-results-wrap');
+    const upResultsBody = $('cid-up-results-body');
+    let upTaskId = null;
+    let sheetPicker = null;
+
+    if (window.SheetPicker) {
+        sheetPicker = SheetPicker.create($('cid-sheet-mount'), { preferred: ['Caller ID'] });
+    }
+
+    templateBtn.addEventListener('click', async () => {
+        templateBtn.disabled = true;
+        const original = templateBtn.innerHTML;
+        templateBtn.innerHTML = '<div class="spinner w-5 h-5"></div> Building…';
+        try {
+            const res = await fetch('/api/caller_id/template');
+            if (res.status === 401) return handle401();
+            if (!res.ok) {
+                let msg = 'Template generation failed';
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'Caller_ID_Template.xlsx';
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(url);
+            notify('Template downloaded. Edit New Caller ID, then upload to review.', false);
+        } catch (err) {
+            notify(err.message, true);
+        } finally {
+            templateBtn.disabled = false;
+            templateBtn.innerHTML = original;
+        }
+    });
+
+    fileInput.addEventListener('change', () => {
+        upApplyBtn.classList.add('hidden');
+        upResultsWrap.classList.add('hidden');
+        upResultsBody.innerHTML = '';
+        upPreviewBtn.disabled = !fileInput.files[0];
+        if (sheetPicker && fileInput.files[0]) sheetPicker.update(fileInput.files[0]);
+    });
+
+    async function runUpload(action) {
+        if (!fileInput.files[0]) return notify('Select a file first.', true);
+        upTaskId = `cid_up_${Date.now()}`;
+        const activeBtn = action === 'preview' ? upPreviewBtn : upApplyBtn;
+        upPreviewBtn.disabled = true; upApplyBtn.disabled = true;
+        const originalHtml = activeBtn.innerHTML;
+        activeBtn.innerHTML = `<div class="spinner w-5 h-5 border-white"></div> ${action === 'preview' ? 'Analysing…' : 'Applying…'}`;
+        if (action === 'apply') upCancelBtn.classList.remove('hidden');
+
+        upResultsBody.innerHTML = '';
+        upResultsWrap.classList.remove('hidden');
+        upWrap.classList.remove('hidden');
+        upBar.style.width = '0%';
+        upBar.className = (action === 'preview' ? 'bg-emerald-500' : 'bg-blue-600') + ' h-full rounded-full transition-all duration-300';
+        upCount.textContent = '0 / 0';
+        upLabel.textContent = action === 'preview' ? 'Previewing…' : 'Applying…';
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('action', action);
+        fd.append('task_id', upTaskId);
+        if (sheetPicker) sheetPicker.appendTo(fd);
+
+        try {
+            const res = await fetch('/api/caller_id/upload', { method: 'POST', body: fd });
+            if (res.status === 401) return handle401();
+            if (!res.ok) {
+                const e = await res.json().catch(() => ({}));
+                throw new Error(e.message || 'Upload rejected.');
+            }
+            const d = await streamInto(res, { bar: upBar, count: upCount, label: upLabel, body: upResultsBody }, 'blue');
+            if (d) {
+                notify(`${d.is_preview ? 'Preview' : 'Update'} complete — ${summaryText(d)}.`, d.errors > 0);
+                if (d.is_preview && d.sawPending) { upApplyBtn.classList.remove('hidden'); upApplyBtn.disabled = false; }
+                if (!d.is_preview) upApplyBtn.classList.add('hidden');
+            }
+        } catch (err) {
+            notify(err.message || 'Network error.', true);
+        } finally {
+            activeBtn.innerHTML = originalHtml;
+            upPreviewBtn.disabled = false;
+            upCancelBtn.classList.add('hidden');
+        }
+    }
+
+    upPreviewBtn.addEventListener('click', () => runUpload('preview'));
+    upApplyBtn.addEventListener('click', () => runUpload('apply'));
+    upCancelBtn.addEventListener('click', async () => {
+        if (!upTaskId) return;
+        upCancelBtn.disabled = true;
+        try { await fetch(`/api/caller_id/cancel?task_id=${upTaskId}`, { method: 'POST' }); notify('Stop requested…', false); }
+        catch (e) { notify('Could not send stop request.', true); }
+        finally { upCancelBtn.disabled = false; }
+    });
+});
+</script>
