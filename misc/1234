@@ -1,15 +1,233 @@
-Ready for action...
-[13:43:07] Uploading CMR-MSE.xlsx...
-[13:43:08] Processing 1 row(s)...
-[13:43:10] ❌ Ext 7708002: write failed. V1 [400] {
-"errorCode" : "InvalidParameter",
-"message" : "Parameter [unconditionalForwarding.phoneNumber] value is invalid.",
-"errors" : [ {
-"errorCode" : "CMN-101",
-"message" : "Parameter [unconditionalForwarding.phoneNumber] value is invalid.",
-"parameterName" : "unconditionalForwarding.p · V2 PUT /restapi/v2/accounts/~/extensions/4046508064/comm-handling/voice/interaction-rules/7869960064 [404] {
-"errorCode" : "AGW-404",
-"message" : "Resource not found",
-"errors" : [ ]
-} · V2 sent: {"displayName": "Forward Call", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 30}, {"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 30}, {"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+4417007708002"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
-[13:43:10] ✔ Finished — 0 rule(s) written.
+
+  "ext_requested": "7708002",
+  "ext_id": 4046508064,
+  "v1_answering_rules": {
+    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064/answering-rule?view=Detailed&page=1&perPage=100",
+    "records": [
+      {
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064/answering-rule/7869960064",
+        "id": "7869960064",
+        "type": "Custom",
+        "name": "Forward call",
+        "enabled": true,
+        "schedule": {
+          "weeklyRanges": {
+            "monday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ],
+            "tuesday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ],
+            "wednesday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ],
+            "thursday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ],
+            "friday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ],
+            "saturday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ],
+            "sunday": [
+              {
+                "from": "00:00",
+                "to": "00:00"
+              }
+            ]
+          }
+        },
+        "greetings": [
+          {
+            "type": "Voicemail",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/65792",
+              "id": "65792",
+              "name": "Default"
+            }
+          },
+          {
+            "type": "Introductory",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/66301",
+              "id": "66301",
+              "name": "None"
+            }
+          },
+          {
+            "type": "ConnectingAudio",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/66307",
+              "id": "66307",
+              "name": "Ring tones"
+            }
+          },
+          {
+            "type": "Announcement",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/66560",
+              "id": "66560",
+              "name": "Default"
+            }
+          },
+          {
+            "type": "Unavailable",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/66816",
+              "id": "66816",
+              "name": "Default"
+            }
+          },
+          {
+            "type": "ConnectingMessage",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/68869",
+              "id": "68869",
+              "name": "No"
+            }
+          }
+        ],
+        "callHandlingAction": "UnconditionalForwarding",
+        "forwarding": {
+          "notifyMySoftPhones": true,
+          "softPhonesPositionTop": false,
+          "notifyAdminSoftPhones": false,
+          "softPhonesRingCount": 6,
+          "mobileTimeout": true,
+          "ringingMode": "Simultaneously",
+          "softPhonesAlwaysRing": false
+        },
+        "unconditionalForwarding": {
+          "phoneNumber": "17007708002"
+        },
+        "transfer": {
+          "extension": {
+            "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064",
+            "id": "4046508064"
+          }
+        },
+        "voicemail": {
+          "enabled": true,
+          "recipient": {
+            "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064",
+            "id": 4046508064
+          }
+        },
+        "screening": "Off"
+      },
+      {
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064/answering-rule/business-hours-rule",
+        "id": "business-hours-rule",
+        "type": "BusinessHours",
+        "enabled": true,
+        "greetings": [
+          {
+            "type": "Voicemail",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/65792",
+              "id": "65792",
+              "name": "Default"
+            }
+          },
+          {
+            "type": "Introductory",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/66301",
+              "id": "66301",
+              "name": "None"
+            }
+          },
+          {
+            "type": "ConnectingAudio",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/66307",
+              "id": "66307",
+              "name": "Ring tones"
+            }
+          },
+          {
+            "type": "ConnectingMessage",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/68869",
+              "id": "68869",
+              "name": "No"
+            }
+          },
+          {
+            "type": "HoldMusic",
+            "preset": {
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/greeting/197382",
+              "id": "197382",
+              "name": "Acoustic"
+            }
+          }
+        ],
+        "callHandlingAction": "ForwardCalls",
+        "forwarding": {
+          "notifyMySoftPhones": true,
+          "softPhonesPositionTop": false,
+          "notifyAdminSoftPhones": false,
+          "softPhonesRingCount": 6,
+          "mobileTimeout": true,
+          "ringingMode": "Simultaneously",
+          "softPhonesAlwaysRing": false
+        },
+        "voicemail": {
+          "enabled": true,
+          "recipient": {
+            "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064",
+            "id": 4046508064
+          }
+        },
+        "screening": "Off"
+      }
+    ],
+    "paging": {
+      "page": 1,
+      "totalPages": 1,
+      "perPage": 100,
+      "totalElements": 2,
+      "pageStart": 0,
+      "pageEnd": 1
+    },
+    "navigation": {
+      "firstPage": {
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064/answering-rule?view=Detailed&page=1&perPage=100"
+      },
+      "lastPage": {
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/account/2616191064/extension/4046508064/answering-rule?view=Detailed&page=1&perPage=100"
+      }
+    }
+  },
+  "v2_interaction_rules_list": {
+    "status": 404,
+    "body": "{\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-102\",\n    \"message\" : \"No scripts found\"\n  } ]\n}"
+  },
+  "v2_states": {
+    "status": 404,
+    "body": "{\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-102\",\n    \"message\" : \"States not found\"\n  } ]\n}"
+  },
+  "v2_state_rules": {
+    "status": 404,
+    "body": "{\n  \"errors\" : [ {\n    \"errorCode\" : \"CMN-102\",\n    \"message\" : \"States not found\"\n  } ]\n}"
+  }
+}
