@@ -178,17 +178,39 @@ def parse_specific_dates(date_str):
         return None
 
 def format_phone(phone_val):
-    """Ensures phone numbers are in E.164 format."""
+    """Ensures phone numbers are in E.164 format.
+
+    Handles the two national dialling plans this tool is deployed on, which are
+    distinguishable by the length of a trunk-'0' national number:
+      - Australia  → 10 digits (0 + 9), e.g. 0412 123 123  → +61412123123
+      - UK         → 11 digits (0 + 10), e.g. 01700 700802 → +441700700802
+    A value already in '+E.164' is trusted and returned untouched — its length
+    is NOT re-validated here, so a malformed E.164 in the source sheet (e.g. one
+    digit too many after the country code) is passed through as-is and only the
+    RingCentral API will reject it."""
     if pd.isna(phone_val): return None
     raw_str = str(phone_val).split('.')[0].strip()
     clean_num = re.sub(r'[^\d+]', '', raw_str)
     if not clean_num: return None
-    
-    # Check for local Australian number formats (e.g., 0412 123 123 or 02 9999 0000)
-    if clean_num.startswith('0') and len(clean_num) == 10:
-        return f"+61{clean_num[1:]}"
-        
-    if len(clean_num) > 9 and not clean_num.startswith('+'): 
+
+    # Already E.164 — trust it (don't second-guess the country or length).
+    if clean_num.startswith('+'):
+        return clean_num
+
+    # National (trunk-'0') number: map to a country code by length and drop the
+    # leading 0. Length disambiguates AU (10) from UK (11).
+    if clean_num.startswith('0'):
+        if len(clean_num) == 10:
+            return f"+61{clean_num[1:]}"   # Australia
+        if len(clean_num) == 11:
+            return f"+44{clean_num[1:]}"   # United Kingdom
+        # Unknown national length — we can't safely infer a country code, so
+        # return the digits and let the API surface the problem rather than
+        # guessing (and silently prefixing the wrong country).
+        return clean_num
+
+    # No '+' and no leading 0: assume the digits already carry a country code.
+    if len(clean_num) > 9:
         return f"+{clean_num}"
     return clean_num
 
@@ -422,6 +444,25 @@ def get_existing_v2_conditions(ext_id, rule_id):
         return (resp or {}).get('conditions', []) or []
     except Exception:
         return []
+
+
+def v2_interaction_rule_exists(ext_id, rule_id):
+    """True if a V2 interaction rule with this id exists on the extension.
+
+    A Rule ID in an uploaded sheet can be a *classic* V1 answering-rule id (the
+    audit falls back to V1 when an extension isn't on New Call Handling). PUTting
+    such an id to the V2 interaction-rules endpoint returns a misleading 404
+    ("Resource not found") that masks the real V1 failure. The update path uses
+    this to confirm the rule is genuinely a V2 rule before attempting a V2
+    update, so a V1-only rule reports its true V1 error instead."""
+    if not rule_id:
+        return False
+    try:
+        url = f"/restapi/v2/accounts/~/extensions/{ext_id}/comm-handling/voice/interaction-rules/{rule_id}"
+        resp = rc_api_call(url, return_response=True)
+        return bool(getattr(resp, 'ok', False))
+    except Exception:
+        return False
 
 
 def fetch_v2_interaction_rules(ext_id):

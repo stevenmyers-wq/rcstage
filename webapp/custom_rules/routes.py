@@ -15,7 +15,7 @@ from .utils import (
     fetch_all_extensions, fetch_sites, resolve_type_filter,
     extension_site_id, FILTER_GROUPS,
     get_existing_v2_greeting, get_existing_v1_conditions, get_existing_v2_conditions,
-    fetch_v2_interaction_rules, THIS_EXTENSION,
+    fetch_v2_interaction_rules, v2_interaction_rule_exists, THIS_EXTENSION,
     apply_phone_forward_to_dispatching, fac_daily_all_day_conditions,
 )
 
@@ -602,7 +602,23 @@ def update_rules():
                     written_ok = True
                 else:
                     v1_status = getattr(v1_resp, 'status_code', '?')
-                    v1_body = ((getattr(v1_resp, 'text', '') or '').strip())[:300]
+                    # Keep enough of the V1 body to actually diagnose the failure;
+                    # the previous 300-char cap truncated mid-parameterName and hid
+                    # the rest of the errors[] detail.
+                    v1_body = ((getattr(v1_resp, 'text', '') or '').strip())[:1000]
+
+                    # The V2 fallback only makes sense when the rule is genuinely a
+                    # V2 interaction rule. On an update whose Rule ID is a classic
+                    # V1 answering-rule id, a V2 PUT 404s and buries the real V1
+                    # error — so verify existence first and, when it's V1-only,
+                    # surface the V1 rejection as the answer instead.
+                    if is_update and not v2_interaction_rule_exists(ext_id, rule_id):
+                        yield prog(
+                            f"❌ Ext {raw_ext_num}: write failed. Rule {rule_id} is a "
+                            f"classic (V1) answering rule with no matching V2 "
+                            f"interaction-rule, so the V2 fallback can't apply. "
+                            f"V1 [{v1_status}] {v1_body or '(no body)'}", "error")
+                        continue
                     try:
                         # Greeting for the V2 rule body: an uploaded clip is applied
                         # separately after the write (use Default in the body); an
