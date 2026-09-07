@@ -1,2 +1,15 @@
-301600	Missed Call Notifications	True	False	Aborted
-301600	System API	Notifications Error: CMN-101: Parameter [emailRecipients] value is invalid. [emailRecipients] | [DEBUG] Notifications PUT failed | payload={"includeManagers": false, "includeSmsRecipients": false, "emailRecipients": [{"extensionId": "497545125", "fullName": "Kristie Eleveld", "extensionNumber": "290052", "status": "Enabled", "permission": "FullAccess", "emailAddresses": ["kristie.eleveld@georgeandmatilda.com.au"]}], "emailAddresses": ["burnie@georgeandmatilda.com.au"], "advancedMode": false, "voicemails": {"notifyByEmail": true, "notifyBySms": false, "includeAttachment": true, "markAsRead": false, "includeTranscription": true}, "inboundFaxes": {"notifyByEmail": true, "notifyBySms": false, "includeAttachment": true, "markAsRead": false}, "outboundFaxes": {"notifyByEmail": true, "notifyBySms": false}, "inboundTexts": {"notifyByEmail": true, "notifyBySms": false}, "missedCalls": {"notifyByEmail": false, "notifyBySms": false}, "callNotes": {"notifyByEmail": false, "notifyBySms": false}} | raw_error={"errorCode": "InvalidParameter", "message": "Parameter [emailRecipients] value is invalid.", "errors": [{"errorCode": "CMN-101", "message": "Parameter [emailRecipients] value is invalid.", "parameterName": "emailRecipients"}], "parameterName": "emailRecipients"}	Failed
+Ready for action...
+[13:43:07] Uploading CMR-MSE.xlsx...
+[13:43:08] Processing 1 row(s)...
+[13:43:10] ❌ Ext 7708002: write failed. V1 [400] {
+"errorCode" : "InvalidParameter",
+"message" : "Parameter [unconditionalForwarding.phoneNumber] value is invalid.",
+"errors" : [ {
+"errorCode" : "CMN-101",
+"message" : "Parameter [unconditionalForwarding.phoneNumber] value is invalid.",
+"parameterName" : "unconditionalForwarding.p · V2 PUT /restapi/v2/accounts/~/extensions/4046508064/comm-handling/voice/interaction-rules/7869960064 [404] {
+"errorCode" : "AGW-404",
+"message" : "Resource not found",
+"errors" : [ ]
+} · V2 sent: {"displayName": "Forward Call", "enabled": true, "conditions": [{"type": "Schedule", "schedule": {"triggers": [{"triggerType": "Daily", "startTime": "00:00:00", "endTime": "23:59:59"}]}}], "dispatching": {"type": "Terminate", "actions": [{"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllMobileRingTarget", "name": "My mobile apps"}], "duration": 30}, {"type": "RingGroupAction", "enabled": false, "targets": [{"type": "AllDesktopRingTarget", "name": "My desktop"}], "duration": 30}, {"type": "TerminatingAction", "targets": [{"type": "VoiceMailTerminatingTarget", "name": "Voicemail", "prompt": {"greeting": {"effectiveGreetingType": "Preset", "preset": {"id": "590080"}}}}, {"type": "PhoneNumberTerminatingTarget", "name": "__EXTERNAL_NUMBER__", "destination": {"phoneNumber": "+4417007708002"}, "dispatchingType": "Terminating"}], "ringingTargetType": "VoiceMailTerminatingTarget", "terminatingTargetType": "PhoneNumberTerminatingTarget"}]}}
+[13:43:10] ✔ Finished — 0 rule(s) written.
