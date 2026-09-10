@@ -43,10 +43,10 @@
     <div class="card w-full">
         <div class="mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
             <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Set Language</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400">Pick the <span class="font-semibold">user language</span> and/or <span class="font-semibold">greeting language</span> to apply to every ticked extension. Some extension types can't hold these settings; any rejection is reported per-extension in the log below.</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Pick the <span class="font-semibold">user language</span>, <span class="font-semibold">greeting language</span> and/or <span class="font-semibold">formatting locale</span> to apply to every ticked extension. RingCentral requires all three language settings together, so any you leave on <span class="font-semibold">No change</span> keep each extension's current value. Some extension types can't hold these settings; any rejection is reported per-extension in the log below.</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div class="input-wrapper">
                 <label for="er-language" class="input-label">User Language</label>
                 <select id="er-language" class="input-field" disabled>
@@ -56,6 +56,12 @@
             <div class="input-wrapper">
                 <label for="er-greeting" class="input-label">Greeting Language</label>
                 <select id="er-greeting" class="input-field" disabled>
+                    <option value="">No change</option>
+                </select>
+            </div>
+            <div class="input-wrapper">
+                <label for="er-formatting" class="input-label">Formatting Locale</label>
+                <select id="er-formatting" class="input-field" disabled>
                     <option value="">No change</option>
                 </select>
             </div>
@@ -107,7 +113,7 @@
     const ER_DEFAULT_LOCALE = 'en-AU';
 
     document.addEventListener('DOMContentLoaded', () => {
-        ['er-language', 'er-greeting'].forEach(id => {
+        ['er-language', 'er-greeting', 'er-formatting'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', erUpdateApplyState);
         });
@@ -146,12 +152,13 @@
     function erPopulateLanguageSelects() {
         const langSel = document.getElementById('er-language');
         const greetSel = document.getElementById('er-greeting');
-        if (!langSel || !greetSel) return;
+        const fmtSel = document.getElementById('er-formatting');
+        if (!langSel || !greetSel || !fmtSel) return;
 
-        // User language dropdown: languages usable as the interface language.
-        // Greeting dropdown: languages usable as a greeting language. RC flags
-        // these per record; if a flag is missing we still list it so nothing is
-        // hidden — the write is the real check.
+        // Each dropdown lists the languages RC flags as valid for that slot:
+        //   ui -> interface language, greeting -> greeting language,
+        //   formattingLocale -> number/date formatting. If a flag is missing we
+        //   still list it so nothing is hidden — the write is the real check.
         const fill = (sel, filterKey) => {
             sel.innerHTML = '<option value="">No change</option>';
             erLanguages
@@ -167,6 +174,7 @@
         };
         fill(langSel, 'ui');
         fill(greetSel, 'greeting');
+        fill(fmtSel, 'formattingLocale');
         erUpdateApplyState();
     }
 
@@ -271,6 +279,7 @@
         return {
             languageId: (document.getElementById('er-language').value || '').trim(),
             greetingLanguageId: (document.getElementById('er-greeting').value || '').trim(),
+            formattingLocaleId: (document.getElementById('er-formatting').value || '').trim(),
         };
     }
 
@@ -278,8 +287,8 @@
         const applyBtn = document.getElementById('er-apply-btn');
         const hint = document.getElementById('er-apply-hint');
         const count = erSelectedIds().length;
-        const { languageId, greetingLanguageId } = erChosen();
-        const hasLang = !!(languageId || greetingLanguageId);
+        const { languageId, greetingLanguageId, formattingLocaleId } = erChosen();
+        const hasLang = !!(languageId || greetingLanguageId || formattingLocaleId);
 
         let msg;
         if (count === 0) msg = 'Nothing ticked yet.';
@@ -288,6 +297,7 @@
             const parts = [];
             if (languageId) parts.push('user language');
             if (greetingLanguageId) parts.push('greeting language');
+            if (formattingLocaleId) parts.push('formatting locale');
             msg = `Will update ${parts.join(' + ')} on ${count} ticked extension(s).`;
         }
         hint.innerText = msg;
@@ -307,14 +317,15 @@
 
     window.erApply = async function () {
         const ids = erSelectedIds();
-        const { languageId, greetingLanguageId } = erChosen();
-        if (ids.length === 0 || (!languageId && !greetingLanguageId)) return;
+        const { languageId, greetingLanguageId, formattingLocaleId } = erChosen();
+        if (ids.length === 0 || (!languageId && !greetingLanguageId && !formattingLocaleId)) return;
 
         const applyBtn = document.getElementById('er-apply-btn');
         const stopBtn = document.getElementById('er-stop-btn');
         const refreshBtn = document.getElementById('er-refresh-btn');
         const langSel = document.getElementById('er-language');
         const greetSel = document.getElementById('er-greeting');
+        const fmtSel = document.getElementById('er-formatting');
 
         erStopRequested = false;
         applyBtn.disabled = true;
@@ -325,6 +336,7 @@
         refreshBtn.disabled = true;
         langSel.disabled = true;
         greetSel.disabled = true;
+        fmtSel.disabled = true;
 
         // Map id -> row for friendlier logging, and label the chosen languages.
         const byId = {};
@@ -336,6 +348,7 @@
         const chosenBits = [];
         if (languageId) chosenBits.push(`user language → ${nameFor(langSel)}`);
         if (greetingLanguageId) chosenBits.push(`greeting language → ${nameFor(greetSel)}`);
+        if (formattingLocaleId) chosenBits.push(`formatting locale → ${nameFor(fmtSel)}`);
 
         erLog(`Applying ${chosenBits.join(', ')} to ${ids.length} extension(s)…`, 'info');
         let ok = 0, failed = 0, stopped = false;
@@ -348,7 +361,7 @@
                 const res = await fetch('/api/extension_region/update', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, languageId, greetingLanguageId }),
+                    body: JSON.stringify({ id, languageId, greetingLanguageId, formattingLocaleId }),
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
@@ -381,6 +394,7 @@
         refreshBtn.disabled = false;
         langSel.disabled = false;
         greetSel.disabled = false;
+        fmtSel.disabled = false;
         erUpdateApplyState();
     };
 })();
