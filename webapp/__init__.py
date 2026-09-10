@@ -198,4 +198,8 @@ def create_app():
         from .caller_id import routes as caller_id_routes
         app.register_blueprint(caller_id_routes.caller_id_bp)
 
+        # Language Diagnostic routes (English (AU) language & greeting probe)
+        from .language_diagnostic import routes as language_diagnostic_routes
+        app.register_blueprint(language_diagnostic_routes.language_diagnostic_bp)
+
     return app
