@@ -49,23 +49,27 @@ def languages():
 @require_rc_token
 @track_usage('Extension Region - Update')
 def update():
-    """Set a single extension's language and/or greeting language.
+    """Set a single extension's language settings.
 
-    Body: {id, languageId, greetingLanguageId}. At least one of languageId /
-    greetingLanguageId must be provided."""
+    Body: {id, languageId, greetingLanguageId, formattingLocaleId}. At least one
+    of the three must be provided. RingCentral requires all three language
+    fields together, so utils.set_region reads the current values and fills any
+    the operator left unset."""
     token = _token()
     data = request.get_json(silent=True) or {}
     ext_id = data.get('id')
     language_id = str(data.get('languageId', '') or '').strip()
     greeting_language_id = str(data.get('greetingLanguageId', '') or '').strip()
+    formatting_locale_id = str(data.get('formattingLocaleId', '') or '').strip()
 
     if not ext_id:
         return jsonify({"error": "Missing id"}), 400
-    if not language_id and not greeting_language_id:
-        return jsonify({"error": "Select a language and/or greeting language to apply."}), 400
+    if not (language_id or greeting_language_id or formatting_locale_id):
+        return jsonify({"error": "Select a language to apply."}), 400
 
     try:
-        ok, msg = utils.set_region(ext_id, language_id, greeting_language_id, token)
+        ok, msg = utils.set_region(ext_id, language_id, greeting_language_id,
+                                   formatting_locale_id, token)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
