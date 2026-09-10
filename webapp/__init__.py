@@ -202,4 +202,8 @@ def create_app():
         from .language_diagnostic import routes as language_diagnostic_routes
         app.register_blueprint(language_diagnostic_routes.language_diagnostic_bp)
 
+        # Extension Region routes (bulk update user & greeting language)
+        from .extension_region import routes as extension_region_routes
+        app.register_blueprint(extension_region_routes.extension_region_bp)
+
     return app
