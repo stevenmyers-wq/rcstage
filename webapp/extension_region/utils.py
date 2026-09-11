@@ -189,19 +189,21 @@ def set_region(ext_id, language_id, greeting_language_id, formatting_locale_id, 
     otherwise. If a field is unset on the extension and not chosen, it defaults
     to the other chosen value so the three stay consistent and valid.
 
-    Returns (ok, message) — message is RingCentral's error text on failure (e.g.
-    an unsupported extension type).
+    Returns (ok, message, request_info) — request_info is a dict describing the
+    exact PUT sent to RingCentral (``method``, ``endpoint``, ``body``) so the UI
+    can show it, or None when no request was made. message is RingCentral's error
+    text on failure (e.g. an unsupported extension type).
     """
     language_id = str(language_id or '').strip()
     greeting_language_id = str(greeting_language_id or '').strip()
     formatting_locale_id = str(formatting_locale_id or '').strip()
 
     if not (language_id or greeting_language_id or formatting_locale_id):
-        return False, 'Nothing to update (no language selected).'
+        return False, 'Nothing to update (no language selected).', None
 
     current = _read_regional_ids(ext_id, token)
     if current is None:
-        return False, 'Could not read the extension to merge language settings.'
+        return False, 'Could not read the extension to merge language settings.', None
     cur_lang, cur_greet, cur_fmt = current
 
     # A sensible fallback for any field that is neither chosen nor currently set,
@@ -215,19 +217,20 @@ def set_region(ext_id, language_id, greeting_language_id, formatting_locale_id, 
     final_fmt = formatting_locale_id or cur_fmt or fallback
 
     if not (final_lang and final_greet and final_fmt):
-        return False, 'Could not determine all language settings to apply.'
+        return False, 'Could not determine all language settings to apply.', None
 
     regional = {
         'language': {'id': final_lang},
         'greetingLanguage': {'id': final_greet},
         'formattingLocale': {'id': final_fmt},
     }
+    endpoint = f"/restapi/v1.0/account/~/extension/{ext_id}"
+    body = {'regionalSettings': regional}
+    request_info = {'method': 'PUT', 'endpoint': endpoint, 'body': body}
 
     resp = rc_api_call(
-        f"/restapi/v1.0/account/~/extension/{ext_id}",
-        method='PUT', json={'regionalSettings': regional},
-        token=token, return_response=True,
+        endpoint, method='PUT', json=body, token=token, return_response=True,
     )
     if resp is not None and getattr(resp, 'ok', False):
-        return True, 'Language settings updated'
-    return False, _error_message(resp)
+        return True, 'Language settings updated', request_info
+    return False, _error_message(resp), request_info

@@ -364,6 +364,12 @@
                     body: JSON.stringify({ id, languageId, greetingLanguageId, formattingLocaleId }),
                 });
                 const data = await res.json();
+                // Show the exact PUT the server sent to RingCentral, so the full
+                // merged payload (all three language fields) is visible.
+                if (data.request) {
+                    const rq = data.request;
+                    erLog(`${label}: ${rq.method} ${rq.endpoint}  ${JSON.stringify(rq.body)}`, 'skip');
+                }
                 if (res.ok && data.success) {
                     ok++;
                     erLog(`${label}: updated.`, 'success');

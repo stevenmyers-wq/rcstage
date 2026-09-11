@@ -68,11 +68,13 @@ def update():
         return jsonify({"error": "Select a language to apply."}), 400
 
     try:
-        ok, msg = utils.set_region(ext_id, language_id, greeting_language_id,
-                                   formatting_locale_id, token)
+        ok, msg, request_info = utils.set_region(
+            ext_id, language_id, greeting_language_id, formatting_locale_id, token)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
     if not ok:
-        return jsonify({"error": msg}), 502
-    return jsonify({"success": True, "id": ext_id})
+        # Include the attempted PUT (when one was built) so the UI can show
+        # exactly what was sent even on a rejection.
+        return jsonify({"error": msg, "request": request_info}), 502
+    return jsonify({"success": True, "id": ext_id, "request": request_info})
