@@ -1,0 +1,97 @@
+<div id="as-built-tab" class="space-y-8 animate-fade-in w-full">
+    <div class="mb-4">
+        <h2 class="text-display mb-2">As-Built Documentation</h2>
+        <p class="text-subheading">Generate a holistic as-built document for the bridged customer account. Pick the item types to include and how deep each should go, preview it, then download as PDF or Word.</p>
+    </div>
+
+    <!-- Preview styling — matches the exported PDF/Word house style -->
+    <style>
+        .ab-doc { color: #0f172a; font-size: 0.9rem; line-height: 1.55; }
+        .dark .ab-doc { color: #e2e8f0; }
+        .ab-doc h1 { font-size: 1.7rem; font-weight: 800; margin: 0 0 .25rem; letter-spacing: -.01em; }
+        .ab-doc h2 { font-size: 1.2rem; font-weight: 700; margin: 1.6rem 0 .6rem; padding-bottom: .35rem; border-bottom: 2px solid #2563eb; }
+        .ab-doc h3 { font-size: 1rem; font-weight: 700; margin: 1.1rem 0 .4rem; color: #1d4ed8; }
+        .dark .ab-doc h3 { color: #60a5fa; }
+        .ab-doc p { margin: .45rem 0; }
+        .ab-doc .ab-wordmark { font-size: 1.4rem; font-weight: 800; color: #0b5cab; letter-spacing: -.02em; }
+        .ab-doc .ab-sub { color: #334155; font-weight: 600; font-size: 1.05rem; margin: 0 0 .2rem; }
+        .dark .ab-doc .ab-sub { color: #cbd5e1; }
+        .ab-doc .ab-lead { color: #64748b; font-size: .82rem; }
+        .ab-doc .ab-note { color: #475569; font-size: .86rem; }
+        .dark .ab-doc .ab-note { color: #94a3b8; }
+        .ab-doc .ab-empty { color: #94a3b8; font-style: italic; font-size: .84rem; }
+        .ab-doc .ab-muted { color: #94a3b8; }
+        .ab-doc .ab-count { display: inline-block; margin-left: .4rem; padding: .05rem .5rem; border-radius: .6rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: .72rem; font-weight: 700; vertical-align: middle; }
+        .dark .ab-doc .ab-count { background: rgba(30,58,138,.25); border-color: rgba(37,99,235,.4); color: #93c5fd; }
+        .ab-doc table.ab-table { width: 100%; border-collapse: collapse; margin: .5rem 0 1rem; font-size: .82rem; }
+        .ab-doc table.ab-table th { text-align: left; background: #f1f5f9; border: 1px solid #e2e8f0; padding: .4rem .6rem; font-weight: 700; }
+        .dark .ab-doc table.ab-table th { background: #1e293b; border-color: #334155; }
+        .ab-doc table.ab-table td { border: 1px solid #e2e8f0; padding: .4rem .6rem; vertical-align: top; word-break: break-word; }
+        .dark .ab-doc table.ab-table td { border-color: #334155; }
+        .ab-doc .ab-kv { margin: .2rem 0; font-size: .86rem; }
+        .ab-doc .ab-kv .ab-k { font-weight: 700; color: #475569; padding-right: .5rem; }
+        .dark .ab-doc .ab-kv .ab-k { color: #94a3b8; }
+        .ab-doc .ab-block { margin: .3rem 0 1rem; line-height: 2; }
+        .ab-doc .ab-chip { display: inline-block; padding: .12rem .5rem; margin: .1rem; border-radius: .45rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: .74rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .dark .ab-doc .ab-chip { background: rgba(30,58,138,.25); border-color: rgba(37,99,235,.4); color: #93c5fd; }
+        .ab-doc .ab-footer { margin-top: 1.5rem; padding-top: .6rem; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: .76rem; }
+        .dark .ab-doc .ab-footer { border-color: #334155; }
+        .ab-section-row { display: flex; align-items: center; gap: .6rem; padding: .5rem .1rem; border-bottom: 1px solid rgba(148,163,184,.15); }
+        .ab-section-row:last-child { border-bottom: none; }
+    </style>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-8 w-full items-start">
+
+        <!-- ===================== LEFT: SELECTION PANEL ===================== -->
+        <div class="xl:col-span-1 flex flex-col gap-6">
+
+            <div class="card !p-6">
+                <h3 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">Document Details</h3>
+                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1.5">Customer Name (optional)</label>
+                <input type="text" id="ab-customer-name" class="input-field" placeholder="Defaults to the account name">
+            </div>
+
+            <div class="card !p-6">
+                <div class="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 class="text-heading text-lg">Sections</h3>
+                    <div class="flex gap-2 text-xs">
+                        <button id="ab-select-all" class="font-bold text-blue-600 hover:text-blue-700">All</button>
+                        <span class="text-slate-300">·</span>
+                        <button id="ab-select-none" class="font-bold text-slate-500 hover:text-slate-700">None</button>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Tick an item type and choose how much detail to capture.</p>
+                <div id="ab-sections" class="space-y-0">
+                    <div class="text-sm text-slate-400 py-4 text-center">Loading sections…</div>
+                </div>
+            </div>
+
+            <div class="card !p-6 space-y-3">
+                <button id="ab-generate" class="btn-primary w-full">Generate Document</button>
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="ab-export-pdf" class="btn-secondary" disabled>Download PDF</button>
+                    <button id="ab-export-word" class="btn-secondary" disabled>Download Word</button>
+                </div>
+                <button id="ab-export-xlsx" class="btn-secondary w-full" disabled>Download Excel (granular data)</button>
+                <p class="text-[11px] text-slate-400 leading-snug">Excel captures the raw, audit-grade detail behind the document. Set sections to <strong>Full</strong> before generating for the most granular workbook.</p>
+                <div id="ab-status" class="text-xs font-semibold text-center text-slate-500 dark:text-slate-400 hidden"></div>
+            </div>
+        </div>
+
+        <!-- ===================== RIGHT: PREVIEW ===================== -->
+        <div class="xl:col-span-2">
+            <div class="card !p-8 min-h-[400px]">
+                <div id="ab-preview-empty" class="text-center py-20 flex flex-col items-center">
+                    <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mb-6 border border-slate-200 dark:border-slate-700">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">No document yet</h3>
+                    <p class="text-slate-500 dark:text-slate-400 font-medium max-w-sm">Select the item types on the left and click <strong>Generate Document</strong> to build a live as-built preview.</p>
+                </div>
+                <div id="ab-preview" class="ab-doc hidden"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/as_built.js') }}"></script>
