@@ -206,4 +206,8 @@ def create_app():
         from .extension_region import routes as extension_region_routes
         app.register_blueprint(extension_region_routes.extension_region_bp)
 
+        # As-Built Documentation routes (holistic account documentation export)
+        from .as_built import routes as as_built_routes
+        app.register_blueprint(as_built_routes.as_built_bp)
+
     return app
