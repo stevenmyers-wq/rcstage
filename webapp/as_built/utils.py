@@ -711,9 +711,35 @@ def render_custom_roles(data, detail):
 
 # ---- Cost Centres ---------------------------------------------------------
 
-def collect_cost_centres(ctx, detail):
+def _license_inventory():
+    """Authoritative per-cost-centre license inventory. Reuses the Cost Centres
+    tool's builder (the same breakdown as the Admin Portal license report).
+    token=None → rc_api_call resolves the bridged/session token."""
+    from webapp.cost_centres.utils import build_license_inventory
     centres = _fetch_all_pages("/restapi/v1.0/account/~/cost-center")
-    out = [{"name": c.get("name", "Unknown"), "id": str(c.get("id", ""))} for c in centres]
+    cc_map = {str(c.get("id")): c.get("name", "") for c in centres}
+    return centres, build_license_inventory(None, cc_map)
+
+
+def collect_cost_centres(ctx, detail):
+    if detail == "summary":
+        centres = _fetch_all_pages("/restapi/v1.0/account/~/cost-center")
+        out = [{"name": c.get("name", "Unknown"), "id": str(c.get("id", ""))}
+               for c in centres]
+        return {"centres": out}
+    # standard/full: attach assigned/available license counts per cost centre.
+    centres, inventory = _license_inventory()
+    by_cc = {cc["costCenterId"]: cc for cc in inventory}
+    out = []
+    for c in centres:
+        cid = str(c.get("id", ""))
+        node = by_cc.get(cid)
+        out.append({
+            "name": c.get("name", "Unknown"),
+            "id": cid,
+            "assigned": node["totalAssigned"] if node else 0,
+            "available": node["totalAvailable"] if node else 0,
+        })
     return {"centres": out}
 
 
@@ -722,8 +748,143 @@ def render_cost_centres(data, detail):
     html = _h2("Cost Centres", len(centres))
     if not centres:
         return html + _empty("No cost centres configured on this account.")
-    rows = [[_cell(c["name"]), _cell(c["id"])] for c in centres]
-    return html + _table(["Cost Centre", "ID"], rows)
+    if detail == "summary":
+        rows = [[_cell(c["name"]), _cell(c["id"])] for c in centres]
+        return html + _table(["Cost Centre", "ID"], rows)
+    rows = [[_cell(c["name"]), _cell(c["id"]),
+             _cell(str(c.get("assigned", 0))), _cell(str(c.get("available", 0)))]
+            for c in centres]
+    return html + _table(
+        ["Cost Centre", "ID", "Licenses Assigned", "Licenses Available"], rows)
+
+
+# ---- Licensing ------------------------------------------------------------
+
+def collect_licensing(ctx, detail):
+    _centres, inventory = _license_inventory()
+    by_type = {}
+    for cc in inventory:
+        for lic in cc.get("licenses", []):
+            node = by_type.setdefault(lic["name"], {"assigned": 0, "available": 0, "total": 0})
+            node["assigned"] += lic.get("assigned", 0)
+            node["available"] += lic.get("available", 0)
+            node["total"] += lic.get("total", 0)
+    data = {
+        "by_type": by_type,
+        "total_assigned": sum(n["assigned"] for n in by_type.values()),
+        "total_available": sum(n["available"] for n in by_type.values()),
+        "total": sum(n["total"] for n in by_type.values()),
+    }
+    if detail == "full":
+        data["inventory"] = inventory
+    return data
+
+
+def render_licensing(data, detail):
+    html = _h2("Licensing")
+    html += _kv("Total Licenses", _esc(str(data["total"])))
+    html += _kv("Assigned", _esc(str(data["total_assigned"])))
+    html += _kv("Available", _esc(str(data["total_available"])))
+    if not data["by_type"]:
+        return html + _empty(
+            "No license data returned (the v2 licenses endpoint may be "
+            "unavailable on this account).")
+    if detail == "summary":
+        return html
+    html += _h3("By License Type")
+    rows = [[_cell(name), _cell(str(n["assigned"])), _cell(str(n["available"])),
+             _cell(str(n["total"]))]
+            for name, n in sorted(data["by_type"].items())]
+    html += _table(["License Type", "Assigned", "Available", "Total"], rows)
+    if detail == "full" and data.get("inventory"):
+        html += _h3("By Cost Centre")
+        for cc in data["inventory"]:
+            html += _h3(cc["costCenterName"])
+            crows = [[_cell(l["name"]), _cell(str(l["assigned"])),
+                      _cell(str(l["available"])), _cell(str(l["total"]))]
+                     for l in cc.get("licenses", [])]
+            html += _table(["License Type", "Assigned", "Available", "Total"], crows)
+    return html
+
+
+# ---- Integrations & Provisioning ------------------------------------------
+
+# Substrings that flag a service feature as integration/provisioning relevant.
+INTEGRATION_KEYWORDS = (
+    "sso", "saml", "scim", "federation", "teams", "microsoft", "salesforce",
+    "google", "hubspot", "zendesk", "servicenow", "okta", "slack", "integration",
+    "presence", "directory", "sync", "crm", "hud", "archiver", "contactcenter",
+    "contact center", "webhook", "developer", "api",
+)
+
+
+def collect_integrations(ctx, detail):
+    svc = _api("/restapi/v1.0/account/~/service-info") or {}
+    features = svc.get("serviceFeatures", []) or []
+
+    scim = _api("/scim/v2/ServiceProviderConfig")
+    scim_enabled = bool(
+        scim and not (isinstance(scim, dict) and scim.get("errorCode")))
+
+    fed = _api("/restapi/v1.0/account/~/directory/federation")
+    fed_accounts = 0
+    if isinstance(fed, dict):
+        fed_accounts = len(fed.get("records") or fed.get("accounts") or [])
+
+    def is_notable(f):
+        n = (f.get("featureName", "") or "").lower()
+        return any(k in n for k in INTEGRATION_KEYWORDS)
+
+    data = {
+        "scim_enabled": scim_enabled,
+        "federation_accounts": fed_accounts,
+        "enabled_count": sum(1 for f in features if f.get("enabled")),
+        "feature_count": len(features),
+        "notable": [
+            {"name": f.get("featureName", ""), "enabled": bool(f.get("enabled"))}
+            for f in features if is_notable(f)
+        ],
+    }
+    if detail == "full":
+        data["all_features"] = [
+            {"name": f.get("featureName", ""), "enabled": bool(f.get("enabled"))}
+            for f in sorted(features, key=lambda x: x.get("featureName", ""))
+        ]
+    return data
+
+
+def render_integrations(data, detail):
+    html = _h2("Integrations & Provisioning")
+    html += _kv("SSO Auto-Provisioning (SCIM)",
+                _esc("Enabled" if data["scim_enabled"] else "Not enabled"))
+    html += _kv("Account Federation",
+                _esc(f'{data["federation_accounts"]} linked account(s)'
+                     if data["federation_accounts"] else "Not federated"))
+    html += _kv("Service Features Enabled",
+                _esc(f'{data["enabled_count"]} of {data["feature_count"]}'))
+
+    if detail != "summary":
+        notable = data.get("notable", [])
+        html += _h3(f"Notable Integration Features ({len(notable)})")
+        if notable:
+            rows = [[_cell(f["name"]), _cell("Enabled" if f["enabled"] else "Disabled")]
+                    for f in notable]
+            html += _table(["Feature", "Status"], rows)
+        else:
+            html += _empty("No integration-related service features detected.")
+
+    if detail == "full" and data.get("all_features"):
+        html += _h3(f"All Service Features ({len(data['all_features'])})")
+        rows = [[_cell(f["name"]), _cell("Enabled" if f["enabled"] else "Disabled")]
+                for f in data["all_features"]]
+        html += _table(["Feature", "Status"], rows)
+
+    html += _p(
+        "Note: Microsoft Teams Direct Routing and the RingCentral embedded app "
+        "for Teams are not exposed as discrete flags in the account API; where "
+        "licensed they surface among the service features above. Per-user "
+        "presence sync is a user-level setting, not an account-wide flag.")
+    return html
 
 
 # ---- Company Business Hours & Answering Rules -----------------------------
@@ -917,9 +1078,25 @@ SECTIONS = [
     {
         "key": "cost_centres",
         "label": "Cost Centres",
-        "description": "Configured cost centres.",
+        "description": "Cost centres with assigned/available license counts.",
         "collect": collect_cost_centres,
         "render": render_cost_centres,
+        "default_detail": "standard",
+    },
+    {
+        "key": "licensing",
+        "label": "Licensing",
+        "description": "License counts by type and cost centre (assigned vs available).",
+        "collect": collect_licensing,
+        "render": render_licensing,
+        "default_detail": "standard",
+    },
+    {
+        "key": "integrations",
+        "label": "Integrations & Provisioning",
+        "description": "SSO/SCIM, account federation and enabled service features.",
+        "collect": collect_integrations,
+        "render": render_integrations,
         "default_detail": "standard",
     },
     {
@@ -989,13 +1166,14 @@ def collect_document(selections):
             data = section["collect"](ctx, detail)
             html = section["render"](data, detail)
             rendered.append({"key": key, "label": section["label"],
-                             "detail": detail, "html": html, "error": None})
+                             "detail": detail, "html": html, "data": data,
+                             "error": None})
         except Exception as e:  # one bad section must not sink the whole doc
             logger.exception("[as_built] section %s failed", key)
             rendered.append({
                 "key": key, "label": section["label"], "detail": detail,
                 "html": _h2(section["label"]) + _empty(f"Could not collect this section: {e}"),
-                "error": str(e),
+                "data": None, "error": str(e),
             })
 
     return {"account_name": ctx.account.get("name", "Customer"),
@@ -1091,3 +1269,253 @@ def build_word_bytes(body_html, customer_name):
     """Word opens well-formed styled HTML natively, keeping the same house style
     as the PDF with no extra document-building dependency."""
     return _standalone_html(body_html, customer_name).encode("utf-8")
+
+
+# ===========================================================================
+# EXCEL EXPORT — granular, audit-grade data dump (one+ sheet per item type)
+# ===========================================================================
+# The PDF/Word are the readable as-built document; the workbook is the raw,
+# filterable data behind it — the same low-level detail our audit tools export.
+# Sheets are built from the structured data collected per section, so the depth
+# reflects the detail level chosen at generation time (generate at "full" for
+# the most granular workbook).
+
+def _join(values):
+    return "\n".join(str(v) for v in (values or []) if v)
+
+
+def _sheets_for(section):
+    """Return [{"name","columns","rows"}] for one collected section.
+
+    Each dict is one worksheet. Sections that are naturally per-item produce
+    one row per item; queues/IVRs/park also emit a membership/action sheet so
+    audits can filter at the row level.
+    """
+    key = section.get("key")
+    data = section.get("data")
+    if not data:
+        return []
+
+    if key == "overview":
+        rows = [{"Item": "Account Name", "Value": data.get("name")},
+                {"Item": "Account ID", "Value": data.get("account_id")},
+                {"Item": "Main Number", "Value": data.get("main_number")},
+                {"Item": "Service Plan", "Value": data.get("service_plan")},
+                {"Item": "Status", "Value": data.get("status")}]
+        rows += [{"Item": k, "Value": v} for k, v in data.get("counts", {}).items()]
+        return [{"name": "Overview", "columns": ["Item", "Value"], "rows": rows}]
+
+    if key == "sites":
+        cols = ["name", "extensionNumber", "address", "operator", "timezone", "code", "hours"]
+        rows = [{c: s.get(c, "") for c in cols} for s in data.get("sites", [])]
+        return [{"name": "Sites", "columns": cols, "rows": rows}]
+
+    if key == "users":
+        cols = ["name", "extensionNumber", "type", "status", "email", "site",
+                "numbers", "devices", "department"]
+        rows = []
+        for u in data.get("users", []):
+            r = {c: u.get(c, "") for c in cols}
+            r["numbers"] = _join(u.get("numbers"))
+            r["devices"] = _join(u.get("devices"))
+            rows.append(r)
+        return [{"name": "Users", "columns": cols, "rows": rows}]
+
+    if key == "call_queues":
+        qcols = ["name", "extensionNumber", "status", "member_count", "hours",
+                 "ring_type", "max_wait"]
+        qrows, mrows = [], []
+        for q in data.get("queues", []):
+            qrows.append({c: q.get(c, "") for c in qcols})
+            for m in q.get("members", []):
+                mrows.append({"Queue": q.get("name"),
+                              "Queue Ext": q.get("extensionNumber"), "Member": m})
+        sheets = [{"name": "Call Queues", "columns": qcols, "rows": qrows}]
+        if mrows:
+            sheets.append({"name": "Queue Members",
+                           "columns": ["Queue", "Queue Ext", "Member"], "rows": mrows})
+        return sheets
+
+    if key == "ivrs":
+        icols = ["name", "extensionNumber", "prompt_mode", "key_count"]
+        irows, arows = [], []
+        for i in data.get("ivrs", []):
+            irows.append({c: i.get(c, "") for c in icols})
+            for a in i.get("actions", []):
+                arows.append({"IVR": i.get("name"), "IVR Ext": i.get("extensionNumber"),
+                              "Key": a.get("key"), "Action": a.get("action"),
+                              "Destination": a.get("destination")})
+        sheets = [{"name": "IVR Menus", "columns": icols, "rows": irows}]
+        if arows:
+            sheets.append({"name": "IVR Actions",
+                           "columns": ["IVR", "IVR Ext", "Key", "Action", "Destination"],
+                           "rows": arows})
+        return sheets
+
+    if key == "park_zones":
+        prows, mrows = [], []
+        for p in data.get("parks", []):
+            prows.append({"name": p.get("name"), "extensionNumber": p.get("extensionNumber"),
+                          "members": _join(p.get("members"))})
+            for m in p.get("members", []):
+                mrows.append({"Park Location": p.get("name"),
+                              "Ext": p.get("extensionNumber"), "Member": m})
+        sheets = [{"name": "Park Locations",
+                   "columns": ["name", "extensionNumber", "members"], "rows": prows}]
+        if mrows:
+            sheets.append({"name": "Park Members",
+                           "columns": ["Park Location", "Ext", "Member"], "rows": mrows})
+        return sheets
+
+    if key == "paging_groups":
+        rows = [{"name": g.get("name"), "extensionNumber": g.get("extensionNumber")}
+                for g in data.get("groups", [])]
+        return [{"name": "Paging Groups", "columns": ["name", "extensionNumber"], "rows": rows}]
+
+    if key in ("shared_line_groups", "message_only", "announcement_only"):
+        label = {"shared_line_groups": "Shared Line Groups",
+                 "message_only": "Message-Only", "announcement_only": "Announcement-Only"}[key]
+        cols = ["name", "extensionNumber", "status", "site", "numbers"]
+        rows = []
+        for i in data.get("items", []):
+            r = {c: i.get(c, "") for c in cols}
+            r["numbers"] = _join(i.get("numbers"))
+            rows.append(r)
+        return [{"name": label, "columns": cols, "rows": rows}]
+
+    if key == "phone_numbers":
+        rows = data.get("rows", [])
+        if rows:
+            cols = ["number", "usage", "type", "status", "location", "assigned"]
+            rows = [{c: r.get(c, "") for c in cols} for r in rows]
+            return [{"name": "Phone Numbers", "columns": cols, "rows": rows}]
+        rows = [{"Usage Type": k, "Count": v} for k, v in data.get("by_usage", {}).items()]
+        return [{"name": "Phone Numbers", "columns": ["Usage Type", "Count"], "rows": rows}]
+
+    if key == "devices":
+        cols = ["name", "model", "type", "status", "serial", "sku", "assigned", "site"]
+        rows = [{c: d.get(c, "") for c in cols} for d in data.get("devices", [])]
+        return [{"name": "Devices", "columns": cols, "rows": rows}]
+
+    if key == "custom_roles":
+        cols = ["name", "scope", "description"]
+        rows = [{c: r.get(c, "") for c in cols} for r in data.get("roles", [])]
+        return [{"name": "Custom Roles", "columns": cols, "rows": rows}]
+
+    if key == "cost_centres":
+        cols = ["name", "id", "assigned", "available"]
+        rows = [{c: c2.get(c, "") for c in cols} for c2 in data.get("centres", [])]
+        return [{"name": "Cost Centres", "columns": cols, "rows": rows}]
+
+    if key == "licensing":
+        rows = [{"License Type": k, "Assigned": v.get("assigned"),
+                 "Available": v.get("available"), "Total": v.get("total")}
+                for k, v in data.get("by_type", {}).items()]
+        sheets = [{"name": "Licensing",
+                   "columns": ["License Type", "Assigned", "Available", "Total"], "rows": rows}]
+        cc_rows = []
+        for cc in data.get("inventory", []) or []:
+            for l in cc.get("licenses", []):
+                cc_rows.append({"Cost Centre": cc.get("costCenterName"),
+                                "License Type": l.get("name"), "Assigned": l.get("assigned"),
+                                "Available": l.get("available"), "Total": l.get("total")})
+        if cc_rows:
+            sheets.append({"name": "Licensing by Cost Centre",
+                           "columns": ["Cost Centre", "License Type", "Assigned",
+                                       "Available", "Total"], "rows": cc_rows})
+        return sheets
+
+    if key == "company_hours_rules":
+        sheets = []
+        weekly = (data.get("schedule") or {}).get("weeklyRanges") or {}
+        if weekly:
+            hrows = []
+            for day in ["monday", "tuesday", "wednesday", "thursday", "friday",
+                        "saturday", "sunday"]:
+                ranges = weekly.get(day) or []
+                spans = ", ".join(f'{r.get("from","")}-{r.get("to","")}' for r in ranges) \
+                    or "Closed"
+                hrows.append({"Day": day.capitalize(), "Open Hours": spans})
+            sheets.append({"name": "Company Hours",
+                           "columns": ["Day", "Open Hours"], "rows": hrows})
+        rrows = [{"Rule": r.get("name"), "Type": r.get("type"),
+                  "Enabled": "Yes" if r.get("enabled") else "No",
+                  "Call Handling": r.get("action")}
+                 for r in data.get("rules", []) or []]
+        if rrows:
+            sheets.append({"name": "Answering Rules",
+                           "columns": ["Rule", "Type", "Enabled", "Call Handling"],
+                           "rows": rrows})
+        return sheets
+
+    if key == "integrations":
+        rows = [{"Feature": "SSO Auto-Provisioning (SCIM)",
+                 "Status": "Enabled" if data.get("scim_enabled") else "Not enabled"},
+                {"Feature": "Account Federation",
+                 "Status": f'{data.get("federation_accounts", 0)} linked account(s)'}]
+        source = data.get("all_features") or data.get("notable") or []
+        for f in source:
+            rows.append({"Feature": f.get("name"),
+                         "Status": "Enabled" if f.get("enabled") else "Disabled"})
+        return [{"name": "Integrations", "columns": ["Feature", "Status"], "rows": rows}]
+
+    if key == "call_recording":
+        def yn(v):
+            return "Enabled" if v else "Disabled"
+        rows = [{"Setting": "Automatic Recording", "Value": yn(data.get("automatic_enabled"))},
+                {"Setting": "On-Demand Recording", "Value": yn(data.get("ondemand_enabled"))},
+                {"Setting": "Automatic - Inbound", "Value": yn(data.get("inbound_calls"))},
+                {"Setting": "Automatic - Outbound", "Value": yn(data.get("outbound_calls"))}]
+        return [{"name": "Call Recording", "columns": ["Setting", "Value"], "rows": rows}]
+
+    return []
+
+
+def _safe_sheet_name(name, used):
+    """Excel sheet names: <=31 chars, unique, no []:*?/\\ characters."""
+    clean = re.sub(r"[\[\]:*?/\\]", " ", str(name)).strip()[:31] or "Sheet"
+    candidate = clean
+    n = 2
+    while candidate.lower() in used:
+        suffix = f" ({n})"
+        candidate = clean[:31 - len(suffix)] + suffix
+        n += 1
+    used.add(candidate.lower())
+    return candidate
+
+
+def build_workbook_bytes(doc, customer_name):
+    """Build a multi-sheet .xlsx with the granular data behind the document."""
+    import io
+    import pandas as pd
+
+    sheets = []
+    for section in doc.get("sections", []):
+        try:
+            sheets.extend(_sheets_for(section))
+        except Exception:
+            logger.exception("[as_built] xlsx sheet build failed for %s",
+                             section.get("key"))
+
+    output = io.BytesIO()
+    used_names = set()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        wrote_any = False
+        for sheet in sheets:
+            rows = sheet.get("rows") or []
+            cols = sheet.get("columns") or []
+            df = pd.DataFrame(rows, columns=cols) if cols else pd.DataFrame(rows)
+            name = _safe_sheet_name(sheet.get("name", "Sheet"), used_names)
+            df.to_excel(writer, index=False, sheet_name=name)
+            wrote_any = True
+            ws = writer.sheets[name]
+            for column in ws.columns:
+                length = max((len(str(c.value)) if c.value is not None else 0)
+                             for c in column)
+                ws.column_dimensions[column[0].column_letter].width = min(length + 3, 60)
+        if not wrote_any:
+            pd.DataFrame([{"Info": "No data collected for the selected sections."}]) \
+                .to_excel(writer, index=False, sheet_name="As-Built")
+
+    output.seek(0)
+    return output.getvalue()

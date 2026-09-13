@@ -10,6 +10,7 @@
     const genBtn = document.getElementById('ab-generate');
     const pdfBtn = document.getElementById('ab-export-pdf');
     const wordBtn = document.getElementById('ab-export-word');
+    const xlsxBtn = document.getElementById('ab-export-xlsx');
     const nameEl = document.getElementById('ab-customer-name');
 
     let detailLevels = ['summary', 'standard', 'full'];
@@ -99,7 +100,7 @@
         genBtn.disabled = true;
         genBtn.textContent = 'Generating…';
         setStatus('Collecting configuration from the account…');
-        pdfBtn.disabled = true; wordBtn.disabled = true;
+        pdfBtn.disabled = true; wordBtn.disabled = true; xlsxBtn.disabled = true;
         try {
             const res = await fetch('/api/as_built/generate', {
                 method: 'POST',
@@ -111,7 +112,7 @@
                 previewEl.innerHTML = data.document;
                 previewEl.classList.remove('hidden');
                 previewEmpty.classList.add('hidden');
-                pdfBtn.disabled = false; wordBtn.disabled = false;
+                pdfBtn.disabled = false; wordBtn.disabled = false; xlsxBtn.disabled = false;
                 if (data.section_errors && data.section_errors.length) {
                     setStatus(data.section_errors.length + ' section(s) had errors — see the document.', true);
                 } else {
@@ -129,7 +130,8 @@
     }
 
     async function exportDoc(fmt) {
-        const btn = fmt === 'pdf' ? pdfBtn : wordBtn;
+        const btn = fmt === 'pdf' ? pdfBtn : (fmt === 'xlsx' ? xlsxBtn : wordBtn);
+        const extByFmt = { pdf: 'pdf', word: 'doc', xlsx: 'xlsx' };
         const orig = btn.textContent;
         btn.disabled = true; btn.textContent = 'Preparing…';
         try {
@@ -147,7 +149,7 @@
             const blob = await res.blob();
             const cd = res.headers.get('Content-Disposition') || '';
             const match = cd.match(/filename="?([^"]+)"?/);
-            const filename = match ? match[1] : ('As_Built.' + (fmt === 'pdf' ? 'pdf' : 'doc'));
+            const filename = match ? match[1] : ('As_Built.' + (extByFmt[fmt] || 'pdf'));
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url; a.download = filename;
@@ -171,6 +173,7 @@
     genBtn.addEventListener('click', generate);
     pdfBtn.addEventListener('click', () => exportDoc('pdf'));
     wordBtn.addEventListener('click', () => exportDoc('word'));
+    xlsxBtn.addEventListener('click', () => exportDoc('xlsx'));
 
     loadCatalog();
 })();

@@ -23,7 +23,7 @@ as_built_bp = Blueprint('as_built_bp', __name__, url_prefix='/api/as_built')
 
 # Last generated document per user email, so /export re-uses exactly what was
 # previewed instead of re-collecting from the API.
-#   { email -> {"body_html": str, "customer_name": str} }
+#   { email -> {"body_html": str, "customer_name": str, "doc": {...}} }
 _doc_store = {}
 
 
@@ -60,6 +60,7 @@ def generate():
         _doc_store[_current_email()] = {
             "body_html": body_html,
             "customer_name": customer_name or doc.get("account_name") or "Customer",
+            "doc": doc,
         }
         return jsonify({
             "success": True,
@@ -81,7 +82,7 @@ def export():
     """Download the last-generated document as PDF or Word."""
     data = request.get_json(silent=True) or {}
     fmt = (data.get('format') or 'pdf').strip().lower()
-    if fmt not in ('pdf', 'word'):
+    if fmt not in ('pdf', 'word', 'xlsx'):
         return jsonify({"success": False, "error": "Unsupported export format."}), 400
 
     stored = _doc_store.get(_current_email())
@@ -103,6 +104,14 @@ def export():
                 mimetype='application/msword',
                 as_attachment=True,
                 download_name=f'As_Built_{slug}.doc',
+            )
+        if fmt == 'xlsx':
+            content = utils.build_workbook_bytes(stored.get("doc") or {}, customer_name)
+            return send_file(
+                BytesIO(content),
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f'As_Built_{slug}.xlsx',
             )
         content = utils.build_pdf_bytes(body_html, customer_name)
         return send_file(
