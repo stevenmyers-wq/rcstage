@@ -522,6 +522,287 @@ def render_paging_groups(data, detail):
     return html + _table(["Paging Group", "Ext"], rows)
 
 
+# ---- Generic extension-type section (Message-Only / Announcement-Only / SLG) --
+
+def _collect_ext_type(ctx, detail, types):
+    """Shared collector for simple extension-type inventories."""
+    items = [e for e in ctx.extensions if e.get("type") in types]
+    out = []
+    for e in sorted(items, key=lambda x: (x.get("extensionNumber") or "")):
+        eid = str(e.get("id"))
+        rec = {
+            "id": eid,
+            "name": e.get("name", "Unknown"),
+            "extensionNumber": e.get("extensionNumber", ""),
+            "status": e.get("status", ""),
+        }
+        if detail != "summary":
+            rec["site"] = (e.get("site") or {}).get("name", "")
+            rec["numbers"] = ctx.numbers_for(eid)
+        out.append(rec)
+    return {"items": out}
+
+
+def _render_ext_type(data, detail, title, name_header):
+    items = data["items"]
+    html = _h2(title, len(items))
+    if not items:
+        return html + _empty(f"No {title.lower()} configured on this account.")
+    if detail == "summary":
+        rows = [[_cell(i["name"]), _cell(i["extensionNumber"]), _cell(i.get("status"))]
+                for i in items]
+        return html + _table([name_header, "Ext", "Status"], rows)
+    rows = [[
+        _cell(i["name"]), _cell(i["extensionNumber"]), _cell(i.get("status")),
+        _cell(i.get("site")), _chips(i.get("numbers")),
+    ] for i in items]
+    return html + _table([name_header, "Ext", "Status", "Site", "Numbers"], rows)
+
+
+def collect_message_only(ctx, detail):
+    return _collect_ext_type(ctx, detail, ("Voicemail", "MessageOnly"))
+
+
+def render_message_only(data, detail):
+    return _render_ext_type(data, detail, "Message-Only Extensions", "Name")
+
+
+def collect_announcement_only(ctx, detail):
+    return _collect_ext_type(ctx, detail, ("AnnouncementOnly", "Announcement"))
+
+
+def render_announcement_only(data, detail):
+    return _render_ext_type(data, detail, "Announcement-Only Extensions", "Name")
+
+
+def collect_shared_line_groups(ctx, detail):
+    return _collect_ext_type(ctx, detail, ("SharedLinesGroup",))
+
+
+def render_shared_line_groups(data, detail):
+    return _render_ext_type(data, detail, "Shared Line Groups", "Group")
+
+
+# ---- Phone Numbers --------------------------------------------------------
+
+def collect_phone_numbers(ctx, detail):
+    numbers = ctx.phone_numbers
+    by_usage = {}
+    for p in numbers:
+        u = p.get("usageType", "Unknown")
+        by_usage[u] = by_usage.get(u, 0) + 1
+    rows = []
+    if detail != "summary":
+        for p in sorted(numbers, key=lambda x: x.get("phoneNumber", "")):
+            ext = p.get("extension") or {}
+            assigned = ctx.ext_name(ext.get("id")) if ext.get("id") else ""
+            row = {
+                "number": p.get("phoneNumber", ""),
+                "usage": p.get("usageType", ""),
+                "status": p.get("status", ""),
+                "assigned": assigned,
+            }
+            if detail == "full":
+                loc = p.get("location", "")
+                row["type"] = p.get("type", "")
+                row["location"] = loc
+            rows.append(row)
+    return {"by_usage": by_usage, "total": len(numbers), "rows": rows}
+
+
+def render_phone_numbers(data, detail):
+    html = _h2("Phone Numbers", data["total"])
+    breakdown = [[_cell(k), _cell(str(v))] for k, v in sorted(data["by_usage"].items())]
+    html += _h3("By Usage Type")
+    html += _table(["Usage Type", "Count"], breakdown)
+    if detail == "summary":
+        return html
+    html += _h3("Number Inventory")
+    if detail == "full":
+        rows = [[_cell(r["number"]), _cell(r["usage"]), _cell(r.get("type")),
+                 _cell(r["status"]), _cell(r.get("location")), _cell(r["assigned"])]
+                for r in data["rows"]]
+        return html + _table(
+            ["Number", "Usage", "Type", "Status", "Location", "Assigned To"], rows)
+    rows = [[_cell(r["number"]), _cell(r["usage"]), _cell(r["status"]), _cell(r["assigned"])]
+            for r in data["rows"]]
+    return html + _table(["Number", "Usage", "Status", "Assigned To"], rows)
+
+
+# ---- Devices / Hardware ---------------------------------------------------
+
+def collect_devices(ctx, detail):
+    devices = _fetch_all_pages("/restapi/v1.0/account/~/device")
+    out = []
+    for d in devices:
+        rec = {
+            "name": d.get("name", "Unnamed Device"),
+            "model": (d.get("model") or {}).get("name", "Unknown"),
+            "status": d.get("status", ""),
+        }
+        if detail != "summary":
+            ext = d.get("extension") or {}
+            rec["assigned"] = ctx.ext_name(ext.get("id")) if ext.get("id") else ""
+            rec["serial"] = d.get("serial", "")
+            rec["site"] = (d.get("site") or {}).get("name", "")
+        if detail == "full":
+            rec["type"] = d.get("type", "")
+            rec["sku"] = d.get("sku", "")
+        out.append(rec)
+    # summary breakdown by model
+    by_model = {}
+    for d in out:
+        by_model[d["model"]] = by_model.get(d["model"], 0) + 1
+    return {"devices": out, "by_model": by_model}
+
+
+def render_devices(data, detail):
+    devices = data["devices"]
+    html = _h2("Devices", len(devices))
+    if not devices:
+        return html + _empty("No devices provisioned on this account.")
+    if detail == "summary":
+        html += _h3("By Model")
+        rows = [[_cell(k), _cell(str(v))] for k, v in sorted(data["by_model"].items())]
+        return html + _table(["Model", "Count"], rows)
+    headers = ["Name", "Model", "Status", "Serial/MAC", "Assigned To", "Site"]
+    if detail == "full":
+        headers = ["Name", "Model", "Type", "Status", "Serial/MAC", "SKU", "Assigned To", "Site"]
+    rows = []
+    for d in devices:
+        if detail == "full":
+            rows.append([_cell(d["name"]), _cell(d["model"]), _cell(d.get("type")),
+                         _cell(d["status"]), _cell(d.get("serial")), _cell(d.get("sku")),
+                         _cell(d.get("assigned")), _cell(d.get("site"))])
+        else:
+            rows.append([_cell(d["name"]), _cell(d["model"]), _cell(d["status"]),
+                         _cell(d.get("serial")), _cell(d.get("assigned")), _cell(d.get("site"))])
+    return html + _table(headers, rows)
+
+
+# ---- Custom Roles ---------------------------------------------------------
+
+def collect_custom_roles(ctx, detail):
+    roles = _fetch_all_pages("/restapi/v1.0/account/~/custom-roles")
+    out = []
+    for r in roles:
+        rec = {
+            "name": r.get("displayName") or r.get("name", "Unknown"),
+            "scope": r.get("scope", ""),
+        }
+        if detail != "summary":
+            rec["description"] = r.get("description", "")
+        out.append(rec)
+    return {"roles": out}
+
+
+def render_custom_roles(data, detail):
+    roles = data["roles"]
+    html = _h2("Custom Roles", len(roles))
+    if not roles:
+        return html + _empty("No custom roles defined on this account.")
+    if detail == "summary":
+        rows = [[_cell(r["name"]), _cell(r.get("scope"))] for r in roles]
+        return html + _table(["Role", "Scope"], rows)
+    rows = [[_cell(r["name"]), _cell(r.get("scope")), _cell(r.get("description"))]
+            for r in roles]
+    return html + _table(["Role", "Scope", "Description"], rows)
+
+
+# ---- Cost Centres ---------------------------------------------------------
+
+def collect_cost_centres(ctx, detail):
+    centres = _fetch_all_pages("/restapi/v1.0/account/~/cost-center")
+    out = [{"name": c.get("name", "Unknown"), "id": str(c.get("id", ""))} for c in centres]
+    return {"centres": out}
+
+
+def render_cost_centres(data, detail):
+    centres = data["centres"]
+    html = _h2("Cost Centres", len(centres))
+    if not centres:
+        return html + _empty("No cost centres configured on this account.")
+    rows = [[_cell(c["name"]), _cell(c["id"])] for c in centres]
+    return html + _table(["Cost Centre", "ID"], rows)
+
+
+# ---- Company Business Hours & Answering Rules -----------------------------
+
+def _render_weekly_hours(schedule):
+    """Full weekly business-hours table from a schedule payload."""
+    weekly = (schedule or {}).get("weeklyRanges") or {}
+    order = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    rows = []
+    for day in order:
+        ranges = weekly.get(day) or []
+        if ranges:
+            spans = ", ".join(f'{r.get("from","")}–{r.get("to","")}' for r in ranges)
+        else:
+            spans = "Closed"
+        rows.append([_cell(day.capitalize()), _cell(spans)])
+    return _table(["Day", "Open Hours"], rows)
+
+
+def collect_company_hours_rules(ctx, detail):
+    hours = _api("/restapi/v1.0/account/~/business-hours") or {}
+    data = {"hours_summary": _summarise_hours(hours), "schedule": hours.get("schedule") or {}}
+    if detail != "summary":
+        rules = _fetch_all_pages(
+            "/restapi/v1.0/account/~/answering-rule?view=Detailed")
+        data["rules"] = [{
+            "name": r.get("name", ""),
+            "type": r.get("type", ""),
+            "enabled": r.get("enabled", ""),
+            "action": (r.get("callHandlingAction") or ""),
+        } for r in rules]
+    return data
+
+
+def render_company_hours_rules(data, detail):
+    html = _h2("Company Business Hours & Answering Rules")
+    if detail == "summary":
+        return html + _kv("Business Hours", _esc(data["hours_summary"]))
+    html += _h3("Company Business Hours")
+    html += _render_weekly_hours(data.get("schedule"))
+    rules = data.get("rules", [])
+    html += _h3(f"Company Answering Rules ({len(rules)})")
+    if not rules:
+        return html + _empty("No company answering rules defined.")
+    rows = [[_cell(r["name"]), _cell(r["type"]),
+             _cell("Yes" if r.get("enabled") else "No"), _cell(r["action"])]
+            for r in rules]
+    return html + _table(["Rule", "Type", "Enabled", "Call Handling"], rows)
+
+
+# ---- Call Recording -------------------------------------------------------
+
+def collect_call_recording(ctx, detail):
+    cfg = _api("/restapi/v1.0/account/~/call-recording") or {}
+    auto = cfg.get("automatic") or {}
+    ondemand = cfg.get("onDemand") or {}
+    return {
+        "automatic_enabled": auto.get("enabled"),
+        "ondemand_enabled": ondemand.get("enabled"),
+        "outbound_calls": auto.get("outboundCallsRecording"),
+        "inbound_calls": auto.get("inboundCallsRecording"),
+        "raw": cfg,
+    }
+
+
+def render_call_recording(data, detail):
+    html = _h2("Call Recording")
+
+    def yn(v):
+        return "Enabled" if v else "Disabled"
+
+    html += _kv("Automatic Recording", _esc(yn(data.get("automatic_enabled"))))
+    html += _kv("On-Demand Recording", _esc(yn(data.get("ondemand_enabled"))))
+    if detail != "summary":
+        html += _kv("Automatic — Inbound", _esc(yn(data.get("inbound_calls"))))
+        html += _kv("Automatic — Outbound", _esc(yn(data.get("outbound_calls"))))
+    return html
+
+
 # ===========================================================================
 # SECTION REGISTRY
 # ===========================================================================
@@ -583,6 +864,78 @@ SECTIONS = [
         "description": "Paging-only groups.",
         "collect": collect_paging_groups,
         "render": render_paging_groups,
+        "default_detail": "standard",
+    },
+    {
+        "key": "shared_line_groups",
+        "label": "Shared Line Groups",
+        "description": "Shared line groups and their assigned numbers.",
+        "collect": collect_shared_line_groups,
+        "render": render_shared_line_groups,
+        "default_detail": "standard",
+    },
+    {
+        "key": "message_only",
+        "label": "Message-Only Extensions",
+        "description": "Message-only (voicemail) extensions.",
+        "collect": collect_message_only,
+        "render": render_message_only,
+        "default_detail": "standard",
+    },
+    {
+        "key": "announcement_only",
+        "label": "Announcement-Only Extensions",
+        "description": "Announcement-only extensions.",
+        "collect": collect_announcement_only,
+        "render": render_announcement_only,
+        "default_detail": "standard",
+    },
+    {
+        "key": "phone_numbers",
+        "label": "Phone Numbers",
+        "description": "DID and company number inventory, by usage type.",
+        "collect": collect_phone_numbers,
+        "render": render_phone_numbers,
+        "default_detail": "standard",
+    },
+    {
+        "key": "devices",
+        "label": "Devices",
+        "description": "Provisioned hardware/soft phones, models, serials and assignments.",
+        "collect": collect_devices,
+        "render": render_devices,
+        "default_detail": "standard",
+    },
+    {
+        "key": "custom_roles",
+        "label": "Custom Roles",
+        "description": "Custom user roles and their scope.",
+        "collect": collect_custom_roles,
+        "render": render_custom_roles,
+        "default_detail": "standard",
+    },
+    {
+        "key": "cost_centres",
+        "label": "Cost Centres",
+        "description": "Configured cost centres.",
+        "collect": collect_cost_centres,
+        "render": render_cost_centres,
+        "default_detail": "standard",
+    },
+    {
+        "key": "company_hours_rules",
+        "label": "Company Hours & Answering Rules",
+        "description": "Company business hours and company-level answering rules.",
+        "collect": collect_company_hours_rules,
+        "render": render_company_hours_rules,
+        "default_detail": "standard",
+    },
+    {
+        "key": "call_recording",
+        "label": "Call Recording",
+        "description": "Automatic and on-demand call recording settings.",
+        "collect": collect_call_recording,
+        "render": render_call_recording,
         "default_detail": "standard",
     },
 ]
