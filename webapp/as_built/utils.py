@@ -171,17 +171,22 @@ def _table(headers, rows, widths=None):
     """rows: list of lists (cells may contain pre-escaped HTML from _cell).
 
     widths: optional list of column widths (percentages that should sum to 100).
-    The table uses a fixed layout so columns keep their share and long content
-    wraps inside the cell instead of pushing neighbours out of alignment — the
-    cause of the "jumbled / overlapping" columns in the first PDF build.
+    xhtml2pdf keys column widths off the widths declared on the header cells, so
+    the widths are applied to each <th> (and mirrored via a colgroup for the
+    browser preview). Combined with the fixed table layout this keeps columns
+    aligned and lets long content wrap inside its own cell — reportlab splits
+    long words by character on its own, so no manual break hints are needed
+    (those produced the black tofu boxes in the previous build).
     """
     if not rows:
         return ""
-    colgroup = ""
+    colgroup, th_style = "", [""] * len(headers)
     if widths:
         colgroup = "<colgroup>" + "".join(
             f'<col style="width:{w}%">' for w in widths) + "</colgroup>"
-    head = "".join(f"<th>{_esc(h)}</th>" for h in headers)
+        th_style = [f' style="width:{w}%"' for w in widths]
+    head = "".join(f"<th{th_style[i] if i < len(th_style) else ''}>{_esc(h)}</th>"
+                   for i, h in enumerate(headers))
     body = ""
     for r in rows:
         cells = "".join(f"<td>{c}</td>" for c in r)
@@ -190,25 +195,11 @@ def _table(headers, rows, widths=None):
             f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
 
 
-# Insert zero-width break points into long unbreakable tokens (emails, phone
-# numbers, IDs). reportlab (the xhtml2pdf backend) honours U+200B as a valid
-# line-break opportunity, so this lets long values wrap inside fixed-width cells
-# instead of overflowing.
-_ZWSP = "​"
-
-
-def _soft_breaks(escaped):
-    def _brk(m):
-        t = m.group(0).replace("@", "@" + _ZWSP).replace(".", "." + _ZWSP)
-        return re.sub(r"(\S{14})(?=\S)", r"\1" + _ZWSP, t)
-    return re.sub(r"\S{15,}", _brk, escaped)
-
-
 def _cell(value):
-    """Escape a plain value for use inside a table cell (with wrap hints)."""
+    """Escape a plain value for use inside a table cell."""
     if value is None or value == "":
         return '<span class="ab-muted">—</span>'
-    return _soft_breaks(_esc(value))
+    return _esc(value)
 
 
 def _lines(values):
@@ -217,7 +208,7 @@ def _lines(values):
     vals = [v for v in (values or []) if v]
     if not vals:
         return '<span class="ab-muted">—</span>'
-    return "<br>".join(_soft_breaks(_esc(v)) for v in vals)
+    return "<br>".join(_esc(v) for v in vals)
 
 
 def _chips(values):
@@ -451,14 +442,20 @@ def collect_call_queues(ctx, detail):
             member_recs = members.get("records") or []
             rec["members"] = [ctx.ext_name(m.get("id")) for m in member_recs]
             rec["member_count"] = members.get("totalElements", len(member_recs))
+            # Call-handling settings live in the business-hours answering rule's
+            # `queue` object (same source the Call Queue Manager reads), not on
+            # the /call-queues/{id} resource — reading the wrong place is why
+            # these values came back blank.
+            rule = _api(
+                f"/restapi/v1.0/account/~/extension/{qid}/answering-rule/business-hours-rule") or {}
+            q = rule.get("queue") or {}
             rec["schedule"] = _fetch_business_hours(qid)
-            cfg = _api(f"/restapi/v1.0/account/~/call-queues/{qid}") or {}
-            rec["ring_type"] = cfg.get("transferMode") or cfg.get("ringType", "")
-            rec["hold_time"] = cfg.get("holdTime")
-            rec["max_callers"] = cfg.get("maxCallers")
-            rec["max_wait"] = cfg.get("holdTimeExpirationAction", "")
-            sls = cfg.get("serviceLevelSettings") or {}
-            rec["service_level"] = sls.get("serviceLevelThresholdSeconds")
+            rec["ring_type"] = q.get("transferMode", "")
+            rec["hold_time"] = q.get("holdTime")
+            rec["wrap_up"] = q.get("wrapUpTime")
+            rec["max_callers"] = q.get("maxCallers")
+            rec["when_full"] = q.get("maxCallersAction", "")
+            rec["when_max_time"] = q.get("holdTimeExpirationAction", "")
         if detail == "full":
             # After-hours handling for the queue, if any.
             ah = _api(
@@ -486,9 +483,11 @@ def render_call_queues(data, detail):
             ["Status", _cell(q.get("status"))],
             ["Members", _cell(str(q.get("member_count", 0)))],
             ["Ring / Transfer Mode", _cell(q.get("ring_type"))],
-            ["Hold Time (s)", _cell(q.get("hold_time"))],
+            ["Total Ring Time (s)", _cell(q.get("hold_time"))],
+            ["Wrap-Up Time (s)", _cell(q.get("wrap_up"))],
             ["Max Callers in Queue", _cell(q.get("max_callers"))],
-            ["Service Level (s)", _cell(q.get("service_level"))],
+            ["When Queue is Full", _cell(q.get("when_full"))],
+            ["When Max Time Reached", _cell(q.get("when_max_time"))],
             ["Business Hours", _weekly_hours_lines(q.get("schedule"))],
         ]
         if detail == "full":
@@ -878,41 +877,49 @@ def _cc_fetch(endpoint):
         return []
 
 
-def _license_inventory():
-    """Authoritative per-cost-centre license inventory. Reuses the Cost Centres
-    tool's builder (the same breakdown as the Admin Portal license report).
-    A license-endpoint failure must not empty the cost-centre list, so it is
-    isolated. token=None → rc_api_call resolves the bridged/session token."""
-    centres = _cc_fetch("/restapi/v1.0/account/~/cost-center")
-    inventory = []
+def _cost_centre_bundle():
+    """Reuse the Cost Centres tool's data path wholesale. It works around the
+    /cost-center list endpoint 404ing on many accounts by harvesting cost-centre
+    names from the costCenter object on every extension/number/device, resolves
+    each object's effective cost centre (explicit → site → account default), and
+    includes the authoritative v2 license inventory. token=None → session/bridge
+    token."""
+    from webapp.cost_centres.utils import get_cost_centres_data
     try:
-        from webapp.cost_centres.utils import build_license_inventory
-        cc_map = {str(c.get("id")): c.get("name", "") for c in centres}
-        inventory = build_license_inventory(None, cc_map)
+        return get_cost_centres_data(None) or {}
     except Exception:
-        logger.exception("[as_built] license inventory failed")
-    return centres, inventory
+        logger.exception("[as_built] cost centre bundle failed")
+        return {}
 
 
 def collect_cost_centres(ctx, detail):
-    if detail == "summary":
-        centres = _cc_fetch("/restapi/v1.0/account/~/cost-center")
-        out = [{"name": c.get("name", "Unknown"), "id": str(c.get("id", ""))}
-               for c in centres]
-        return {"centres": out}
-    # standard/full: attach assigned/available license counts per cost centre.
-    centres, inventory = _license_inventory()
-    by_cc = {cc["costCenterId"]: cc for cc in inventory}
+    bundle = _cost_centre_bundle()
+    centres = bundle.get("cost_centres", []) or []
+    assets = bundle.get("assets", []) or []
+    inv_by_cc = {str(cc.get("costCenterId")): cc
+                 for cc in bundle.get("license_inventory", []) or []}
+
+    # Count assigned objects per cost centre (by id, falling back to name).
+    count_by_id, count_by_name = {}, {}
+    for a in assets:
+        cid = str(a.get("costCenterId") or "")
+        count_by_id[cid] = count_by_id.get(cid, 0) + 1
+        nm = a.get("costCenterName") or ""
+        count_by_name[nm] = count_by_name.get(nm, 0) + 1
+
     out = []
     for c in centres:
         cid = str(c.get("id", ""))
-        node = by_cc.get(cid)
+        node = inv_by_cc.get(cid)
+        objects = count_by_id.get(cid) or count_by_name.get(c.get("name", ""), 0)
         out.append({
             "name": c.get("name", "Unknown"),
             "id": cid,
+            "objects": objects,
             "assigned": node["totalAssigned"] if node else 0,
             "available": node["totalAvailable"] if node else 0,
         })
+    out.sort(key=lambda x: x["name"].lower())
     return {"centres": out}
 
 
@@ -922,20 +929,20 @@ def render_cost_centres(data, detail):
     if not centres:
         return html + _empty("No cost centres configured on this account.")
     if detail == "summary":
-        rows = [[_cell(c["name"]), _cell(c["id"])] for c in centres]
-        return html + _table(["Cost Centre", "ID"], rows, widths=[70, 30])
-    rows = [[_cell(c["name"]), _cell(c["id"]),
+        rows = [[_cell(c["name"]), _cell(str(c.get("objects", 0)))] for c in centres]
+        return html + _table(["Cost Centre", "Assigned Objects"], rows, widths=[70, 30])
+    rows = [[_cell(c["name"]), _cell(str(c.get("objects", 0))),
              _cell(str(c.get("assigned", 0))), _cell(str(c.get("available", 0)))]
             for c in centres]
     return html + _table(
-        ["Cost Centre", "ID", "Licenses Assigned", "Licenses Available"], rows,
-        widths=[46, 22, 16, 16])
+        ["Cost Centre", "Assigned Objects", "Licenses Assigned", "Licenses Available"],
+        rows, widths=[40, 20, 20, 20])
 
 
 # ---- Licensing ------------------------------------------------------------
 
 def collect_licensing(ctx, detail):
-    _centres, inventory = _license_inventory()
+    inventory = _cost_centre_bundle().get("license_inventory", []) or []
     by_type = {}
     for cc in inventory:
         for lic in cc.get("licenses", []):
@@ -1000,19 +1007,17 @@ def collect_integrations(ctx, detail):
     scim_enabled = bool(
         scim and not (isinstance(scim, dict) and scim.get("errorCode")))
 
+    # Actual federation shows as 2+ linked accounts in the directory federation
+    # resource. The AccountFederation service feature only means the account is
+    # *entitled* to federation, not that it is federated — so the headline is
+    # based on real linked accounts, with the entitlement reported separately to
+    # avoid the "enabled but not linked" confusion.
     fed = _api("/restapi/v1.0/account/~/directory/federation")
     fed_accounts = 0
     if isinstance(fed, dict):
         fed_accounts = len(fed.get("records") or fed.get("accounts") or [])
-
-    # Authoritative federation signal is the AccountFederation service feature;
-    # the /directory/federation count is supplementary (and often empty on a
-    # bridged token). Deriving the headline from the feature avoids the earlier
-    # contradiction where the summary said "Not federated" but the feature table
-    # showed AccountFederation enabled.
     feat_map = {(f.get("featureName", "") or "").lower(): bool(f.get("enabled"))
                 for f in features}
-    federation_enabled = feat_map.get("accountfederation", fed_accounts > 0)
 
     def is_notable(f):
         n = (f.get("featureName", "") or "").lower()
@@ -1020,7 +1025,8 @@ def collect_integrations(ctx, detail):
 
     data = {
         "scim_enabled": scim_enabled,
-        "federation_enabled": federation_enabled,
+        "federation_active": fed_accounts >= 2,
+        "federation_capable": feat_map.get("accountfederation", False),
         "federation_accounts": fed_accounts,
         "enabled_count": sum(1 for f in features if f.get("enabled")),
         "feature_count": len(features),
@@ -1041,10 +1047,10 @@ def render_integrations(data, detail):
     html = _h2("Integrations & Provisioning")
     html += _kv("SSO Auto-Provisioning (SCIM)",
                 _esc("Enabled" if data["scim_enabled"] else "Not enabled"))
-    if data.get("federation_enabled"):
-        fed_txt = "Enabled"
-        if data.get("federation_accounts"):
-            fed_txt += f' ({data["federation_accounts"]} linked account(s))'
+    if data.get("federation_active"):
+        fed_txt = f'Federated ({data.get("federation_accounts", 0)} linked accounts)'
+    elif data.get("federation_capable"):
+        fed_txt = "Not federated (feature available, no linked accounts)"
     else:
         fed_txt = "Not federated"
     html += _kv("Account Federation", _esc(fed_txt))
@@ -1528,8 +1534,8 @@ def _sheets_for(section):
 
     if key == "call_queues":
         qcols = ["name", "extensionNumber", "status", "member_count", "ring_type",
-                 "hold_time", "max_callers", "service_level", "hours",
-                 "after_hours_action"]
+                 "hold_time", "wrap_up", "max_callers", "when_full", "when_max_time",
+                 "hours", "after_hours_action"]
         qrows, mrows = [], []
         for q in data.get("queues", []):
             r = {c: q.get(c, "") for c in qcols}
@@ -1620,7 +1626,7 @@ def _sheets_for(section):
         return [{"name": "User Roles", "columns": cols, "rows": rows}]
 
     if key == "cost_centres":
-        cols = ["name", "id", "assigned", "available"]
+        cols = ["name", "id", "objects", "assigned", "available"]
         rows = [{c: c2.get(c, "") for c in cols} for c2 in data.get("centres", [])]
         return [{"name": "Cost Centres", "columns": cols, "rows": rows}]
 
@@ -1666,11 +1672,12 @@ def _sheets_for(section):
         return sheets
 
     if key == "integrations":
-        fed_status = "Not federated"
-        if data.get("federation_enabled"):
-            fed_status = "Enabled"
-            if data.get("federation_accounts"):
-                fed_status += f' ({data["federation_accounts"]} linked account(s))'
+        if data.get("federation_active"):
+            fed_status = f'Federated ({data.get("federation_accounts", 0)} linked accounts)'
+        elif data.get("federation_capable"):
+            fed_status = "Not federated (feature available, no linked accounts)"
+        else:
+            fed_status = "Not federated"
         rows = [{"Feature": "SSO Auto-Provisioning (SCIM)",
                  "Status": "Enabled" if data.get("scim_enabled") else "Not enabled"},
                 {"Feature": "Account Federation", "Status": fed_status}]
