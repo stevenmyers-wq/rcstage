@@ -195,11 +195,35 @@ def _table(headers, rows, widths=None):
             f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
 
 
+def _wrap_long(value, n=20):
+    """Escape a value and force hard <br/> breaks inside any unbroken run longer
+    than n characters.
+
+    xhtml2pdf does not reliably honour fixed table-layout / column widths, and
+    reportlab only splits a long word when the column width is constrained — so
+    a long email or ID overflows and overlaps the next column in the PDF. Rather
+    than fight the column sizing, we insert real break opportunities so a token
+    physically cannot be wider than n characters. Each chunk is escaped
+    individually so entities are never split. Renders identically in the browser
+    preview and the PDF/Word export, with no zero-width glyphs (which tofu'd).
+    """
+    s = str(value)
+    out = []
+    for tok in re.split(r"(\s+)", s):
+        if tok == "" or tok.isspace():
+            out.append(_esc(tok))
+        elif len(tok) > n:
+            out.append("<br/>".join(_esc(tok[i:i + n]) for i in range(0, len(tok), n)))
+        else:
+            out.append(_esc(tok))
+    return "".join(out)
+
+
 def _cell(value):
-    """Escape a plain value for use inside a table cell."""
+    """Escape a plain value for use inside a table cell (long tokens wrapped)."""
     if value is None or value == "":
         return '<span class="ab-muted">—</span>'
-    return _esc(value)
+    return _wrap_long(value)
 
 
 def _lines(values):
@@ -208,7 +232,7 @@ def _lines(values):
     vals = [v for v in (values or []) if v]
     if not vals:
         return '<span class="ab-muted">—</span>'
-    return "<br>".join(_esc(v) for v in vals)
+    return "<br/>".join(_wrap_long(v) for v in vals)
 
 
 def _chips(values):
