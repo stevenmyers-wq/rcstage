@@ -469,6 +469,42 @@ def render_users(data, detail):
 
 # ---- Call Queues ----------------------------------------------------------
 
+def _fetch_queue_members(qid):
+    """All members of a queue, following pagination (the endpoint's default
+    page size is small, so large queues were being truncated)."""
+    records, page = [], 1
+    while page <= 50:
+        resp = _api(f"/restapi/v1.0/account/~/call-queues/{qid}/members"
+                    f"?page={page}&perPage=1000")
+        if not isinstance(resp, dict):
+            break
+        batch = resp.get("records") or []
+        records.extend(batch)
+        nav = resp.get("navigation") or {}
+        paging = resp.get("paging") or {}
+        if not batch or not nav.get("nextPage"):
+            if not paging or page >= paging.get("totalPages", page):
+                break
+        page += 1
+    return records
+
+
+def _member_label(ctx, m):
+    """Best-effort 'Name (ext)' for a queue member record."""
+    mid = m.get("id")
+    rec = ctx.ext_by_id.get(str(mid))
+    if rec:
+        name = rec.get("name") or "Unknown"
+        num = rec.get("extensionNumber") or ""
+        return f"{name} ({num})" if num else name
+    # Fall back to any name/extension carried on the member record itself.
+    name = m.get("name") or ""
+    num = m.get("extensionNumber") or ""
+    if name and num:
+        return f"{name} ({num})"
+    return name or (f"Ext {num}" if num else f"ID {mid}")
+
+
 def collect_call_queues(ctx, detail):
     queues = _fetch_all_pages("/restapi/v1.0/account/~/call-queues")
     out = []
@@ -481,10 +517,12 @@ def collect_call_queues(ctx, detail):
             "status": q.get("status", ""),
         }
         if detail != "summary":
-            members = _api(f"/restapi/v1.0/account/~/call-queues/{qid}/members") or {}
-            member_recs = members.get("records") or []
-            rec["members"] = [ctx.ext_name(m.get("id")) for m in member_recs]
-            rec["member_count"] = members.get("totalElements", len(member_recs))
+            # Page through members — the endpoint defaults to a small page size,
+            # so large queues were being truncated (the list showed fewer than
+            # the count). Fetch every page and resolve each member to a name.
+            member_recs = _fetch_queue_members(qid)
+            rec["members"] = [_member_label(ctx, m) for m in member_recs]
+            rec["member_count"] = len(member_recs)
             # Call-handling settings live in the business-hours answering rule's
             # `queue` object (same source the Call Queue Manager reads), not on
             # the /call-queues/{id} resource — reading the wrong place is why
@@ -1481,8 +1519,8 @@ EXPORT_CSS = (
     ".ab-count{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:9px;"
     "background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:9pt;font-weight:700;}"
     "table.ab-table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt;table-layout:fixed;}"
-    "table.ab-table th{text-align:left;background:#f1f5f9;border:1px solid #cbd5e1;padding:5px 7px;font-weight:700;}"
-    "table.ab-table td{border:1px solid #cbd5e1;padding:5px 7px;vertical-align:top;word-break:break-word;overflow-wrap:break-word;}"
+    "table.ab-table th{text-align:center;background:#f1f5f9;border:1px solid #cbd5e1;padding:5px 7px;font-weight:700;}"
+    "table.ab-table td{border:1px solid #cbd5e1;padding:5px 7px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}"
     ".ab-kv{margin:3px 0;font-size:10pt;}"
     ".ab-kv .ab-k{padding-right:8px;font-weight:700;color:#475569;}"
     ".ab-block{margin:4px 0 12px;line-height:2;}"
