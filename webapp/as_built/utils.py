@@ -89,6 +89,9 @@ class CollectContext:
 
     def __init__(self):
         self.account = _api("/restapi/v1.0/account/~") or {}
+        # service-info carries the service plan, brand and feature flags; fetched
+        # once and shared by the overview and integrations sections.
+        self.service_info = _api("/restapi/v1.0/account/~/service-info") or {}
         self.extensions = _fetch_all_pages("/restapi/v1.0/account/~/extension")
         self.phone_numbers = _fetch_all_pages("/restapi/v1.0/account/~/phone-number")
 
@@ -298,11 +301,25 @@ def collect_overview(ctx, detail):
         t = e.get("type", "Unknown")
         type_counts[t] = type_counts.get(t, 0) + 1
 
+    # Service plan lives under serviceInfo on the account resource (and on
+    # /service-info) — not under a top-level "servicePlan", which was the blank.
+    svc_info = ctx.service_info or {}
+    service_plan = (
+        (ctx.account.get("serviceInfo") or {}).get("servicePlan", {}).get("name")
+        or (svc_info.get("servicePlan") or {}).get("name")
+        or ""
+    )
+    brand = (
+        (ctx.account.get("serviceInfo") or {}).get("brand", {}).get("name")
+        or (svc_info.get("brand") or {}).get("name")
+        or ""
+    )
     data = {
         "name": ctx.account_name,
         "account_id": ctx.account_id,
         "main_number": ctx.account.get("mainNumber", ""),
-        "service_plan": (ctx.account.get("servicePlan") or {}).get("name", ""),
+        "service_plan": service_plan,
+        "brand": brand,
         "status": ctx.account.get("status", ""),
         "counts": {
             "Users": sum(type_counts.get(t, 0) for t in USER_TYPES),
@@ -327,6 +344,8 @@ def render_overview(data, detail):
     html += _kv("Main Number", _esc(data["main_number"]))
     html += _kv("Service Plan", _esc(data["service_plan"]))
     if detail != "summary":
+        if data.get("brand"):
+            html += _kv("Brand", _esc(data["brand"]))
         html += _kv("Status", _esc(data["status"]))
     rows = [[k, str(v)] for k, v in data["counts"].items() if v]
     html += _h3("Inventory Summary")
@@ -603,19 +622,19 @@ def render_ivrs(data, detail):
 # ---- Park Locations -------------------------------------------------------
 
 def collect_park_zones(ctx, detail):
-    parks = _fetch_all_pages("/restapi/v1.0/account/~/park-locations")
+    # Park locations are extensions of type ParkLocation. The dedicated
+    # /park-locations endpoint returns empty on many bridged accounts (like
+    # /cost-center), so derive them from the already-fetched extension list.
+    parks = [e for e in ctx.extensions if e.get("type") == "ParkLocation"]
     out = []
-    for p in parks:
-        pid = str(p.get("id"))
+    for e in sorted(parks, key=lambda x: (x.get("extensionNumber") or "")):
         rec = {
-            "id": pid,
-            "name": p.get("name", "Unknown"),
-            "extensionNumber": p.get("extensionNumber", ""),
+            "id": str(e.get("id")),
+            "name": e.get("name", "Unknown"),
+            "extensionNumber": e.get("extensionNumber", ""),
+            "status": e.get("status", ""),
+            "site": (e.get("site") or {}).get("name", ""),
         }
-        if detail != "summary":
-            members = (p.get("members") or {})
-            member_recs = members.get("records") if isinstance(members, dict) else members
-            rec["members"] = [ctx.ext_name(m.get("id")) for m in (member_recs or [])]
         out.append(rec)
     return {"parks": out}
 
@@ -627,23 +646,25 @@ def render_park_zones(data, detail):
         return html + _empty("No park locations configured on this account.")
     if detail == "summary":
         rows = [[_cell(p["name"]), _cell(p["extensionNumber"])] for p in parks]
-        return html + _table(["Park Location", "Ext"], rows)
-    rows = [[_cell(p["name"]), _cell(p["extensionNumber"]), _chips(p.get("members"))]
-            for p in parks]
-    return html + _table(["Park Location", "Ext", "Members"], rows)
+        return html + _table(["Park Location", "Ext"], rows, widths=[70, 30])
+    rows = [[_cell(p["name"]), _cell(p["extensionNumber"]), _cell(p.get("status")),
+             _cell(p.get("site"))] for p in parks]
+    return html + _table(["Park Location", "Ext", "Status", "Site"], rows,
+                         widths=[40, 15, 20, 25])
 
 
 # ---- Paging Groups --------------------------------------------------------
 
 def collect_paging_groups(ctx, detail):
-    groups = _fetch_all_pages("/restapi/v1.0/account/~/paging-only-groups")
+    # Same as park locations: paging groups are PagingOnly extensions; the
+    # dedicated endpoint is unreliable on bridged accounts, so use the list.
+    groups = [e for e in ctx.extensions if e.get("type") == "PagingOnly"]
     out = []
-    for g in groups:
-        gid = str(g.get("id"))
+    for e in sorted(groups, key=lambda x: (x.get("extensionNumber") or "")):
         rec = {
-            "id": gid,
-            "name": g.get("name", "Unknown"),
-            "extensionNumber": g.get("extensionNumber", ""),
+            "id": str(e.get("id")),
+            "name": e.get("name", "Unknown"),
+            "extensionNumber": e.get("extensionNumber", ""),
         }
         out.append(rec)
     return {"groups": out}
@@ -1024,33 +1045,31 @@ INTEGRATION_KEYWORDS = (
 
 
 def collect_integrations(ctx, detail):
-    svc = _api("/restapi/v1.0/account/~/service-info") or {}
-    features = svc.get("serviceFeatures", []) or []
+    features = ctx.service_info.get("serviceFeatures", []) or []
 
     scim = _api("/scim/v2/ServiceProviderConfig")
     scim_enabled = bool(
         scim and not (isinstance(scim, dict) and scim.get("errorCode")))
 
-    # Actual federation shows as 2+ linked accounts in the directory federation
-    # resource. The AccountFederation service feature only means the account is
-    # *entitled* to federation, not that it is federated — so the headline is
-    # based on real linked accounts, with the entitlement reported separately to
-    # avoid the "enabled but not linked" confusion.
+    # Federation is only "on" when the account is actually linked to others —
+    # i.e. the directory federation resource lists 2+ accounts. The
+    # AccountFederation service feature merely means the account is *entitled* to
+    # federation, so it is deliberately NOT used for the headline and is excluded
+    # from the feature list below to avoid reading as "federation enabled".
     fed = _api("/restapi/v1.0/account/~/directory/federation")
     fed_accounts = 0
     if isinstance(fed, dict):
         fed_accounts = len(fed.get("records") or fed.get("accounts") or [])
-    feat_map = {(f.get("featureName", "") or "").lower(): bool(f.get("enabled"))
-                for f in features}
 
     def is_notable(f):
         n = (f.get("featureName", "") or "").lower()
+        if n == "accountfederation":
+            return False  # represented by the dedicated federation headline
         return any(k in n for k in INTEGRATION_KEYWORDS)
 
     data = {
         "scim_enabled": scim_enabled,
         "federation_active": fed_accounts >= 2,
-        "federation_capable": feat_map.get("accountfederation", False),
         "federation_accounts": fed_accounts,
         "enabled_count": sum(1 for f in features if f.get("enabled")),
         "feature_count": len(features),
@@ -1063,6 +1082,7 @@ def collect_integrations(ctx, detail):
         data["all_features"] = [
             {"name": f.get("featureName", ""), "enabled": bool(f.get("enabled"))}
             for f in sorted(features, key=lambda x: x.get("featureName", ""))
+            if (f.get("featureName", "") or "").lower() != "accountfederation"
         ]
     return data
 
@@ -1073,8 +1093,6 @@ def render_integrations(data, detail):
                 _esc("Enabled" if data["scim_enabled"] else "Not enabled"))
     if data.get("federation_active"):
         fed_txt = f'Federated ({data.get("federation_accounts", 0)} linked accounts)'
-    elif data.get("federation_capable"):
-        fed_txt = "Not federated (feature available, no linked accounts)"
     else:
         fed_txt = "Not federated"
     html += _kv("Account Federation", _esc(fed_txt))
@@ -1596,19 +1614,9 @@ def _sheets_for(section):
         return sheets
 
     if key == "park_zones":
-        prows, mrows = [], []
-        for p in data.get("parks", []):
-            prows.append({"name": p.get("name"), "extensionNumber": p.get("extensionNumber"),
-                          "members": _join(p.get("members"))})
-            for m in p.get("members", []):
-                mrows.append({"Park Location": p.get("name"),
-                              "Ext": p.get("extensionNumber"), "Member": m})
-        sheets = [{"name": "Park Locations",
-                   "columns": ["name", "extensionNumber", "members"], "rows": prows}]
-        if mrows:
-            sheets.append({"name": "Park Members",
-                           "columns": ["Park Location", "Ext", "Member"], "rows": mrows})
-        return sheets
+        cols = ["name", "extensionNumber", "status", "site"]
+        rows = [{c: p.get(c, "") for c in cols} for p in data.get("parks", [])]
+        return [{"name": "Park Locations", "columns": cols, "rows": rows}]
 
     if key == "paging_groups":
         rows = [{"name": g.get("name"), "extensionNumber": g.get("extensionNumber")}
@@ -1698,8 +1706,6 @@ def _sheets_for(section):
     if key == "integrations":
         if data.get("federation_active"):
             fed_status = f'Federated ({data.get("federation_accounts", 0)} linked accounts)'
-        elif data.get("federation_capable"):
-            fed_status = "Not federated (feature available, no linked accounts)"
         else:
             fed_status = "Not federated"
         rows = [{"Feature": "SSO Auto-Provisioning (SCIM)",

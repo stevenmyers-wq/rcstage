@@ -49,6 +49,13 @@
                 <h3 class="text-heading text-lg mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">Document Details</h3>
                 <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1.5">Customer Name (optional)</label>
                 <input type="text" id="ab-customer-name" class="input-field" placeholder="Defaults to the account name">
+                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1.5 mt-4">Detail Level</label>
+                <select id="ab-detail-level" class="input-field">
+                    <option value="summary">Summary — light inventory</option>
+                    <option value="standard" selected>Standard — recommended</option>
+                    <option value="full">Full — every field (slower)</option>
+                </select>
+                <p class="text-[11px] text-slate-400 leading-snug mt-1.5">Applies to every selected section.</p>
             </div>
 
             <div class="card !p-6">
@@ -73,7 +80,7 @@
                     <button id="ab-export-word" class="btn-secondary" disabled>Download Word</button>
                 </div>
                 <button id="ab-export-xlsx" class="btn-secondary w-full" disabled>Download Excel (granular data)</button>
-                <p class="text-[11px] text-slate-400 leading-snug">Excel captures the raw, audit-grade detail behind the document. Set sections to <strong>Full</strong> before generating for the most granular workbook.</p>
+                <p class="text-[11px] text-slate-400 leading-snug">Excel captures the raw, audit-grade detail behind the document. Set the Detail Level to <strong>Full</strong> before generating for the most granular workbook.</p>
                 <div id="ab-status" class="text-xs font-semibold text-center text-slate-500 dark:text-slate-400 hidden"></div>
             </div>
         </div>

@@ -12,8 +12,7 @@
     const wordBtn = document.getElementById('ab-export-word');
     const xlsxBtn = document.getElementById('ab-export-xlsx');
     const nameEl = document.getElementById('ab-customer-name');
-
-    let detailLevels = ['summary', 'standard', 'full'];
+    const detailEl = document.getElementById('ab-detail-level');
 
     function setStatus(msg, isError) {
         if (!msg) { statusEl.classList.add('hidden'); return; }
@@ -21,10 +20,6 @@
         statusEl.classList.remove('hidden');
         statusEl.classList.toggle('text-rose-500', !!isError);
         statusEl.classList.toggle('text-slate-500', !isError);
-    }
-
-    function titleCase(s) {
-        return s.charAt(0).toUpperCase() + s.slice(1);
     }
 
     function renderCatalog(sections) {
@@ -48,31 +43,17 @@
                 '</div>' +
                 '<div class="text-xs text-slate-400 truncate" title="' + (sec.description || '') + '">' + (sec.description || '') + '</div>';
 
-            const sel = document.createElement('select');
-            sel.className = 'ab-detail input-field !py-1 !px-2 text-xs !w-28';
-            sel.dataset.key = sec.key;
-            detailLevels.forEach(lvl => {
-                const opt = document.createElement('option');
-                opt.value = lvl;
-                opt.textContent = titleCase(lvl);
-                if (lvl === (sec.default_detail || 'standard')) opt.selected = true;
-                sel.appendChild(opt);
-            });
-
             row.appendChild(cb);
             row.appendChild(labelWrap);
-            row.appendChild(sel);
             sectionsEl.appendChild(row);
         });
     }
 
     function collectSelections() {
+        const detail = detailEl ? detailEl.value : 'standard';
         const out = [];
         sectionsEl.querySelectorAll('.ab-cb').forEach(cb => {
-            if (cb.checked) {
-                const sel = sectionsEl.querySelector('.ab-detail[data-key="' + cb.dataset.key + '"]');
-                out.push({ key: cb.dataset.key, detail: sel ? sel.value : 'standard' });
-            }
+            if (cb.checked) out.push({ key: cb.dataset.key, detail: detail });
         });
         return out;
     }
@@ -82,9 +63,6 @@
             const res = await fetch('/api/as_built/catalog');
             const data = await res.json();
             if (data.success) {
-                if (Array.isArray(data.detail_levels) && data.detail_levels.length) {
-                    detailLevels = data.detail_levels;
-                }
                 renderCatalog(data.sections || []);
             } else {
                 sectionsEl.innerHTML = '<div class="text-sm text-rose-500 py-4 text-center">' + (data.error || 'Failed to load sections.') + '</div>';
