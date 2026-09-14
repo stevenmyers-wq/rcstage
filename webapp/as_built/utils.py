@@ -92,6 +92,22 @@ class CollectContext:
         self.extensions = _fetch_all_pages("/restapi/v1.0/account/~/extension")
         self.phone_numbers = _fetch_all_pages("/restapi/v1.0/account/~/phone-number")
 
+        # Resolve the account name. The account resource doesn't always carry a
+        # populated "name"; when bridged, the SM bridge already knows the target
+        # account's name/id, so fall back to that before giving up.
+        self.account_name = self.account.get("name") or ""
+        self.account_id = str(self.account.get("id") or "")
+        try:
+            from flask import session
+            if not self.account_name:
+                self.account_name = session.get("sm_target_name") or ""
+            if not self.account_id:
+                self.account_id = str(session.get("sm_target_id") or "")
+        except Exception:
+            pass
+        if not self.account_name:
+            self.account_name = "Customer"
+
         # id -> extension record
         self.ext_by_id = {str(e.get("id")): e for e in self.extensions if e.get("id")}
 
@@ -151,29 +167,86 @@ def _empty(text):
     return f'<p class="ab-empty">{_esc(text)}</p>'
 
 
-def _table(headers, rows):
-    """rows: list of lists (cells may contain pre-escaped HTML from _cell)."""
+def _table(headers, rows, widths=None):
+    """rows: list of lists (cells may contain pre-escaped HTML from _cell).
+
+    widths: optional list of column widths (percentages that should sum to 100).
+    The table uses a fixed layout so columns keep their share and long content
+    wraps inside the cell instead of pushing neighbours out of alignment — the
+    cause of the "jumbled / overlapping" columns in the first PDF build.
+    """
     if not rows:
         return ""
+    colgroup = ""
+    if widths:
+        colgroup = "<colgroup>" + "".join(
+            f'<col style="width:{w}%">' for w in widths) + "</colgroup>"
     head = "".join(f"<th>{_esc(h)}</th>" for h in headers)
     body = ""
     for r in rows:
         cells = "".join(f"<td>{c}</td>" for c in r)
         body += f"<tr>{cells}</tr>"
-    return f'<table class="ab-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+    return (f'<table class="ab-table">{colgroup}'
+            f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
+
+
+# Insert zero-width break points into long unbreakable tokens (emails, phone
+# numbers, IDs). reportlab (the xhtml2pdf backend) honours U+200B as a valid
+# line-break opportunity, so this lets long values wrap inside fixed-width cells
+# instead of overflowing.
+_ZWSP = "​"
+
+
+def _soft_breaks(escaped):
+    def _brk(m):
+        t = m.group(0).replace("@", "@" + _ZWSP).replace(".", "." + _ZWSP)
+        return re.sub(r"(\S{14})(?=\S)", r"\1" + _ZWSP, t)
+    return re.sub(r"\S{15,}", _brk, escaped)
 
 
 def _cell(value):
-    """Escape a plain value for use inside a table cell."""
+    """Escape a plain value for use inside a table cell (with wrap hints)."""
     if value is None or value == "":
         return '<span class="ab-muted">—</span>'
-    return _esc(value)
+    return _soft_breaks(_esc(value))
+
+
+def _lines(values):
+    """Multi-value cell rendered one value per line so it wraps cleanly in a
+    fixed-width column (used for phone numbers, devices, members)."""
+    vals = [v for v in (values or []) if v]
+    if not vals:
+        return '<span class="ab-muted">—</span>'
+    return "<br>".join(_soft_breaks(_esc(v)) for v in vals)
 
 
 def _chips(values):
     if not values:
         return '<span class="ab-muted">—</span>'
     return "".join(f'<span class="ab-chip">{_esc(v)}</span>' for v in values)
+
+
+def _weekly_hours_lines(schedule):
+    """Compact multi-line schedule (one day per line) for a business-hours
+    schedule payload — used inline in queue/site blocks."""
+    weekly = (schedule or {}).get("weeklyRanges") or {}
+    if not weekly:
+        return "24/7 (always open)"
+    order = ["monday", "tuesday", "wednesday", "thursday", "friday",
+             "saturday", "sunday"]
+    parts = []
+    for day in order:
+        ranges = weekly.get(day) or []
+        if ranges:
+            spans = ", ".join(f'{r.get("from","")}–{r.get("to","")}' for r in ranges)
+            parts.append(f"{day.capitalize()[:3]}: {spans}")
+    return "<br>".join(_esc(p) for p in parts) if parts else "No open hours set"
+
+
+def _fetch_business_hours(ext_id):
+    """Return the schedule payload for an extension's business hours."""
+    bh = _api(f"/restapi/v1.0/account/~/extension/{ext_id}/business-hours") or {}
+    return bh.get("schedule") or {}
 
 
 def _kv(label, value):
@@ -211,8 +284,8 @@ def collect_overview(ctx, detail):
         type_counts[t] = type_counts.get(t, 0) + 1
 
     data = {
-        "name": ctx.account.get("name", "Unknown"),
-        "account_id": ctx.account.get("id", ""),
+        "name": ctx.account_name,
+        "account_id": ctx.account_id,
         "main_number": ctx.account.get("mainNumber", ""),
         "service_plan": (ctx.account.get("servicePlan") or {}).get("name", ""),
         "status": ctx.account.get("status", ""),
@@ -338,24 +411,26 @@ def render_users(data, detail):
     if detail == "summary":
         rows = [[_cell(u["name"]), _cell(u["extensionNumber"]), _cell(u["type"])]
                 for u in users]
-        return html + _table(["Name", "Ext", "Type"], rows)
+        return html + _table(["Name", "Ext", "Type"], rows, widths=[55, 15, 30])
     if detail == "standard":
         rows = [[
             _cell(u["name"]), _cell(u["extensionNumber"]), _cell(u.get("email")),
             _cell(u.get("status")), _cell(u.get("site")),
-            _chips(u.get("numbers")),
+            _lines(u.get("numbers")),
         ] for u in users]
         return html + _table(
-            ["Name", "Ext", "Email", "Status", "Site", "Direct Numbers"], rows)
+            ["Name", "Ext", "Email", "Status", "Site", "Direct Numbers"], rows,
+            widths=[20, 8, 28, 12, 14, 18])
     # full
     rows = [[
         _cell(u["name"]), _cell(u["extensionNumber"]), _cell(u.get("email")),
-        _cell(u.get("status")), _cell(u.get("site")), _chips(u.get("numbers")),
-        _chips(u.get("devices")), _cell(u.get("department")),
+        _cell(u.get("status")), _cell(u.get("site")), _lines(u.get("numbers")),
+        _lines(u.get("devices")), _cell(u.get("department")),
     ] for u in users]
     return html + _table(
         ["Name", "Ext", "Email", "Status", "Site", "Direct Numbers",
-         "Devices", "Department"], rows)
+         "Devices", "Department"], rows,
+        widths=[16, 7, 22, 10, 12, 13, 13, 7])
 
 
 # ---- Call Queues ----------------------------------------------------------
@@ -376,14 +451,20 @@ def collect_call_queues(ctx, detail):
             member_recs = members.get("records") or []
             rec["members"] = [ctx.ext_name(m.get("id")) for m in member_recs]
             rec["member_count"] = members.get("totalElements", len(member_recs))
-            bh = _api(f"/restapi/v1.0/account/~/extension/{qid}/business-hours")
-            rec["hours"] = _summarise_hours(bh)
-        if detail == "full":
+            rec["schedule"] = _fetch_business_hours(qid)
             cfg = _api(f"/restapi/v1.0/account/~/call-queues/{qid}") or {}
-            rec["ring_type"] = cfg.get("serviceLevelSettings", {}).get(
-                "serviceLevelThresholdSeconds")
-            rec["max_wait"] = (cfg.get("maxCallers") or cfg.get("holdTimeExpirationAction"))
-            rec["managers"] = ""  # placeholder for /managers, see notes
+            rec["ring_type"] = cfg.get("transferMode") or cfg.get("ringType", "")
+            rec["hold_time"] = cfg.get("holdTime")
+            rec["max_callers"] = cfg.get("maxCallers")
+            rec["max_wait"] = cfg.get("holdTimeExpirationAction", "")
+            sls = cfg.get("serviceLevelSettings") or {}
+            rec["service_level"] = sls.get("serviceLevelThresholdSeconds")
+        if detail == "full":
+            # After-hours handling for the queue, if any.
+            ah = _api(
+                f"/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule")
+            if isinstance(ah, dict):
+                rec["after_hours_action"] = ah.get("callHandlingAction", "")
         out.append(rec)
     return {"queues": out}
 
@@ -396,17 +477,25 @@ def render_call_queues(data, detail):
     if detail == "summary":
         rows = [[_cell(q["name"]), _cell(q["extensionNumber"]), _cell(q.get("status"))]
                 for q in queues]
-        return html + _table(["Queue", "Ext", "Status"], rows)
+        return html + _table(["Queue", "Ext", "Status"], rows, widths=[60, 15, 25])
     # standard + full render each queue as its own block (members can be long)
     html_parts = [html]
     for q in queues:
         html_parts.append(_h3(f'{q["name"]}  ·  Ext {q["extensionNumber"]}'))
-        html_parts.append(_kv("Members", str(q.get("member_count", 0))))
-        html_parts.append(_kv("Business Hours", _esc(q.get("hours"))))
+        rows = [
+            ["Status", _cell(q.get("status"))],
+            ["Members", _cell(str(q.get("member_count", 0)))],
+            ["Ring / Transfer Mode", _cell(q.get("ring_type"))],
+            ["Hold Time (s)", _cell(q.get("hold_time"))],
+            ["Max Callers in Queue", _cell(q.get("max_callers"))],
+            ["Service Level (s)", _cell(q.get("service_level"))],
+            ["Business Hours", _weekly_hours_lines(q.get("schedule"))],
+        ]
         if detail == "full":
-            html_parts.append(_kv("Service Level (s)", _esc(q.get("ring_type"))))
-        html_parts.append(
-            '<div class="ab-block">' + _chips(q.get("members")) + "</div>")
+            rows.append(["After-Hours Handling", _cell(q.get("after_hours_action"))])
+        html_parts.append(_table(["Setting", "Value"], rows, widths=[32, 68]))
+        html_parts.append('<p class="ab-note"><strong>Members:</strong></p>')
+        html_parts.append('<div class="ab-block">' + _lines(q.get("members")) + "</div>")
     return "".join(html_parts)
 
 
@@ -426,7 +515,9 @@ def collect_ivrs(ctx, detail):
             cfg = _api(f"/restapi/v1.0/account/~/ivr-menus/{iid}") or {}
             actions = cfg.get("actions", []) or []
             rec["key_count"] = len(actions)
-            rec["prompt_mode"] = (cfg.get("prompt") or {}).get("mode", "")
+            prompt = cfg.get("prompt") or {}
+            rec["prompt_mode"] = prompt.get("mode", "")
+            rec["prompt"] = _describe_ivr_prompt(prompt)
             rec["actions"] = []
             for a in actions:
                 dest = a.get("extension") or {}
@@ -444,6 +535,28 @@ def collect_ivrs(ctx, detail):
     return {"ivrs": out}
 
 
+def _describe_ivr_prompt(prompt):
+    """Human-readable description of an IVR menu's greeting/prompt.
+
+    TextToSpeech → the spoken text; Audio → the uploaded prompt's filename
+    (resolved from /ivr-prompts/{id}); otherwise the mode."""
+    if not prompt:
+        return ""
+    mode = prompt.get("mode", "")
+    if mode == "TextToSpeech":
+        return f'Text-to-speech: "{prompt.get("text", "").strip()}"'
+    if mode in ("Audio", "Recording"):
+        audio = prompt.get("audio") or {}
+        pid = audio.get("id") or (audio.get("uri", "").rstrip("/").split("/")[-1]
+                                  if audio.get("uri") else "")
+        if pid:
+            detail = _api(f"/restapi/v1.0/account/~/ivr-prompts/{pid}") or {}
+            fname = detail.get("filename") or detail.get("name")
+            return f"Audio prompt: {fname}" if fname else f"Audio prompt (id {pid})"
+        return "Audio prompt"
+    return mode or "None"
+
+
 def render_ivrs(data, detail):
     ivrs = data["ivrs"]
     html = _h2("IVR Menus", len(ivrs))
@@ -451,15 +564,15 @@ def render_ivrs(data, detail):
         return html + _empty("No IVR menus configured on this account.")
     if detail == "summary":
         rows = [[_cell(i["name"]), _cell(i["extensionNumber"])] for i in ivrs]
-        return html + _table(["IVR", "Ext"], rows)
+        return html + _table(["IVR", "Ext"], rows, widths=[70, 30])
     html_parts = [html]
     for i in ivrs:
         html_parts.append(_h3(f'{i["name"]}  ·  Ext {i["extensionNumber"]}'))
-        if detail == "full":
-            html_parts.append(_kv("Prompt Mode", _esc(i.get("prompt_mode"))))
+        html_parts.append(_kv("Prompt", _cell(i.get("prompt"))))
         rows = [[_cell(a["key"]), _cell(a["action"]), _cell(a["destination"])]
                 for a in i.get("actions", [])]
-        html_parts.append(_table(["Key", "Action", "Destination"], rows)
+        html_parts.append(_table(["Key", "Action", "Destination"], rows,
+                                 widths=[12, 33, 55])
                           or _empty("No key actions defined."))
     return "".join(html_parts)
 
@@ -524,7 +637,22 @@ def render_paging_groups(data, detail):
 
 # ---- Generic extension-type section (Message-Only / Announcement-Only / SLG) --
 
-def _collect_ext_type(ctx, detail, types):
+def _notification_emails(ext_id):
+    """Voicemail/notification email recipients for an extension."""
+    ns = _api(f"/restapi/v1.0/account/~/extension/{ext_id}/notification-settings") or {}
+    emails = list(ns.get("emailAddresses") or [])
+    vm = ns.get("voicemails") or {}
+    emails += list(vm.get("advancedEmailAddresses") or [])
+    # De-duplicate, preserve order.
+    seen, out = set(), []
+    for e in emails:
+        if e and e not in seen:
+            seen.add(e)
+            out.append(e)
+    return out
+
+
+def _collect_ext_type(ctx, detail, types, notify_email=False):
     """Shared collector for simple extension-type inventories."""
     items = [e for e in ctx.extensions if e.get("type") in types]
     out = []
@@ -539,11 +667,18 @@ def _collect_ext_type(ctx, detail, types):
         if detail != "summary":
             rec["site"] = (e.get("site") or {}).get("name", "")
             rec["numbers"] = ctx.numbers_for(eid)
+            if notify_email:
+                emails = _notification_emails(eid)
+                if not emails:
+                    contact_email = (e.get("contact") or {}).get("email")
+                    if contact_email:
+                        emails = [contact_email]
+                rec["notify_email"] = emails
         out.append(rec)
     return {"items": out}
 
 
-def _render_ext_type(data, detail, title, name_header):
+def _render_ext_type(data, detail, title, name_header, show_notify_email=False):
     items = data["items"]
     html = _h2(title, len(items))
     if not items:
@@ -551,20 +686,32 @@ def _render_ext_type(data, detail, title, name_header):
     if detail == "summary":
         rows = [[_cell(i["name"]), _cell(i["extensionNumber"]), _cell(i.get("status"))]
                 for i in items]
-        return html + _table([name_header, "Ext", "Status"], rows)
+        return html + _table([name_header, "Ext", "Status"], rows, widths=[55, 15, 30])
+    if show_notify_email:
+        rows = [[
+            _cell(i["name"]), _cell(i["extensionNumber"]), _cell(i.get("status")),
+            _cell(i.get("site")), _lines(i.get("numbers")),
+            _lines(i.get("notify_email")),
+        ] for i in items]
+        return html + _table(
+            [name_header, "Ext", "Status", "Site", "Numbers", "Notification Email"],
+            rows, widths=[20, 8, 12, 15, 20, 25])
     rows = [[
         _cell(i["name"]), _cell(i["extensionNumber"]), _cell(i.get("status")),
-        _cell(i.get("site")), _chips(i.get("numbers")),
+        _cell(i.get("site")), _lines(i.get("numbers")),
     ] for i in items]
-    return html + _table([name_header, "Ext", "Status", "Site", "Numbers"], rows)
+    return html + _table([name_header, "Ext", "Status", "Site", "Numbers"], rows,
+                         widths=[26, 10, 14, 22, 28])
 
 
 def collect_message_only(ctx, detail):
-    return _collect_ext_type(ctx, detail, ("Voicemail", "MessageOnly"))
+    return _collect_ext_type(ctx, detail, ("Voicemail", "MessageOnly"),
+                             notify_email=True)
 
 
 def render_message_only(data, detail):
-    return _render_ext_type(data, detail, "Message-Only Extensions", "Name")
+    return _render_ext_type(data, detail, "Message-Only Extensions", "Name",
+                            show_notify_email=True)
 
 
 def collect_announcement_only(ctx, detail):
@@ -683,47 +830,73 @@ def render_devices(data, detail):
 # ---- Custom Roles ---------------------------------------------------------
 
 def collect_custom_roles(ctx, detail):
-    roles = _fetch_all_pages("/restapi/v1.0/account/~/custom-roles")
+    # /user-role is the reliable roles endpoint (returns predefined + custom,
+    # each with a friendly displayName). /custom-roles returns empty on many
+    # bridged accounts, which produced the false "none".
+    roles = _cc_fetch("/restapi/v1.0/account/~/user-role")
     out = []
     for r in roles:
         rec = {
             "name": r.get("displayName") or r.get("name", "Unknown"),
             "scope": r.get("scope", ""),
+            "custom": "Yes" if r.get("custom") else "No",
         }
         if detail != "summary":
             rec["description"] = r.get("description", "")
         out.append(rec)
+    # Custom roles first, then predefined; alphabetical within each.
+    out.sort(key=lambda x: (x["custom"] != "Yes", x["name"].lower()))
     return {"roles": out}
 
 
 def render_custom_roles(data, detail):
     roles = data["roles"]
-    html = _h2("Custom Roles", len(roles))
+    html = _h2("User Roles", len(roles))
     if not roles:
-        return html + _empty("No custom roles defined on this account.")
+        return html + _empty("No roles returned for this account.")
     if detail == "summary":
-        rows = [[_cell(r["name"]), _cell(r.get("scope"))] for r in roles]
-        return html + _table(["Role", "Scope"], rows)
-    rows = [[_cell(r["name"]), _cell(r.get("scope")), _cell(r.get("description"))]
-            for r in roles]
-    return html + _table(["Role", "Scope", "Description"], rows)
+        rows = [[_cell(r["name"]), _cell(r.get("scope")), _cell(r.get("custom"))]
+                for r in roles]
+        return html + _table(["Role", "Scope", "Custom"], rows, widths=[45, 35, 20])
+    rows = [[_cell(r["name"]), _cell(r.get("scope")), _cell(r.get("custom")),
+             _cell(r.get("description"))] for r in roles]
+    return html + _table(["Role", "Scope", "Custom", "Description"], rows,
+                         widths=[24, 20, 12, 44])
 
 
 # ---- Cost Centres ---------------------------------------------------------
 
+def _cc_fetch(endpoint):
+    """Proven paginated fetch from the Cost Centres tool (params-based, honours
+    navigation.nextPage). token=None → rc_api_call resolves the session/bridge
+    token. Used for endpoints where our generic fetcher returned empty."""
+    from webapp.cost_centres.utils import fetch_all_pages
+    try:
+        return fetch_all_pages(endpoint, None)
+    except Exception:
+        logger.exception("[as_built] _cc_fetch failed for %s", endpoint)
+        return []
+
+
 def _license_inventory():
     """Authoritative per-cost-centre license inventory. Reuses the Cost Centres
     tool's builder (the same breakdown as the Admin Portal license report).
-    token=None → rc_api_call resolves the bridged/session token."""
-    from webapp.cost_centres.utils import build_license_inventory
-    centres = _fetch_all_pages("/restapi/v1.0/account/~/cost-center")
-    cc_map = {str(c.get("id")): c.get("name", "") for c in centres}
-    return centres, build_license_inventory(None, cc_map)
+    A license-endpoint failure must not empty the cost-centre list, so it is
+    isolated. token=None → rc_api_call resolves the bridged/session token."""
+    centres = _cc_fetch("/restapi/v1.0/account/~/cost-center")
+    inventory = []
+    try:
+        from webapp.cost_centres.utils import build_license_inventory
+        cc_map = {str(c.get("id")): c.get("name", "") for c in centres}
+        inventory = build_license_inventory(None, cc_map)
+    except Exception:
+        logger.exception("[as_built] license inventory failed")
+    return centres, inventory
 
 
 def collect_cost_centres(ctx, detail):
     if detail == "summary":
-        centres = _fetch_all_pages("/restapi/v1.0/account/~/cost-center")
+        centres = _cc_fetch("/restapi/v1.0/account/~/cost-center")
         out = [{"name": c.get("name", "Unknown"), "id": str(c.get("id", ""))}
                for c in centres]
         return {"centres": out}
@@ -750,12 +923,13 @@ def render_cost_centres(data, detail):
         return html + _empty("No cost centres configured on this account.")
     if detail == "summary":
         rows = [[_cell(c["name"]), _cell(c["id"])] for c in centres]
-        return html + _table(["Cost Centre", "ID"], rows)
+        return html + _table(["Cost Centre", "ID"], rows, widths=[70, 30])
     rows = [[_cell(c["name"]), _cell(c["id"]),
              _cell(str(c.get("assigned", 0))), _cell(str(c.get("available", 0)))]
             for c in centres]
     return html + _table(
-        ["Cost Centre", "ID", "Licenses Assigned", "Licenses Available"], rows)
+        ["Cost Centre", "ID", "Licenses Assigned", "Licenses Available"], rows,
+        widths=[46, 22, 16, 16])
 
 
 # ---- Licensing ------------------------------------------------------------
@@ -831,12 +1005,22 @@ def collect_integrations(ctx, detail):
     if isinstance(fed, dict):
         fed_accounts = len(fed.get("records") or fed.get("accounts") or [])
 
+    # Authoritative federation signal is the AccountFederation service feature;
+    # the /directory/federation count is supplementary (and often empty on a
+    # bridged token). Deriving the headline from the feature avoids the earlier
+    # contradiction where the summary said "Not federated" but the feature table
+    # showed AccountFederation enabled.
+    feat_map = {(f.get("featureName", "") or "").lower(): bool(f.get("enabled"))
+                for f in features}
+    federation_enabled = feat_map.get("accountfederation", fed_accounts > 0)
+
     def is_notable(f):
         n = (f.get("featureName", "") or "").lower()
         return any(k in n for k in INTEGRATION_KEYWORDS)
 
     data = {
         "scim_enabled": scim_enabled,
+        "federation_enabled": federation_enabled,
         "federation_accounts": fed_accounts,
         "enabled_count": sum(1 for f in features if f.get("enabled")),
         "feature_count": len(features),
@@ -857,9 +1041,13 @@ def render_integrations(data, detail):
     html = _h2("Integrations & Provisioning")
     html += _kv("SSO Auto-Provisioning (SCIM)",
                 _esc("Enabled" if data["scim_enabled"] else "Not enabled"))
-    html += _kv("Account Federation",
-                _esc(f'{data["federation_accounts"]} linked account(s)'
-                     if data["federation_accounts"] else "Not federated"))
+    if data.get("federation_enabled"):
+        fed_txt = "Enabled"
+        if data.get("federation_accounts"):
+            fed_txt += f' ({data["federation_accounts"]} linked account(s))'
+    else:
+        fed_txt = "Not federated"
+    html += _kv("Account Federation", _esc(fed_txt))
     html += _kv("Service Features Enabled",
                 _esc(f'{data["enabled_count"]} of {data["feature_count"]}'))
 
@@ -941,13 +1129,24 @@ def collect_call_recording(ctx, detail):
     cfg = _api("/restapi/v1.0/account/~/call-recording") or {}
     auto = cfg.get("automatic") or {}
     ondemand = cfg.get("onDemand") or {}
-    return {
+    data = {
         "automatic_enabled": auto.get("enabled"),
         "ondemand_enabled": ondemand.get("enabled"),
-        "outbound_calls": auto.get("outboundCallsRecording"),
-        "inbound_calls": auto.get("inboundCallsRecording"),
-        "raw": cfg,
     }
+    # The account resource only exposes on/off. The inbound/outbound direction
+    # lives per extension in /call-recording/extensions (callDirection), so
+    # derive the direction breakdown from there rather than from non-existent
+    # account-level fields (the cause of the earlier "enabled but both
+    # disabled" contradiction).
+    if detail != "summary":
+        exts = _cc_fetch("/restapi/v1.0/account/~/call-recording/extensions")
+        directions = {"Inbound": 0, "Outbound": 0, "All": 0}
+        for e in exts:
+            d = e.get("callDirection", "All") or "All"
+            directions[d] = directions.get(d, 0) + 1
+        data["auto_ext_count"] = len(exts)
+        data["directions"] = directions
+    return data
 
 
 def render_call_recording(data, detail):
@@ -959,8 +1158,14 @@ def render_call_recording(data, detail):
     html += _kv("Automatic Recording", _esc(yn(data.get("automatic_enabled"))))
     html += _kv("On-Demand Recording", _esc(yn(data.get("ondemand_enabled"))))
     if detail != "summary":
-        html += _kv("Automatic — Inbound", _esc(yn(data.get("inbound_calls"))))
-        html += _kv("Automatic — Outbound", _esc(yn(data.get("outbound_calls"))))
+        html += _kv("Extensions with Automatic Recording",
+                    _esc(str(data.get("auto_ext_count", 0))))
+        d = data.get("directions") or {}
+        if data.get("auto_ext_count"):
+            html += _kv("Recorded Directions",
+                        _esc(f'Inbound {d.get("Inbound", 0)}, '
+                             f'Outbound {d.get("Outbound", 0)}, '
+                             f'Both {d.get("All", 0)}'))
     return html
 
 
@@ -1069,8 +1274,8 @@ SECTIONS = [
     },
     {
         "key": "custom_roles",
-        "label": "Custom Roles",
-        "description": "Custom user roles and their scope.",
+        "label": "User Roles",
+        "description": "User roles (predefined and custom), scope and description.",
         "collect": collect_custom_roles,
         "render": render_custom_roles,
         "default_detail": "standard",
@@ -1176,8 +1381,8 @@ def collect_document(selections):
                 "data": None, "error": str(e),
             })
 
-    return {"account_name": ctx.account.get("name", "Customer"),
-            "account_id": ctx.account.get("id", ""),
+    return {"account_name": ctx.account_name,
+            "account_id": ctx.account_id,
             "sections": rendered}
 
 
@@ -1227,9 +1432,9 @@ EXPORT_CSS = (
     ".ab-muted{color:#94a3b8;}"
     ".ab-count{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:9px;"
     "background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:9pt;font-weight:700;}"
-    "table.ab-table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt;}"
+    "table.ab-table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt;table-layout:fixed;}"
     "table.ab-table th{text-align:left;background:#f1f5f9;border:1px solid #cbd5e1;padding:5px 7px;font-weight:700;}"
-    "table.ab-table td{border:1px solid #cbd5e1;padding:5px 7px;vertical-align:top;word-break:break-word;}"
+    "table.ab-table td{border:1px solid #cbd5e1;padding:5px 7px;vertical-align:top;word-break:break-word;overflow-wrap:break-word;}"
     ".ab-kv{margin:3px 0;font-size:10pt;}"
     ".ab-kv .ab-k{padding-right:8px;font-weight:700;color:#475569;}"
     ".ab-block{margin:4px 0 12px;line-height:2;}"
@@ -1322,11 +1527,19 @@ def _sheets_for(section):
         return [{"name": "Users", "columns": cols, "rows": rows}]
 
     if key == "call_queues":
-        qcols = ["name", "extensionNumber", "status", "member_count", "hours",
-                 "ring_type", "max_wait"]
+        qcols = ["name", "extensionNumber", "status", "member_count", "ring_type",
+                 "hold_time", "max_callers", "service_level", "hours",
+                 "after_hours_action"]
         qrows, mrows = [], []
         for q in data.get("queues", []):
-            qrows.append({c: q.get(c, "") for c in qcols})
+            r = {c: q.get(c, "") for c in qcols}
+            # Flatten the schedule to a single-cell text summary for the sheet.
+            weekly = (q.get("schedule") or {}).get("weeklyRanges") or {}
+            r["hours"] = "; ".join(
+                f'{d[:3].capitalize()} '
+                + ", ".join(f'{x.get("from","")}-{x.get("to","")}' for x in weekly[d])
+                for d in weekly if weekly[d]) or "24/7"
+            qrows.append(r)
             for m in q.get("members", []):
                 mrows.append({"Queue": q.get("name"),
                               "Queue Ext": q.get("extensionNumber"), "Member": m})
@@ -1337,7 +1550,7 @@ def _sheets_for(section):
         return sheets
 
     if key == "ivrs":
-        icols = ["name", "extensionNumber", "prompt_mode", "key_count"]
+        icols = ["name", "extensionNumber", "prompt", "prompt_mode", "key_count"]
         irows, arows = [], []
         for i in data.get("ivrs", []):
             irows.append({c: i.get(c, "") for c in icols})
@@ -1376,10 +1589,14 @@ def _sheets_for(section):
         label = {"shared_line_groups": "Shared Line Groups",
                  "message_only": "Message-Only", "announcement_only": "Announcement-Only"}[key]
         cols = ["name", "extensionNumber", "status", "site", "numbers"]
+        if key == "message_only":
+            cols = cols + ["notify_email"]
         rows = []
         for i in data.get("items", []):
             r = {c: i.get(c, "") for c in cols}
             r["numbers"] = _join(i.get("numbers"))
+            if key == "message_only":
+                r["notify_email"] = _join(i.get("notify_email"))
             rows.append(r)
         return [{"name": label, "columns": cols, "rows": rows}]
 
@@ -1398,9 +1615,9 @@ def _sheets_for(section):
         return [{"name": "Devices", "columns": cols, "rows": rows}]
 
     if key == "custom_roles":
-        cols = ["name", "scope", "description"]
+        cols = ["name", "scope", "custom", "description"]
         rows = [{c: r.get(c, "") for c in cols} for r in data.get("roles", [])]
-        return [{"name": "Custom Roles", "columns": cols, "rows": rows}]
+        return [{"name": "User Roles", "columns": cols, "rows": rows}]
 
     if key == "cost_centres":
         cols = ["name", "id", "assigned", "available"]
@@ -1449,10 +1666,14 @@ def _sheets_for(section):
         return sheets
 
     if key == "integrations":
+        fed_status = "Not federated"
+        if data.get("federation_enabled"):
+            fed_status = "Enabled"
+            if data.get("federation_accounts"):
+                fed_status += f' ({data["federation_accounts"]} linked account(s))'
         rows = [{"Feature": "SSO Auto-Provisioning (SCIM)",
                  "Status": "Enabled" if data.get("scim_enabled") else "Not enabled"},
-                {"Feature": "Account Federation",
-                 "Status": f'{data.get("federation_accounts", 0)} linked account(s)'}]
+                {"Feature": "Account Federation", "Status": fed_status}]
         source = data.get("all_features") or data.get("notable") or []
         for f in source:
             rows.append({"Feature": f.get("name"),
@@ -1464,8 +1685,13 @@ def _sheets_for(section):
             return "Enabled" if v else "Disabled"
         rows = [{"Setting": "Automatic Recording", "Value": yn(data.get("automatic_enabled"))},
                 {"Setting": "On-Demand Recording", "Value": yn(data.get("ondemand_enabled"))},
-                {"Setting": "Automatic - Inbound", "Value": yn(data.get("inbound_calls"))},
-                {"Setting": "Automatic - Outbound", "Value": yn(data.get("outbound_calls"))}]
+                {"Setting": "Extensions with Automatic Recording",
+                 "Value": data.get("auto_ext_count", 0)}]
+        d = data.get("directions") or {}
+        if data.get("auto_ext_count"):
+            rows += [{"Setting": "Recorded - Inbound", "Value": d.get("Inbound", 0)},
+                     {"Setting": "Recorded - Outbound", "Value": d.get("Outbound", 0)},
+                     {"Setting": "Recorded - Both", "Value": d.get("All", 0)}]
         return [{"name": "Call Recording", "columns": ["Setting", "Value"], "rows": rows}]
 
     return []
