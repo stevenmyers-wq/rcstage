@@ -1,0 +1,324 @@
+<div class="space-y-6 animate-fade-in w-full">
+
+    <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+        <h2 class="text-heading mb-1">Extension Activation</h2>
+        <p class="text-subheading">Bulk-change the <span class="font-semibold">activation status</span> of the connected account's extensions — for example, take users from <span class="font-semibold">Not Activated</span> to <span class="font-semibold">Enabled</span>, or switch an extension off by setting it to <span class="font-semibold">Disabled</span>. Load every extension below, narrow with the <span class="font-semibold">Type</span>, <span class="font-semibold">Site</span> and <span class="font-semibold">Status</span> filters, tick the ones to change, pick the target status and click <span class="font-semibold">Apply</span>.</p>
+    </div>
+
+    <!-- Step 1: load + select -->
+    <div class="card w-full">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">1. Select Extensions</h3>
+                <p id="ea-summary" class="text-sm text-slate-500 dark:text-slate-400">Load the account, then tick the extensions to change.</p>
+            </div>
+            <button id="ea-refresh-btn" onclick="eaRefresh()" class="btn-primary !py-2 !px-5">Load Extensions</button>
+        </div>
+
+        <div id="ea-loading" class="hidden items-center text-blue-600 dark:text-blue-400 text-sm mb-4 font-bold">
+            <div class="spinner w-5 h-5 border-4 border-blue-600 dark:border-blue-400 mr-3"></div>
+            Fetching extension list…
+        </div>
+
+        <div id="ea-picker-wrap" class="space-y-6 opacity-50 pointer-events-none transition-opacity duration-300">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="input-wrapper">
+                    <label class="input-label">Filter by Type <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                    <div id="ea-filter-type"></div>
+                </div>
+                <div class="input-wrapper">
+                    <label class="input-label">Filter by Status <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                    <div id="ea-filter-status"></div>
+                </div>
+                <div class="input-wrapper">
+                    <label class="input-label">Filter by Site <span class="normal-case font-medium ml-1 tracking-normal">(tick any number; leave empty for all)</span></label>
+                    <div id="ea-filter-site"></div>
+                </div>
+            </div>
+
+            <div class="input-wrapper">
+                <label class="input-label">Extensions <span class="normal-case font-medium ml-1 tracking-normal">(tick the ones to change)</span></label>
+                <div id="ea-picker"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: target status + apply -->
+    <div class="card w-full">
+        <div class="mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+            <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Set Activation Status</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Choose the status to apply to every ticked extension. <span class="font-semibold">Enabled</span> activates the extension (this is what takes a Not Activated user live); <span class="font-semibold">Disabled</span> switches it off while keeping it assigned. RingCentral decides which transitions are allowed for each extension type — any rejection is reported per-extension in the log below.</p>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-end gap-4">
+            <div class="input-wrapper flex-grow">
+                <label for="ea-status" class="input-label">Target Status</label>
+                <select id="ea-status" class="input-field">
+                    <option value="Enabled">Enabled (activate)</option>
+                    <option value="Disabled">Disabled (switch off)</option>
+                </select>
+            </div>
+            <button id="ea-apply-btn" onclick="eaApply()" disabled
+                    class="btn-success !py-3 !px-6 disabled:opacity-40 disabled:cursor-not-allowed">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                Apply to Ticked
+            </button>
+            <button id="ea-stop-btn" onclick="eaStop()" class="hidden btn-secondary !py-3 !px-4 text-xs !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                ■ Stop
+            </button>
+        </div>
+        <p id="ea-apply-hint" class="text-xs text-slate-400 mt-2">Nothing ticked yet.</p>
+    </div>
+
+    <!-- Log console -->
+    <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg !p-0 overflow-hidden border-slate-700 w-full">
+        <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
+            <span class="font-mono font-bold text-sm">EXTENSION ACTIVATION LOG</span>
+            <button onclick="document.getElementById('eaLogs').innerHTML=''" class="text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
+        </div>
+        <div id="eaLogs" class="p-4 font-mono text-sm h-56 overflow-y-auto whitespace-pre-line text-slate-300 shadow-inner">
+            Ready. Load the account, tick the extensions to change, pick a target status and click Apply.
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function () {
+    // Every account extension (raw rows from the list endpoint).
+    let eaRows = [];
+    // CheckboxSelect instances: the three tick-box filters and the extension list.
+    let eaPicker = null, eaTypeFilter = null, eaSiteFilter = null, eaStatusFilter = null;
+    // Master set of ticked extension IDs, tracked outside the picker so ticks
+    // survive filter changes (which swap the picker's visible items).
+    const eaSelected = new Set();
+    // Rows currently shown in the picker after the active filters.
+    let eaFiltered = [];
+    // Set by Stop; the per-extension apply loop checks it between calls.
+    let eaStopRequested = false;
+
+    function eaLog(msg, type) {
+        const box = document.getElementById('eaLogs');
+        if (!box) return;
+        if (box.children.length === 0 && box.textContent.trim()) box.innerHTML = '';
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-red-400'
+            : type === 'success' ? 'text-green-400'
+            : type === 'warn' ? 'text-amber-400'
+            : type === 'skip' ? 'text-slate-400'
+            : 'text-blue-300';
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    // --- Load + build the picker ------------------------------------------
+
+    window.eaRefresh = async function () {
+        const btn = document.getElementById('ea-refresh-btn');
+        const loading = document.getElementById('ea-loading');
+        const wrap = document.getElementById('ea-picker-wrap');
+        btn.disabled = true;
+        btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Loading…`;
+        loading.classList.remove('hidden');
+        loading.classList.add('flex');
+        eaLog('Loading account extensions…', 'info');
+        try {
+            const res = await fetch('/api/extension_activation/list-extensions');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load extensions');
+            eaRows = data.records || [];
+            eaBuildPicker();
+            wrap.classList.remove('opacity-50', 'pointer-events-none');
+            const s = data.summary || { total: eaRows.length };
+            document.getElementById('ea-summary').innerText =
+                `${s.total} extension(s) loaded — tick the ones to change.`;
+            eaLog(`Loaded ${s.total} extension(s).`, 'success');
+        } catch (e) {
+            eaLog('Error: ' + e.message, 'error');
+            if (window.showMessage) showMessage(e.message, true);
+            document.getElementById('ea-summary').innerText = 'Failed to load extensions.';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Reload Extensions';
+            loading.classList.add('hidden');
+            loading.classList.remove('flex');
+        }
+    };
+
+    function eaBuildPicker() {
+        const mount = document.getElementById('ea-picker');
+        if (!window.CheckboxSelect) {
+            mount.innerHTML = '<p class="text-sm text-red-500">Selection component failed to load.</p>';
+            return;
+        }
+        eaSelected.clear();
+
+        const types = Array.from(new Set(eaRows.map(r => r.type).filter(Boolean))).sort();
+        const statuses = Array.from(new Set(eaRows.map(r => r.status).filter(Boolean))).sort();
+        const sites = Array.from(new Set(eaRows.map(r => r.site).filter(Boolean))).sort();
+
+        eaTypeFilter = CheckboxSelect.create(document.getElementById('ea-filter-type'), {
+            items: types, searchable: false, listHeightClass: 'h-32', onChange: eaApplyFilters,
+        });
+        eaStatusFilter = CheckboxSelect.create(document.getElementById('ea-filter-status'), {
+            items: statuses, searchable: false, listHeightClass: 'h-32', onChange: eaApplyFilters,
+        });
+        eaSiteFilter = CheckboxSelect.create(document.getElementById('ea-filter-site'), {
+            items: sites, searchable: true, searchPlaceholder: 'Search sites…',
+            listHeightClass: 'h-32', onChange: eaApplyFilters,
+        });
+
+        eaFiltered = eaRows.slice();
+        eaPicker = CheckboxSelect.create(mount, {
+            items: eaFiltered,
+            getValue: r => String(r.id),
+            getLabel: r => `${r.extensionNumber ? r.extensionNumber + ' — ' : ''}${r.name}`,
+            getSub: r => `${r.type}${r.site ? ' · ' + r.site : ''} · ${r.status}`,
+            searchable: true,
+            searchPlaceholder: 'Search name / extension…',
+            listHeightClass: 'h-80',
+            onChange: eaSyncSelection,
+        });
+        eaUpdateApplyState();
+    }
+
+    // Recompute the picker's visible rows from the ticked filters (an empty
+    // filter means "all"), preserving ticks via the master set.
+    function eaApplyFilters() {
+        if (!eaPicker) return;
+        const selTypes = eaTypeFilter ? eaTypeFilter.getSelected() : [];
+        const selStatuses = eaStatusFilter ? eaStatusFilter.getSelected() : [];
+        const selSites = eaSiteFilter ? eaSiteFilter.getSelected() : [];
+        eaFiltered = eaRows.filter(r =>
+            (selTypes.length === 0 || selTypes.includes(r.type)) &&
+            (selStatuses.length === 0 || selStatuses.includes(r.status)) &&
+            (selSites.length === 0 || selSites.includes(r.site))
+        );
+        eaPicker.setItems(eaFiltered);
+        // Restore ticks for whichever of the newly-visible rows are in the master set.
+        eaPicker.setSelected(Array.from(eaSelected));
+        eaUpdateApplyState();
+    }
+
+    // Fold the picker's current ticks back into the master set. Only the rows
+    // currently visible (eaFiltered) can change here; ticks on rows hidden by
+    // the active filter are left untouched.
+    function eaSyncSelection() {
+        const visibleIds = new Set(eaFiltered.map(r => String(r.id)));
+        visibleIds.forEach(id => eaSelected.delete(id));
+        eaPicker.getSelected().forEach(id => eaSelected.add(id));
+        eaUpdateApplyState();
+    }
+
+    // --- Apply gate -------------------------------------------------------
+
+    function eaSelectedIds() {
+        return Array.from(eaSelected);
+    }
+
+    function eaUpdateApplyState() {
+        const applyBtn = document.getElementById('ea-apply-btn');
+        const hint = document.getElementById('ea-apply-hint');
+        const status = document.getElementById('ea-status').value;
+        const count = eaSelectedIds().length;
+
+        let msg;
+        if (count === 0) msg = 'Nothing ticked yet.';
+        else msg = `Will set ${count} ticked extension(s) to ${status}.`;
+        hint.innerText = msg;
+
+        applyBtn.disabled = !(count > 0);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const sel = document.getElementById('ea-status');
+        if (sel) sel.addEventListener('change', eaUpdateApplyState);
+    });
+
+    // --- Apply ------------------------------------------------------------
+
+    window.eaStop = function () {
+        eaStopRequested = true;
+        const stopBtn = document.getElementById('ea-stop-btn');
+        stopBtn.disabled = true;
+        stopBtn.innerText = 'Stopping…';
+        eaLog('Stop requested — halting after the current extension…', 'skip');
+    };
+
+    window.eaApply = async function () {
+        const ids = eaSelectedIds();
+        const status = document.getElementById('ea-status').value;
+        if (ids.length === 0 || !status) return;
+
+        const applyBtn = document.getElementById('ea-apply-btn');
+        const stopBtn = document.getElementById('ea-stop-btn');
+        const refreshBtn = document.getElementById('ea-refresh-btn');
+        const statusSel = document.getElementById('ea-status');
+
+        eaStopRequested = false;
+        applyBtn.disabled = true;
+        applyBtn.innerHTML = `<div class="spinner w-4 h-4 border-white mr-2"></div> Applying…`;
+        stopBtn.classList.remove('hidden');
+        stopBtn.disabled = false;
+        stopBtn.innerText = '■ Stop';
+        refreshBtn.disabled = true;
+        statusSel.disabled = true;
+
+        // Map id -> row for friendlier logging.
+        const byId = {};
+        eaRows.forEach(r => { byId[String(r.id)] = r; });
+
+        eaLog(`Setting ${ids.length} extension(s) to ${status}…`, 'info');
+        let ok = 0, failed = 0, stopped = false;
+
+        for (const id of ids) {
+            if (eaStopRequested) { stopped = true; break; }
+            const r = byId[id] || {};
+            const label = `Ext ${r.extensionNumber || id}${r.name ? ' (' + r.name + ')' : ''}`;
+            try {
+                const res = await fetch('/api/extension_activation/update-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, status }),
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    ok++;
+                    // Reflect the new status locally so the picker sub-line and
+                    // Status filter stay accurate without a full reload.
+                    if (r) r.status = status;
+                    eaLog(`${label}: set to ${status}.`, 'success');
+                } else {
+                    failed++;
+                    let err = data.error;
+                    if (typeof err === 'object' && err !== null) err = JSON.stringify(err);
+                    eaLog(`${label}: ${err || 'Update failed'}`, 'error');
+                }
+            } catch (e) {
+                failed++;
+                eaLog(`${label}: network error — ${e.message}`, 'error');
+            }
+            // Gentle pacing to stay well under RingCentral's rate limits.
+            await new Promise(res => setTimeout(res, 300));
+        }
+
+        const bits = [`${ok} updated`];
+        if (failed) bits.push(`${failed} failed`);
+        eaLog(
+            (stopped ? 'Stopped by user — ' : 'Apply complete — ') + bits.join(', ') + '.',
+            failed ? 'warn' : 'success'
+        );
+        if (window.showMessage) showMessage(`Activation apply ${stopped ? 'stopped' : 'complete'}: ${bits.join(', ')}.`, failed > 0);
+
+        applyBtn.innerHTML = `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Apply to Ticked`;
+        stopBtn.classList.add('hidden');
+        refreshBtn.disabled = false;
+        statusSel.disabled = false;
+        // Refresh the picker sub-lines to show any updated statuses.
+        if (eaPicker) eaPicker.setItems(eaFiltered);
+        if (eaPicker) eaPicker.setSelected(Array.from(eaSelected));
+        eaUpdateApplyState();
+    };
+})();
+</script>

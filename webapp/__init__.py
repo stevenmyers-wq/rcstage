@@ -194,6 +194,10 @@ def create_app():
         from .extension_pin import routes as extension_pin_routes
         app.register_blueprint(extension_pin_routes.extension_pin_bp)
 
+        # Extension Activation routes (bulk change extension activation status)
+        from .extension_activation import routes as extension_activation_routes
+        app.register_blueprint(extension_activation_routes.extension_activation_bp)
+
         # Caller ID routes
         from .caller_id import routes as caller_id_routes
         app.register_blueprint(caller_id_routes.caller_id_bp)
