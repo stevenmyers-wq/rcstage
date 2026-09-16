@@ -89,6 +89,80 @@
         <p id="ea-apply-hint" class="text-xs text-slate-400 mt-2">Nothing ticked yet.</p>
     </div>
 
+    <!-- Bulk update via XLSX -->
+    <div class="mb-1 border-b border-slate-200 dark:border-slate-700 pb-2">
+        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Or: Bulk Update from a Spreadsheet</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Prefer a spreadsheet? Download a template pre-filled with every extension and its current status, set the desired status per row from the dropdown, then upload to review and apply. Rows are matched by the friendly <span class="font-semibold">Extension</span> number (the stable Extension ID is carried along for exact matching).</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <!-- Step 1: Download template (pre-filled with current state) -->
+        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-500 transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">1. Download Template</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
+                An <span class="font-semibold">Extension Activation</span> sheet pre-filled with every extension and its <span class="font-semibold">Current Status</span>. Edit the <span class="font-semibold">New Status</span> column (an <span class="font-semibold">Enabled / Disabled / NotActivated</span> dropdown); the optional <span class="font-semibold">Suspension Reason</span> &amp; <span class="font-semibold">Comment</span> apply only when disabling. Rows left unchanged are skipped.
+            </p>
+            <button onclick="eaDownloadTemplate()" id="eaTemplateBtn" class="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
+                Download Template
+            </button>
+        </div>
+
+        <!-- Step 2: Upload & review -->
+        <div class="card flex flex-col items-center text-center group hover:shadow-lg transition-all duration-200 !p-6">
+            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white dark:group-hover:bg-purple-500 transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">2. Upload &amp; Review</h3>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-6 flex-grow">
+                Upload your edited sheet. Nothing changes yet — every row is matched to a live extension (by Extension&nbsp;ID, then Extension number) so you can review the exact status changes before applying them.
+            </p>
+            <label id="eaUploadLabel" class="w-full bg-transparent border-2 border-purple-600 dark:border-purple-400 text-purple-600 dark:text-purple-400 font-semibold py-2 px-4 rounded-lg hover:bg-purple-600 hover:text-white dark:hover:bg-purple-500 transition-colors cursor-pointer block text-center">
+                Choose File to Review
+                <input type="file" class="hidden" accept=".xlsx,.csv" onchange="eaValidateFile(this)">
+            </label>
+            <p id="eaFileName" class="text-xs text-slate-400 mt-2 truncate w-full"></p>
+            <div id="eaSheetMount" class="mt-4 text-left"></div>
+        </div>
+    </div>
+
+    <!-- Bulk review / results table -->
+    <div id="ea-results-card" class="card w-full hidden">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+            <div>
+                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Review Changes</h3>
+                <p id="ea-bulk-summary" class="text-sm text-slate-500 dark:text-slate-400">Review the proposed status changes below before applying them.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="ea-bulk-download" class="hidden text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">⬇ Download results (.xlsx)</button>
+                <button id="ea-apply-bulk-btn" onclick="eaApplyChanges()" disabled class="btn-success !py-2 !px-5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    Apply Changes
+                </button>
+                <button id="ea-bulk-stop-btn" class="hidden btn-secondary !py-2 !px-4 text-xs !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">
+                    ■ Stop
+                </button>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th class="py-2 pr-4">Ext</th>
+                        <th class="py-2 pr-4">Name</th>
+                        <th class="py-2 pr-4">Type</th>
+                        <th class="py-2 pr-4">Current</th>
+                        <th class="py-2 pr-4">New</th>
+                        <th class="py-2 pr-4">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="ea-bulk-body" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- Log console -->
     <div class="card bg-slate-900 dark:bg-slate-950 text-white shadow-lg !p-0 overflow-hidden border-slate-700 w-full">
         <div class="bg-slate-800 dark:bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
@@ -115,6 +189,17 @@
     let eaFiltered = [];
     // Set by Stop; the per-extension apply loop checks it between calls.
     let eaStopRequested = false;
+    // Bulk-upload state.
+    let eaFile = null;
+    let eaBulkResultRows = [];
+    let eaTaskId = null;
+    let eaSheetPicker = null;
+
+    function eaEscapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
 
     function eaLog(msg, type) {
         const box = document.getElementById('eaLogs');
@@ -265,6 +350,33 @@
             eaUpdateApplyState();
         });
         eaSyncSuspensionVisibility();
+
+        // --- Bulk-upload wiring ---
+        if (window.SheetPicker) {
+            eaSheetPicker = SheetPicker.create(
+                document.getElementById('eaSheetMount'), { preferred: ['Extension Activation'] }
+            );
+            eaSheetPicker.select.addEventListener('change', () => {
+                if (eaFile) eaRunBatch('preview');
+            });
+        }
+        if (window.UCResults) {
+            UCResults.attachButton(
+                document.getElementById('ea-bulk-download'),
+                () => eaBulkResultRows, 'Extension_Activation_Results', 'Results'
+            );
+        }
+        const stopBtn = document.getElementById('ea-bulk-stop-btn');
+        if (stopBtn) {
+            stopBtn.addEventListener('click', async () => {
+                if (!eaTaskId) return;
+                stopBtn.disabled = true;
+                stopBtn.innerHTML = 'Stopping…';
+                eaLog('Stop requested — finishing the current change, then halting…', 'info');
+                try { await fetch(`/api/extension_activation/cancel?task_id=${eaTaskId}`, { method: 'POST' }); }
+                catch (e) { /* worker also polls the flag */ }
+            });
+        }
     });
 
     // --- Apply ------------------------------------------------------------
@@ -354,5 +466,186 @@
         if (eaPicker) eaPicker.setSelected(Array.from(eaSelected));
         eaUpdateApplyState();
     };
+
+    // --- Bulk XLSX update -------------------------------------------------
+
+    window.eaDownloadTemplate = async function () {
+        const btn = document.getElementById('eaTemplateBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<div class="spinner border-white w-4 h-4 mr-2"></div> Building…`;
+        eaLog('Building template from current activation state…');
+        try {
+            const res = await fetch('/api/extension_activation/template');
+            if (!res.ok) {
+                let msg = 'Template generation failed';
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Extension_Activation_Template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            eaLog('Template downloaded. Edit New Status, then upload to review.', 'success');
+        } catch (e) {
+            eaLog('Template error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Download Template';
+        }
+    };
+
+    window.eaValidateFile = function (input) {
+        if (!input.files || !input.files[0]) return;
+        eaFile = input.files[0];
+        document.getElementById('eaFileName').innerText = 'Selected: ' + eaFile.name;
+        input.value = '';
+        if (eaSheetPicker) eaSheetPicker.update(eaFile);
+        eaRunBatch('preview');
+    };
+
+    window.eaApplyChanges = function () {
+        if (!eaFile) { eaLog('No reviewed file to apply. Please upload and review first.', 'error'); return; }
+        eaRunBatch('apply');
+    };
+
+    function eaStatusLabel(status, isPreview) {
+        if (status === 'error')   return { text: 'Error', cls: 'text-red-500 font-semibold' };
+        if (status === 'success') return isPreview
+            ? { text: 'Will change', cls: 'text-emerald-600 dark:text-emerald-400 font-semibold' }
+            : { text: 'Changed', cls: 'text-green-600 dark:text-green-400 font-semibold' };
+        return { text: 'No change', cls: 'text-slate-400' };
+    }
+
+    async function eaRunBatch(action) {
+        const isPreview = action !== 'apply';
+        const applyBtn = document.getElementById('ea-apply-bulk-btn');
+        const uploadLabel = document.getElementById('eaUploadLabel');
+        const tableBody = document.getElementById('ea-bulk-body');
+        const resultsCard = document.getElementById('ea-results-card');
+
+        resultsCard.classList.remove('hidden');
+        tableBody.innerHTML = '';
+        eaBulkResultRows = [];
+        document.getElementById('ea-bulk-download').classList.add('hidden');
+        applyBtn.disabled = true;
+        uploadLabel.classList.add('opacity-50', 'pointer-events-none');
+
+        const stopBtn = document.getElementById('ea-bulk-stop-btn');
+        eaTaskId = !isPreview ? `ea_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` : null;
+        if (stopBtn) {
+            if (!isPreview) { stopBtn.classList.remove('hidden'); stopBtn.disabled = false; stopBtn.innerHTML = '■ Stop'; }
+            else { stopBtn.classList.add('hidden'); }
+        }
+        if (!isPreview) applyBtn.innerHTML = `<div class="spinner w-4 h-4 border-white mr-2"></div> Applying…`;
+
+        eaLog(isPreview ? `Validating ${eaFile.name}…` : 'Applying reviewed changes…', 'info');
+        const counts = { change: 0, noop: 0, error: 0, applied: 0 };
+
+        const formData = new FormData();
+        formData.append('file', eaFile);
+        formData.append('action', action);
+        if (eaTaskId) formData.append('task_id', eaTaskId);
+        if (eaSheetPicker) eaSheetPicker.appendTo(formData);
+
+        try {
+            const res = await fetch('/api/extension_activation/upload', { method: 'POST', body: formData });
+            if (!res.ok) {
+                let msg = 'Upload failed';
+                try { msg = (await res.json()).message || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    let data;
+                    try { data = JSON.parse(line); } catch (e) { continue; }
+                    eaHandleChunk(data, isPreview, tableBody, counts);
+                }
+            }
+
+            const bits = [];
+            if (isPreview) {
+                bits.push(`${counts.change} change(s)`);
+                if (counts.noop) bits.push(`${counts.noop} unchanged`);
+                if (counts.error) bits.push(`${counts.error} error(s)`);
+                document.getElementById('ea-bulk-summary').innerText = bits.join(' · ');
+                eaLog(`Review complete — ${bits.join(', ')}.`, 'success');
+                applyBtn.disabled = counts.change === 0;
+                if (counts.change === 0) eaLog('Nothing to change.', 'skip');
+            } else {
+                bits.push(`${counts.applied} changed`);
+                if (counts.error) bits.push(`${counts.error} failed`);
+                if (counts.noop) bits.push(`${counts.noop} unchanged`);
+                document.getElementById('ea-bulk-summary').innerText = bits.join(' · ');
+                eaLog(`Apply complete — ${bits.join(', ')}.`, 'success');
+                applyBtn.disabled = true;
+                eaFile = null;
+                if (eaSheetPicker) eaSheetPicker.reset();
+                document.getElementById('eaFileName').innerText = '';
+                if (window.showMessage) showMessage(`Activation apply complete: ${bits.join(', ')}.`, counts.error > 0);
+            }
+
+            eaBulkResultRows = eaCollectResultRows(tableBody);
+            document.getElementById('ea-bulk-download').classList.toggle('hidden', eaBulkResultRows.length === 0);
+        } catch (e) {
+            eaLog('Error: ' + e.message, 'error');
+        } finally {
+            eaTaskId = null;
+            const s2 = document.getElementById('ea-bulk-stop-btn');
+            if (s2) s2.classList.add('hidden');
+            uploadLabel.classList.remove('opacity-50', 'pointer-events-none');
+            applyBtn.innerText = 'Apply Changes';
+        }
+    }
+
+    function eaHandleChunk(data, isPreview, tableBody, counts) {
+        if (data.type === 'error') { eaLog(data.message, 'error'); return; }
+        if (data.type === 'start') { eaLog(data.message, 'info'); return; }
+        if (data.type === 'cancelled') { eaLog(data.message || 'Stopped by user.', 'skip'); return; }
+        if (data.type === 'done') return;
+        if (data.type !== 'progress') return;
+
+        const r = data.result || {};
+        if (r.status === 'info') counts.noop++;
+        if (r.status === 'success') counts[isPreview ? 'change' : 'applied']++;
+        else if (r.status === 'error') counts.error++;
+
+        const label = eaStatusLabel(r.status, isPreview);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="py-2 pr-4 font-mono text-slate-700 dark:text-slate-300">${eaEscapeHtml(r.ext)}</td>
+            <td class="py-2 pr-4 text-slate-700 dark:text-slate-200">${eaEscapeHtml(r.name)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${eaEscapeHtml(r.type)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${eaEscapeHtml(r.current)}</td>
+            <td class="py-2 pr-4 text-slate-500 dark:text-slate-400">${eaEscapeHtml(r.new)}</td>
+            <td class="py-2 pr-4 ${label.cls}" title="${eaEscapeHtml(r.message)}">${eaEscapeHtml(label.text)}</td>`;
+        tableBody.appendChild(tr);
+
+        const logType = r.status === 'error' ? 'error' : r.status === 'success' ? 'success' : 'skip';
+        eaLog(`Ext ${r.ext}: ${r.message}`, logType);
+    }
+
+    function eaCollectResultRows(tableBody) {
+        return Array.from(tableBody.children).map(tr => {
+            const c = tr.children;
+            return {
+                Extension: c[0].innerText, Name: c[1].innerText, Type: c[2].innerText,
+                Current: c[3].innerText, New: c[4].innerText, Status: c[5].innerText,
+            };
+        });
+    }
 })();
 </script>
