@@ -2,7 +2,7 @@
 
     <div class="mb-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <h2 class="text-heading mb-1">Extension Activation</h2>
-        <p class="text-subheading">Bulk-change the <span class="font-semibold">activation status</span> of the connected account's extensions — for example, take users from <span class="font-semibold">Not Activated</span> to <span class="font-semibold">Enabled</span>, or switch an extension off by setting it to <span class="font-semibold">Disabled</span>. Load every extension below, narrow with the <span class="font-semibold">Type</span>, <span class="font-semibold">Site</span> and <span class="font-semibold">Status</span> filters, tick the ones to change, pick the target status and click <span class="font-semibold">Apply</span>.</p>
+        <p class="text-subheading">Bulk-change the <span class="font-semibold">activation status</span> of the connected account's extensions — for example, take users from <span class="font-semibold">Not Activated</span> to <span class="font-semibold">Enabled</span>, switch an extension off with <span class="font-semibold">Disabled</span>, or send one back to <span class="font-semibold">Not Activated</span>. Load every extension below, narrow with the <span class="font-semibold">Type</span>, <span class="font-semibold">Site</span> and <span class="font-semibold">Status</span> filters, tick the ones to change, pick the target status and click <span class="font-semibold">Apply</span>.</p>
     </div>
 
     <!-- Step 1: load + select -->
@@ -47,7 +47,7 @@
     <div class="card w-full">
         <div class="mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
             <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">2. Set Activation Status</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400">Choose the status to apply to every ticked extension. <span class="font-semibold">Enabled</span> activates the extension (this is what takes a Not Activated user live); <span class="font-semibold">Disabled</span> switches it off while keeping it assigned. RingCentral decides which transitions are allowed for each extension type — any rejection is reported per-extension in the log below.</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Choose the status to apply to every ticked extension. <span class="font-semibold">Enabled</span> activates the extension (this is what takes a Not Activated user live); <span class="font-semibold">Disabled</span> switches it off while keeping it assigned; <span class="font-semibold">Not Activated</span> returns it to the un-activated state. RingCentral decides which transitions are allowed for each extension type — any rejection is reported per-extension in the log below.</p>
         </div>
 
         <div class="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -56,6 +56,7 @@
                 <select id="ea-status" class="input-field">
                     <option value="Enabled">Enabled (activate)</option>
                     <option value="Disabled">Disabled (switch off)</option>
+                    <option value="NotActivated">Not Activated (reset)</option>
                 </select>
             </div>
             <button id="ea-apply-btn" onclick="eaApply()" disabled
@@ -67,6 +68,24 @@
                 ■ Stop
             </button>
         </div>
+
+        <!-- Optional suspension detail — only relevant when Disabling -->
+        <div id="ea-suspension" class="hidden mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700 pt-4">
+            <div class="input-wrapper">
+                <label for="ea-reason" class="input-label">Suspension Reason <span class="normal-case font-medium ml-1 tracking-normal">(optional)</span></label>
+                <select id="ea-reason" class="input-field">
+                    <option value="">— none —</option>
+                    <option value="Voluntarily">Voluntarily</option>
+                    <option value="Involuntarily">Involuntarily</option>
+                </select>
+            </div>
+            <div class="input-wrapper">
+                <label for="ea-comment" class="input-label">Comment <span class="normal-case font-medium ml-1 tracking-normal">(optional)</span></label>
+                <input id="ea-comment" type="text" autocomplete="off" maxlength="255"
+                       placeholder="Free-form note on the status change" class="input-field" />
+            </div>
+        </div>
+
         <p id="ea-apply-hint" class="text-xs text-slate-400 mt-2">Nothing ticked yet.</p>
     </div>
 
@@ -231,9 +250,21 @@
         applyBtn.disabled = !(count > 0);
     }
 
+    // The suspension reason / comment only apply when the target is Disabled.
+    function eaSyncSuspensionVisibility() {
+        const block = document.getElementById('ea-suspension');
+        const status = document.getElementById('ea-status').value;
+        if (!block) return;
+        block.classList.toggle('hidden', status !== 'Disabled');
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const sel = document.getElementById('ea-status');
-        if (sel) sel.addEventListener('change', eaUpdateApplyState);
+        if (sel) sel.addEventListener('change', () => {
+            eaSyncSuspensionVisibility();
+            eaUpdateApplyState();
+        });
+        eaSyncSuspensionVisibility();
     });
 
     // --- Apply ------------------------------------------------------------
@@ -250,6 +281,9 @@
         const ids = eaSelectedIds();
         const status = document.getElementById('ea-status').value;
         if (ids.length === 0 || !status) return;
+        // Only sent when disabling; ignored by the server otherwise.
+        const reason = status === 'Disabled' ? (document.getElementById('ea-reason').value || '') : '';
+        const comment = status === 'Disabled' ? (document.getElementById('ea-comment').value || '').trim() : '';
 
         const applyBtn = document.getElementById('ea-apply-btn');
         const stopBtn = document.getElementById('ea-stop-btn');
@@ -280,7 +314,7 @@
                 const res = await fetch('/api/extension_activation/update-status', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, status }),
+                    body: JSON.stringify({ id, status, reason, comment }),
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {

@@ -18,22 +18,31 @@ any other extension) is expressed through it::
     Frozen        — a transitional / administrative hold applied by RingCentral
                     (e.g. an account pending confirmation). System-managed.
 
-Of those, only ``Enabled`` and ``Disabled`` are the administrator-settable
-*activation* states, so those are the only two targets this tool offers. The
-common workflow the tool is built for is taking a user from ``NotActivated`` (or
-``Disabled``) to ``Enabled`` — i.e. activating / enabling them — and the reverse
-``Enabled`` → ``Disabled`` to switch a user off.
+RingCentral's ``ExtensionUpdateRequest`` schema accepts exactly
+``Enabled | Disabled | NotActivated`` for the ``status`` field, so those three
+are the write targets this tool offers; ``Unassigned`` and ``Frozen`` are not in
+that enum (they are reached as side effects / managed by RingCentral) so they
+are shown for context but never offered as a target. The common workflow the
+tool is built for is taking a user from ``NotActivated`` (or ``Disabled``) to
+``Enabled`` — i.e. activating / enabling them — with the reverse
+``Enabled`` → ``Disabled`` to switch a user off and ``… → NotActivated`` to send
+them back to the un-activated state.
+
+When disabling, RingCentral also accepts an optional ``statusInfo`` object
+carrying the *type of suspension* (``reason``: ``Voluntarily`` |
+``Involuntarily``) and a free-form ``comment``; this tool passes those through
+when supplied.
 
 The status lives on the main extension body, so it is written with::
 
     PUT /restapi/v1.0/account/~/extension/{extensionId}
     {"status": "Enabled"}
 
-RingCentral treats this as a partial update (only the ``status`` key is sent, so
-nothing else on the extension is touched) and enforces which transitions are
-legal server-side — some extension types cannot be toggled, and some
-transitions are rejected outright. Those errors are surfaced verbatim
-per-extension rather than pre-judged here.
+RingCentral treats this as a partial update (only the ``status`` — and
+``statusInfo`` when given — is sent, so nothing else on the extension is
+touched) and enforces which transitions are legal server-side — some extension
+types cannot be toggled, and some transitions are rejected outright. Those
+errors are surfaced verbatim per-extension rather than pre-judged here.
 
 The list endpoint simply enumerates every account extension (Users, Call
 Queues, IVR menus, …) so the UI can offer Type / Site / current-Status filters
@@ -44,11 +53,15 @@ import time
 
 from webapp.rc_api import rc_api_call
 
-# The two administrator-settable activation states. Everything else
-# (NotActivated, Unassigned, Frozen) is a current-state that RingCentral manages
-# or that is reached as a side effect, so it is shown for context but never
-# offered as a write target.
-SETTABLE_STATUSES = ('Enabled', 'Disabled')
+# The activation states RingCentral's ExtensionUpdateRequest schema accepts for
+# the ``status`` field. Everything else an extension can read as
+# (Unassigned, Frozen) is a current-state RingCentral manages and is not in the
+# update enum, so it is shown for context but never offered as a write target.
+SETTABLE_STATUSES = ('Enabled', 'Disabled', 'NotActivated')
+
+# Optional statusInfo.reason values RingCentral accepts when disabling an
+# extension (the "type of suspension").
+SUSPENSION_REASONS = ('Voluntarily', 'Involuntarily')
 
 
 def fetch_all_extensions(token):
@@ -150,18 +163,29 @@ def _error_message(resp):
     return str(msg)[:300]
 
 
-def set_status(ext_id, status, token):
+def set_status(ext_id, status, token, reason=None, comment=None):
     """Set an extension's activation status (RingCentral ``status``).
 
-    Sends only the ``status`` key to the extension body so nothing else on the
-    extension is disturbed (RingCentral merges the partial update). Returns
-    (ok, message) — message is RingCentral's error text on failure (e.g. an
-    illegal transition or an extension type that can't be toggled). ``status``
-    must be one of ``SETTABLE_STATUSES``.
+    Sends only the ``status`` key (plus ``statusInfo`` when a suspension
+    ``reason`` / ``comment`` is supplied) to the extension body so nothing else
+    on the extension is disturbed (RingCentral merges the partial update).
+    Returns (ok, message) — message is RingCentral's error text on failure (e.g.
+    an illegal transition or an extension type that can't be toggled).
+    ``status`` must be one of ``SETTABLE_STATUSES``; ``reason``, when given, one
+    of ``SUSPENSION_REASONS``.
     """
+    body = {'status': str(status)}
+    status_info = {}
+    if reason:
+        status_info['reason'] = str(reason)
+    if comment:
+        status_info['comment'] = str(comment)
+    if status_info:
+        body['statusInfo'] = status_info
+
     resp = rc_api_call(
         f"/restapi/v1.0/account/~/extension/{ext_id}",
-        method='PUT', json={'status': str(status)},
+        method='PUT', json=body,
         token=token, return_response=True,
     )
     if resp is not None and getattr(resp, 'ok', False):

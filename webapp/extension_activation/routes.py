@@ -45,21 +45,31 @@ def update_status():
     data = request.get_json(silent=True) or {}
     ext_id = data.get('id')
     status = str(data.get('status', '')).strip()
+    reason = str(data.get('reason', '')).strip()
+    comment = str(data.get('comment', '')).strip()
 
     if not ext_id:
         return jsonify({"error": "Missing id"}), 400
-    # Only the administrator-settable activation states are accepted here;
-    # NotActivated / Unassigned / Frozen are current-states RingCentral manages,
-    # not write targets. RingCentral still enforces which transitions are legal
-    # for each extension type and returns a specific error, which is surfaced
-    # verbatim.
+    # Only the values RingCentral's update schema accepts (Enabled / Disabled /
+    # NotActivated) are allowed here; Unassigned / Frozen are current-states
+    # RingCentral manages, not write targets. RingCentral still enforces which
+    # transitions are legal for each extension type and returns a specific
+    # error, which is surfaced verbatim.
     if status not in utils.SETTABLE_STATUSES:
         return jsonify({
             "error": f"status must be one of {', '.join(utils.SETTABLE_STATUSES)}"
         }), 400
+    # The optional suspension reason / comment only make sense when disabling.
+    if reason and reason not in utils.SUSPENSION_REASONS:
+        return jsonify({
+            "error": f"reason must be one of {', '.join(utils.SUSPENSION_REASONS)}"
+        }), 400
+    if status != 'Disabled':
+        reason = comment = ''
 
     try:
-        ok, msg = utils.set_status(ext_id, status, token)
+        ok, msg = utils.set_status(ext_id, status, token,
+                                   reason=reason or None, comment=comment or None)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
