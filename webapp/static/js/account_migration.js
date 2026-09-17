@@ -1,6 +1,7 @@
 // webapp/static/js/account_migration.js
 document.addEventListener('DOMContentLoaded', () => {
     const btnExport = document.getElementById('btn-start-export');
+    const btnAudit = document.getElementById('btn-start-audit');
     const btnImport = document.getElementById('btn-start-import');
     const unbindCb = document.getElementById('unbind-devices-cb');
     const fileInput = document.getElementById('import-zip-file');
@@ -71,6 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pollInterval) clearInterval(pollInterval);
     }
 
+    function setActionsDisabled(disabled) {
+        btnExport.disabled = disabled;
+        btnImport.disabled = disabled;
+        if (btnAudit) btnAudit.disabled = disabled;
+    }
+
     btnClose.addEventListener('click', closeProgressModal);
 
     function showMigResults(results) {
@@ -104,8 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progMsg.classList.replace('text-blue-600', 'text-green-600');
                     btnClose.classList.remove('hidden');
                     showMigResults(data.results);
-                    btnExport.disabled = false;
-                    btnImport.disabled = false;
+                    setActionsDisabled(false);
                     if (onSuccess) onSuccess();
                 } else if (data.status === 'cancelled') {
                     clearInterval(pollInterval);
@@ -117,8 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progMsg.classList.replace('text-blue-600', 'text-amber-600');
                     btnClose.classList.remove('hidden');
                     showMigResults(data.results);
-                    btnExport.disabled = false;
-                    btnImport.disabled = false;
+                    setActionsDisabled(false);
                 } else if (data.status === 'error') {
                     clearInterval(pollInterval);
                     currentImportTaskId = null;
@@ -129,8 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     progMsg.classList.replace('text-blue-600', 'text-red-600');
                     btnClose.classList.remove('hidden');
                     showMigResults(data.results);
-                    btnExport.disabled = false;
-                    btnImport.disabled = false;
+                    setActionsDisabled(false);
                 }
             } catch (e) {
                 // Ignore silent polling network errors
@@ -143,8 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!confirm("WARNING: You have selected to UNBIND physical devices. This will remove digital lines from phones. Proceed?")) return;
         }
 
-        btnExport.disabled = true;
-        btnImport.disabled = true;
+        setActionsDisabled(true);
 
         const taskId = 'export_' + Date.now();
         openProgressModal("Exporting Account Data");
@@ -174,16 +177,55 @@ document.addEventListener('DOMContentLoaded', () => {
             progMsg.textContent = err.message;
             progMsg.classList.replace('text-blue-600', 'text-red-600');
             btnClose.classList.remove('hidden');
-            btnExport.disabled = false;
-            btnImport.disabled = false;
+            setActionsDisabled(false);
         }
     });
+
+    if (btnAudit) {
+        btnAudit.addEventListener('click', async () => {
+            setActionsDisabled(true);
+
+            const taskId = 'audit_' + Date.now();
+            openProgressModal("Building Reader-Friendly Audit");
+            startPolling(taskId);
+
+            try {
+                const res = await fetch('/api/migration/audit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: taskId })
+                });
+
+                if (!res.ok) {
+                    let msg = "Audit failed on server.";
+                    try { msg = (await res.json()).error || msg; } catch (e) { /* non-JSON error body */ }
+                    throw new Error(msg);
+                }
+
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `RC_Account_Audit_${new Date().getTime()}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (err) {
+                clearInterval(pollInterval);
+                progBar.classList.replace('bg-blue-600', 'bg-red-500');
+                progTitle.textContent = 'Audit Failed';
+                progMsg.textContent = err.message;
+                progMsg.classList.replace('text-blue-600', 'text-red-600');
+                btnClose.classList.remove('hidden');
+                setActionsDisabled(false);
+            }
+        });
+    }
 
     btnImport.addEventListener('click', async () => {
         if (fileInput.files.length === 0) return;
 
-        btnExport.disabled = true;
-        btnImport.disabled = true;
+        setActionsDisabled(true);
 
         const taskId = 'import_' + Date.now();
         currentImportTaskId = taskId;
@@ -209,8 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             progMsg.textContent = err.message;
             progMsg.classList.replace('text-blue-600', 'text-red-600');
             btnClose.classList.remove('hidden');
-            btnExport.disabled = false;
-            btnImport.disabled = false;
+            setActionsDisabled(false);
         }
     });
 });

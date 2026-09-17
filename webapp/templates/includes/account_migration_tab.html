@@ -29,20 +29,30 @@
             </div>
             
             <div class="flex-grow space-y-4 text-sm text-slate-600 dark:text-slate-400">
-                <p>Scans the tenant to generate a ZIP containing machine-readable JSON, an Excel audit, and all Custom Audio files. Captures Users &amp; Limited extensions, Cost Centers, Custom Roles, Sites, Answering Rules, Business Hours, Forwarding, Caller Blocking, Notification settings, Queues (with members), IVRs, Announce/Message settings, and Templates.</p>
-                
+                <p>Scans the tenant across Users &amp; Limited extensions, Cost Centers, Custom Roles, Sites, Answering Rules, Business Hours, Forwarding, Caller Blocking, Notification settings, Queues (with members), IVRs, Announce/Message settings, and Templates. Choose one of two outputs:</p>
+
+                <div class="text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg p-3 space-y-2">
+                    <p><strong class="text-slate-800 dark:text-slate-200">System-supported export</strong> &mdash; a ZIP containing machine-readable JSON, the raw Excel audit, and all Custom Audio files. This is the file the Import step consumes; it is built for the system, not for reading.</p>
+                    <p><strong class="text-slate-800 dark:text-slate-200">Reader-friendly audit</strong> &mdash; a formatted, multi-sheet Excel workbook (Summary, Users, Queues, IVRs, Answering Rules, Numbers, Devices, Sites and more) with clean column headers and no raw JSON, made for reviewing the account at a glance. It cannot be imported.</p>
+                </div>
+
                 <label class="flex items-start gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition shadow-sm">
                     <input type="checkbox" id="unbind-devices-cb" class="mt-1 h-4 w-4 rounded border-red-300 dark:border-red-700 text-red-600 focus:ring-red-500 cursor-pointer bg-white dark:bg-slate-900">
                     <div>
                         <span class="font-bold text-red-800 dark:text-red-300 block">Release &amp; Delete Devices (Destructive)</span>
-                        <span class="text-xs text-red-600 dark:text-red-400 leading-snug block mt-0.5">Deletes physical phones (HardPhone / Existing Phone) from the source account so their MAC addresses are freed and can be pushed to the winning account on import. Device details are captured in the export first.</span>
+                        <span class="text-xs text-red-600 dark:text-red-400 leading-snug block mt-0.5">Deletes physical phones (HardPhone / Existing Phone) from the source account so their MAC addresses are freed and can be pushed to the winning account on import. Device details are captured in the export first. Applies to the system-supported export only.</span>
                     </div>
                 </label>
             </div>
 
-            <button id="btn-start-export" class="mt-6 w-full btn-primary !py-3 disabled:opacity-50">
-                Start Full Account Export
-            </button>
+            <div class="mt-6 space-y-3">
+                <button id="btn-start-export" class="w-full btn-primary !py-3 disabled:opacity-50">
+                    Start Full Account Export
+                </button>
+                <button id="btn-start-audit" class="w-full btn-secondary !py-3 disabled:opacity-50">
+                    Download Reader-Friendly Audit (.xlsx)
+                </button>
+            </div>
         </div>
 
         <div class="card flex flex-col h-full hover:shadow-lg transition-all duration-200 group !p-6">
