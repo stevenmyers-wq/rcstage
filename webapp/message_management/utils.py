@@ -1330,7 +1330,13 @@ def xlsx_bulk_upload(file_storage, drive_url, task_id=None, access_token=None,
 
             if tts_text:
                 audio_buffer = generate_tts_audio_bytes(tts_text, voice_name=voice)
-                clip_name = f"TTS_{ext_num}_{code.split(':')[-1]}.wav"
+                # Name the uploaded clip after the extension object and greeting
+                # slot (e.g. "Sales Queue - Voicemail.wav"). The object name is
+                # sanitized the same way the export path does so odd characters
+                # can't break the RingCentral attachment or IVR name matching.
+                greeting_slot = code.split(':')[-1]
+                safe_ext_name = re.sub(r'[^a-zA-Z0-9_\- ]', '', ext.get('name') or ext_num).strip() or ext_num
+                clip_name = f"{safe_ext_name} - {greeting_slot}.wav"
                 upload_obj = _MemoryUpload(audio_buffer.read(), clip_name, 'audio/wav')
                 result = upload_custom_greeting(ext['id'], upload_obj, code, greeting_name=clip_name)
                 log(f"{row_label}: generated TTS ({voice}) → {ext.get('name', ext_num)}", 'success')
