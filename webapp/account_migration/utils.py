@@ -157,14 +157,22 @@ def fetch_all_pages(endpoint, token=None, task_id=None):
         time.sleep(0.1)
     return all_records
 
-# --- EXPORT LOGIC ---
-def run_account_export(task_id, unbind_devices=False, token=None):
+# --- SHARED READ-ONLY COLLECTION ---
+def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True):
+    """Perform the full read-only tenant scan shared by the migration export and
+    the reader-friendly audit.
+
+    When ``zip_file`` is provided and ``download_audio`` is True (the export
+    path), custom greeting / IVR prompt audio is downloaded and written into the
+    archive, and each entry in ``custom_audio_map`` carries its ``filename``.
+    Otherwise (the audit path) only the audio metadata is recorded — enough to
+    list which greetings are custom — without pulling the bytes."""
     update_progress(task_id, 2, 100, "Fetching Global Account Structure...")
-    
+
     phone_numbers = fetch_all_pages('/restapi/v1.0/account/~/phone-number', token, task_id)
     devices = fetch_all_pages('/restapi/v1.0/account/~/device', token, task_id)
     sites = fetch_all_pages('/restapi/v1.0/account/~/sites', token, task_id)
-    
+
     cost_centers = []
     try:
         cc_resp = safe_rc_api_call('/restapi/v1.0/account/~/cost-center', task_id=task_id, method='GET', token=token, raise_error=False)
@@ -186,7 +194,7 @@ def run_account_export(task_id, unbind_devices=False, token=None):
 
     update_progress(task_id, 10, 100, "Fetching Extensions...")
     extensions = fetch_all_pages('/restapi/v1.0/account/~/extension', token, task_id)
-    
+
     config_data = {
         "account_info": safe_rc_api_call('/restapi/v1.0/account/~', task_id=task_id, method='GET', token=token, raise_error=False),
         "sites": sites,
@@ -205,104 +213,117 @@ def run_account_export(task_id, unbind_devices=False, token=None):
         "detailed_extensions": {},
         "custom_audio_map": []
     }
-    
-    zip_buffer = io.BytesIO()
-    total_exts = len(extensions)
-    
+
+    total_exts = max(len(extensions), 1)
+    pull_audio = zip_file is not None and download_audio
+
     # ONLY these types actually support Answering Rules and Forwarding Numbers in the RC API
     VALID_CALL_HANDLING_TYPES = [
-        'User', 'Department', 'VirtualUser', 'DigitalUser', 
+        'User', 'Department', 'VirtualUser', 'DigitalUser',
         'FlexibleUser', 'Voicemail', 'MessageOnly', 'Announcement', 'AnnouncementOnly'
     ]
-    
+
+    def _record_audio(entry, audio_uri):
+        # Export path: download the bytes into the archive and tag the entry with
+        # its filename (needed on import). Audit path: just record that the
+        # greeting is custom, without pulling the audio.
+        if pull_audio:
+            try:
+                audio_bytes, mime = download_audio_content(audio_uri, token, task_id)
+                if audio_bytes:
+                    file_ext = 'mp3' if 'mpeg' in mime or 'mp3' in mime else 'wav'
+                    filename = f"audio/{entry['ext_id']}_{entry['rule_id']}_{entry['greeting_type']}.{file_ext}"
+                    zip_file.writestr(filename, audio_bytes)
+                    entry["filename"] = filename
+                    config_data["custom_audio_map"].append(entry)
+            except Exception:
+                pass
+        else:
+            config_data["custom_audio_map"].append(entry)
+
+    for i, ext in enumerate(extensions):
+        ext_id = str(ext['id'])
+        ext_type = ext.get('type')
+        ext_name = ext.get('name', 'Unknown')
+
+        update_progress(task_id, 10 + int((i/total_exts)*80), 100, f"Extracting {ext_type}: {ext_name}...")
+
+        ext_details = {"base_info": ext}
+
+        # Only query deep routing for compatible extension types to prevent 403 Forbidden errors
+        if ext_type in VALID_CALL_HANDLING_TYPES:
+            ext_details["business_hours"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours', task_id=task_id, method='GET', token=token, raise_error=False)
+            ext_details["forwarding_numbers"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/forwarding-number', token, task_id)
+            ext_details["caller_id"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-id', task_id=task_id, method='GET', token=token, raise_error=False)
+            ext_details["notification_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings', task_id=task_id, method='GET', token=token, raise_error=False)
+            ext_details["caller_blocking"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-blocking', task_id=task_id, method='GET', token=token, raise_error=False)
+            ext_details["caller_blocking_numbers"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-blocking/phone-numbers', token, task_id)
+
+            # User-only surfaces: BLF/monitored lines and the assigned role.
+            if ext_type == 'User':
+                ext_details["presence_line"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/presence/line', token, task_id)
+                ext_details["assigned_role"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/assigned-role', task_id=task_id, method='GET', token=token, raise_error=False)
+
+            rules_resp = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed', task_id=task_id, method='GET', token=token, raise_error=False)
+            answering_rules = rules_resp.get('records', []) if rules_resp else []
+            ext_details["answering_rules"] = answering_rules
+
+            for rule in answering_rules:
+                rule_id = rule.get('id')
+                for greeting in rule.get('greetings', []):
+                    if greeting.get('type') != 'Default' and greeting.get('custom'):
+                        audio_id = greeting['custom'].get('id')
+                        audio_uri = greeting['custom'].get('uri')
+                        if audio_id and audio_uri:
+                            _record_audio({
+                                "ext_id": ext_id,
+                                "ext_type": ext_type,
+                                "ext_name": ext_name,
+                                "rule_id": rule_id,
+                                "greeting_type": greeting['type'],
+                                "audio_id": audio_id,
+                            }, audio_uri)
+
+        # Special Configurations based on Extension Type
+        if ext_type == 'Department':
+            ext_details["queue_members"] = fetch_all_pages(f'/restapi/v1.0/account/~/call-queues/{ext_id}/members', token, task_id)
+            ext_details["queue_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/call-queues/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
+        elif ext_type == 'IvrMenu':
+            ivr_info = safe_rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
+            ext_details["ivr_settings"] = ivr_info
+            if ivr_info and ivr_info.get('prompt', {}).get('mode') == 'Audio':
+                audio_uri = ivr_info['prompt'].get('audio', {}).get('uri')
+                audio_id = ivr_info['prompt'].get('audio', {}).get('id')
+                if audio_uri:
+                    _record_audio({
+                        "ext_id": ext_id,
+                        "ext_type": ext_type,
+                        "ext_name": ext_name,
+                        "rule_id": "ivr_prompt",
+                        "greeting_type": "IvrPrompt",
+                        "audio_id": audio_id,
+                    }, audio_uri)
+        elif ext_type in ['Announcement', 'AnnouncementOnly']:
+            ext_details["announcement_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
+        elif ext_type in ['MessageOnly', 'Voicemail']:
+            ext_details["message_only_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
+
+        config_data["detailed_extensions"][ext_id] = ext_details
+        time.sleep(0.05)
+
+    return config_data
+
+
+# --- EXPORT LOGIC ---
+def run_account_export(task_id, unbind_devices=False, token=None):
+    zip_buffer = io.BytesIO()
+
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for i, ext in enumerate(extensions):
-            ext_id = str(ext['id'])
-            ext_type = ext.get('type')
-            ext_name = ext.get('name', 'Unknown')
-            
-            update_progress(task_id, 10 + int((i/total_exts)*80), 100, f"Extracting {ext_type}: {ext_name}...")
-            
-            ext_details = {"base_info": ext}
-
-            # Only query deep routing for compatible extension types to prevent 403 Forbidden errors
-            if ext_type in VALID_CALL_HANDLING_TYPES:
-                ext_details["business_hours"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/business-hours', task_id=task_id, method='GET', token=token, raise_error=False)
-                ext_details["forwarding_numbers"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/forwarding-number', token, task_id)
-                ext_details["caller_id"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-id', task_id=task_id, method='GET', token=token, raise_error=False)
-                ext_details["notification_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/notification-settings', task_id=task_id, method='GET', token=token, raise_error=False)
-                ext_details["caller_blocking"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-blocking', task_id=task_id, method='GET', token=token, raise_error=False)
-                ext_details["caller_blocking_numbers"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/caller-blocking/phone-numbers', token, task_id)
-
-                # User-only surfaces: BLF/monitored lines and the assigned role.
-                if ext_type == 'User':
-                    ext_details["presence_line"] = fetch_all_pages(f'/restapi/v1.0/account/~/extension/{ext_id}/presence/line', token, task_id)
-                    ext_details["assigned_role"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/assigned-role', task_id=task_id, method='GET', token=token, raise_error=False)
-                
-                rules_resp = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}/answering-rule?view=Detailed', task_id=task_id, method='GET', token=token, raise_error=False)
-                answering_rules = rules_resp.get('records', []) if rules_resp else []
-                ext_details["answering_rules"] = answering_rules
-
-                for rule in answering_rules:
-                    rule_id = rule.get('id')
-                    for greeting in rule.get('greetings', []):
-                        if greeting.get('type') != 'Default' and greeting.get('custom'):
-                            audio_id = greeting['custom'].get('id')
-                            audio_uri = greeting['custom'].get('uri')
-                            if audio_id and audio_uri:
-                                try:
-                                    audio_bytes, mime = download_audio_content(audio_uri, token, task_id)
-                                    if audio_bytes:
-                                        file_ext = 'mp3' if 'mpeg' in mime or 'mp3' in mime else 'wav'
-                                        filename = f"audio/{ext_id}_{rule_id}_{greeting['type']}.{file_ext}"
-                                        zip_file.writestr(filename, audio_bytes)
-                                        config_data["custom_audio_map"].append({
-                                            "ext_id": ext_id,
-                                            "ext_type": ext_type,
-                                            "ext_name": ext_name,
-                                            "rule_id": rule_id,
-                                            "greeting_type": greeting['type'],
-                                            "audio_id": audio_id,
-                                            "filename": filename
-                                        })
-                                except Exception:
-                                    pass
-
-            # Special Configurations based on Extension Type
-            if ext_type == 'Department':
-                ext_details["queue_members"] = fetch_all_pages(f'/restapi/v1.0/account/~/call-queues/{ext_id}/members', token, task_id)
-                ext_details["queue_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/call-queues/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
-            elif ext_type == 'IvrMenu':
-                ivr_info = safe_rc_api_call(f'/restapi/v1.0/account/~/ivr-menus/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
-                ext_details["ivr_settings"] = ivr_info
-                if ivr_info and ivr_info.get('prompt', {}).get('mode') == 'Audio':
-                    audio_uri = ivr_info['prompt'].get('audio', {}).get('uri')
-                    audio_id = ivr_info['prompt'].get('audio', {}).get('id')
-                    if audio_uri:
-                        try:
-                            audio_bytes, mime = download_audio_content(audio_uri, token, task_id)
-                            if audio_bytes:
-                                file_ext = 'mp3' if 'mpeg' in mime or 'mp3' in mime else 'wav'
-                                filename = f"audio/{ext_id}_ivr_prompt.{file_ext}"
-                                zip_file.writestr(filename, audio_bytes)
-                                config_data["custom_audio_map"].append({
-                                    "ext_id": ext_id,
-                                    "ext_type": ext_type,
-                                    "ext_name": ext_name,
-                                    "rule_id": "ivr_prompt",
-                                    "greeting_type": "IvrPrompt",
-                                    "audio_id": audio_id,
-                                    "filename": filename
-                                })
-                        except Exception:
-                            pass
-            elif ext_type in ['Announcement', 'AnnouncementOnly']:
-                ext_details["announcement_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
-            elif ext_type in ['MessageOnly', 'Voicemail']:
-                ext_details["message_only_settings"] = safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{ext_id}', task_id=task_id, method='GET', token=token, raise_error=False)
-
-            config_data["detailed_extensions"][ext_id] = ext_details
-            time.sleep(0.05)
+        config_data = _collect_config_data(task_id, token=token, zip_file=zip_file, download_audio=True)
+        extensions = config_data["extensions_raw"]
+        cost_centers = config_data["cost_centers"]
+        phone_numbers = config_data["phone_numbers"]
+        devices = config_data["devices"]
 
         if unbind_devices:
             # Free physical MACs on the LOSING account so they can be pushed to
@@ -353,6 +374,247 @@ def run_account_export(task_id, unbind_devices=False, token=None):
     update_progress(task_id, 100, 100, "Export Complete! ZIP file downloading...", status='completed')
     zip_buffer.seek(0)
     return zip_buffer
+
+
+# --- READER-FRIENDLY AUDIT ---
+def _display_name(base):
+    """Best human-readable label for an extension: its name, else the contact's
+    full name, else the extension number / id."""
+    base = base or {}
+    name = base.get('name')
+    if name:
+        return name
+    c = base.get('contact') or {}
+    full = ' '.join(x for x in [c.get('firstName'), c.get('lastName')] if x)
+    return full or str(base.get('extensionNumber') or base.get('id') or '')
+
+
+def _build_audit_workbook(config_data):
+    """Render the collected tenant data as a formatted, multi-sheet Excel
+    workbook meant for a person to read: one clean sheet per category, friendly
+    column headers, frozen header row, sized columns, and no raw JSON blobs."""
+    detailed = config_data.get('detailed_extensions', {})
+    exts_raw = config_data.get('extensions_raw', [])
+
+    ext_by_id = {str(e.get('id')): e for e in exts_raw}
+
+    def assigned_to(ref):
+        ref = ref or {}
+        eid = ref.get('id')
+        if not eid:
+            return ''
+        e = ext_by_id.get(str(eid))
+        if not e:
+            return ref.get('name') or str(eid)
+        num = e.get('extensionNumber')
+        return f"{_display_name(e)}" + (f" (Ext {num})" if num else '')
+
+    def ext_sort_key(row):
+        val = row.get('Extension #', '')
+        try:
+            return (0, int(val))
+        except (TypeError, ValueError):
+            return (1, str(val))
+
+    # --- Summary ---
+    ai = config_data.get('account_info') or {}
+    type_counts = {}
+    for e in exts_raw:
+        t = e.get('type', 'Unknown')
+        type_counts[t] = type_counts.get(t, 0) + 1
+    summary_rows = [
+        {"Metric": "Account Name", "Value": ai.get('name', '')},
+        {"Metric": "Account ID", "Value": ai.get('id', '')},
+        {"Metric": "Main Number", "Value": ai.get('mainNumber', '')},
+        {"Metric": "Total Extensions", "Value": len(exts_raw)},
+    ]
+    for t in sorted(type_counts):
+        summary_rows.append({"Metric": f"    • {t}", "Value": type_counts[t]})
+    summary_rows += [
+        {"Metric": "Sites", "Value": len(config_data.get('sites', []))},
+        {"Metric": "Cost Centers", "Value": len(config_data.get('cost_centers', []))},
+        {"Metric": "Custom Roles", "Value": len(config_data.get('custom_roles', []))},
+        {"Metric": "Phone Numbers", "Value": len(config_data.get('phone_numbers', []))},
+        {"Metric": "Devices", "Value": len(config_data.get('devices', []))},
+        {"Metric": "Templates", "Value": len(config_data.get('templates', []))},
+        {"Metric": "Custom Greetings", "Value": len(config_data.get('custom_audio_map', []))},
+    ]
+
+    # --- Users & Extensions ---
+    ext_rows = []
+    for _eid, d in detailed.items():
+        b = d.get('base_info', {})
+        c = b.get('contact') or {}
+        roles = ((d.get('assigned_role') or {}).get('records')) or []
+        role_label = ', '.join(r.get('displayName') or str(r.get('id', '')) for r in roles)
+        ext_rows.append({
+            "Extension #": b.get('extensionNumber', ''),
+            "Name": _display_name(b),
+            "Type": b.get('type', ''),
+            "Status": b.get('status', ''),
+            "Email": c.get('email', ''),
+            "Department": c.get('department', ''),
+            "Site": (b.get('site') or {}).get('name', ''),
+            "Cost Center": (b.get('costCenter') or {}).get('name', ''),
+            "Role": role_label,
+        })
+    ext_rows.sort(key=ext_sort_key)
+
+    # --- Call Queues ---
+    queue_rows = []
+    for _eid, d in detailed.items():
+        b = d.get('base_info', {})
+        if b.get('type') != 'Department':
+            continue
+        members = d.get('queue_members', []) or []
+        member_names = ', '.join(str(m.get('name') or m.get('extensionNumber') or '') for m in members)
+        queue_rows.append({
+            "Queue Name": _display_name(b),
+            "Extension #": b.get('extensionNumber', ''),
+            "Site": (b.get('site') or {}).get('name', ''),
+            "Member Count": len(members),
+            "Members": member_names,
+        })
+    queue_rows.sort(key=ext_sort_key)
+
+    # --- IVR Menus ---
+    ivr_rows = []
+    for _eid, d in detailed.items():
+        b = d.get('base_info', {})
+        if b.get('type') != 'IvrMenu':
+            continue
+        s = d.get('ivr_settings') or {}
+        prompt = s.get('prompt') or {}
+        ivr_rows.append({
+            "IVR Name": _display_name(b),
+            "Extension #": b.get('extensionNumber', ''),
+            "Prompt Mode": prompt.get('mode', ''),
+            "Actions Defined": len(s.get('actions', []) or []),
+        })
+    ivr_rows.sort(key=ext_sort_key)
+
+    # --- Sites ---
+    site_rows = [{
+        "Site Name": s.get('name', ''),
+        "Extension #": s.get('extensionNumber', ''),
+        "Site ID": s.get('id', ''),
+    } for s in config_data.get('sites', [])]
+
+    # --- Cost Centers ---
+    cc_rows = [{
+        "Name": c.get('name', ''),
+        "Billing Code": c.get('billingCode', ''),
+    } for c in config_data.get('cost_centers', [])]
+
+    # --- Custom Roles ---
+    role_rows = [{
+        "Role Name": r.get('displayName', r.get('id', '')),
+        "Based On": r.get('basedOn', ''),
+        "Description": r.get('description', ''),
+    } for r in config_data.get('custom_roles', [])]
+
+    # --- Phone Numbers ---
+    pn_rows = [{
+        "Phone Number": n.get('phoneNumber', ''),
+        "Type": n.get('type', ''),
+        "Usage": n.get('usageType', ''),
+        "Status": n.get('status', ''),
+        "Label": n.get('label', ''),
+        "Assigned To": assigned_to(n.get('extension')),
+    } for n in config_data.get('phone_numbers', [])]
+
+    # --- Devices ---
+    dev_rows = [{
+        "Device Name": dv.get('name', ''),
+        "Type": dv.get('type', ''),
+        "Model": (dv.get('model') or {}).get('name', ''),
+        "Serial / MAC": dv.get('serial', ''),
+        "Site": (dv.get('site') or {}).get('name', ''),
+        "Status": dv.get('status', ''),
+        "Assigned To": assigned_to(dv.get('extension')) or 'Unassigned',
+    } for dv in config_data.get('devices', [])]
+
+    # --- Answering Rules (custom, per extension) ---
+    ar_rows = []
+    for _eid, d in detailed.items():
+        b = d.get('base_info', {})
+        for rule in d.get('answering_rules', []) or []:
+            if rule.get('type') != 'Custom':
+                continue
+            ar_rows.append({
+                "Extension": _display_name(b),
+                "Ext #": b.get('extensionNumber', ''),
+                "Rule Name": rule.get('name', ''),
+                "Enabled": "Yes" if rule.get('enabled') else "No",
+                "Call Handling": rule.get('callHandlingAction', ''),
+            })
+
+    # --- Custom Greetings ---
+    greet_rows = [{
+        "Extension": a.get('ext_name', ''),
+        "Extension Type": a.get('ext_type', ''),
+        "Greeting Type": a.get('greeting_type', ''),
+    } for a in config_data.get('custom_audio_map', [])]
+
+    # --- Templates ---
+    tpl_rows = [{"Template Name": t.get('name', '')} for t in config_data.get('templates', [])]
+
+    sheets = [
+        ("Summary", summary_rows, ["Metric", "Value"]),
+        ("Users & Extensions", ext_rows, ["Extension #", "Name", "Type", "Status", "Email", "Department", "Site", "Cost Center", "Role"]),
+        ("Call Queues", queue_rows, ["Queue Name", "Extension #", "Site", "Member Count", "Members"]),
+        ("IVR Menus", ivr_rows, ["IVR Name", "Extension #", "Prompt Mode", "Actions Defined"]),
+        ("Answering Rules", ar_rows, ["Extension", "Ext #", "Rule Name", "Enabled", "Call Handling"]),
+        ("Phone Numbers", pn_rows, ["Phone Number", "Type", "Usage", "Status", "Label", "Assigned To"]),
+        ("Devices", dev_rows, ["Device Name", "Type", "Model", "Serial / MAC", "Site", "Status", "Assigned To"]),
+        ("Sites", site_rows, ["Site Name", "Extension #", "Site ID"]),
+        ("Cost Centers", cc_rows, ["Name", "Billing Code"]),
+        ("Custom Roles", role_rows, ["Role Name", "Based On", "Description"]),
+        ("Custom Greetings", greet_rows, ["Extension", "Extension Type", "Greeting Type"]),
+        ("Templates", tpl_rows, ["Template Name"]),
+    ]
+
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+        book = writer.book
+        header_fmt = book.add_format({
+            'bold': True, 'bg_color': '#1F4E78', 'font_color': 'white',
+            'border': 1, 'align': 'left', 'valign': 'vcenter',
+        })
+
+        for sheet_name, rows, columns in sheets:
+            if rows:
+                df = pd.DataFrame(rows, columns=columns)
+            else:
+                # Keep a non-empty sheet so reviewers see the category exists.
+                df = pd.DataFrame([{columns[0]: "None found"}], columns=columns)
+            df = df.fillna('')
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            ws = writer.sheets[sheet_name]
+            for col_idx, col in enumerate(df.columns):
+                ws.write(0, col_idx, str(col), header_fmt)
+                width = len(str(col))
+                for value in df[col].astype(str).tolist():
+                    width = max(width, min(len(value), 60))
+                ws.set_column(col_idx, col_idx, width + 2)
+            ws.freeze_panes(1, 0)
+
+    return excel_buffer
+
+
+def run_account_audit(task_id, token=None):
+    """Full-scale, reader-friendly account audit: the same deep read-only tenant
+    scan the migration export performs, rendered as a formatted multi-sheet Excel
+    workbook for reviewing an account at a glance. Read-only — nothing on the
+    tenant is changed and no audio is downloaded."""
+    config_data = _collect_config_data(task_id, token=token, zip_file=None, download_audio=False)
+    update_progress(task_id, 92, 100, "Building reader-friendly audit workbook...")
+    excel_buffer = _build_audit_workbook(config_data)
+    update_progress(task_id, 100, 100, "Audit complete! Workbook downloading...", status='completed')
+    excel_buffer.seek(0)
+    return excel_buffer
+
 
 # --- IMPORT HELPERS ---
 

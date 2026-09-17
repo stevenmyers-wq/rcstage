@@ -32,6 +32,29 @@ def start_export():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@account_migration_bp.route('/audit', methods=['POST'])
+@require_rc_token
+@track_usage('Account Migration - Audit')
+def start_audit():
+    try:
+        data = request.get_json()
+        task_id = data.get('task_id')
+
+        if not task_id:
+            return jsonify({'error': 'No task ID provided'}), 400
+
+        token = get_rc_access_token()
+        excel_buffer = utils.run_account_audit(task_id, token)
+
+        return send_file(
+            excel_buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='RC_Account_Audit.xlsx'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @account_migration_bp.route('/import', methods=['POST'])
 @require_rc_token
 @track_usage('Account Migration - Import')
