@@ -112,58 +112,6 @@
             </table>
         </div>
     </div>
-
-    <!-- API Debug (advanced) -->
-    <details class="card !p-0 overflow-hidden w-full border border-amber-200 dark:border-amber-800/50">
-        <summary class="cursor-pointer select-none px-6 py-4 bg-amber-50/70 dark:bg-amber-900/10 font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
-            🔧 API Debug (advanced) — send raw requests to the RingCentral role API
-        </summary>
-        <div class="p-6 space-y-4">
-            <p class="text-sm text-slate-500 dark:text-slate-400">
-                Sends a request straight to RingCentral (role / permission endpoints only) and shows the raw
-                status &amp; response. Use <code>~</code> for the current account. Tip: <strong>GET</strong> a real
-                custom role with <code>?advancedPermissions=true</code> to see the exact <code>permissions[]</code> shape RC expects.
-            </p>
-
-            <div class="flex flex-wrap gap-2">
-                <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="GET" data-path="/restapi/v1.0/account/~/user-role" data-body="">List roles</button>
-                <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="GET" data-path="/restapi/v1.0/account/~/user-role/ROLE_ID" data-body="">Get role</button>
-                <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="GET" data-path="/restapi/v1.0/dictionary/permission?perPage=1000" data-body="">List permissions</button>
-                <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="PUT" data-path="/restapi/v1.0/account/~/user-role/ROLE_ID"
-                    data-body='{"permissions":[{"id":"ReadCompanyInfo"},{"id":"ReadUserInfo"}]}'>PUT sample</button>
-                <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="POST" data-path="/restapi/v1.0/account/~/user-role"
-                    data-body='{"displayName":"ZZ Debug Role","description":"debug test","scope":"Self","permissions":[{"id":"ReadCompanyInfo"},{"id":"ReadUserInfo"},{"id":"Groups"}]}'>POST sample</button>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div class="input-wrapper sm:col-span-1">
-                    <label class="input-label">Method</label>
-                    <select id="ur-dbg-method" class="input-field">
-                        <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
-                    </select>
-                </div>
-                <div class="input-wrapper sm:col-span-3">
-                    <label class="input-label">Path</label>
-                    <input type="text" id="ur-dbg-path" class="input-field font-mono text-xs" value="/restapi/v1.0/account/~/user-role">
-                </div>
-            </div>
-            <div class="input-wrapper">
-                <label class="input-label">Body (JSON — for POST/PUT)</label>
-                <textarea id="ur-dbg-body" rows="6" class="input-field font-mono text-xs" placeholder='{"permissions":[{"id":"InternalCalls","permissionsCapabilities":{"enabled":true}}]}'></textarea>
-            </div>
-            <div class="flex items-center gap-3">
-                <button id="ur-dbg-send" type="button" class="btn-primary !py-2.5 px-6">▶ Send request</button>
-                <button id="ur-dbg-copy" type="button" class="btn-secondary !py-2.5 px-4 text-sm hidden">📋 Copy response</button>
-                <span id="ur-dbg-status" class="text-sm font-bold"></span>
-            </div>
-            <pre id="ur-dbg-response" class="hidden bg-slate-900 dark:bg-[#0b1120] text-emerald-300 p-4 rounded-xl font-mono text-xs overflow-auto max-h-[420px] whitespace-pre-wrap"></pre>
-        </div>
-    </details>
 </div>
 
 <!-- Progress Modal -->
@@ -580,69 +528,5 @@ document.addEventListener('DOMContentLoaded', () => {
             progressCloseBtn.classList.remove('hidden');
         }
     };
-
-    // --- API Debug panel ---
-    const dbgMethod = document.getElementById('ur-dbg-method');
-    const dbgPath = document.getElementById('ur-dbg-path');
-    const dbgBody = document.getElementById('ur-dbg-body');
-    const dbgSend = document.getElementById('ur-dbg-send');
-    const dbgCopy = document.getElementById('ur-dbg-copy');
-    const dbgStatus = document.getElementById('ur-dbg-status');
-    const dbgResponse = document.getElementById('ur-dbg-response');
-
-    document.querySelectorAll('.ur-dbg-fill').forEach(btn => {
-        btn.addEventListener('click', () => {
-            dbgMethod.value = btn.dataset.method || 'GET';
-            dbgPath.value = btn.dataset.path || '';
-            dbgBody.value = btn.dataset.body || '';
-        });
-    });
-
-    if (dbgSend) dbgSend.addEventListener('click', async () => {
-        const method = dbgMethod.value;
-        const path = dbgPath.value.trim();
-        let body = null;
-        const raw = dbgBody.value.trim();
-        if (raw && (method === 'POST' || method === 'PUT')) {
-            try { body = JSON.parse(raw); }
-            catch (e) { dbgStatus.textContent = 'Body is not valid JSON: ' + e.message; dbgStatus.className = 'text-sm font-bold text-rose-500'; return; }
-        }
-        dbgSend.disabled = true;
-        dbgStatus.textContent = 'Sending…';
-        dbgStatus.className = 'text-sm font-bold text-slate-400';
-        dbgResponse.classList.add('hidden');
-        dbgCopy.classList.add('hidden');
-        try {
-            const res = await fetch('/api/user_roles/debug', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ method, path, body })
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                dbgStatus.textContent = 'Error: ' + (data.error || res.status);
-                dbgStatus.className = 'text-sm font-bold text-rose-500';
-                return;
-            }
-            const ok = data.ok;
-            dbgStatus.textContent = `HTTP ${data.status} ${ok ? '✓' : '✗'}`;
-            dbgStatus.className = 'text-sm font-bold ' + (ok ? 'text-emerald-500' : 'text-rose-500');
-            dbgResponse.textContent = JSON.stringify(data, null, 2);
-            dbgResponse.classList.remove('hidden');
-            dbgCopy.classList.remove('hidden');
-        } catch (err) {
-            dbgStatus.textContent = 'Network error: ' + err.message;
-            dbgStatus.className = 'text-sm font-bold text-rose-500';
-        } finally {
-            dbgSend.disabled = false;
-        }
-    });
-
-    if (dbgCopy) dbgCopy.addEventListener('click', () => {
-        navigator.clipboard.writeText(dbgResponse.textContent || '').then(() => {
-            dbgCopy.textContent = '✓ Copied';
-            setTimeout(() => { dbgCopy.textContent = '📋 Copy response'; }, 1500);
-        }).catch(() => {});
-    });
 });
 </script>
