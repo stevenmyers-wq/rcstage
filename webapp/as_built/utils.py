@@ -29,7 +29,10 @@ Export re-uses the proven approach from the Network Requirements tool:
 """
 
 import re
+import time
 import logging
+import threading
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
 from webapp.rc_api import rc_api_call
@@ -45,6 +48,92 @@ logger = logging.getLogger(__name__)
 # already backs off and retries on 429, and a wide pool would only trip
 # RingCentral's rate limiter harder.
 _MAX_WORKERS = 8
+
+
+# ---------------------------------------------------------------------------
+# Background collection (no request/session) — mirrors Device Ringing Audit /
+# Deskphone Ring Time. Generation runs in a daemon thread so a large account
+# can't overrun the Cloud Run request timeout, and the SM bridge token is kept
+# alive by a single self-healing refresher instead of the request's session.
+# ---------------------------------------------------------------------------
+
+# When set, collection is running outside a request: _api() resolves the token
+# from this caller and refreshes the bridge itself rather than via the session.
+_bg_ctx = contextvars.ContextVar("as_built_bg_ctx", default=None)
+
+
+class _BgCaller:
+    """Self-healing RC GET caller for background (no-session) collection.
+
+    Holds the mutable auth snapshot (bridge access token plus the SM
+    employee/refresh material) and re-mints the impersonation token *in place*
+    on a 401. Refreshes are serialised behind a lock and de-duplicated: only the
+    first worker to see the stale token re-mints, the rest reuse the fresh one.
+    RingCentral rotates refresh tokens, so two concurrent refreshes would
+    invalidate each other — which is exactly what was killing the bridge when
+    collection ran across a thread pool.
+    """
+
+    def __init__(self, auth_data):
+        self.auth = auth_data
+        self._lock = threading.Lock()
+
+    @property
+    def token(self):
+        return self.auth.get("access_token")
+
+    def get(self, endpoint, params=None):
+        """GET returning parsed JSON (or None) — same contract as _api()."""
+        healed = False
+        transient = 0
+        while True:
+            used = self.auth.get("access_token")
+            # A bounded (connect, read) timeout so a stalled RC connection in the
+            # background thread surfaces as a retryable error instead of hanging
+            # the whole job. rc_api_call handles 429/503 back-off internally and,
+            # because a token is passed, skips its own session-based 401 refresh
+            # and hands the 401 back to us to heal.
+            resp = rc_api_call(endpoint, params=params, method="GET",
+                               return_response=True, token=used, timeout=(10, 60))
+            status = getattr(resp, "status_code", None)
+            if status == 401 and not healed:
+                healed = True
+                if self._heal(used):
+                    continue
+                return None
+            if status == 204:
+                return {"success": True}
+            if status and 200 <= status < 300:
+                try:
+                    return resp.json()
+                except Exception:
+                    return None
+            if (status is None or status >= 500) and transient < 2:
+                transient += 1
+                time.sleep(1)
+                continue
+            return None
+
+    def _heal(self, used_token):
+        with self._lock:
+            # Another worker may have refreshed while we waited for the lock.
+            if self.auth.get("access_token") != used_token:
+                return True
+            try:
+                # Reuse the proven bridge/OAuth refresh from Device Ringing Audit;
+                # task_id=None makes its status-message hook a no-op here.
+                from webapp.deskphone_ring_time.utils import _heal_bg_token
+                return bool(_heal_bg_token(self.auth))
+            except Exception:
+                logger.exception("[as_built] background token heal failed")
+                return False
+
+
+def _bg_token():
+    """Explicit token for helpers that must pass one (cost-centre reuse), or None
+    when collecting in-request (they then fall back to the session)."""
+    bg = _bg_ctx.get()
+    return bg.token if bg is not None else None
 
 
 def _request_ctx_copier():
@@ -73,22 +162,34 @@ def _request_ctx_copier():
 def _map_concurrent(items, worker, max_workers=_MAX_WORKERS):
     """Apply ``worker(item)`` to every item, preserving input order.
 
-    Each call runs inside its own copy of the current Flask request context so
-    rc_api_call can still resolve the session bridge token (and refresh it on
-    401) from the worker threads. Falls back to a plain sequential map when
-    there is no request context (e.g. unit tests), when there is a single item,
-    or when concurrency is disabled — so behaviour is unchanged, only faster.
+    In a background job each worker re-establishes the background auth context
+    (a ContextVar does not propagate into pool threads on its own); in a request
+    each worker runs in its own copy of the Flask request context so rc_api_call
+    still resolves the session token. Falls back to a plain sequential map when
+    there is a single item, concurrency is disabled, or neither context is
+    available (e.g. unit tests) — behaviour is unchanged, only faster.
     """
     items = list(items)
     if not items:
         return []
-    copy_ctx = _request_ctx_copier()
-    if len(items) == 1 or max_workers <= 1 or copy_ctx is None:
+    if len(items) == 1 or max_workers <= 1:
         return [worker(it) for it in items]
 
-    def _run(item):
-        with copy_ctx():
-            return worker(item)
+    copy_ctx = _request_ctx_copier()
+    bg = _bg_ctx.get()
+    if copy_ctx is not None:
+        def _run(item):
+            with copy_ctx():
+                return worker(item)
+    elif bg is not None:
+        def _run(item):
+            token = _bg_ctx.set(bg)
+            try:
+                return worker(item)
+            finally:
+                _bg_ctx.reset(token)
+    else:
+        return [worker(it) for it in items]
 
     with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as pool:
         # pool.map preserves the order of the input iterable.
@@ -110,8 +211,14 @@ VIRTUAL_TYPES = ("VirtualUser",)
 # ---------------------------------------------------------------------------
 
 def _api(endpoint, params=None):
-    """Single GET returning parsed JSON (or None). Token is resolved inside
-    rc_api_call from the session (SM bridge token preferred)."""
+    """Single GET returning parsed JSON (or None).
+
+    In a background job the token is resolved from the self-healing _BgCaller;
+    in a request it is resolved inside rc_api_call from the session (SM bridge
+    token preferred)."""
+    bg = _bg_ctx.get()
+    if bg is not None:
+        return bg.get(endpoint, params)
     return rc_api_call(endpoint, params=params, method="GET")
 
 
@@ -1058,11 +1165,11 @@ def render_custom_roles(data, detail):
 
 def _cc_fetch(endpoint):
     """Proven paginated fetch from the Cost Centres tool (params-based, honours
-    navigation.nextPage). token=None → rc_api_call resolves the session/bridge
-    token. Used for endpoints where our generic fetcher returned empty."""
+    navigation.nextPage). Passes the background bridge token when collecting off
+    the request thread, else None so rc_api_call resolves it from the session."""
     from webapp.cost_centres.utils import fetch_all_pages
     try:
-        return fetch_all_pages(endpoint, None)
+        return fetch_all_pages(endpoint, _bg_token())
     except Exception:
         logger.exception("[as_built] _cc_fetch failed for %s", endpoint)
         return []
@@ -1073,11 +1180,11 @@ def _cost_centre_bundle():
     /cost-center list endpoint 404ing on many accounts by harvesting cost-centre
     names from the costCenter object on every extension/number/device, resolves
     each object's effective cost centre (explicit → site → account default), and
-    includes the authoritative v2 license inventory. token=None → session/bridge
-    token."""
+    includes the authoritative v2 license inventory. Passes the background bridge
+    token when collecting off the request thread, else None (session)."""
     from webapp.cost_centres.utils import get_cost_centres_data
     try:
-        return get_cost_centres_data(None) or {}
+        return get_cost_centres_data(_bg_token()) or {}
     except Exception:
         logger.exception("[as_built] cost centre bundle failed")
         return {}
@@ -1537,11 +1644,13 @@ def get_catalog():
 # DOCUMENT ASSEMBLY
 # ===========================================================================
 
-def collect_document(selections):
+def collect_document(selections, progress=None):
     """Run the collectors for the requested sections.
 
     selections: list of {"key": str, "detail": str}. Overview is always
     included first. Returns a list of rendered section dicts.
+    progress: optional callable(done, total, label) invoked as each section is
+    collected, so a background job can surface live status.
     """
     ctx = CollectContext()
 
@@ -1555,12 +1664,18 @@ def collect_document(selections):
         if key in SECTION_BY_KEY:
             requested[key] = detail
 
+    plan = [s for s in SECTIONS if s.get("always") or s["key"] in requested]
+    total = len(plan)
+
     rendered = []
-    for section in SECTIONS:
+    for idx, section in enumerate(plan):
         key = section["key"]
-        if not section.get("always") and key not in requested:
-            continue
         detail = requested.get(key, section.get("default_detail", DEFAULT_DETAIL))
+        if progress:
+            try:
+                progress(idx, total, section["label"])
+            except Exception:
+                pass
         try:
             data = section["collect"](ctx, detail)
             html = section["render"](data, detail)
@@ -1575,9 +1690,71 @@ def collect_document(selections):
                 "data": None, "error": str(e),
             })
 
+    if progress:
+        try:
+            progress(total, total, "Assembling document")
+        except Exception:
+            pass
+
     return {"account_name": ctx.account_name,
             "account_id": ctx.account_id,
             "sections": rendered}
+
+
+# ---------------------------------------------------------------------------
+# Background generation task (daemon thread + poll). Mirrors Device Ringing
+# Audit: each HTTP request stays short, so a large account can't hit the Cloud
+# Run request timeout, and the bridge is kept alive by _BgCaller for the whole
+# run. Stores are in-memory, like the existing _doc_store — the finished
+# document is handed to /export by the status poll (which runs in the request).
+# ---------------------------------------------------------------------------
+
+# task_id -> {status, message, error, body_html, account_name, customer_name,
+#             doc, section_errors}
+_gen_store = {}
+
+
+def run_generation_background(app, task_id, selections, customer_name, auth_data):
+    """Collect + assemble the document in a daemon thread, writing progress and
+    the result into _gen_store[task_id]. Wraps the work in an app context (so
+    rc_api_call resolves RC_SERVER_URL/config without a request) and installs a
+    self-healing _BgCaller as the token source for the whole run."""
+    store = _gen_store.get(task_id)
+    if store is None:
+        return
+    token_ctx = None
+    try:
+        with app.app_context():
+            caller = _BgCaller(auth_data)
+            token_ctx = _bg_ctx.set(caller)
+
+            def _progress(done, total, label):
+                store["message"] = (f"Collecting {label}… ({done}/{total})"
+                                    if done < total else "Assembling document…")
+
+            store["message"] = "Loading account inventory…"
+            doc = collect_document(selections, progress=_progress)
+            body_html = build_body_html(doc, customer_name or None)
+
+            store["doc"] = doc
+            store["body_html"] = body_html
+            store["account_name"] = doc.get("account_name")
+            store["customer_name"] = (customer_name or doc.get("account_name")
+                                      or "Customer")
+            store["section_errors"] = [
+                {"label": s["label"], "error": s["error"]}
+                for s in doc.get("sections", []) if s.get("error")
+            ]
+            store["status"] = "completed"
+            store["message"] = "Document generated."
+    except Exception as e:
+        logger.exception("[as_built] background generation failed")
+        store["status"] = "error"
+        store["error"] = str(e)
+        store["message"] = f"Generation failed: {e}"
+    finally:
+        if token_ctx is not None:
+            _bg_ctx.reset(token_ctx)
 
 
 def build_body_html(doc, customer_name=None):

@@ -72,21 +72,33 @@
         }
     }
 
-    async function generate() {
-        const selections = collectSelections();
-        if (!selections.length) { setStatus('Select at least one section.', true); return; }
-        genBtn.disabled = true;
-        genBtn.textContent = 'Generating…';
-        setStatus('Collecting configuration from the account…');
-        pdfBtn.disabled = true; wordBtn.disabled = true; xlsxBtn.disabled = true;
+    function resetGenBtn() {
+        genBtn.disabled = false;
+        genBtn.textContent = 'Generate Document';
+    }
+
+    // Collection runs in a background thread on the server; the browser starts a
+    // job and polls for it. Each request is short, so a large account no longer
+    // holds one long connection open (which timed out and surfaced as a bare
+    // "Network error during generation."). Transient poll failures are retried
+    // rather than aborting the whole run, because the work continues server-side.
+    let pollTimer = null;
+    let pollMisses = 0;
+    const POLL_INTERVAL_MS = 2000;
+    const MAX_POLL_MISSES = 10;  // ~30s of consecutive network hiccups
+
+    async function pollStatus(taskId) {
         try {
-            const res = await fetch('/api/as_built/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sections: selections, customer_name: nameEl.value.trim() })
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
+            const res = await fetch('/api/as_built/generate/status?task_id=' + encodeURIComponent(taskId));
+            let data = {};
+            try { data = await res.json(); } catch (e) {}
+
+            if (res.status === 404) {
+                setStatus(data.error || 'Generation task expired — please try again.', true);
+                resetGenBtn();
+                return;
+            }
+            if (data.status === 'completed') {
                 previewEl.innerHTML = data.document;
                 previewEl.classList.remove('hidden');
                 previewEmpty.classList.add('hidden');
@@ -96,14 +108,56 @@
                 } else {
                     setStatus('Document generated. Download below.');
                 }
+                resetGenBtn();
+                return;
+            }
+            if (data.status === 'error' || (!res.ok && data.success === false)) {
+                setStatus(data.error || 'Generation failed.', true);
+                resetGenBtn();
+                return;
+            }
+            // Still running.
+            pollMisses = 0;
+            setStatus(data.message || 'Collecting configuration from the account…');
+            pollTimer = setTimeout(() => pollStatus(taskId), POLL_INTERVAL_MS);
+        } catch (e) {
+            // Transient network blip — keep polling; the job runs server-side.
+            pollMisses += 1;
+            if (pollMisses > MAX_POLL_MISSES) {
+                setStatus('Lost contact with the server during generation.', true);
+                resetGenBtn();
+                return;
+            }
+            setStatus('Working… (waiting for the server)');
+            pollTimer = setTimeout(() => pollStatus(taskId), POLL_INTERVAL_MS + 1000);
+        }
+    }
+
+    async function generate() {
+        const selections = collectSelections();
+        if (!selections.length) { setStatus('Select at least one section.', true); return; }
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+        pollMisses = 0;
+        genBtn.disabled = true;
+        genBtn.textContent = 'Generating…';
+        setStatus('Starting generation…');
+        pdfBtn.disabled = true; wordBtn.disabled = true; xlsxBtn.disabled = true;
+        try {
+            const res = await fetch('/api/as_built/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sections: selections, customer_name: nameEl.value.trim() })
+            });
+            const data = await res.json();
+            if (res.ok && data.success && data.task_id) {
+                pollStatus(data.task_id);
             } else {
                 setStatus(data.error || 'Generation failed.', true);
+                resetGenBtn();
             }
         } catch (e) {
-            setStatus('Network error during generation.', true);
-        } finally {
-            genBtn.disabled = false;
-            genBtn.textContent = 'Generate Document';
+            setStatus('Network error starting generation.', true);
+            resetGenBtn();
         }
     }
 
