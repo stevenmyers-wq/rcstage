@@ -1,0 +1,481 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+
+<style>
+    /* Indeterminate action progress bar (fetches where total is unknown) */
+    #ur-action-progress-bar.indeterminate {
+        width: 40% !important;
+        animation: ur-indeterminate 1.1s ease-in-out infinite;
+    }
+    @keyframes ur-indeterminate {
+        0%   { left: -40%; }
+        100% { left: 100%; }
+    }
+    /* The permission matrix is wide — keep the meta columns readable. */
+    #ur-table th, #ur-table td { white-space: nowrap; }
+    #ur-table .perm-col { text-align: center; }
+</style>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+<div class="space-y-8 animate-fade-in w-full">
+
+    <div class="mb-4">
+        <h2 class="text-display mb-2">User Roles</h2>
+        <p class="text-subheading">Audit, create and update custom user roles as a permission matrix. One row per role, one column per assignable permission (<code>X</code> = granted).</p>
+    </div>
+
+    <!-- Instructions -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <div class="card !p-5 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/50 shadow-sm">
+            <h4 class="text-heading text-base text-blue-900 dark:text-blue-100 mb-2">1. Audit</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
+                <li>Click <strong>Fetch Roles</strong> to load every role and its permissions.</li>
+                <li>Click <strong>Download .xlsx</strong> for the full permission matrix.</li>
+            </ol>
+        </div>
+        <div class="card !p-5 bg-purple-50/50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-800/50 shadow-sm">
+            <h4 class="text-heading text-base text-purple-900 dark:text-purple-100 mb-2">2. Create / Update</h4>
+            <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
+                <li>Edit the matrix. Set the <code>Action</code> column to <code>MODIFY</code> (edit an existing role) or <code>NEW</code> (create one).</li>
+                <li>Toggle permissions with <code>X</code> (blank = not granted). For <code>NEW</code>, clear <code>RoleID</code> and set <code>DisplayName</code> + <code>Scope</code>.</li>
+                <li>Upload the file and click <strong>Apply Changes</strong>. Predefined roles are read-only and are skipped.</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex flex-col gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
+        <div class="flex flex-col sm:flex-row gap-4 w-full">
+            <button id="ur-fetch-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
+                🔎 Fetch Roles
+            </button>
+            <button id="ur-download-btn" class="btn-secondary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📥 Download .xlsx
+            </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full items-center">
+            <div class="relative flex items-center h-[52px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden px-2">
+                <input type="file" id="ur-file-input" accept=".xlsx" class="text-sm file:mr-3 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 dark:file:bg-slate-800 dark:file:text-slate-300 cursor-pointer w-full">
+            </div>
+            <button id="ur-apply-btn" class="btn-success h-[52px] px-6 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                📤 Apply Changes
+            </button>
+        </div>
+    </div>
+
+    <!-- Inline action progress bar -->
+    <div id="ur-action-progress" class="w-full hidden -mt-2">
+        <div class="flex items-center justify-between mb-1.5">
+            <span id="ur-action-progress-label" class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Working…</span>
+            <span id="ur-action-progress-pct" class="text-xs font-semibold text-slate-400"></span>
+        </div>
+        <div class="relative w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden shadow-inner">
+            <div id="ur-action-progress-bar" class="absolute top-0 left-0 h-full rounded-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <div class="card !p-6 flex flex-wrap gap-6 items-end w-full">
+        <div class="input-wrapper flex-grow min-w-[200px]">
+            <label class="input-label">Filter Roles</label>
+            <input type="text" id="ur-filter-input" placeholder="Type to filter by name, scope…" class="input-field">
+        </div>
+        <span id="ur-count-badge" class="badge badge-info px-3 py-1">No data</span>
+    </div>
+
+    <!-- Data Table -->
+    <div class="card !p-0 overflow-hidden w-full border-0 shadow-lg">
+        <div class="table-container border-0 rounded-none shadow-none max-h-[700px] overflow-auto">
+            <table id="ur-table" class="data-table">
+                <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                    <tr id="ur-header-row"></tr>
+                </thead>
+                <tbody id="ur-table-body">
+                    <tr><td class="py-20 text-center text-slate-400 font-medium italic">Fetch roles to begin.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div id="ur-modal-progress" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+    <div class="card w-full max-w-md text-center transform scale-95 transition-transform duration-300 shadow-2xl">
+        <h3 class="text-heading mb-2" id="ur-progress-title">Processing…</h3>
+        <p class="text-subheading mb-8" id="ur-progress-desc">Applying role changes to RingCentral. Please stand by.</p>
+        <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-6 overflow-hidden shadow-inner">
+            <div id="ur-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div id="ur-progress-log" class="h-40 overflow-y-auto bg-slate-900 dark:bg-[#0b1120] text-left p-4 rounded-xl font-mono text-xs text-emerald-400 space-y-1 shadow-inner outline-none"></div>
+        <div class="mt-8 space-y-3">
+            <button id="ur-progress-stop-btn" class="hidden w-full btn-secondary !text-red-600 !border-red-300 dark:!border-red-800 hover:!bg-red-50 dark:hover:!bg-red-900/20">■ Stop</button>
+            <button id="ur-progress-result-btn" class="hidden w-full btn-primary !bg-emerald-600 hover:!bg-emerald-700">⬇ Download results (.xlsx)</button>
+            <button id="ur-progress-close-btn" class="hidden w-full btn-secondary">Close Window</button>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Must match META_COLUMNS in webapp/user_roles/utils.py — everything else is a permission column.
+    const META_COLUMNS = ["Action", "RoleID", "DisplayName", "Description", "Scope", "Custom", "Editable", "PermissionCount"];
+
+    const fetchBtn = document.getElementById('ur-fetch-btn');
+    const downloadBtn = document.getElementById('ur-download-btn');
+    const fileInput = document.getElementById('ur-file-input');
+    const applyBtn = document.getElementById('ur-apply-btn');
+    const headerRow = document.getElementById('ur-header-row');
+    const tbody = document.getElementById('ur-table-body');
+    const filterInput = document.getElementById('ur-filter-input');
+    const countBadge = document.getElementById('ur-count-badge');
+
+    const modalProgress = document.getElementById('ur-modal-progress');
+    const progressLog = document.getElementById('ur-progress-log');
+    const progressBar = document.getElementById('ur-progress-bar');
+    const progressTitle = document.getElementById('ur-progress-title');
+    const progressCloseBtn = document.getElementById('ur-progress-close-btn');
+    const progressResultBtn = document.getElementById('ur-progress-result-btn');
+    const progressStopBtn = document.getElementById('ur-progress-stop-btn');
+
+    // Inline action progress bar
+    const actionProgress = document.getElementById('ur-action-progress');
+    const actionProgressBar = document.getElementById('ur-action-progress-bar');
+    const actionProgressLabel = document.getElementById('ur-action-progress-label');
+    const actionProgressPct = document.getElementById('ur-action-progress-pct');
+    let actionProgressTimer = null;
+    const AP = {
+        _reset() {
+            clearTimeout(actionProgressTimer);
+            actionProgressBar.className = 'absolute top-0 left-0 h-full rounded-full bg-blue-600 transition-all duration-300';
+            actionProgressBar.style.left = '0%';
+        },
+        start(label) {
+            this._reset();
+            actionProgress.classList.remove('hidden');
+            actionProgressLabel.textContent = label || 'Working…';
+            actionProgressPct.textContent = '';
+            actionProgressBar.classList.add('indeterminate');
+        },
+        set(pct, label) {
+            this._reset();
+            const v = Math.max(0, Math.min(100, pct));
+            actionProgress.classList.remove('hidden');
+            if (label) actionProgressLabel.textContent = label;
+            actionProgressBar.style.width = v + '%';
+            actionProgressPct.textContent = Math.round(v) + '%';
+        },
+        finish(label) {
+            this._reset();
+            actionProgress.classList.remove('hidden');
+            actionProgressBar.classList.remove('bg-blue-600');
+            actionProgressBar.classList.add('bg-emerald-500');
+            actionProgressBar.style.width = '100%';
+            actionProgressLabel.textContent = label || 'Done';
+            actionProgressPct.textContent = '100%';
+            actionProgressTimer = setTimeout(() => actionProgress.classList.add('hidden'), 1400);
+        },
+        error(label) {
+            this._reset();
+            actionProgress.classList.remove('hidden');
+            actionProgressBar.classList.remove('bg-blue-600');
+            actionProgressBar.classList.add('bg-rose-500');
+            actionProgressBar.style.width = '100%';
+            actionProgressLabel.textContent = label || 'Failed';
+            actionProgressPct.textContent = '';
+            actionProgressTimer = setTimeout(() => actionProgress.classList.add('hidden'), 3000);
+        }
+    };
+
+    let currentData = [];          // array of role row objects
+    let permissionColumns = [];    // ordered permission id columns
+    let headers = [];              // META_COLUMNS + permissionColumns
+    let userRolesTaskId = null;
+
+    // --- Modal helpers ---
+    const openModal = () => {
+        modalProgress.classList.remove('hidden');
+        setTimeout(() => { modalProgress.classList.remove('opacity-0'); modalProgress.querySelector('.card').classList.remove('scale-95'); }, 10);
+    };
+    const closeModal = () => {
+        modalProgress.classList.add('opacity-0');
+        modalProgress.querySelector('.card').classList.add('scale-95');
+        setTimeout(() => modalProgress.classList.add('hidden'), 300);
+    };
+    const logProgress = (msg, type = 'info') => {
+        const entry = document.createElement('div');
+        entry.className = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-slate-400');
+        entry.innerText = `> ${msg}`;
+        progressLog.appendChild(entry);
+        progressLog.scrollTop = progressLog.scrollHeight;
+    };
+
+    // Downloadable result listing for the current apply run.
+    let lastResultRows = null;
+    const setResultData = (rows) => {
+        lastResultRows = (rows && rows.length) ? rows : null;
+        progressResultBtn.classList.toggle('hidden', !lastResultRows);
+    };
+    if (window.UCResults) UCResults.attachButton(progressResultBtn, () => lastResultRows, 'User_Roles_Results', 'Results');
+
+    if (progressStopBtn) {
+        progressStopBtn.addEventListener('click', async () => {
+            if (!userRolesTaskId) return;
+            progressStopBtn.disabled = true;
+            progressStopBtn.textContent = 'Stopping…';
+            logProgress('Stop requested — finishing the current role, then halting…', 'info');
+            try { await fetch(`/api/user_roles/cancel?task_id=${userRolesTaskId}`, { method: 'POST' }); } catch (e) {}
+        });
+    }
+    progressCloseBtn.addEventListener('click', closeModal);
+
+    // --- Render ---
+    const renderTable = () => {
+        headerRow.innerHTML = '';
+        tbody.innerHTML = '';
+        filterInput.value = '';
+
+        if (!currentData.length) {
+            tbody.innerHTML = `<tr><td class="py-20 text-center text-slate-400 font-medium italic">No roles returned.</td></tr>`;
+            return;
+        }
+
+        headers = [...META_COLUMNS, ...permissionColumns];
+        headers.forEach(key => {
+            const th = document.createElement('th');
+            const isPerm = permissionColumns.includes(key);
+            th.className = 'py-3 px-3 font-semibold tracking-wider text-[11px] uppercase' + (isPerm ? ' perm-col text-slate-400 dark:text-slate-500' : '');
+            th.textContent = key;
+            headerRow.appendChild(th);
+        });
+
+        currentData.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors duration-150 border-b border-slate-100 dark:border-slate-800/50';
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                const isPerm = permissionColumns.includes(header);
+                td.className = 'px-3 py-2 text-sm text-slate-700 dark:text-slate-300' + (isPerm ? ' perm-col' : '');
+                const content = String(row[header] ?? '');
+                if (isPerm) {
+                    td.innerHTML = content.trim().toLowerCase() === 'x'
+                        ? '<span class="text-emerald-600 dark:text-emerald-400 font-bold">✓</span>'
+                        : '<span class="text-slate-300 dark:text-slate-700">·</span>';
+                } else if (header === 'Editable') {
+                    const editable = content.toLowerCase().startsWith('yes');
+                    td.innerHTML = `<span class="px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-full ${editable ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">${content}</span>`;
+                } else {
+                    td.textContent = content;
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    };
+
+    filterInput.addEventListener('keyup', () => {
+        const term = filterInput.value.toLowerCase();
+        tbody.querySelectorAll('tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+        });
+    });
+
+    // --- NDJSON reader ---
+    const readNdjson = async (response, onChunk) => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                let obj; try { obj = JSON.parse(line); } catch (e) { continue; }
+                onChunk(obj);
+            }
+        }
+        if (buffer.trim()) { try { onChunk(JSON.parse(buffer)); } catch (e) {} }
+    };
+
+    // --- Fetch (audit) ---
+    fetchBtn.addEventListener('click', async () => {
+        fetchBtn.disabled = true;
+        downloadBtn.disabled = true;
+        countBadge.textContent = 'Loading…';
+        countBadge.className = 'badge badge-info px-3 py-1';
+        tbody.innerHTML = `<tr><td class="py-20 text-center text-slate-400 font-medium italic"><div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div>Fetching roles…</td></tr>`;
+        AP.start('Fetching roles…');
+        try {
+            const response = await fetch('/api/user_roles/roles');
+            if (!response.ok) {
+                let msg = `HTTP ${response.status}`;
+                try { msg = (await response.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+            let finalData = null, streamError = null, total = 0;
+            await readNdjson(response, (chunk) => {
+                switch (chunk.type) {
+                    case 'start': if (chunk.message) AP.start(chunk.message); break;
+                    case 'columns': permissionColumns = chunk.permissions || []; break;
+                    case 'total':
+                        total = chunk.total || 0;
+                        AP.set(total === 0 ? 100 : 0, total === 0 ? 'No roles found' : `Processing 0 / ${total} roles…`);
+                        break;
+                    case 'progress':
+                        if (chunk.total) AP.set((chunk.current / chunk.total) * 100, `Processing ${chunk.current} / ${chunk.total} roles…`);
+                        break;
+                    case 'done':
+                        finalData = chunk.data || [];
+                        if (chunk.permissions) permissionColumns = chunk.permissions;
+                        break;
+                    case 'error': streamError = chunk.message || 'Unknown error while fetching.'; break;
+                }
+            });
+            if (streamError) throw new Error(streamError);
+
+            currentData = finalData || [];
+            renderTable();
+            downloadBtn.disabled = currentData.length === 0;
+            const custom = currentData.filter(r => String(r.Custom).toLowerCase() === 'true').length;
+            countBadge.textContent = `${currentData.length} roles (${custom} custom) · ${permissionColumns.length} permissions`;
+            AP.finish(`Loaded ${currentData.length} role${currentData.length === 1 ? '' : 's'}`);
+        } catch (error) {
+            tbody.innerHTML = `<tr><td class="py-20 text-center text-rose-500 font-bold">Failed to load: ${error.message}</td></tr>`;
+            countBadge.textContent = 'Error';
+            countBadge.className = 'badge badge-danger px-3 py-1';
+            AP.error(`Failed to load: ${error.message}`);
+        } finally {
+            fetchBtn.disabled = false;
+        }
+    });
+
+    // --- Download .xlsx ---
+    downloadBtn.addEventListener('click', () => {
+        if (!currentData.length) return;
+        AP.set(40, 'Building spreadsheet…');
+        const orderedHeaders = [...META_COLUMNS, ...permissionColumns];
+        const ws = XLSX.utils.json_to_sheet(currentData, { header: orderedHeaders });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "User Roles");
+        XLSX.writeFile(wb, `RC_User_Roles_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        AP.finish(`Downloaded ${currentData.length} roles`);
+    });
+
+    // --- Upload + Apply ---
+    fileInput.addEventListener('change', () => { applyBtn.disabled = !fileInput.files.length; });
+
+    applyBtn.addEventListener('click', () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            let records, fileHeaders;
+            try {
+                const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const asRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                fileHeaders = (asRows[0] || []).map(String);
+                records = XLSX.utils.sheet_to_json(ws, { defval: '' });
+            } catch (err) {
+                alert('Could not read the spreadsheet: ' + err.message);
+                return;
+            }
+            const uploadPermCols = fileHeaders.filter(h => !META_COLUMNS.includes(h));
+            const actionable = records.filter(r => ['NEW', 'MODIFY'].includes(String(r.Action || '').trim().toUpperCase()));
+
+            if (!actionable.length) {
+                alert('No rows have an Action of NEW or MODIFY. Set the Action column, then re-upload.');
+                return;
+            }
+            if (!confirm(`Apply ${actionable.length} role change(s) to RingCentral?\n\nPredefined (read-only) roles are skipped automatically.`)) return;
+
+            handleApply(actionable, uploadPermCols);
+        };
+        reader.readAsArrayBuffer(file);
+        fileInput.value = '';
+        applyBtn.disabled = true;
+    });
+
+    const handleApply = async (records, uploadPermCols) => {
+        openModal();
+        progressLog.innerHTML = '';
+        progressCloseBtn.classList.add('hidden');
+        userRolesTaskId = `ur_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        if (progressStopBtn) { progressStopBtn.classList.remove('hidden'); progressStopBtn.disabled = false; progressStopBtn.textContent = '■ Stop'; }
+        setResultData(null);
+        progressBar.style.width = '0%';
+        progressBar.className = 'bg-blue-600 h-full rounded-full transition-all duration-300';
+        progressTitle.textContent = 'Updating RingCentral…';
+        logProgress(`Packaging ${records.length} role change(s)…`, 'info');
+
+        try {
+            const response = await fetch('/api/user_roles/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ records, permissionColumns: uploadPermCols, task_id: userRolesTaskId })
+            });
+            if (!response.ok) {
+                let msg = 'Unknown upload error.';
+                try { msg = (await response.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
+            }
+
+            let results = [], total = records.length, streamError = null;
+            await readNdjson(response, (chunk) => {
+                switch (chunk.type) {
+                    case 'start':
+                        total = chunk.total || total;
+                        progressTitle.textContent = `Updating RingCentral… (0 / ${total})`;
+                        if (chunk.message) logProgress(chunk.message, 'info');
+                        break;
+                    case 'progress': {
+                        if (chunk.total) {
+                            progressBar.style.width = `${(chunk.current / chunk.total) * 100}%`;
+                            progressTitle.textContent = `Updating RingCentral… (${chunk.current} / ${chunk.total})`;
+                        }
+                        const r = chunk.result;
+                        if (r) logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, r.status === 'success' ? 'success' : (r.status === 'error' ? 'error' : 'info'));
+                        break;
+                    }
+                    case 'done': results = chunk.results || results; break;
+                    case 'error': streamError = chunk.message || 'Unknown upload error.'; break;
+                }
+            });
+            if (streamError) throw new Error(streamError);
+
+            progressBar.style.width = '100%';
+            const cancelled = results.some(r => r.status === 'cancelled');
+            const errors = results.filter(r => r.status === 'error').length;
+
+            setResultData(results.map(r => ({
+                'Role': r.name,
+                'Status': r.status === 'success' ? 'Success' : (r.status === 'cancelled' ? 'Cancelled' : 'Failed'),
+                'Detail': r.message
+            })));
+
+            if (cancelled) {
+                progressTitle.textContent = `Stopped${errors ? ` (${errors} error(s))` : ''}`;
+                progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
+            } else if (errors === 0) {
+                progressTitle.textContent = 'Update Successful';
+                progressBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-300';
+            } else {
+                progressTitle.textContent = `Completed with ${errors} Error(s)`;
+                progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
+            }
+            logProgress('Fetch roles again to verify the applied changes.', 'info');
+        } catch (error) {
+            progressBar.style.width = '100%';
+            progressBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-300';
+            progressTitle.textContent = 'Update Failed';
+            logProgress(error.message, 'error');
+        } finally {
+            userRolesTaskId = null;
+            if (progressStopBtn) progressStopBtn.classList.add('hidden');
+            progressCloseBtn.classList.remove('hidden');
+        }
+    };
+});
+</script>

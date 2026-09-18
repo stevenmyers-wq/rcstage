@@ -214,4 +214,8 @@ def create_app():
         from .as_built import routes as as_built_routes
         app.register_blueprint(as_built_routes.as_built_bp)
 
+        # User Roles routes (audit / create / update custom user roles via XLSX)
+        from .user_roles import routes as user_roles_routes
+        app.register_blueprint(user_roles_routes.user_roles_bp)
+
     return app
