@@ -1,632 +1,41 @@
+Post response
+
 {
   "ok": true,
   "request": {
-    "body": null,
-    "method": "GET",
-    "path": "/restapi/v1.0/account/~/user-role/7733124?advancedPermissions=true"
+    "body": {
+      "description": "debug test",
+      "displayName": "ZZ Debug Role",
+      "permissions": [
+        {
+          "id": "ReadCompanyInfo"
+        },
+        {
+          "id": "ReadUserInfo"
+        },
+        {
+          "id": "Groups"
+        }
+      ],
+      "scope": "Self"
+    },
+    "method": "POST",
+    "path": "/restapi/v1.0/account/~/user-role"
   },
   "response": {
     "custom": true,
-    "displayName": "Store Manager Reporting",
+    "description": "debug test",
+    "displayName": "ZZ Debug Role",
     "hidden": false,
-    "id": "7733124",
-    "lastUpdated": "2026-09-18T11:49:30.000Z",
+    "id": "7734124",
+    "lastUpdated": "2026-09-18T12:11:11.000Z",
     "permissions": [
       {
-        "assignable": true,
-        "id": "Purchase",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Purchase"
-      },
-      {
         "assignable": false,
-        "id": "EditUserTemplates",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserTemplates"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserTemplates",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserTemplates"
-      },
-      {
-        "assignable": true,
-        "id": "AccountAdministration",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AccountAdministration"
-      },
-      {
-        "assignable": false,
-        "id": "DND",
+        "id": "EditExtensionGrant",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/DND"
-      },
-      {
-        "assignable": true,
-        "id": "ViewLocationData",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ViewLocationData"
-      },
-      {
-        "assignable": true,
-        "id": "BillingInfo",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/BillingInfo"
-      },
-      {
-        "assignable": true,
-        "id": "DeviceOrdering",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/DeviceOrdering"
-      },
-      {
-        "assignable": true,
-        "id": "CostCenterManagement",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CostCenterManagement"
-      },
-      {
-        "assignable": true,
-        "id": "AuditTrail",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AuditTrail"
-      },
-      {
-        "assignable": false,
-        "id": "InboundSMS",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/InboundSMS"
-      },
-      {
-        "assignable": false,
-        "id": "MeetingsRecordings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/MeetingsRecordings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyDevices",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyDevices"
-      },
-      {
-        "assignable": false,
-        "id": "EditOutboundFaxSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditOutboundFaxSettings"
-      },
-      {
-        "assignable": true,
-        "id": "DevPortalAccess",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/DevPortalAccess"
-      },
-      {
-        "assignable": true,
-        "id": "DeviceStatusReport",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/DeviceStatusReport"
-      },
-      {
-        "assignable": true,
-        "id": "MeetingsConfiguration",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/MeetingsConfiguration"
-      },
-      {
-        "assignable": true,
-        "id": "CallHandling",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallHandling"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserPhoneNumbers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserPhoneNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserRoles",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserRoles"
-      },
-      {
-        "assignable": false,
-        "id": "EditLiveReportsInApp",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditLiveReportsInApp"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserScreeningGreetingSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserScreeningGreetingSettings"
-      },
-      {
-        "assignable": true,
-        "id": "Users",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Users"
-      },
-      {
-        "assignable": true,
-        "id": "Roles",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Roles"
-      },
-      {
-        "assignable": true,
-        "id": "MeetingsSettings",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/MeetingsSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyGreetings",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyGreetings"
-      },
-      {
-        "assignable": true,
-        "id": "QoSReports",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/QoSReports"
-      },
-      {
-        "assignable": false,
-        "id": "EditMultiUserDevices",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMultiUserDevices"
-      },
-      {
-        "assignable": true,
-        "id": "ThirdPartyAppAccess",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ThirdPartyAppAccess"
-      },
-      {
-        "assignable": true,
-        "id": "MeetingsPlan",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/MeetingsPlan"
-      },
-      {
-        "assignable": true,
-        "id": "EditBusinessAnalyticsReports",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditBusinessAnalyticsReports"
-      },
-      {
-        "assignable": false,
-        "id": "ReassignDevices",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReassignDevices"
-      },
-      {
-        "assignable": false,
-        "id": "ReadExtensions",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadExtensions"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadLiveReportsInApp",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadLiveReportsInApp"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMessages",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessages"
-      },
-      {
-        "assignable": false,
-        "id": "CallFlip",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallFlip"
-      },
-      {
-        "assignable": true,
-        "id": "EditLiveReports",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditLiveReports"
-      },
-      {
-        "assignable": false,
-        "id": "EditCompanyCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyCallerIDSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPaymentMethod",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPaymentMethod"
-      },
-      {
-        "assignable": true,
-        "id": "EditTeamsDirectRouting",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditTeamsDirectRouting"
-      },
-      {
-        "assignable": true,
-        "id": "InternalCalls",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/InternalCalls"
-      },
-      {
-        "assignable": true,
-        "id": "General",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/General"
-      },
-      {
-        "assignable": true,
-        "id": "ReadLiveReports",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadLiveReports"
-      },
-      {
-        "assignable": false,
-        "id": "ReadBlockedNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadBlockedNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPresenceSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPresenceSettings"
-      },
-      {
-        "assignable": true,
-        "id": "OutboundCallerId",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/OutboundCallerId"
-      },
-      {
-        "assignable": false,
-        "id": "EditSiteInfo",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditSiteInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadBusinessAnalyticsReports",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadBusinessAnalyticsReports"
-      },
-      {
-        "assignable": true,
-        "id": "PhonesAndDevices",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/PhonesAndDevices"
-      },
-      {
-        "assignable": true,
-        "id": "UnifiedAppDesktop",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UnifiedAppDesktop"
-      },
-      {
-        "assignable": true,
-        "id": "EditEmergencyLocations",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditEmergencyLocations"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMessageContent",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessageContent"
-      },
-      {
-        "assignable": true,
-        "id": "OutboundFaxSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/OutboundFaxSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditCompanyGreetings",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyGreetings"
-      },
-      {
-        "assignable": true,
-        "id": "AccountFaxSettings",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AccountFaxSettings"
-      },
-      {
-        "assignable": true,
-        "id": "ReadCallLog",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallLog"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserAnsweringRules"
-      },
-      {
-        "assignable": true,
-        "id": "PremiumDestinations",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/PremiumDestinations"
-      },
-      {
-        "assignable": true,
-        "id": "ReadCallRecordings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallRecordings"
-      },
-      {
-        "assignable": true,
-        "id": "LicensesAndInventory",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/LicensesAndInventory"
-      },
-      {
-        "assignable": true,
-        "id": "DomesticCalls",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/DomesticCalls"
-      },
-      {
-        "assignable": true,
-        "id": "ScreeningGreetingHoldMusic",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ScreeningGreetingHoldMusic"
-      },
-      {
-        "assignable": false,
-        "id": "ReassignPhoneNumbers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReassignPhoneNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditPaymentMethod",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditPaymentMethod"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ParkPublic",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ParkPublic"
-      },
-      {
-        "assignable": false,
-        "id": "OutboundFaxes",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/OutboundFaxes"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserForwardingFlipNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserForwardingFlipNumbers"
-      },
-      {
-        "assignable": true,
-        "id": "Meetings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Meetings"
-      },
-      {
-        "assignable": true,
-        "id": "WebinarSettings",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/WebinarSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ParkLocation",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ParkLocation"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserCredentials",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserCredentials"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserAnsweringRules"
-      },
-      {
-        "assignable": true,
-        "id": "AutoReceptionist",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AutoReceptionist"
-      },
-      {
-        "assignable": false,
-        "id": "ReadAssignedRoles",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadAssignedRoles"
-      },
-      {
-        "assignable": false,
-        "id": "EditCompanyDevices",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyDevices"
-      },
-      {
-        "assignable": false,
-        "id": "EditMessages",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessages"
-      },
-      {
-        "assignable": false,
-        "id": "CallForwarding",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallForwarding"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserRoles",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserRoles"
-      },
-      {
-        "assignable": false,
-        "id": "OutboundSMS",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/OutboundSMS"
-      },
-      {
-        "assignable": false,
-        "id": "AddRemoveUsers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemoveUsers"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyAnsweringRules"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserScreeningGreetingSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserScreeningGreetingSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadOutboundFaxSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadOutboundFaxSettings"
-      },
-      {
-        "assignable": true,
-        "id": "RingCentralMobileApp",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/RingCentralMobileApp"
-      },
-      {
-        "assignable": false,
-        "id": "ReadServicePlanInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadServicePlanInfo"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditExtensionGrant"
       },
       {
         "assignable": false,
@@ -643,11 +52,18 @@
         "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemoveGroups"
       },
       {
-        "assignable": true,
-        "id": "RoomConnectorSettings",
+        "assignable": false,
+        "id": "EditCallerIDSettings",
         "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/RoomConnectorSettings"
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallerIDSettings"
+      },
+      {
+        "assignable": false,
+        "id": "ReadMessageContent",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessageContent"
       },
       {
         "assignable": true,
@@ -671,382 +87,11 @@
         "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessagesNotificationsSettings"
       },
       {
-        "assignable": true,
-        "id": "EditCallLogDelivery",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallLogDelivery"
-      },
-      {
         "assignable": false,
-        "id": "EditCompanyPhoneNumbers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyPhoneNumbers"
-      },
-      {
-        "assignable": true,
-        "id": "MessagesAndNotifications",
+        "id": "ReadUserAnsweringRules",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/MessagesAndNotifications"
-      },
-      {
-        "assignable": true,
-        "id": "CompanyCallLog",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CompanyCallLog"
-      },
-      {
-        "assignable": false,
-        "id": "EditCompanyInfo",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyInfo"
-      },
-      {
-        "assignable": true,
-        "id": "ArchiverAdminAccess",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ArchiverAdminAccess"
-      },
-      {
-        "assignable": true,
-        "id": "ConfigurePresence",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ConfigurePresence"
-      },
-      {
-        "assignable": false,
-        "id": "EditAssignedRoles",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditAssignedRoles"
-      },
-      {
-        "assignable": false,
-        "id": "CallTransfer",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallTransfer"
-      },
-      {
-        "assignable": false,
-        "id": "CallRecording",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallRecording"
-      },
-      {
-        "assignable": true,
-        "id": "SiteTemplates",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/SiteTemplates"
-      },
-      {
-        "assignable": true,
-        "id": "PaymentMethod",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/PaymentMethod"
-      },
-      {
-        "assignable": false,
-        "id": "ArchiverManagement",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ArchiverManagement"
-      },
-      {
-        "assignable": true,
-        "id": "UnmaskedNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UnmaskedNumbers"
-      },
-      {
-        "assignable": true,
-        "id": "EditCompanySmsTemplates",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanySmsTemplates"
-      },
-      {
-        "assignable": true,
-        "id": "EditCompanyCallLogDelivery",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyCallLogDelivery"
-      },
-      {
-        "assignable": true,
-        "id": "ManageExternalSharedDirectory",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ManageExternalSharedDirectory"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPresenceStatus",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPresenceStatus"
-      },
-      {
-        "assignable": false,
-        "id": "EditCompanyAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyAnsweringRules"
-      },
-      {
-        "assignable": false,
-        "id": "AddRemovePhoneNumbers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemovePhoneNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserDevices",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserDevices"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserForwardingFlipNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserForwardingFlipNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "ApplyUserTemplates",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ApplyUserTemplates"
-      },
-      {
-        "assignable": true,
-        "id": "Appearance",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Appearance"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallerIDSettings"
-      },
-      {
-        "assignable": true,
-        "id": "Templates",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Templates"
-      },
-      {
-        "assignable": true,
-        "id": "ReadCompanyCallLog",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyCallLog"
-      },
-      {
-        "assignable": true,
-        "id": "CompanyNumbers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CompanyNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditPresenceSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditPresenceSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanySmsTemplates",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanySmsTemplates"
-      },
-      {
-        "assignable": true,
-        "id": "ReadCompanySMSLog",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanySMSLog"
-      },
-      {
-        "assignable": true,
-        "id": "BotInstall",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/BotInstall"
-      },
-      {
-        "assignable": true,
-        "id": "CompanyInfo",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CompanyInfo"
-      },
-      {
-        "assignable": true,
-        "id": "MeetingsCompanyRecordings",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/MeetingsCompanyRecordings"
-      },
-      {
-        "assignable": true,
-        "id": "UsageInfo",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UsageInfo"
-      },
-      {
-        "assignable": true,
-        "id": "InternationalCalling",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/InternationalCalling"
-      },
-      {
-        "assignable": true,
-        "id": "ExtensionNumbering",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ExtensionNumbering"
-      },
-      {
-        "assignable": true,
-        "id": "LiveReportsLicense",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/LiveReportsLicense"
-      },
-      {
-        "assignable": true,
-        "id": "PhonesAndNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/PhonesAndNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPersonalContacts",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPersonalContacts"
-      },
-      {
-        "assignable": true,
-        "id": "UserFaxSettings",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UserFaxSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallQueueMembers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallQueueMembers"
-      },
-      {
-        "assignable": false,
-        "id": "ReadInternationalCallingPolicy",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadInternationalCallingPolicy"
-      },
-      {
-        "assignable": true,
-        "id": "OrganizeConference",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/OrganizeConference"
-      },
-      {
-        "assignable": false,
-        "id": "EditCompanyCallLog",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCompanyCallLog"
-      },
-      {
-        "assignable": false,
-        "id": "EditExtensionGrant",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditExtensionGrant"
-      },
-      {
-        "assignable": false,
-        "id": "EditPersonalContacts",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditPersonalContacts"
-      },
-      {
-        "assignable": false,
-        "id": "EditSiteAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditSiteAnsweringRules"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallerIDSettings"
-      },
-      {
-        "assignable": true,
-        "id": "DeviceStatusReportAlerts",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/DeviceStatusReportAlerts"
-      },
-      {
-        "assignable": false,
-        "id": "LocalSMS",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/LocalSMS"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMultiUserDevices",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMultiUserDevices"
-      },
-      {
-        "assignable": true,
-        "id": "HUD",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/HUD"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserDevices",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserDevices"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserAnsweringRules"
       },
       {
         "assignable": true,
@@ -1064,10 +109,10 @@
       },
       {
         "assignable": true,
-        "id": "InternationalCalls",
+        "id": "ScreeningGreetingHoldMusic",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/InternationalCalls"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ScreeningGreetingHoldMusic"
       },
       {
         "assignable": false,
@@ -1077,25 +122,18 @@
         "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyPhoneNumbers"
       },
       {
-        "assignable": true,
-        "id": "UnifiedAppMobile",
+        "assignable": false,
+        "id": "EditUserInfo",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UnifiedAppMobile"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserInfo"
       },
       {
-        "assignable": true,
-        "id": "EditCallLog",
+        "assignable": false,
+        "id": "ReadPresenceStatus",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallLog"
-      },
-      {
-        "assignable": true,
-        "id": "GroupTemplates",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/GroupTemplates"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPresenceStatus"
       },
       {
         "assignable": true,
@@ -1106,38 +144,38 @@
       },
       {
         "assignable": true,
-        "id": "SiteCallLog",
+        "id": "CallHandling",
         "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/SiteCallLog"
-      },
-      {
-        "assignable": false,
-        "id": "AddRemoveDevices",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemoveDevices"
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallHandling"
       },
       {
         "assignable": true,
-        "id": "Voicemail",
+        "id": "JoinLeaveCallQueue",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Voicemail"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/JoinLeaveCallQueue"
       },
       {
         "assignable": false,
-        "id": "Hold",
+        "id": "EditUserScreeningGreetingSettings",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Hold"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserScreeningGreetingSettings"
       },
       {
-        "assignable": true,
-        "id": "UsageReports",
+        "assignable": false,
+        "id": "EditUserForwardingFlipNumbers",
         "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UsageReports"
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserForwardingFlipNumbers"
+      },
+      {
+        "assignable": false,
+        "id": "ReadUserForwardingFlipNumbers",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserForwardingFlipNumbers"
       },
       {
         "assignable": false,
@@ -1147,18 +185,11 @@
         "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserHours"
       },
       {
-        "assignable": true,
-        "id": "BusinessSms",
+        "assignable": false,
+        "id": "ReadCallerIDSettings",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/BusinessSms"
-      },
-      {
-        "assignable": true,
-        "id": "ConfigureIntercom",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ConfigureIntercom"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallerIDSettings"
       },
       {
         "assignable": true,
@@ -1169,17 +200,31 @@
       },
       {
         "assignable": false,
+        "id": "EditUserCredentials",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserCredentials"
+      },
+      {
+        "assignable": false,
         "id": "EditCallInfo",
         "readOnly": false,
         "siteCompatible": "Independent",
         "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallInfo"
       },
       {
-        "assignable": true,
-        "id": "BotUninstall",
+        "assignable": false,
+        "id": "EditUserAnsweringRules",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/BotUninstall"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserAnsweringRules"
+      },
+      {
+        "assignable": false,
+        "id": "ReadCompanyInfo",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyInfo"
       },
       {
         "assignable": false,
@@ -1190,66 +235,52 @@
       },
       {
         "assignable": false,
-        "id": "ServiceWebAccess",
+        "id": "ReadUserInfo",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ServiceWebAccess"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserInfo"
       },
       {
         "assignable": false,
-        "id": "ReadUserPhoneNumbers",
+        "id": "ReadAssignedRoles",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserPhoneNumbers"
-      },
-      {
-        "assignable": true,
-        "id": "Sites",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Sites"
-      },
-      {
-        "assignable": true,
-        "id": "ReadCompanyCallRecordings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyCallRecordings"
-      },
-      {
-        "assignable": true,
-        "id": "RoomsSettings",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/RoomsSettings"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadAssignedRoles"
       },
       {
         "assignable": false,
-        "id": "EditInternationalCallingPolicy",
+        "id": "ReadMessages",
         "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditInternationalCallingPolicy"
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessages"
       },
       {
         "assignable": false,
-        "id": "AllowControlDnd",
+        "id": "EditMessages",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessages"
+      },
+      {
+        "assignable": false,
+        "id": "ReadPaymentMethod",
+        "readOnly": false,
+        "siteCompatible": "Incompatible",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPaymentMethod"
+      },
+      {
+        "assignable": false,
+        "id": "ReadUserScreeningGreetingSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserScreeningGreetingSettings"
+      },
+      {
+        "assignable": false,
+        "id": "EditCallQueueMembers",
         "readOnly": false,
         "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AllowControlDnd"
-      },
-      {
-        "assignable": false,
-        "id": "ReadEmergencyLocations",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadEmergencyLocations"
-      },
-      {
-        "assignable": true,
-        "id": "InternalSMS",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/InternalSMS"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallQueueMembers"
       },
       {
         "assignable": true,
@@ -1259,16 +290,308 @@
         "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UserInfo"
       },
       {
-        "assignable": true,
-        "id": "ReadTeamsDirectRouting",
+        "assignable": false,
+        "id": "ReadBlockedNumbers",
         "readOnly": false,
         "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadTeamsDirectRouting"
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadBlockedNumbers"
       }
     ],
     "scope": "Self",
     "siteCompatible": true,
-    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/934660124/user-role/7733124"
+    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/934660124/user-role/7734124"
+  },
+  "status": 201
+}
+
+
+
+
+
+
+
+
+get role
+
+
+{
+  "ok": true,
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/restapi/v1.0/account/~/user-role/7734124"
+  },
+  "response": {
+    "custom": true,
+    "description": "debug test",
+    "displayName": "ZZ Debug Role",
+    "hidden": false,
+    "id": "7734124",
+    "lastUpdated": "2026-09-18T12:11:11.000Z",
+    "permissions": [
+      {
+        "assignable": false,
+        "id": "EditExtensionGrant",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditExtensionGrant"
+      },
+      {
+        "assignable": false,
+        "id": "CallQueueToCallQueue",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallQueueToCallQueue"
+      },
+      {
+        "assignable": false,
+        "id": "AddRemoveGroups",
+        "readOnly": false,
+        "siteCompatible": "Compatible",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemoveGroups"
+      },
+      {
+        "assignable": false,
+        "id": "EditCallerIDSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallerIDSettings"
+      },
+      {
+        "assignable": false,
+        "id": "ReadMessageContent",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessageContent"
+      },
+      {
+        "assignable": true,
+        "id": "Groups",
+        "readOnly": false,
+        "siteCompatible": "Compatible",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Groups"
+      },
+      {
+        "assignable": false,
+        "id": "ReadMessagesNotificationsSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessagesNotificationsSettings"
+      },
+      {
+        "assignable": false,
+        "id": "EditMessagesNotificationsSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessagesNotificationsSettings"
+      },
+      {
+        "assignable": false,
+        "id": "ReadUserAnsweringRules",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserAnsweringRules"
+      },
+      {
+        "assignable": true,
+        "id": "AcceptQueueCalls",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AcceptQueueCalls"
+      },
+      {
+        "assignable": false,
+        "id": "EditPresenceStatus",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditPresenceStatus"
+      },
+      {
+        "assignable": true,
+        "id": "ScreeningGreetingHoldMusic",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ScreeningGreetingHoldMusic"
+      },
+      {
+        "assignable": false,
+        "id": "ReadCompanyPhoneNumbers",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyPhoneNumbers"
+      },
+      {
+        "assignable": false,
+        "id": "EditUserInfo",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserInfo"
+      },
+      {
+        "assignable": false,
+        "id": "ReadPresenceStatus",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPresenceStatus"
+      },
+      {
+        "assignable": true,
+        "id": "VoicemailSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/VoicemailSettings"
+      },
+      {
+        "assignable": true,
+        "id": "CallHandling",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallHandling"
+      },
+      {
+        "assignable": false,
+        "id": "EditUserScreeningGreetingSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserScreeningGreetingSettings"
+      },
+      {
+        "assignable": false,
+        "id": "EditUserForwardingFlipNumbers",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserForwardingFlipNumbers"
+      },
+      {
+        "assignable": false,
+        "id": "ReadUserForwardingFlipNumbers",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserForwardingFlipNumbers"
+      },
+      {
+        "assignable": false,
+        "id": "EditUserHours",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserHours"
+      },
+      {
+        "assignable": false,
+        "id": "ReadCallerIDSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallerIDSettings"
+      },
+      {
+        "assignable": true,
+        "id": "EditBlockedNumbers",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditBlockedNumbers"
+      },
+      {
+        "assignable": false,
+        "id": "EditUserCredentials",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserCredentials"
+      },
+      {
+        "assignable": false,
+        "id": "EditCallInfo",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallInfo"
+      },
+      {
+        "assignable": false,
+        "id": "EditUserAnsweringRules",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserAnsweringRules"
+      },
+      {
+        "assignable": false,
+        "id": "ReadCompanyInfo",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyInfo"
+      },
+      {
+        "assignable": false,
+        "id": "ReadExtensionGrant",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadExtensionGrant"
+      },
+      {
+        "assignable": false,
+        "id": "ReadUserInfo",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserInfo"
+      },
+      {
+        "assignable": false,
+        "id": "ReadAssignedRoles",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadAssignedRoles"
+      },
+      {
+        "assignable": false,
+        "id": "ReadMessages",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessages"
+      },
+      {
+        "assignable": false,
+        "id": "EditMessages",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessages"
+      },
+      {
+        "assignable": false,
+        "id": "ReadPaymentMethod",
+        "readOnly": false,
+        "siteCompatible": "Incompatible",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPaymentMethod"
+      },
+      {
+        "assignable": false,
+        "id": "ReadUserScreeningGreetingSettings",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserScreeningGreetingSettings"
+      },
+      {
+        "assignable": false,
+        "id": "EditCallQueueMembers",
+        "readOnly": false,
+        "siteCompatible": "Compatible",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallQueueMembers"
+      },
+      {
+        "assignable": true,
+        "id": "UserInfo",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UserInfo"
+      },
+      {
+        "assignable": false,
+        "id": "ReadBlockedNumbers",
+        "readOnly": false,
+        "siteCompatible": "Independent",
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadBlockedNumbers"
+      }
+    ],
+    "scope": "Self",
+    "siteCompatible": true,
+    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/934660124/user-role/7734124"
   },
   "status": 200
 }
