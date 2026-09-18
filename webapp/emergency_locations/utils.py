@@ -317,6 +317,86 @@ def _build_location_body(record, address_columns):
     return body
 
 
+def _flatten_scalars(obj, prefix=""):
+    """Flatten a dict of (possibly nested) scalars to {dotted_key: str_value}."""
+    flat = {}
+    if not isinstance(obj, dict):
+        return flat
+    for key, value in obj.items():
+        dotted = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flat.update(_flatten_scalars(value, prefix=f"{dotted}."))
+        elif not isinstance(value, list):
+            flat[dotted] = "" if value is None else str(value)
+    return flat
+
+
+def _stored_state(response, loc_id):
+    """The location as RingCentral stored it after a write.
+
+    Prefers the write response body; falls back to a fresh GET so we always
+    compare against ground truth even when POST/PUT returns no body.
+    """
+    body = None
+    try:
+        body = response.json() if response is not None else None
+    except Exception:
+        body = None
+    if not isinstance(body, dict) or 'address' not in body:
+        rid = (body or {}).get('id') if isinstance(body, dict) else None
+        rid = rid or loc_id
+        if rid:
+            fresh = rc_api_call(f"{ERL_ENDPOINT}/{rid}")
+            if isinstance(fresh, dict):
+                body = fresh
+    return body if isinstance(body, dict) else None
+
+
+def _write_diff(sent_body, stored):
+    """Compare what we sent vs what RC stored; flag fields that didn't stick.
+
+    Returns (message, dropped, changed):
+      dropped — fields we sent that RC did not store (empty/absent) — e.g. a
+                structured-only field like ``address.streetType`` sent against a
+                flat/outdated ``addressFormatId``. This is the "didn't stick" case.
+      changed — fields RC stored with a different (non-empty) value than sent,
+                i.e. RC normalised/validated the input (not a failure).
+    """
+    if not isinstance(stored, dict):
+        return "written (RC returned no body to verify).", [], []
+
+    sent = {}
+    if isinstance(sent_body.get('address'), dict):
+        sent.update(_flatten_scalars(sent_body['address'], prefix="address."))
+    if sent_body.get('addressFormatId'):
+        sent['addressFormatId'] = str(sent_body['addressFormatId'])
+
+    stored_flat = {}
+    if isinstance(stored.get('address'), dict):
+        stored_flat.update(_flatten_scalars(stored['address'], prefix="address."))
+    if stored.get('addressFormatId') is not None:
+        stored_flat['addressFormatId'] = str(stored['addressFormatId'])
+
+    dropped, changed = [], []
+    for key, sent_val in sent.items():
+        stored_val = stored_flat.get(key, "")
+        if stored_val.strip() == "":
+            dropped.append(f"{key}={sent_val!r}")
+        elif stored_val.strip().lower() != sent_val.strip().lower():
+            changed.append(f"{key}: sent {sent_val!r} → stored {stored_val!r}")
+
+    if dropped:
+        fmt = stored_flat.get('addressFormatId', '?')
+        msg = (f"applied, but {len(dropped)} field(s) did NOT stick "
+               f"(RC dropped them for addressFormatId {fmt}): " + "; ".join(dropped))
+        if changed:
+            msg += f". RC also normalised: {'; '.join(changed)}"
+        return msg, dropped, changed
+    if changed:
+        return "applied (RC normalised some values): " + "; ".join(changed), dropped, changed
+    return "applied — all sent fields stored as-is.", dropped, changed
+
+
 def apply_locations_from_records(records, address_columns, task_id=None):
     """Stream create/update/delete of ERLs, one chunk per record.
 
@@ -377,16 +457,21 @@ def apply_locations_from_records(records, address_columns, task_id=None):
                 verb = "NEW"
 
             if response is not None and getattr(response, 'ok', False):
-                new_id = loc_id
-                try:
-                    new_id = (response.json() or {}).get('id', loc_id) or loc_id
-                except Exception:
-                    pass
-                msg = f"{verb} succeeded."
-                if verb == "NEW" and new_id:
-                    msg = f"NEW succeeded — created location {new_id}."
-                item = {"name": label, "status": "success", "message": msg,
-                        "locationId": new_id}
+                if verb == "DELETE":
+                    item = {"name": label, "status": "success",
+                            "message": "DELETE succeeded.", "locationId": loc_id}
+                else:
+                    stored = _stored_state(response, loc_id)
+                    new_id = (stored or {}).get('id') or loc_id
+                    diff_msg, dropped, changed = _write_diff(body, stored)
+                    prefix = (f"NEW succeeded (location {new_id}) — " if verb == "NEW"
+                              else "MODIFY succeeded — ")
+                    # A dropped field means the write "didn't stick" — surface it as
+                    # a warning so the operator sees it in the log and results file.
+                    status = "warning" if dropped else "success"
+                    item = {"name": label, "status": status,
+                            "message": prefix + diff_msg, "locationId": new_id,
+                            "dropped": dropped, "changed": changed}
             else:
                 detail = _error_detail(response)
                 item = {"name": label, "status": "error",
