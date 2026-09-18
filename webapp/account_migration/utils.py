@@ -1,13 +1,62 @@
 import io
 import json
 import zipfile
+import threading
+import contextvars
+import logging
 import pandas as pd
 import time
 import requests
 from webapp.rc_api import rc_api_call
 from webapp import task_control
 
+logger = logging.getLogger(__name__)
+
 migration_progress_store = {}
+
+
+# ---------------------------------------------------------------------------
+# Self-healing auth for long-running migration jobs (export / audit / import).
+#
+# Every RC call goes through safe_rc_api_call with an explicit token captured
+# once at request time. On a large account the job runs long enough for the SM
+# bridge token to expire mid-run — previously that surfaced as a hard failure
+# (or silently dropped data). A background job now installs a _MigCaller in this
+# ContextVar; safe_rc_api_call then uses its live token and re-mints the bridge
+# in place on a 401, serialised behind a lock so concurrent work never mints two
+# bridges at once (RingCentral rotates refresh tokens, so a double refresh would
+# invalidate the other).
+# ---------------------------------------------------------------------------
+_mig_ctx = contextvars.ContextVar("account_migration_auth", default=None)
+
+
+class _MigCaller:
+    def __init__(self, auth_data):
+        self.auth = auth_data
+        self._lock = threading.Lock()
+
+    @property
+    def token(self):
+        return self.auth.get("access_token")
+
+    def heal(self, used_token):
+        """Re-mint the bridge token in place. De-duplicated: if another thread
+        already refreshed while we waited for the lock, reuse that token."""
+        with self._lock:
+            if self.auth.get("access_token") != used_token:
+                return True
+            try:
+                from webapp.deskphone_ring_time.utils import _heal_bg_token
+                return bool(_heal_bg_token(self.auth))
+            except Exception:
+                logger.exception("[account_migration] token heal failed")
+                return False
+
+
+def _mig_token(fallback=None):
+    """Live bridge token from the active job, or the caller's fallback token."""
+    caller = _mig_ctx.get()
+    return caller.token if caller is not None else fallback
 
 
 def _stopped_and_marked(task_id):
@@ -25,16 +74,18 @@ def _stopped_and_marked(task_id):
     return True
 
 def update_progress(task_id, current, total, message, status='running'):
-    # Preserve any accumulated per-item results across progress updates, since
-    # this replaces the whole store entry on every call.
-    existing = migration_progress_store.get(task_id, {})
-    migration_progress_store[task_id] = {
-        'current': current,
-        'total': total,
-        'message': message,
-        'status': status,
-        'results': existing.get('results', [])
-    }
+    # Update in place so accumulated per-item results AND any extra keys set by
+    # the background runners (account_name, file_data, download_name, kind, …)
+    # survive across progress updates.
+    entry = migration_progress_store.get(task_id)
+    if entry is None:
+        entry = {'results': []}
+        migration_progress_store[task_id] = entry
+    entry['current'] = current
+    entry['total'] = total
+    entry['message'] = message
+    entry['status'] = status
+    entry.setdefault('results', [])
 
 def add_result(task_id, category, item, status, detail=''):
     """Append a per-item outcome to the downloadable result listing."""
@@ -50,22 +101,39 @@ def add_result(task_id, category, item, status, detail=''):
 
 def safe_rc_api_call(endpoint, task_id=None, method='GET', token=None, json_payload=None, data=None, files=None, params=None, raise_error=True):
     """Wrapper around rc_api_call that explicitly handles 429 Rate Limits and 403s."""
-    max_retries = 20 
-    
+    max_retries = 20
+    healed = False  # allow one bridge re-mint per call on a 401
+
     for attempt in range(max_retries):
+        # In a background job the live (self-healing) token wins over the token
+        # captured at request time; outside a job this is just the passed token.
+        call_token = _mig_token(fallback=token)
         resp = rc_api_call(
-            endpoint, 
-            method=method, 
-            token=token, 
-            json=json_payload, 
-            data=data, 
-            files=files, 
-            params=params, 
-            return_response=True 
+            endpoint,
+            method=method,
+            token=call_token,
+            json=json_payload,
+            data=data,
+            files=files,
+            params=params,
+            return_response=True
         )
-        
+
         status_code = getattr(resp, 'status_code', 500)
-        
+
+        # 401 → the bridge token expired mid-run. Re-mint once and retry.
+        caller = _mig_ctx.get()
+        if status_code == 401 and caller is not None and not healed:
+            healed = True
+            if caller.heal(call_token):
+                if task_id and task_id in migration_progress_store:
+                    entry = migration_progress_store[task_id]
+                    clean = entry['message'].split(" (⏳")[0]
+                    update_progress(task_id, entry['current'], entry['total'],
+                                    f"{clean} (⏳ bridge refreshed — resuming…)")
+                continue
+            # heal failed → fall through to normal error handling below
+
         # Explicit 429 Handling
         if status_code == 429:
             retry_after = 60
@@ -112,7 +180,9 @@ def safe_rc_api_call(endpoint, task_id=None, method='GET', token=None, json_payl
     raise Exception(f"Max retries exhausted due to rate limits on {endpoint}")
 
 def download_audio_content(audio_uri, token, task_id=None):
-    headers = {"Authorization": f"Bearer {token}"}
+    # Prefer the live (self-healing) job token so a long export whose bridge was
+    # re-minted mid-run keeps fetching audio with the fresh token.
+    headers = {"Authorization": f"Bearer {_mig_token(fallback=token)}"}
     
     for _ in range(10):
         response = requests.get(audio_uri, headers=headers)
@@ -320,6 +390,7 @@ def run_account_export(task_id, unbind_devices=False, token=None):
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         config_data = _collect_config_data(task_id, token=token, zip_file=zip_file, download_audio=True)
+        _set_account_name(task_id, config_data)
         extensions = config_data["extensions_raw"]
         cost_centers = config_data["cost_centers"]
         phone_numbers = config_data["phone_numbers"]
@@ -371,7 +442,9 @@ def run_account_export(task_id, unbind_devices=False, token=None):
                 pd.DataFrame(flatten_dict_for_excel(config_data["custom_audio_map"])).to_excel(writer, sheet_name="Audio Mappings", index=False)
         zip_file.writestr("Account_Audit.xlsx", excel_buffer.getvalue())
 
-    update_progress(task_id, 100, 100, "Export Complete! ZIP file downloading...", status='completed')
+    # Non-terminal: the background runner marks 'completed' only after the ZIP is
+    # stored, so a status poll can't report done before the file is downloadable.
+    update_progress(task_id, 98, 100, "Finalising export…")
     zip_buffer.seek(0)
     return zip_buffer
 
@@ -609,11 +682,145 @@ def run_account_audit(task_id, token=None):
     workbook for reviewing an account at a glance. Read-only — nothing on the
     tenant is changed and no audio is downloaded."""
     config_data = _collect_config_data(task_id, token=token, zip_file=None, download_audio=False)
+    _set_account_name(task_id, config_data)
     update_progress(task_id, 92, 100, "Building reader-friendly audit workbook...")
     excel_buffer = _build_audit_workbook(config_data)
-    update_progress(task_id, 100, 100, "Audit complete! Workbook downloading...", status='completed')
+    # Non-terminal: the background runner marks 'completed' after the workbook is
+    # stored (see run_audit_background), so the poll never reports done early.
+    update_progress(task_id, 98, 100, "Finalising audit…")
     excel_buffer.seek(0)
     return excel_buffer
+
+
+# --- BACKGROUND RUNNERS + DURABLE STORAGE -----------------------------------
+# Export and Audit now run in a daemon thread (Import already did) so a large
+# account can't overrun the Cloud Run request timeout, and the SM bridge is kept
+# alive by the self-healing _MigCaller for the whole run. Each finished artifact
+# is persisted (GCS + Firestore index) for later retrieval.
+
+def _set_account_name(task_id, config_data):
+    """Stash the account name on the progress entry for status + storage labels."""
+    info = (config_data or {}).get("account_info") or {}
+    name = info.get("name") or ""
+    entry = migration_progress_store.get(task_id)
+    if entry is not None and name:
+        entry["account_name"] = name
+
+
+def _run_with_auth(app, task_id, auth_data, fn):
+    """Run fn() inside an app context with a self-healing auth holder installed,
+    so RC calls resolve config and re-mint the bridge token without a session."""
+    token_ctx = None
+    try:
+        with app.app_context():
+            token_ctx = _mig_ctx.set(_MigCaller(auth_data))
+            return fn()
+    finally:
+        if token_ctx is not None:
+            _mig_ctx.reset(token_ctx)
+
+
+def run_export_background(app, task_id, unbind_devices, auth_data, user_email=None):
+    from . import storage
+    try:
+        storage.record_status(task_id, "running", kind="export", user_email=user_email)
+
+        def _do():
+            buf = run_account_export(task_id, unbind_devices, auth_data.get("access_token"))
+            data = buf.getvalue()
+            entry = migration_progress_store.get(task_id, {})
+            fname = f"RC_Migration_Export_{int(time.time())}.zip"
+            entry["file_data"] = data
+            entry["download_name"] = fname
+            entry["content_type"] = "application/zip"
+            entry["kind"] = "export"
+            migration_progress_store[task_id] = entry
+            storage.save_result(task_id, "export", data, fname, "application/zip",
+                                user_email, account_name=entry.get("account_name"))
+            # Now that the file is downloadable, signal completion.
+            update_progress(task_id, 100, 100, "Export complete! Downloading…",
+                            status="completed")
+        _run_with_auth(app, task_id, auth_data, _do)
+    except Exception as e:
+        logger.exception("[account_migration] export failed")
+        update_progress(task_id, 0, 100, f"Export Error: {e}", status="error")
+        try:
+            storage.record_status(task_id, "error", kind="export",
+                                  user_email=user_email, error=str(e))
+        except Exception:
+            pass
+
+
+def run_audit_background(app, task_id, auth_data, user_email=None):
+    from . import storage
+    try:
+        storage.record_status(task_id, "running", kind="audit", user_email=user_email)
+
+        def _do():
+            buf = run_account_audit(task_id, auth_data.get("access_token"))
+            data = buf.getvalue()
+            entry = migration_progress_store.get(task_id, {})
+            fname = f"RC_Account_Audit_{int(time.time())}.xlsx"
+            ctype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            entry["file_data"] = data
+            entry["download_name"] = fname
+            entry["content_type"] = ctype
+            entry["kind"] = "audit"
+            migration_progress_store[task_id] = entry
+            storage.save_result(task_id, "audit", data, fname, ctype,
+                                user_email, account_name=entry.get("account_name"))
+            update_progress(task_id, 100, 100, "Audit complete! Downloading…",
+                            status="completed")
+        _run_with_auth(app, task_id, auth_data, _do)
+    except Exception as e:
+        logger.exception("[account_migration] audit failed")
+        update_progress(task_id, 0, 100, f"Audit Error: {e}", status="error")
+        try:
+            storage.record_status(task_id, "error", kind="audit",
+                                  user_email=user_email, error=str(e))
+        except Exception:
+            pass
+
+
+def _build_results_workbook(results):
+    """Build an xlsx from a run's per-item results (Category/Item/Status/Detail)."""
+    buf = io.BytesIO()
+    rows = results or [{"Category": "—", "Item": "No results recorded",
+                        "Status": "—", "Detail": ""}]
+    with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Results", index=False)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _persist_import_log(task_id, account_name, user_email):
+    """Save the import's results log to durable storage for later audit."""
+    from . import storage
+    try:
+        entry = migration_progress_store.get(task_id) or {}
+        data = _build_results_workbook(entry.get("results"))
+        fname = f"RC_Import_Results_{int(time.time())}.xlsx"
+        ctype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        entry["file_data"] = data
+        entry["download_name"] = fname
+        entry["content_type"] = ctype
+        entry["kind"] = "import"
+        migration_progress_store[task_id] = entry
+        storage.save_result(task_id, "import", data, fname, ctype,
+                            user_email, account_name=account_name)
+    except Exception:
+        logger.exception("[account_migration] import log persist failed")
+
+
+def run_import_background(app, task_id, zip_bytes, auth_data, user_email=None):
+    """Run the account import under an app context + self-healing auth holder,
+    then persist its results log for later audit retrieval. run_account_import
+    owns its own status/error handling and cancel-flag clearing."""
+    def _do():
+        run_account_import(task_id, zip_bytes, auth_data.get("access_token"))
+    _run_with_auth(app, task_id, auth_data, _do)
+    entry = migration_progress_store.get(task_id) or {}
+    _persist_import_log(task_id, entry.get("account_name"), user_email)
 
 
 # --- IMPORT HELPERS ---
@@ -664,6 +871,7 @@ def run_account_import(task_id, zip_bytes, token=None):
                 return
 
             config = json.loads(zip_ref.read("config.json"))
+            _set_account_name(task_id, config)  # source account, for the log label
             audio_map = config.get("custom_audio_map", [])
             detailed_exts = config.get("detailed_extensions", {})
 
