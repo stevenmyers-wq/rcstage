@@ -242,7 +242,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const logProgress = (msg, type = 'info') => {
         const entry = document.createElement('div');
-        entry.className = type === 'error' ? 'text-rose-400 font-bold' : (type === 'success' ? 'text-emerald-400 font-bold' : 'text-slate-400');
+        const cls = {
+            error: 'text-rose-400 font-bold',
+            success: 'text-emerald-400 font-bold',
+            warning: 'text-amber-300 font-bold',
+        }[type] || 'text-slate-400';
+        entry.className = cls;
         entry.innerText = `> ${msg}`;
         progressLog.appendChild(entry);
         progressLog.scrollTop = progressLog.scrollHeight;
@@ -525,7 +530,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             progressTitle.textContent = `Updating RingCentral… (${chunk.current} / ${chunk.total})`;
                         }
                         const r = chunk.result;
-                        if (r) logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, r.status === 'success' ? 'success' : (r.status === 'error' ? 'error' : 'info'));
+                        if (r) {
+                            const logType = { success: 'success', error: 'error', warning: 'warning' }[r.status] || 'info';
+                            logProgress(`[${r.status.toUpperCase()}] ${r.name}: ${r.message}`, logType);
+                        }
                         break;
                     }
                     case 'done': results = chunk.results || results; break;
@@ -537,22 +545,29 @@ document.addEventListener('DOMContentLoaded', () => {
             progressBar.style.width = '100%';
             const cancelled = results.some(r => r.status === 'cancelled');
             const errors = results.filter(r => r.status === 'error').length;
+            const warnings = results.filter(r => r.status === 'warning').length;
 
+            const statusLabel = { success: 'Success', warning: 'Applied — fields dropped', cancelled: 'Cancelled', error: 'Failed' };
             setResultData(results.map(r => ({
                 'Location': r.name,
-                'Status': r.status === 'success' ? 'Success' : (r.status === 'cancelled' ? 'Cancelled' : 'Failed'),
+                'Status': statusLabel[r.status] || r.status,
                 'Location ID': r.locationId || '',
+                'Fields that did NOT stick': (r.dropped || []).join('; '),
+                'RC normalised': (r.changed || []).join('; '),
                 'Detail': r.message
             })));
 
             if (cancelled) {
                 progressTitle.textContent = `Stopped${errors ? ` (${errors} error(s))` : ''}`;
                 progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
-            } else if (errors === 0) {
+            } else if (errors === 0 && warnings === 0) {
                 progressTitle.textContent = 'Update Successful';
                 progressBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-300';
+            } else if (errors === 0) {
+                progressTitle.textContent = `Applied — ${warnings} with dropped field(s)`;
+                progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
             } else {
-                progressTitle.textContent = `Completed with ${errors} Error(s)`;
+                progressTitle.textContent = `Completed with ${errors} Error(s)${warnings ? `, ${warnings} warning(s)` : ''}`;
                 progressBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-300';
             }
             logProgress('Fetch locations again to verify the applied changes.', 'info');
