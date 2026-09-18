@@ -292,25 +292,25 @@ def _create_role(body):
     return put_resp, None
 
 
-def _diff_message(action, sent_ids, stored_ids, assignable_universe):
+def _diff_message(action, sent_ids, stored_ids):
     """Human-readable diagnostic comparing what we sent vs what RC stored.
 
-    Restricts the applied/dropped comparison to assignable permissions (RC also
-    manages a baseline of non-assignable permissions in the stored set).
+    RingCentral auto-adds dependency and baseline permissions, so the stored
+    total is normally larger than what we requested — that is expected, not a
+    failure. What matters is that every requested permission was applied.
     """
     sent = set(sent_ids)
     if stored_ids is None:
-        return f"{action} succeeded — sent {len(sent)} permissions (RC did not return the stored set)."
-    stored_assignable = stored_ids & assignable_universe
+        return f"{action} succeeded — {len(sent)} permissions requested (RC did not return the stored set)."
     applied = sent & stored_ids
     dropped = sent - stored_ids
-    added = stored_assignable - sent
-    msg = (f"{action} succeeded — sent {len(sent)}, RC kept {len(applied)}, "
-           f"dropped {len(dropped)}, added {len(added)} assignable "
-           f"(+{len(stored_ids) - len(stored_assignable)} baseline).")
+    auto_added = len(stored_ids) - len(applied)
+    msg = (f"{action} succeeded — {len(applied)}/{len(sent)} requested permissions applied; "
+           f"RC auto-added {auto_added} dependency/baseline permissions "
+           f"({len(stored_ids)} total on the role).")
     if dropped:
         sample = ", ".join(sorted(dropped)[:8])
-        msg += f" Dropped: {sample}{'…' if len(dropped) > 8 else ''}."
+        msg += f" NOT applied: {sample}{'…' if len(dropped) > 8 else ''}."
     return msg
 
 
@@ -328,7 +328,6 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
     yield {"type": "start", "total": total,
            "message": f"Applying {total} role change{'' if total == 1 else 's'}…"}
     results = []
-    assignable_universe = _permission_metadata()['assignable']
 
     for i, record in enumerate(records):
         # Cooperative stop: roles already written stand; the rest are skipped.
@@ -368,11 +367,13 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
 
             if response is not None and getattr(response, 'ok', False):
                 item = {"name": name, "status": "success",
-                        "message": _diff_message(action, sent_ids, stored, assignable_universe)}
+                        "message": _diff_message(action, sent_ids, stored)}
                 if stored is not None:
-                    # Attach the id sets for the downloadable results detail.
+                    # Attach detail for the downloadable results: requested perms
+                    # that RC did NOT apply, and the dependency/baseline perms it
+                    # auto-added.
                     item["dropped"] = sorted(set(sent_ids) - stored)
-                    item["added"] = sorted((stored & assignable_universe) - set(sent_ids))
+                    item["added"] = sorted(stored - set(sent_ids))
             else:
                 detail = _error_detail(response)
                 item = {"name": name, "status": "error",

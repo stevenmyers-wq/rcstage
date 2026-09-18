@@ -554,8 +554,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Role': r.name,
                 'Status': r.status === 'success' ? 'Success' : (r.status === 'cancelled' ? 'Cancelled' : 'Failed'),
                 'Detail': r.message,
-                'Dropped by RC': (r.dropped || []).join(', '),
-                'Auto-added by RC': (r.added || []).join(', ')
+                'Requested but NOT applied': (r.dropped || []).join(', '),
+                'Auto-added by RC (dependencies)': (r.added || []).join(', ')
             })));
 
             if (cancelled) {
