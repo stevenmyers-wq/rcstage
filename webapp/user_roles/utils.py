@@ -164,11 +164,10 @@ def fetch_roles(category='all'):
     rows = []
     for i, summary in enumerate(role_summaries):
         role_id = summary.get('id')
-        # The detail call carries the permissions array; advancedPermissions=true
-        # makes RC include permissionsCapabilities so we can read the enabled flag.
-        detail = rc_api_call(
-            f"/restapi/v1.0/account/~/user-role/{role_id}?advancedPermissions=true"
-        ) or {}
+        # Simple view: the permissions array lists the granted permissions
+        # (presence = granted). advancedPermissions=true instead returns the full
+        # ~179-permission catalog without an enabled flag, which is not useful.
+        detail = rc_api_call(f"/restapi/v1.0/account/~/user-role/{role_id}") or {}
         if 'errorCode' in detail or not detail:
             detail = summary  # fall back to the summary so the row still appears
 
@@ -226,15 +225,10 @@ def _permissions_from_row(record, permission_columns):
             continue
         value = str(record.get(pid, "")).strip().lower()
         if value in ("x", "true", "1", "yes", "y", "✓"):
-            # Only set `enabled` — it is the grant flag. manageEnabled/grantEnabled
-            # are not valid on every permission (e.g. a permission that cannot be
-            # granted onward), and setting them makes RC reject the whole array
-            # with "permissionCapabilities value is invalid". RC applies its own
-            # defaults for the manage/grant sub-capabilities.
-            permissions.append({
-                "id": pid,
-                "permissionsCapabilities": {"enabled": True},
-            })
+            # This account's role model uses the simple representation: a granted
+            # permission is just {"id": ...}. Sending permissionsCapabilities makes
+            # RC reject the array ("permissionCapabilities value is invalid").
+            permissions.append({"id": pid})
     return permissions
 
 
@@ -275,8 +269,7 @@ def _create_role(body):
 
     Returns (final_response, stored_permission_ids | None).
     """
-    adv = {"advancedPermissions": "true"}
-    create_resp = rc_api_call("/restapi/v1.0/account/~/user-role", params=adv,
+    create_resp = rc_api_call("/restapi/v1.0/account/~/user-role",
                               method="POST", json=body, return_response=True)
     if create_resp is None or not getattr(create_resp, 'ok', False):
         return create_resp, None
@@ -291,7 +284,7 @@ def _create_role(body):
     if not new_id or not body.get('permissions'):
         return create_resp, _stored_permission_ids(create_resp)
 
-    put_resp = rc_api_call(f"/restapi/v1.0/account/~/user-role/{new_id}", params=adv,
+    put_resp = rc_api_call(f"/restapi/v1.0/account/~/user-role/{new_id}",
                            method="PUT", json=body, return_response=True)
     if put_resp is not None and getattr(put_resp, 'ok', False):
         return put_resp, _stored_permission_ids(put_resp)
@@ -368,8 +361,7 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
                 if str(record.get("Custom", "")).strip().lower() == "false":
                     raise ValueError("Predefined roles are read-only and cannot be modified.")
                 endpoint = f"/restapi/v1.0/account/~/user-role/{role_id}"
-                response = rc_api_call(endpoint, params={"advancedPermissions": "true"},
-                                       method="PUT", json=body, return_response=True)
+                response = rc_api_call(endpoint, method="PUT", json=body, return_response=True)
                 stored = _stored_permission_ids(response) if getattr(response, 'ok', False) else None
             else:  # NEW
                 response, stored = _create_role(body)
