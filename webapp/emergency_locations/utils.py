@@ -267,19 +267,23 @@ def fetch_raw_examples(location_id=None, limit=3):
 
 # Candidate RC dictionary endpoints to probe for the enums behind an ERL's coded
 # fields (addressFormatId, streetType, stateId, countryId). RingCentral's docs
-# are not reachable from this environment, so rather than hard-code a guess we
-# hit each candidate live and report which respond — the ones that return data
-# are the real dictionaries to build on. Add more here as we learn them.
+# are not reachable from this environment, so we hit each candidate live and
+# report which respond.
+#
+# Probed live (see misc/1234): only /dictionary/country and /dictionary/state
+# return data. /dictionary/location exists but requires a stateId. Every
+# address-format / street-type / emergency-address candidate returned 404 —
+# RingCentral exposes NO dictionary for address formats or street types, so the
+# only source for those codes is what is already in use on the account (see the
+# 'streettype' aggregation below). The 404 candidates are kept here, commented,
+# as a record of what was checked; the raw-path box covers any future guess.
 DICTIONARY_PROBE_ENDPOINTS = [
     "/restapi/v1.0/dictionary/country?perPage=1000",
     "/restapi/v1.0/dictionary/state?perPage=1000",
     "/restapi/v1.0/dictionary/location",
-    "/restapi/v1.0/dictionary/emergency-address-format",
-    "/restapi/v1.0/dictionary/address-format",
-    "/restapi/v1.0/dictionary/street-type",
-    "/restapi/v1.0/dictionary/emergency-location",
-    "/restapi/v1.0/dictionary/emergency-address",
-    "/restapi/v1.0/account/~/emergency-address-auto-update/settings",
+    # 404 (confirmed absent): dictionary/emergency-address-format,
+    # dictionary/address-format, dictionary/street-type,
+    # dictionary/emergency-address, account/~/emergency-address-auto-update/settings
 ]
 
 
@@ -353,7 +357,10 @@ def explore_dictionary(kind=None, country_id=None, path=None):
         return {"mode": "state", "countryId": str(country_id), "records": _dict_records(ep)}
 
     if kind == "streettype":
-        # Aggregate the codes RC currently accepts, straight from live ERLs.
+        # RC has no address-format / street-type dictionary (all 404 on probe),
+        # so aggregate the codes and field shapes RC currently accepts straight
+        # from live ERLs, grouped by country + addressFormatId. This is the
+        # authoritative "what do I put in the sheet for this country" answer.
         groups = {}
         for rec in _get_all_records(ERL_ENDPOINT):
             addr = rec.get("address") or {}
@@ -364,9 +371,13 @@ def explore_dictionary(kind=None, country_id=None, path=None):
                 "addressFormatStatus": rec.get("addressFormatStatus"),
                 "streetTypes": set(),
                 "hasBuildingNumber": False,
+                # Union of address field names seen for this format, so the
+                # operator knows exactly which Address.* columns to fill.
+                "addressFields": set(),
                 "count": 0,
             })
             g["count"] += 1
+            g["addressFields"].update(k for k in addr.keys())
             if addr.get("streetType"):
                 g["streetTypes"].add(str(addr["streetType"]))
             if addr.get("buildingNumber"):
@@ -374,7 +385,16 @@ def explore_dictionary(kind=None, country_id=None, path=None):
         # sets aren't JSON serialisable — sort to lists
         for g in groups.values():
             g["streetTypes"] = sorted(g["streetTypes"])
-        return {"mode": "streettype", "groups": list(groups.values())}
+            g["addressFields"] = sorted(g["addressFields"])
+        # Prefer 'Actual' (current) formats first, then by country.
+        ordered = sorted(groups.values(),
+                         key=lambda g: (g["country"] or "", g["addressFormatStatus"] != "Actual"))
+        return {"mode": "streettype",
+                "note": ("RingCentral exposes no dictionary for address formats or "
+                         "street types; these are the codes/fields in use on this "
+                         "account. Prefer an 'Actual' format; copy an existing "
+                         "same-country row as a template."),
+                "groups": ordered}
 
     if kind == "probe":
         results = []
