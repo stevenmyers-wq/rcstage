@@ -1,597 +1,338 @@
-Post response
-
 {
-  "ok": true,
-  "request": {
-    "body": {
-      "description": "debug test",
-      "displayName": "ZZ Debug Role",
-      "permissions": [
-        {
-          "id": "ReadCompanyInfo"
+  "details": [
+    {
+      "detail": {
+        "address": {
+          "city": "Auckland",
+          "country": "NZ",
+          "countryId": "160",
+          "countryName": "New Zealand",
+          "customerName": "NZ Site",
+          "state": "1",
+          "street": "1234 something street",
+          "zip": "0645"
         },
-        {
-          "id": "ReadUserInfo"
+        "addressFormatId": "174",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "86708124",
+        "name": "nz",
+        "site": {
+          "id": "663130124",
+          "name": "NZ Test 1"
         },
-        {
-          "id": "Groups"
-        }
-      ],
-      "scope": "Self"
+        "usageStatus": "Inactive",
+        "visibility": "Public"
+      },
+      "id": "86708124"
     },
-    "method": "POST",
-    "path": "/restapi/v1.0/account/~/user-role"
-  },
-  "response": {
-    "custom": true,
-    "description": "debug test",
-    "displayName": "ZZ Debug Role",
-    "hidden": false,
-    "id": "7734124",
-    "lastUpdated": "2026-09-18T12:11:11.000Z",
-    "permissions": [
+    {
+      "detail": {
+        "address": {
+          "city": "Redbank Plains",
+          "country": "AU",
+          "countryId": "15",
+          "countryName": "Australia",
+          "customerName": "RingCentral, Inc",
+          "state": "QLD",
+          "stateId": "771",
+          "stateName": "Queensland",
+          "street": "189 Henty Drive",
+          "zip": "4301"
+        },
+        "addressFormatId": "33",
+        "addressFormatStatus": "Outdated",
+        "addressStatus": "Valid",
+        "id": "113436124",
+        "name": "Test",
+        "site": {
+          "id": "main-site",
+          "name": "Main Site"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
+      },
+      "id": "113436124"
+    },
+    {
+      "detail": {
+        "address": {
+          "city": "BELMONT",
+          "country": "US",
+          "countryId": "1",
+          "countryName": "United States",
+          "customerName": "Central Perk",
+          "state": "CA",
+          "stateId": "16",
+          "stateName": "California",
+          "street": "20 DAVIS DR",
+          "street2": "#1000",
+          "zip": "94002"
+        },
+        "addressFormatId": "19",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "53729125",
+        "name": "Central Perk",
+        "site": {
+          "id": "505345125",
+          "name": "Central Perk"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
+      },
+      "id": "53729125"
+    }
+  ],
+  "list": {
+    "navigation": {
+      "firstPage": {
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/account/281658124/emergency-locations?orderBy=%2Baddress&page=1&perPage=100"
+      },
+      "lastPage": {
+        "uri": "https://platform.ringcentral.com/restapi/v1.0/account/281658124/emergency-locations?orderBy=%2Baddress&page=1&perPage=100"
+      }
+    },
+    "paging": {
+      "page": 1,
+      "pageEnd": 8,
+      "pageStart": 0,
+      "perPage": 100,
+      "totalElements": 9,
+      "totalPages": 1
+    },
+    "records": [
       {
-        "assignable": false,
-        "id": "EditExtensionGrant",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditExtensionGrant"
+        "address": {
+          "city": "Auckland",
+          "country": "NZ",
+          "countryId": "160",
+          "countryName": "New Zealand",
+          "customerName": "NZ Site",
+          "state": "1",
+          "street": "1234 something street",
+          "zip": "0645"
+        },
+        "addressFormatId": "174",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "86708124",
+        "name": "nz",
+        "site": {
+          "id": "663130124",
+          "name": "NZ Test 1"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "CallQueueToCallQueue",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallQueueToCallQueue"
+        "address": {
+          "city": "Redbank Plains",
+          "country": "AU",
+          "countryId": "15",
+          "countryName": "Australia",
+          "customerName": "RingCentral, Inc",
+          "state": "QLD",
+          "stateId": "771",
+          "stateName": "Queensland",
+          "street": "189 Henty Drive",
+          "zip": "4301"
+        },
+        "addressFormatId": "33",
+        "addressFormatStatus": "Outdated",
+        "addressStatus": "Valid",
+        "id": "113436124",
+        "name": "Test",
+        "site": {
+          "id": "main-site",
+          "name": "Main Site"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "AddRemoveGroups",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemoveGroups"
+        "address": {
+          "city": "BELMONT",
+          "country": "US",
+          "countryId": "1",
+          "countryName": "United States",
+          "customerName": "Central Perk",
+          "state": "CA",
+          "stateId": "16",
+          "stateName": "California",
+          "street": "20 DAVIS DR",
+          "street2": "#1000",
+          "zip": "94002"
+        },
+        "addressFormatId": "19",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "53729125",
+        "name": "Central Perk",
+        "site": {
+          "id": "505345125",
+          "name": "Central Perk"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "EditCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallerIDSettings"
+        "address": {
+          "city": "CHARLOTTE",
+          "country": "US",
+          "countryId": "1",
+          "countryName": "United States",
+          "customerName": "Brooklyn",
+          "state": "NC",
+          "stateId": "45",
+          "stateName": "North Carolina",
+          "street": "200 S COLLEGE ST",
+          "street2": "UNIT 220",
+          "zip": "28202"
+        },
+        "addressFormatId": "19",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "53731125",
+        "name": "Brooklyn",
+        "site": {
+          "id": "505349125",
+          "name": "Brooklyn"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "ReadMessageContent",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessageContent"
+        "address": {
+          "city": "Exeter",
+          "country": "GB",
+          "countryId": "224",
+          "countryName": "United Kingdom",
+          "customerName": "uk test",
+          "street": "46",
+          "street2": "Victoria Road",
+          "zip": "EX3 0EU"
+        },
+        "addressFormatId": "236",
+        "addressFormatStatus": "Outdated",
+        "addressStatus": "Valid",
+        "id": "70563124",
+        "name": "IRL",
+        "site": {
+          "id": "main-site",
+          "name": "Main Site"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": true,
-        "id": "Groups",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Groups"
+        "address": {
+          "city": "MECHANICSBURG",
+          "country": "US",
+          "countryId": "1",
+          "countryName": "United States",
+          "customerName": "Steven Myers",
+          "state": "PA",
+          "stateId": "50",
+          "stateName": "Pennsylvania",
+          "street": "711 GRANTHAM RD",
+          "zip": "17055"
+        },
+        "addressFormatId": "19",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "70562124",
+        "name": "USA",
+        "site": {
+          "id": "main-site",
+          "name": "Main Site"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "ReadMessagesNotificationsSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessagesNotificationsSettings"
+        "address": {
+          "city": "CENTENNIAL",
+          "country": "US",
+          "countryId": "1",
+          "countryName": "United States",
+          "customerName": "Scranton",
+          "state": "CO",
+          "stateId": "17",
+          "stateName": "Colorado",
+          "street": "8005 S CHESTER ST",
+          "street2": "#100",
+          "zip": "80112"
+        },
+        "addressFormatId": "19",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "53730125",
+        "name": "Scranton",
+        "site": {
+          "id": "505348125",
+          "name": "Scranton"
+        },
+        "usageStatus": "Inactive",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "EditMessagesNotificationsSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessagesNotificationsSettings"
+        "address": {
+          "buildingNumber": "190",
+          "city": "Redbank Plains",
+          "country": "AU",
+          "countryId": "15",
+          "countryName": "Australia",
+          "customerName": "Primary",
+          "state": "QLD",
+          "stateId": "771",
+          "stateName": "Queensland",
+          "street": "Henty",
+          "streetType": "Dr",
+          "zip": "4301"
+        },
+        "addressFormatId": "1",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "18086124",
+        "name": "Primary",
+        "site": {
+          "id": "main-site",
+          "name": "Main Site"
+        },
+        "usageStatus": "Active",
+        "visibility": "Public"
       },
       {
-        "assignable": false,
-        "id": "ReadUserAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserAnsweringRules"
-      },
-      {
-        "assignable": true,
-        "id": "AcceptQueueCalls",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AcceptQueueCalls"
-      },
-      {
-        "assignable": false,
-        "id": "EditPresenceStatus",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditPresenceStatus"
-      },
-      {
-        "assignable": true,
-        "id": "ScreeningGreetingHoldMusic",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ScreeningGreetingHoldMusic"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyPhoneNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyPhoneNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPresenceStatus",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPresenceStatus"
-      },
-      {
-        "assignable": true,
-        "id": "VoicemailSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/VoicemailSettings"
-      },
-      {
-        "assignable": true,
-        "id": "CallHandling",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallHandling"
-      },
-      {
-        "assignable": true,
-        "id": "JoinLeaveCallQueue",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/JoinLeaveCallQueue"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserScreeningGreetingSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserScreeningGreetingSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserForwardingFlipNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserForwardingFlipNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserForwardingFlipNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserForwardingFlipNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserHours",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserHours"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallerIDSettings"
-      },
-      {
-        "assignable": true,
-        "id": "EditBlockedNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditBlockedNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserCredentials",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserCredentials"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallInfo"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserAnsweringRules"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadExtensionGrant",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadExtensionGrant"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadAssignedRoles",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadAssignedRoles"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMessages",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessages"
-      },
-      {
-        "assignable": false,
-        "id": "EditMessages",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessages"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPaymentMethod",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPaymentMethod"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserScreeningGreetingSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserScreeningGreetingSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallQueueMembers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallQueueMembers"
-      },
-      {
-        "assignable": true,
-        "id": "UserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadBlockedNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadBlockedNumbers"
+        "address": {
+          "buildingNumber": "53",
+          "city": "Brisbane",
+          "country": "AU",
+          "countryId": "15",
+          "countryName": "Australia",
+          "customerName": "Daina",
+          "state": "QLD",
+          "stateId": "771",
+          "stateName": "Queensland",
+          "street": "Winrock Street",
+          "streetType": "St",
+          "zip": "4069"
+        },
+        "addressFormatId": "1",
+        "addressFormatStatus": "Actual",
+        "addressStatus": "Valid",
+        "id": "40417124",
+        "name": "Home",
+        "site": {
+          "id": "main-site",
+          "name": "Main Site"
+        },
+        "usageStatus": "Active",
+        "visibility": "Public"
       }
     ],
-    "scope": "Self",
-    "siteCompatible": true,
-    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/934660124/user-role/7734124"
+    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/281658124/emergency-locations?orderBy=%2Baddress&page=1&perPage=100"
   },
-  "status": 201
-}
-
-
-
-
-
-
-
-
-get role
-
-
-{
-  "ok": true,
-  "request": {
-    "body": null,
-    "method": "GET",
-    "path": "/restapi/v1.0/account/~/user-role/7734124"
-  },
-  "response": {
-    "custom": true,
-    "description": "debug test",
-    "displayName": "ZZ Debug Role",
-    "hidden": false,
-    "id": "7734124",
-    "lastUpdated": "2026-09-18T12:11:11.000Z",
-    "permissions": [
-      {
-        "assignable": false,
-        "id": "EditExtensionGrant",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditExtensionGrant"
-      },
-      {
-        "assignable": false,
-        "id": "CallQueueToCallQueue",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallQueueToCallQueue"
-      },
-      {
-        "assignable": false,
-        "id": "AddRemoveGroups",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AddRemoveGroups"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallerIDSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMessageContent",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessageContent"
-      },
-      {
-        "assignable": true,
-        "id": "Groups",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/Groups"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMessagesNotificationsSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessagesNotificationsSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditMessagesNotificationsSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessagesNotificationsSettings"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserAnsweringRules"
-      },
-      {
-        "assignable": true,
-        "id": "AcceptQueueCalls",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/AcceptQueueCalls"
-      },
-      {
-        "assignable": false,
-        "id": "EditPresenceStatus",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditPresenceStatus"
-      },
-      {
-        "assignable": true,
-        "id": "ScreeningGreetingHoldMusic",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ScreeningGreetingHoldMusic"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyPhoneNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyPhoneNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPresenceStatus",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPresenceStatus"
-      },
-      {
-        "assignable": true,
-        "id": "VoicemailSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/VoicemailSettings"
-      },
-      {
-        "assignable": true,
-        "id": "CallHandling",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/CallHandling"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserScreeningGreetingSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserScreeningGreetingSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserForwardingFlipNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserForwardingFlipNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserForwardingFlipNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserForwardingFlipNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserHours",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserHours"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCallerIDSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCallerIDSettings"
-      },
-      {
-        "assignable": true,
-        "id": "EditBlockedNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditBlockedNumbers"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserCredentials",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserCredentials"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallInfo"
-      },
-      {
-        "assignable": false,
-        "id": "EditUserAnsweringRules",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditUserAnsweringRules"
-      },
-      {
-        "assignable": false,
-        "id": "ReadCompanyInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadCompanyInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadExtensionGrant",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadExtensionGrant"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadAssignedRoles",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadAssignedRoles"
-      },
-      {
-        "assignable": false,
-        "id": "ReadMessages",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadMessages"
-      },
-      {
-        "assignable": false,
-        "id": "EditMessages",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditMessages"
-      },
-      {
-        "assignable": false,
-        "id": "ReadPaymentMethod",
-        "readOnly": false,
-        "siteCompatible": "Incompatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadPaymentMethod"
-      },
-      {
-        "assignable": false,
-        "id": "ReadUserScreeningGreetingSettings",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadUserScreeningGreetingSettings"
-      },
-      {
-        "assignable": false,
-        "id": "EditCallQueueMembers",
-        "readOnly": false,
-        "siteCompatible": "Compatible",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/EditCallQueueMembers"
-      },
-      {
-        "assignable": true,
-        "id": "UserInfo",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/UserInfo"
-      },
-      {
-        "assignable": false,
-        "id": "ReadBlockedNumbers",
-        "readOnly": false,
-        "siteCompatible": "Independent",
-        "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/permission/ReadBlockedNumbers"
-      }
-    ],
-    "scope": "Self",
-    "siteCompatible": true,
-    "uri": "https://platform.ringcentral.com/restapi/v1.0/account/934660124/user-role/7734124"
-  },
+  "mode": "list",
   "status": 200
 }
