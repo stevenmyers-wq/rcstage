@@ -83,6 +83,15 @@
                 <p class="text-[11px] text-slate-400 leading-snug">Excel captures the raw, audit-grade detail behind the document. Set the Detail Level to <strong>Full</strong> before generating for the most granular workbook.</p>
                 <div id="ab-status" class="text-xs font-semibold text-center text-slate-500 dark:text-slate-400 hidden"></div>
             </div>
+
+            <div id="ab-history-card" class="card !p-6 hidden">
+                <div class="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 class="text-heading text-lg">Recent As-Builts</h3>
+                    <button id="ab-history-refresh" class="text-xs font-bold text-blue-600 hover:text-blue-700">Refresh</button>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-snug mb-3">Documents you generated in the last 7 days. Load one to preview and re-download in any format.</p>
+                <div id="ab-history-list" class="space-y-0"></div>
+            </div>
         </div>
 
         <!-- ===================== RIGHT: PREVIEW ===================== -->

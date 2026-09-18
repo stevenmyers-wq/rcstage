@@ -13,6 +13,9 @@
     const xlsxBtn = document.getElementById('ab-export-xlsx');
     const nameEl = document.getElementById('ab-customer-name');
     const detailEl = document.getElementById('ab-detail-level');
+    const historyCard = document.getElementById('ab-history-card');
+    const historyList = document.getElementById('ab-history-list');
+    const historyRefresh = document.getElementById('ab-history-refresh');
 
     function setStatus(msg, isError) {
         if (!msg) { statusEl.classList.add('hidden'); return; }
@@ -109,6 +112,7 @@
                     setStatus('Document generated. Download below.');
                 }
                 resetGenBtn();
+                loadHistory();  // the new document is now saved — refresh the list
                 return;
             }
             if (data.status === 'error' || (!res.ok && data.success === false)) {
@@ -196,6 +200,81 @@
         }
     }
 
+    // ---- Recent As-Builts (durable storage, 7-day retention) ----------------
+    function fmtWhen(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (isNaN(d)) return '';
+        return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    function renderHistory(items) {
+        historyList.innerHTML = '';
+        if (!items.length) {
+            historyList.innerHTML = '<div class="text-xs text-slate-400 py-2 text-center">No documents in the last 7 days.</div>';
+            return;
+        }
+        items.forEach(it => {
+            const row = document.createElement('div');
+            row.className = 'ab-section-row';
+            const info = document.createElement('div');
+            info.className = 'flex-1 min-w-0';
+            const name = it.customer_name || it.account_name || 'As-Built';
+            info.innerHTML =
+                '<div class="text-sm font-bold text-slate-700 dark:text-slate-200 truncate" title="' + name + '">' + name + '</div>' +
+                '<div class="text-[11px] text-slate-400">' + fmtWhen(it.created_at) + '</div>';
+            const load = document.createElement('button');
+            load.className = 'text-xs font-bold text-blue-600 hover:text-blue-700 shrink-0';
+            load.textContent = 'Load';
+            load.addEventListener('click', () => loadHistoryDoc(it.task_id, load));
+            row.appendChild(info);
+            row.appendChild(load);
+            historyList.appendChild(row);
+        });
+    }
+
+    async function loadHistory() {
+        try {
+            const res = await fetch('/api/as_built/history');
+            const data = await res.json();
+            if (!data.success || !data.enabled) { historyCard.classList.add('hidden'); return; }
+            historyCard.classList.remove('hidden');
+            renderHistory(data.items || []);
+        } catch (e) {
+            historyCard.classList.add('hidden');
+        }
+    }
+
+    async function loadHistoryDoc(taskId, btn) {
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Loading…';
+        setStatus('Loading saved document…');
+        try {
+            const res = await fetch('/api/as_built/history/load?task_id=' + encodeURIComponent(taskId));
+            const data = await res.json();
+            if (res.ok && data.success) {
+                previewEl.innerHTML = data.document;
+                previewEl.classList.remove('hidden');
+                previewEmpty.classList.add('hidden');
+                pdfBtn.disabled = false; wordBtn.disabled = false; xlsxBtn.disabled = false;
+                if (data.section_errors && data.section_errors.length) {
+                    setStatus(data.section_errors.length + ' section(s) had errors — see the document.', true);
+                } else {
+                    setStatus('Loaded saved document. Download below.');
+                }
+            } else {
+                setStatus(data.error || 'Could not load that document.', true);
+                loadHistory();
+            }
+        } catch (e) {
+            setStatus('Network error loading document.', true);
+        } finally {
+            btn.disabled = false; btn.textContent = orig;
+        }
+    }
+
+    if (historyRefresh) historyRefresh.addEventListener('click', loadHistory);
+
     document.getElementById('ab-select-all').addEventListener('click', () => {
         sectionsEl.querySelectorAll('.ab-cb').forEach(cb => { if (!cb.disabled) cb.checked = true; });
     });
@@ -208,4 +287,5 @@
     xlsxBtn.addEventListener('click', () => exportDoc('xlsx'));
 
     loadCatalog();
+    loadHistory();
 })();

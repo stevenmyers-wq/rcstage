@@ -1714,11 +1714,16 @@ def collect_document(selections, progress=None):
 _gen_store = {}
 
 
-def run_generation_background(app, task_id, selections, customer_name, auth_data):
+def run_generation_background(app, task_id, selections, customer_name, auth_data,
+                              user_email=None):
     """Collect + assemble the document in a daemon thread, writing progress and
     the result into _gen_store[task_id]. Wraps the work in an app context (so
     rc_api_call resolves RC_SERVER_URL/config without a request) and installs a
-    self-healing _BgCaller as the token source for the whole run."""
+    self-healing _BgCaller as the token source for the whole run. On completion
+    the result bundle is also persisted to durable storage (GCS + Firestore
+    index) when configured, so it can be retrieved later from any instance."""
+    from . import storage
+
     store = _gen_store.get(task_id)
     if store is None:
         return
@@ -1732,26 +1737,45 @@ def run_generation_background(app, task_id, selections, customer_name, auth_data
                 store["message"] = (f"Collecting {label}… ({done}/{total})"
                                     if done < total else "Assembling document…")
 
+            storage.record_status(task_id, "running", user_email=user_email,
+                                  customer_name=customer_name)
             store["message"] = "Loading account inventory…"
             doc = collect_document(selections, progress=_progress)
             body_html = build_body_html(doc, customer_name or None)
 
+            account_name = doc.get("account_name")
+            resolved_customer = customer_name or account_name or "Customer"
             store["doc"] = doc
             store["body_html"] = body_html
-            store["account_name"] = doc.get("account_name")
-            store["customer_name"] = (customer_name or doc.get("account_name")
-                                      or "Customer")
+            store["account_name"] = account_name
+            store["customer_name"] = resolved_customer
             store["section_errors"] = [
                 {"label": s["label"], "error": s["error"]}
                 for s in doc.get("sections", []) if s.get("error")
             ]
             store["status"] = "completed"
             store["message"] = "Document generated."
+
+            # Persist the raw bundle so any format can be re-exported later.
+            try:
+                storage.save_document(
+                    task_id,
+                    {"schema": 1, "customer_name": resolved_customer,
+                     "body_html": body_html, "doc": doc},
+                    user_email=user_email, account_name=account_name,
+                    customer_name=resolved_customer)
+            except Exception:
+                logger.exception("[as_built] durable save failed (kept in memory)")
     except Exception as e:
         logger.exception("[as_built] background generation failed")
         store["status"] = "error"
         store["error"] = str(e)
         store["message"] = f"Generation failed: {e}"
+        try:
+            storage.record_status(task_id, "error", user_email=user_email,
+                                  error=str(e))
+        except Exception:
+            pass
     finally:
         if token_ctx is not None:
             _bg_ctx.reset(token_ctx)
