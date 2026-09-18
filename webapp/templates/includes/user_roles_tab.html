@@ -45,7 +45,14 @@
 
     <!-- Controls -->
     <div class="flex flex-col gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
-        <div class="flex flex-col sm:flex-row gap-4 w-full">
+        <div class="flex flex-col sm:flex-row gap-4 w-full sm:items-end">
+            <div class="input-wrapper w-full sm:w-64">
+                <label for="ur-category" class="input-label">Roles to fetch</label>
+                <select id="ur-category" class="input-field h-[52px]">
+                    <option value="all">All roles (predefined + custom)</option>
+                    <option value="custom">Custom roles only</option>
+                </select>
+            </div>
             <button id="ur-fetch-btn" class="btn-primary flex-1 !py-3.5 text-base disabled:opacity-50 disabled:cursor-not-allowed">
                 🔎 Fetch Roles
             </button>
@@ -121,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const META_COLUMNS = ["Action", "RoleID", "DisplayName", "Description", "Scope", "Custom", "Editable", "PermissionCount"];
 
     const fetchBtn = document.getElementById('ur-fetch-btn');
+    const categorySelect = document.getElementById('ur-category');
     const downloadBtn = document.getElementById('ur-download-btn');
     const fileInput = document.getElementById('ur-file-input');
     const applyBtn = document.getElementById('ur-apply-btn');
@@ -301,14 +309,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Fetch (audit) ---
     fetchBtn.addEventListener('click', async () => {
+        const category = categorySelect ? categorySelect.value : 'all';
+        const scopeLabel = category === 'custom' ? 'custom roles' : 'roles';
         fetchBtn.disabled = true;
         downloadBtn.disabled = true;
         countBadge.textContent = 'Loading…';
         countBadge.className = 'badge badge-info px-3 py-1';
-        tbody.innerHTML = `<tr><td class="py-20 text-center text-slate-400 font-medium italic"><div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div>Fetching roles…</td></tr>`;
-        AP.start('Fetching roles…');
+        tbody.innerHTML = `<tr><td class="py-20 text-center text-slate-400 font-medium italic"><div class="spinner border-slate-400 w-6 h-6 mx-auto mb-4"></div>Fetching ${scopeLabel}…</td></tr>`;
+        AP.start(`Fetching ${scopeLabel}…`);
         try {
-            const response = await fetch('/api/user_roles/roles');
+            const response = await fetch(`/api/user_roles/roles?category=${encodeURIComponent(category)}`);
             if (!response.ok) {
                 let msg = `HTTP ${response.status}`;
                 try { msg = (await response.json()).error || msg; } catch (e) {}
