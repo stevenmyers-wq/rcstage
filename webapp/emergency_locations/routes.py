@@ -87,6 +87,27 @@ def get_dictionary():
         return jsonify({"error": "An internal error occurred while exploring the dictionary."}), 500
 
 
+@emergency_locations_bp.route('/test-write', methods=['POST'])
+@require_rc_token
+def test_write():
+    """DEBUG: send one exact body to the ERL endpoint and return the round-trip.
+
+    Body: {"body": {...RC location body...}, "locationId": "optional — PUT if set,
+    POST (create) if omitted"}. Use to iterate on the exact structured-address
+    body that makes buildingNumber / streetType persist.
+    """
+    data = request.get_json(silent=True) or {}
+    body = data.get('body')
+    location_id = (data.get('locationId') or '').strip() or None
+    if not isinstance(body, dict) or not body:
+        return jsonify({"error": "Request must include a non-empty 'body' object."}), 400
+    try:
+        return jsonify(utils.test_write(body, location_id=location_id))
+    except Exception as e:
+        print(f"Error during ERL test write: {e}")
+        return jsonify({"error": "An internal error occurred during the test write."}), 500
+
+
 @emergency_locations_bp.route('/upload', methods=['POST'])
 @require_rc_token
 @track_usage('Emergency Locations')

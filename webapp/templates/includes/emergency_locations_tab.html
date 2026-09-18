@@ -81,6 +81,40 @@
         <pre id="el-dict-output" class="hidden mt-4 max-h-96 overflow-auto bg-slate-900 dark:bg-[#0b1120] text-sky-200 text-xs font-mono p-4 rounded-xl shadow-inner"></pre>
     </details>
 
+    <!-- Debug: raw test write (iterate on the exact body that sticks) -->
+    <details class="card !p-5 bg-rose-50/50 dark:bg-rose-900/10 border-rose-100 dark:border-rose-800/50 shadow-sm">
+        <summary class="cursor-pointer text-heading text-base text-rose-900 dark:text-rose-100">🧪 Debug — raw test write (find the body that sticks)</summary>
+        <p class="text-slate-600 dark:text-slate-400 text-sm font-medium mt-2 mb-3"><strong>Writes to RingCentral.</strong> Sends the exact JSON body below to the emergency-locations endpoint and shows RC's raw response plus a fresh read-back — so we can pin down why <code>buildingNumber</code>/<code>streetType</code> don't persist. Leave the ID blank to <strong>POST</strong> (create a new location); set an ID to <strong>PUT</strong> (modify). Edit the body freely; the default is a structured AU (addressFormatId 1) example — change <code>site.id</code> to a real site first.</p>
+        <div class="input-wrapper w-full sm:w-72 mb-3">
+            <label for="el-tw-id" class="input-label">Location ID (blank = create new)</label>
+            <input type="text" id="el-tw-id" class="input-field h-[42px] font-mono" placeholder="blank = POST (new)">
+        </div>
+        <textarea id="el-tw-body" rows="16" class="input-field font-mono text-xs w-full" spellcheck="false">{
+  "name": "TEST ERL - delete me",
+  "visibility": "Private",
+  "site": { "id": "main-site" },
+  "addressFormatId": "1",
+  "address": {
+    "country": "AU",
+    "countryId": "15",
+    "state": "QLD",
+    "stateId": "771",
+    "stateName": "Queensland",
+    "city": "Redbank Plains",
+    "zip": "4301",
+    "buildingNumber": "190",
+    "street": "Henty",
+    "streetType": "Dr",
+    "customerName": "Test"
+  }
+}</textarea>
+        <div class="flex flex-wrap gap-2 mt-3">
+            <button id="el-tw-post" class="btn-secondary !py-2 px-4 text-sm !text-rose-700 dark:!text-rose-300 !border-rose-300 dark:!border-rose-800">▶ Send as written (POST/PUT)</button>
+            <button id="el-tw-reset" class="btn-secondary !py-2 px-4 text-sm">↺ Reset body</button>
+        </div>
+        <pre id="el-tw-output" class="hidden mt-4 max-h-96 overflow-auto bg-slate-900 dark:bg-[#0b1120] text-rose-200 text-xs font-mono p-4 rounded-xl shadow-inner"></pre>
+    </details>
+
     <!-- Controls -->
     <div class="flex flex-col gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
         <div class="flex flex-col sm:flex-row gap-4 w-full sm:items-end">
@@ -358,6 +392,47 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = dictPathInput.value.trim();
         if (!p) { alert('Enter a /restapi/… path.'); return; }
         runDictQuery(`path=${encodeURIComponent(p)}`, [dictPathBtn]);
+    });
+
+    // --- Debug: raw test write ---
+    const twBody = document.getElementById('el-tw-body');
+    const twId = document.getElementById('el-tw-id');
+    const twPost = document.getElementById('el-tw-post');
+    const twReset = document.getElementById('el-tw-reset');
+    const twOutput = document.getElementById('el-tw-output');
+    const twDefault = twBody ? twBody.value : '';
+
+    if (twReset) twReset.addEventListener('click', () => { twBody.value = twDefault; });
+
+    if (twPost) twPost.addEventListener('click', async () => {
+        let parsed;
+        try {
+            parsed = JSON.parse(twBody.value);
+        } catch (e) {
+            twOutput.classList.remove('hidden');
+            twOutput.textContent = 'Body is not valid JSON: ' + e.message;
+            return;
+        }
+        const id = twId.value.trim();
+        const verb = id ? 'PUT (modify)' : 'POST (create)';
+        if (!confirm(`This WRITES to RingCentral (${verb}). Continue?`)) return;
+        twPost.disabled = true;
+        twOutput.classList.remove('hidden');
+        twOutput.textContent = 'Sending…';
+        try {
+            const res = await fetch('/api/emergency_locations/test-write', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body: parsed, locationId: id })
+            });
+            const data = await res.json();
+            twOutput.textContent = JSON.stringify(data, null, 2);
+            twOutput.classList.toggle('text-rose-400', !res.ok);
+        } catch (e) {
+            twOutput.textContent = 'Error: ' + e.message;
+        } finally {
+            twPost.disabled = false;
+        }
     });
 
     // --- Render ---

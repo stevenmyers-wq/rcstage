@@ -417,6 +417,52 @@ def explore_dictionary(kind=None, country_id=None, path=None):
 
 
 # ===============================================================
+# DEBUG — raw test write (iterate on the exact body that sticks)
+# ===============================================================
+
+def test_write(body, location_id=None):
+    """Send one exact body to the ERL endpoint and report the full round-trip.
+
+    Bounded to the emergency-locations resource: POST to create when
+    ``location_id`` is omitted, otherwise PUT to that id. Returns the request
+    sent, RC's raw status + response body, and a fresh GET of the resulting
+    record — so an operator can pin down precisely which body makes structured
+    fields (buildingNumber / streetType) persist, and see any validation error
+    or normalisation RC applies. Read-heavy debugging tool; it does write, so it
+    is only reachable behind the same auth as the rest of the tool.
+    """
+    if not isinstance(body, dict) or not body:
+        return {"error": "A non-empty JSON body is required."}
+
+    if location_id:
+        resp = rc_api_call(f"{ERL_ENDPOINT}/{location_id}", method="PUT",
+                           json=body, return_response=True)
+        verb = "PUT"
+    else:
+        resp = rc_api_call(ERL_ENDPOINT, method="POST", json=body, return_response=True)
+        verb = "POST"
+
+    resp_body = _json_or_text(resp)
+    result_id = location_id
+    if not result_id and isinstance(resp_body, dict):
+        result_id = resp_body.get('id')
+
+    stored = None
+    if result_id:
+        stored = rc_api_call(f"{ERL_ENDPOINT}/{result_id}")
+
+    return {
+        "verb": verb,
+        "endpoint": ERL_ENDPOINT + (f"/{location_id}" if location_id else ""),
+        "requestBody": body,
+        "status": getattr(resp, 'status_code', None),
+        "ok": getattr(resp, 'ok', False),
+        "response": resp_body,
+        "storedAfter": stored,
+    }
+
+
+# ===============================================================
 # CREATE / UPDATE / DELETE
 # ===============================================================
 
@@ -540,16 +586,22 @@ def _write_diff(sent_body, stored):
         elif stored_val.strip().lower() != sent_val.strip().lower():
             changed.append(f"{key}: sent {sent_val!r} → stored {stored_val!r}")
 
+    # Stored top-level context — the likely reason a structured field is dropped
+    # is the address failing validation (addressStatus) or the format not being
+    # switched (addressFormatId/Status). Surface it alongside the dropped list.
+    ctx = (f"stored addressFormatId={stored.get('addressFormatId')}, "
+           f"addressFormatStatus={stored.get('addressFormatStatus')}, "
+           f"addressStatus={stored.get('addressStatus')}")
+
     if dropped:
-        fmt = stored_flat.get('addressFormatId', '?')
         msg = (f"applied, but {len(dropped)} field(s) did NOT stick "
-               f"(RC dropped them for addressFormatId {fmt}): " + "; ".join(dropped))
+               f"({ctx}): " + "; ".join(dropped))
         if changed:
             msg += f". RC also normalised: {'; '.join(changed)}"
         return msg, dropped, changed
     if changed:
-        return "applied (RC normalised some values): " + "; ".join(changed), dropped, changed
-    return "applied — all sent fields stored as-is.", dropped, changed
+        return f"applied ({ctx}); RC normalised: " + "; ".join(changed), dropped, changed
+    return f"applied — all sent fields stored as-is ({ctx}).", dropped, changed
 
 
 def apply_locations_from_records(records, address_columns, task_id=None):
