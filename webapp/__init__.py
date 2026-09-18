@@ -218,4 +218,8 @@ def create_app():
         from .user_roles import routes as user_roles_routes
         app.register_blueprint(user_roles_routes.user_roles_bp)
 
+        # Emergency Locations routes (bulk audit / create / update / delete ERLs)
+        from .emergency_locations import routes as emergency_locations_routes
+        app.register_blueprint(emergency_locations_routes.emergency_locations_bp)
+
     return app
