@@ -30,10 +30,69 @@ Export re-uses the proven approach from the Network Requirements tool:
 
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from webapp.rc_api import rc_api_call
 
 logger = logging.getLogger(__name__)
+
+# Per-item RC calls used to run strictly one after another, so a large account
+# at "full" detail could fire hundreds or thousands of GETs back-to-back and
+# overrun the front-end request timeout — the browser then surfaces a bare
+# "Network error during generation." Fan the independent per-item calls out
+# across a small thread pool so wall-clock time scales with the pool size
+# rather than the item count. The pool is deliberately small: rc_api_call
+# already backs off and retries on 429, and a wide pool would only trip
+# RingCentral's rate limiter harder.
+_MAX_WORKERS = 8
+
+
+def _request_ctx_copier():
+    """Return a zero-arg callable that yields a *fresh* copy of the current
+    Flask request context, or None when there is no request context.
+
+    Each worker thread must push its own copy: sharing a single copied context
+    across a thread pool breaks under Flask's ContextVars (the reset token is
+    created in one thread and cannot be reset in another). ``RequestContext.copy``
+    gives every worker an independent context that still points at the same
+    session, so rc_api_call keeps resolving (and refreshing) the bridge token.
+    """
+    try:
+        from flask import has_request_context
+        from flask.globals import request_ctx
+    except Exception:  # pragma: no cover - Flask always present in the app
+        return None
+    if not has_request_context():
+        return None
+    try:
+        return request_ctx._get_current_object().copy
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
+def _map_concurrent(items, worker, max_workers=_MAX_WORKERS):
+    """Apply ``worker(item)`` to every item, preserving input order.
+
+    Each call runs inside its own copy of the current Flask request context so
+    rc_api_call can still resolve the session bridge token (and refresh it on
+    401) from the worker threads. Falls back to a plain sequential map when
+    there is no request context (e.g. unit tests), when there is a single item,
+    or when concurrency is disabled — so behaviour is unchanged, only faster.
+    """
+    items = list(items)
+    if not items:
+        return []
+    copy_ctx = _request_ctx_copier()
+    if len(items) == 1 or max_workers <= 1 or copy_ctx is None:
+        return [worker(it) for it in items]
+
+    def _run(item):
+        with copy_ctx():
+            return worker(item)
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as pool:
+        # pool.map preserves the order of the input iterable.
+        return list(pool.map(_run, items))
 
 # Ordered from lightest to heaviest. The UI offers these per selected section.
 DETAIL_LEVELS = ("summary", "standard", "full")
@@ -121,6 +180,33 @@ class CollectContext:
             ext_id = str(ext.get("id")) if ext.get("id") else None
             if ext_id:
                 self.numbers_by_ext.setdefault(ext_id, []).append(p)
+
+        # Account-wide device inventory is fetched lazily and cached: the Devices
+        # section and the Users section (full detail) both need it, and the
+        # account-wide list already carries each device's extension assignment —
+        # so we never need a per-user /extension/{id}/device call.
+        self._devices = None
+        self._devices_by_ext = None
+
+    @property
+    def devices(self):
+        """All provisioned devices for the account, fetched once and shared."""
+        if self._devices is None:
+            self._devices = _fetch_all_pages("/restapi/v1.0/account/~/device")
+        return self._devices
+
+    @property
+    def devices_by_ext(self):
+        """extension id -> list of device records assigned to it."""
+        if self._devices_by_ext is None:
+            mapping = {}
+            for d in self.devices:
+                ext = d.get("extension") or {}
+                ext_id = str(ext.get("id")) if ext.get("id") else None
+                if ext_id:
+                    mapping.setdefault(ext_id, []).append(d)
+            self._devices_by_ext = mapping
+        return self._devices_by_ext
 
     def ext_name(self, ext_id):
         """Human-readable 'Name (ext)' for an extension id, if known."""
@@ -357,8 +443,8 @@ def render_overview(data, detail):
 
 def collect_sites(ctx, detail):
     sites = _fetch_all_pages("/restapi/v1.0/account/~/sites")
-    out = []
-    for s in sites:
+
+    def _one(s):
         sid = str(s.get("id"))
         row = {
             "id": sid,
@@ -381,7 +467,10 @@ def collect_sites(ctx, detail):
             if detail == "full":
                 bh = _api(f"/restapi/v1.0/account/~/extension/{sid}/business-hours")
                 row["hours"] = _summarise_hours(bh)
-        out.append(row)
+        return row
+
+    out = ([_one(s) for s in sites] if detail == "summary"
+           else _map_concurrent(sites, _one))
     return {"sites": out}
 
 
@@ -426,10 +515,12 @@ def collect_users(ctx, detail):
             rec["site"] = (u.get("site") or {}).get("name", "")
             rec["numbers"] = ctx.numbers_for(uid)
         if detail == "full":
-            devices = _api(f"/restapi/v1.0/account/~/extension/{uid}/device") or {}
+            # Read from the account-wide device inventory (fetched once) instead
+            # of firing one /extension/{id}/device call per user — the latter is
+            # what pushed large accounts past the request timeout at full detail.
             rec["devices"] = [
-                d.get("name") or d.get("model", {}).get("name", "Device")
-                for d in (devices.get("records") or [])
+                d.get("name") or (d.get("model") or {}).get("name", "Device")
+                for d in ctx.devices_by_ext.get(uid, [])
             ]
             rec["department"] = ", ".join(u.get("departments", []) or []) if isinstance(
                 u.get("departments"), list) else ""
@@ -507,8 +598,8 @@ def _member_label(ctx, m):
 
 def collect_call_queues(ctx, detail):
     queues = _fetch_all_pages("/restapi/v1.0/account/~/call-queues")
-    out = []
-    for q in queues:
+
+    def _one(q):
         qid = str(q.get("id"))
         rec = {
             "id": qid,
@@ -529,21 +620,25 @@ def collect_call_queues(ctx, detail):
             # these values came back blank.
             rule = _api(
                 f"/restapi/v1.0/account/~/extension/{qid}/answering-rule/business-hours-rule") or {}
-            q = rule.get("queue") or {}
+            queue_cfg = rule.get("queue") or {}
             rec["schedule"] = _fetch_business_hours(qid)
-            rec["ring_type"] = q.get("transferMode", "")
-            rec["hold_time"] = q.get("holdTime")
-            rec["wrap_up"] = q.get("wrapUpTime")
-            rec["max_callers"] = q.get("maxCallers")
-            rec["when_full"] = q.get("maxCallersAction", "")
-            rec["when_max_time"] = q.get("holdTimeExpirationAction", "")
+            rec["ring_type"] = queue_cfg.get("transferMode", "")
+            rec["hold_time"] = queue_cfg.get("holdTime")
+            rec["wrap_up"] = queue_cfg.get("wrapUpTime")
+            rec["max_callers"] = queue_cfg.get("maxCallers")
+            rec["when_full"] = queue_cfg.get("maxCallersAction", "")
+            rec["when_max_time"] = queue_cfg.get("holdTimeExpirationAction", "")
         if detail == "full":
             # After-hours handling for the queue, if any.
             ah = _api(
                 f"/restapi/v1.0/account/~/extension/{qid}/answering-rule/after-hours-rule")
             if isinstance(ah, dict):
                 rec["after_hours_action"] = ah.get("callHandlingAction", "")
-        out.append(rec)
+        return rec
+
+    # Summary needs no per-queue calls; deeper levels do — fan those out.
+    out = ([_one(q) for q in queues] if detail == "summary"
+           else _map_concurrent(queues, _one))
     return {"queues": out}
 
 
@@ -583,8 +678,8 @@ def render_call_queues(data, detail):
 
 def collect_ivrs(ctx, detail):
     ivr_exts = [e for e in ctx.extensions if e.get("type") == "IvrMenu"]
-    out = []
-    for e in ivr_exts:
+
+    def _one(e):
         iid = str(e.get("id"))
         rec = {
             "id": iid,
@@ -611,7 +706,10 @@ def collect_ivrs(ctx, detail):
                     "action": a.get("action", ""),
                     "destination": dest_label,
                 })
-        out.append(rec)
+        return rec
+
+    out = ([_one(e) for e in ivr_exts] if detail == "summary"
+           else _map_concurrent(ivr_exts, _one))
     return {"ivrs": out}
 
 
@@ -736,9 +834,12 @@ def _notification_emails(ext_id):
 
 def _collect_ext_type(ctx, detail, types, notify_email=False):
     """Shared collector for simple extension-type inventories."""
-    items = [e for e in ctx.extensions if e.get("type") in types]
-    out = []
-    for e in sorted(items, key=lambda x: (x.get("extensionNumber") or "")):
+    items = sorted(
+        (e for e in ctx.extensions if e.get("type") in types),
+        key=lambda x: (x.get("extensionNumber") or ""),
+    )
+
+    def _one(e):
         eid = str(e.get("id"))
         rec = {
             "id": eid,
@@ -756,7 +857,14 @@ def _collect_ext_type(ctx, detail, types, notify_email=False):
                     if contact_email:
                         emails = [contact_email]
                 rec["notify_email"] = emails
-        out.append(rec)
+        return rec
+
+    # Only the per-extension notification-email lookup hits the API; fan that
+    # out. Everything else is in-memory, so run it sequentially.
+    if detail != "summary" and notify_email:
+        out = _map_concurrent(items, _one)
+    else:
+        out = [_one(e) for e in items]
     return {"items": out}
 
 
@@ -861,7 +969,7 @@ def render_phone_numbers(data, detail):
 # ---- Devices / Hardware ---------------------------------------------------
 
 def collect_devices(ctx, detail):
-    devices = _fetch_all_pages("/restapi/v1.0/account/~/device")
+    devices = ctx.devices  # shared account-wide inventory (fetched once)
     out = []
     for d in devices:
         rec = {
