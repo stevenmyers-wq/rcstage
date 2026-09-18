@@ -33,9 +33,16 @@ ERL_ENDPOINT = "/restapi/v1.0/account/~/emergency-locations"
 # the address prefix is treated as an address field. Both this module and the
 # frontend agree on this set so an uploaded sheet can be split back into
 # metadata vs. address columns.
+#
+# AddressFormatId is the linchpin of the international ("special") format: it is
+# a top-level field (NOT under address) whose value depends on the country
+# (verified against live data: US=19, AU=33, NZ=174) and determines which
+# address sub-fields RC expects. It must round-trip and be sent on create/update
+# so non-US locations validate. AddressFormatStatus (Actual/Outdated) is the
+# RC-managed audit companion.
 META_COLUMNS = [
-    "Action", "LocationId", "Name", "Visibility",
-    "SiteId", "SiteName", "UsageStatus", "AddressStatus", "SyncStatus",
+    "Action", "LocationId", "Name", "Visibility", "SiteId", "SiteName",
+    "AddressFormatId", "AddressFormatStatus", "UsageStatus", "AddressStatus",
 ]
 
 # Address columns are namespaced so they never collide with a meta column and so
@@ -44,7 +51,7 @@ ADDR_PREFIX = "Address."
 
 # Columns that reflect RC-managed state — shown for audit context but never sent
 # back on a create/update (RC rejects or ignores operator-supplied values here).
-READ_ONLY_META = {"UsageStatus", "AddressStatus", "SyncStatus", "SiteName"}
+READ_ONLY_META = {"UsageStatus", "AddressStatus", "AddressFormatStatus", "SiteName"}
 
 # Accepted "granted/true" style tokens are not needed here (no matrix ticks), but
 # visibility must be one of RC's enum values when supplied.
@@ -176,9 +183,11 @@ def fetch_locations(site_id=None):
             "Visibility": detail.get('visibility', summary.get('visibility', '')),
             "SiteId": site_id_val,
             "SiteName": site.get('name') or sites.get(site_id_val, ''),
+            # Top-level (not under address); country-specific — see META_COLUMNS.
+            "AddressFormatId": detail.get('addressFormatId', ''),
+            "AddressFormatStatus": detail.get('addressFormatStatus', ''),
             "UsageStatus": detail.get('usageStatus', ''),
             "AddressStatus": detail.get('addressStatus', ''),
-            "SyncStatus": detail.get('syncStatus', ''),
         }
         row.update(addr_flat)
         rows.append(row)
@@ -295,6 +304,12 @@ def _build_location_body(record, address_columns):
     site_id = str(record.get("SiteId", "")).strip()
     if site_id:
         body["site"] = {"id": site_id}
+
+    # Top-level, country-specific format id — required for non-US ("special
+    # format") locations to validate. Send it whenever the row carries one.
+    address_format_id = str(record.get("AddressFormatId", "")).strip()
+    if address_format_id:
+        body["addressFormatId"] = address_format_id
 
     address = _address_from_row(record, address_columns)
     if address:
