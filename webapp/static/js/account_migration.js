@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showMigResults(data.results);
                     setActionsDisabled(false);
                     if (onSuccess) onSuccess();
+                    loadHistory();  // a new artifact was stored — refresh the list
                 } else if (data.status === 'cancelled') {
                     clearInterval(pollInterval);
                     currentImportTaskId = null;
@@ -142,16 +143,96 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1000);
     }
 
+    // Download a finished artifact (export ZIP / audit XLSX) from the server.
+    async function downloadResult(taskId, fallbackName) {
+        try {
+            const res = await fetch('/api/migration/result/download?task_id=' + encodeURIComponent(taskId));
+            if (!res.ok) return;
+            const blob = await res.blob();
+            const cd = res.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="?([^"]+)"?/);
+            const name = m ? m[1] : fallbackName;
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) { /* the file also stays available in Recent migrations */ }
+    }
+
+    function failModal(title, msg) {
+        if (pollInterval) clearInterval(pollInterval);
+        progBar.classList.replace('bg-blue-600', 'bg-red-500');
+        progTitle.textContent = title;
+        progMsg.textContent = msg;
+        progMsg.classList.replace('text-blue-600', 'text-red-600');
+        btnClose.classList.remove('hidden');
+        setActionsDisabled(false);
+    }
+
+    // ---- Recent migrations (durable storage, 7-day retention) ---------------
+    const historyCard = document.getElementById('mig-history-card');
+    const historyList = document.getElementById('mig-history-list');
+    const historyRefresh = document.getElementById('mig-history-refresh');
+    const KIND_LABEL = { export: 'Export (ZIP)', audit: 'Audit (XLSX)', import: 'Import log (XLSX)' };
+
+    function fmtWhen(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return isNaN(d) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    function renderHistory(items) {
+        if (!historyList) return;
+        historyList.innerHTML = '';
+        if (!items.length) {
+            historyList.innerHTML = '<div class="text-xs text-slate-400 py-2 text-center">No migration outputs in the last 7 days.</div>';
+            return;
+        }
+        items.forEach(it => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0';
+            const label = (KIND_LABEL[it.kind] || it.kind || 'Output');
+            const acct = it.account_name ? (' · ' + it.account_name) : '';
+            const info = document.createElement('div');
+            info.className = 'min-w-0';
+            info.innerHTML =
+                '<div class="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">' + label + acct + '</div>' +
+                '<div class="text-[11px] text-slate-400">' + fmtWhen(it.created_at) + '</div>';
+            const dl = document.createElement('button');
+            dl.className = 'text-xs font-bold text-blue-600 hover:text-blue-700 shrink-0';
+            dl.textContent = '⬇ Download';
+            dl.addEventListener('click', () => downloadResult(it.task_id, it.filename || 'download'));
+            row.appendChild(info);
+            row.appendChild(dl);
+            historyList.appendChild(row);
+        });
+    }
+
+    async function loadHistory() {
+        if (!historyCard) return;
+        try {
+            const res = await fetch('/api/migration/history');
+            const data = await res.json();
+            if (!data.success || !data.enabled) { historyCard.classList.add('hidden'); return; }
+            historyCard.classList.remove('hidden');
+            renderHistory(data.items || []);
+        } catch (e) {
+            historyCard.classList.add('hidden');
+        }
+    }
+
+    if (historyRefresh) historyRefresh.addEventListener('click', loadHistory);
+    loadHistory();
+
     btnExport.addEventListener('click', async () => {
         if (unbindCb.checked) {
             if (!confirm("WARNING: You have selected to UNBIND physical devices. This will remove digital lines from phones. Proceed?")) return;
         }
 
         setActionsDisabled(true);
-
         const taskId = 'export_' + Date.now();
         openProgressModal("Exporting Account Data");
-        startPolling(taskId);
 
         try {
             const res = await fetch('/api/migration/export', {
@@ -159,35 +240,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ task_id: taskId, unbind_devices: unbindCb.checked })
             });
-
-            if (!res.ok) throw new Error("Export failed on server.");
-
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `RC_Migration_Export_${new Date().getTime()}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Export failed to start.");
+            startPolling(taskId, () => downloadResult(taskId, `RC_Migration_Export_${Date.now()}.zip`));
         } catch (err) {
-            clearInterval(pollInterval);
-            progBar.classList.replace('bg-blue-600', 'bg-red-500');
-            progTitle.textContent = 'Export Failed';
-            progMsg.textContent = err.message;
-            progMsg.classList.replace('text-blue-600', 'text-red-600');
-            btnClose.classList.remove('hidden');
-            setActionsDisabled(false);
+            failModal('Export Failed', err.message);
         }
     });
 
     if (btnAudit) {
         btnAudit.addEventListener('click', async () => {
             setActionsDisabled(true);
-
             const taskId = 'audit_' + Date.now();
             openProgressModal("Building Reader-Friendly Audit");
-            startPolling(taskId);
 
             try {
                 const res = await fetch('/api/migration/audit', {
@@ -195,29 +260,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ task_id: taskId })
                 });
-
-                if (!res.ok) {
-                    let msg = "Audit failed on server.";
-                    try { msg = (await res.json()).error || msg; } catch (e) { /* non-JSON error body */ }
-                    throw new Error(msg);
-                }
-
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `RC_Account_Audit_${new Date().getTime()}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) throw new Error(data.error || "Audit failed to start.");
+                startPolling(taskId, () => downloadResult(taskId, `RC_Account_Audit_${Date.now()}.xlsx`));
             } catch (err) {
-                clearInterval(pollInterval);
-                progBar.classList.replace('bg-blue-600', 'bg-red-500');
-                progTitle.textContent = 'Audit Failed';
-                progMsg.textContent = err.message;
-                progMsg.classList.replace('text-blue-600', 'text-red-600');
-                btnClose.classList.remove('hidden');
-                setActionsDisabled(false);
+                failModal('Audit Failed', err.message);
             }
         });
     }
