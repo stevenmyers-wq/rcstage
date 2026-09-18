@@ -67,6 +67,26 @@ def get_raw_example():
         return jsonify({"error": "An internal error occurred while fetching the raw example."}), 500
 
 
+@emergency_locations_bp.route('/dictionary', methods=['GET'])
+@require_rc_token
+def get_dictionary():
+    """DEBUG: look up the coded values behind ERL fields.
+
+    Query params:
+      kind      — country | state | streettype | probe
+      countryId — required when kind=state
+      path      — raw passthrough of any /restapi/… path (overrides kind)
+    """
+    kind = (request.args.get('kind') or '').strip() or None
+    country_id = (request.args.get('countryId') or '').strip() or None
+    path = (request.args.get('path') or '').strip() or None
+    try:
+        return jsonify(utils.explore_dictionary(kind=kind, country_id=country_id, path=path))
+    except Exception as e:
+        print(f"Error exploring ERL dictionary: {e}")
+        return jsonify({"error": "An internal error occurred while exploring the dictionary."}), 500
+
+
 @emergency_locations_bp.route('/upload', methods=['POST'])
 @require_rc_token
 @track_usage('Emergency Locations')
