@@ -226,13 +226,14 @@ def _permissions_from_row(record, permission_columns):
             continue
         value = str(record.get(pid, "")).strip().lower()
         if value in ("x", "true", "1", "yes", "y", "✓"):
+            # Only set `enabled` — it is the grant flag. manageEnabled/grantEnabled
+            # are not valid on every permission (e.g. a permission that cannot be
+            # granted onward), and setting them makes RC reject the whole array
+            # with "permissionCapabilities value is invalid". RC applies its own
+            # defaults for the manage/grant sub-capabilities.
             permissions.append({
                 "id": pid,
-                "permissionsCapabilities": {
-                    "enabled": True,
-                    "manageEnabled": True,
-                    "grantEnabled": True,
-                },
+                "permissionsCapabilities": {"enabled": True},
             })
     return permissions
 
