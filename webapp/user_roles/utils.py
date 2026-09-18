@@ -30,6 +30,9 @@ SCOPE_VALUES = [
     "NonUserExtensions", "RoleBased", "Self", "UserExtensions",
 ]
 
+# Process-level cache of permission flags from /dictionary/permission.
+_PERM_META_CACHE = None
+
 
 def _get_all_records(base_endpoint):
     """Fetch every record across all pages for a paginated RC list endpoint."""
@@ -59,20 +62,41 @@ def _get_all_records(base_endpoint):
 def _assignable_permission_ids():
     """Return the sorted list of assignable permission IDs from the RC dictionary.
 
-    These become the matrix columns. Only assignable permissions are included –
-    read-only/system permissions cannot be granted on a custom role, so exposing
-    them as editable columns would be misleading.
+    These become the matrix columns. Only *editable* permissions are included:
+    assignable AND not read-only. Read-only permissions are baseline/system
+    permissions that RingCentral manages automatically on every role — they
+    cannot be toggled, and (critically) including non-assignable permissions in
+    a create/update body makes RingCentral reject or ignore the permission set.
     """
+    return sorted(_permission_metadata()['editable'])
+
+
+def _permission_metadata():
+    """Fetch permission flags from the RC dictionary.
+
+    Returns {'editable': set(ids), 'readonly': set(ids), 'all': set(ids)} where
+    'editable' = assignable and not read-only. Cached per process since the
+    catalog is account-independent and stable within a session.
+    """
+    global _PERM_META_CACHE
+    if _PERM_META_CACHE is not None:
+        return _PERM_META_CACHE
+
     records = _get_all_records("/restapi/v1.0/dictionary/permission")
-    ids = []
+    editable, readonly, every = set(), set(), set()
     for perm in records:
         pid = perm.get('id')
         if not pid:
             continue
-        # 'assignable' is the flag RC uses for "an admin may grant this on a role".
-        if perm.get('assignable', True):
-            ids.append(pid)
-    return sorted(set(ids))
+        every.add(pid)
+        read_only = bool(perm.get('readOnly', False))
+        assignable = bool(perm.get('assignable', True))
+        if read_only:
+            readonly.add(pid)
+        if assignable and not read_only:
+            editable.add(pid)
+    _PERM_META_CACHE = {'editable': editable, 'readonly': readonly, 'all': every}
+    return _PERM_META_CACHE
 
 
 def _role_permission_ids(detail):
@@ -135,6 +159,9 @@ def fetch_roles(category='all'):
 
         is_custom = bool(detail.get('custom', summary.get('custom', False)))
         held = _role_permission_ids(detail)
+        # Count only editable perms so the number matches the visible X columns
+        # (RC-managed read-only baseline perms aren't shown as columns).
+        held_editable = held & set(permission_columns)
 
         row = {
             "Action": "",  # operator sets NEW or MODIFY
@@ -144,7 +171,7 @@ def fetch_roles(category='all'):
             "Scope": detail.get('scope', summary.get('scope', '')),
             "Custom": "true" if is_custom else "false",
             "Editable": "Yes" if is_custom else "No (predefined)",
-            "PermissionCount": len(held),
+            "PermissionCount": len(held_editable),
         }
         for pid in permission_columns:
             row[pid] = "X" if pid in held else ""
@@ -165,9 +192,18 @@ def fetch_roles(category='all'):
 # ===============================================================
 
 def _permissions_from_row(record, permission_columns):
-    """Build the RC permissions array from the ticked matrix columns of a row."""
+    """Build the RC permissions array from the ticked matrix columns of a row.
+
+    Only *editable* permissions are sent. Read-only / non-assignable permissions
+    are managed by RingCentral automatically; including them in the body causes
+    RC to reject or ignore the whole permission set, so we drop them here even if
+    an older template ticked them.
+    """
+    editable = _permission_metadata()['editable']
     permissions = []
     for pid in permission_columns:
+        if pid not in editable:
+            continue
         value = str(record.get(pid, "")).strip().lower()
         if value in ("x", "true", "1", "yes", "y", "✓"):
             permissions.append({"id": pid})
@@ -187,14 +223,14 @@ def _build_role_body(record, permission_columns):
     return body
 
 
-def _stored_permission_count(response):
-    """Number of permissions RingCentral actually stored, from a role response."""
+def _stored_permission_ids(response):
+    """Set of permission IDs RingCentral stored, read back from a role response."""
     try:
         data = response.json()
     except Exception:
         return None
     if isinstance(data, dict) and isinstance(data.get('permissions'), list):
-        return len(data['permissions'])
+        return {p.get('id') for p in data['permissions'] if isinstance(p, dict) and p.get('id')}
     return None
 
 
@@ -208,7 +244,7 @@ def _create_role(body):
     then immediately PUT the full desired state — including permissions — onto
     the returned role id. The PUT is a no-op if the POST already applied them.
 
-    Returns (final_response, stored_permission_count).
+    Returns (final_response, stored_permission_ids | None).
     """
     create_resp = rc_api_call("/restapi/v1.0/account/~/user-role",
                               method="POST", json=body, return_response=True)
@@ -223,14 +259,36 @@ def _create_role(body):
 
     # No permissions requested, or we couldn't read the new id — nothing to enforce.
     if not new_id or not body.get('permissions'):
-        return create_resp, _stored_permission_count(create_resp)
+        return create_resp, _stored_permission_ids(create_resp)
 
     put_resp = rc_api_call(f"/restapi/v1.0/account/~/user-role/{new_id}",
                            method="PUT", json=body, return_response=True)
     if put_resp is not None and getattr(put_resp, 'ok', False):
-        return put_resp, _stored_permission_count(put_resp)
+        return put_resp, _stored_permission_ids(put_resp)
     # The role was created but enforcing permissions failed — surface that.
     return put_resp, None
+
+
+def _diff_message(action, sent_ids, stored_ids, editable_universe):
+    """Human-readable diagnostic comparing what we sent vs what RC stored.
+
+    Restricts the applied/dropped comparison to editable permissions (RC also
+    manages a read-only baseline that always appears in the stored set).
+    """
+    sent = set(sent_ids)
+    if stored_ids is None:
+        return f"{action} succeeded — sent {len(sent)} permissions (RC did not return the stored set)."
+    stored_editable = stored_ids & editable_universe
+    applied = sent & stored_ids
+    dropped = sent - stored_ids
+    added = stored_editable - sent
+    msg = (f"{action} succeeded — sent {len(sent)}, RC kept {len(applied)}, "
+           f"dropped {len(dropped)}, added {len(added)} editable "
+           f"(+{len(stored_ids) - len(stored_editable)} read-only baseline).")
+    if dropped:
+        sample = ", ".join(sorted(dropped)[:8])
+        msg += f" Dropped: {sample}{'…' if len(dropped) > 8 else ''}."
+    return msg
 
 
 def apply_roles_from_records(records, permission_columns, task_id=None):
@@ -247,6 +305,7 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
     yield {"type": "start", "total": total,
            "message": f"Applying {total} role change{'' if total == 1 else 's'}…"}
     results = []
+    editable_universe = _permission_metadata()['editable']
 
     for i, record in enumerate(records):
         # Cooperative stop: roles already written stand; the rest are skipped.
@@ -271,7 +330,7 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
             body = _build_role_body(record, permission_columns)
             if not body["displayName"]:
                 raise ValueError("DisplayName is required.")
-            requested = len(body["permissions"])
+            sent_ids = [p["id"] for p in body["permissions"]]
 
             if action == "MODIFY":
                 if not role_id:
@@ -280,16 +339,17 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
                     raise ValueError("Predefined roles are read-only and cannot be modified.")
                 endpoint = f"/restapi/v1.0/account/~/user-role/{role_id}"
                 response = rc_api_call(endpoint, method="PUT", json=body, return_response=True)
-                stored = _stored_permission_count(response) if getattr(response, 'ok', False) else None
+                stored = _stored_permission_ids(response) if getattr(response, 'ok', False) else None
             else:  # NEW
                 response, stored = _create_role(body)
 
             if response is not None and getattr(response, 'ok', False):
-                # Report the count RC actually stored so any mismatch is visible.
-                shown = stored if stored is not None else requested
-                note = "" if (stored is None or stored == requested) else f" (requested {requested})"
                 item = {"name": name, "status": "success",
-                        "message": f"{action} succeeded — {shown} permissions{note}."}
+                        "message": _diff_message(action, sent_ids, stored, editable_universe)}
+                if stored is not None:
+                    # Attach the id sets for the downloadable results detail.
+                    item["dropped"] = sorted(set(sent_ids) - stored)
+                    item["added"] = sorted((stored & editable_universe) - set(sent_ids))
             else:
                 detail = _error_detail(response)
                 item = {"name": name, "status": "error",
