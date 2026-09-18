@@ -38,7 +38,7 @@
             <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
                 <li>Edit the matrix. Set the <code>Action</code> column to <code>MODIFY</code> (edit an existing role) or <code>NEW</code> (create one).</li>
                 <li>Toggle permissions with <code>X</code> (blank = not granted). For <code>NEW</code>, clear <code>RoleID</code> and set <code>DisplayName</code> + <code>Scope</code>.</li>
-                <li>Upload the file and click <strong>Apply Changes</strong>. Predefined roles are read-only and are skipped.</li>
+                <li>Upload the file, pick the <strong>Sheet</strong> to read, and click <strong>Apply Changes</strong>. Predefined roles are read-only and are skipped.</li>
             </ol>
         </div>
     </div>
@@ -60,9 +60,18 @@
                 📥 Download .xlsx
             </button>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full items-center">
-            <div class="relative flex items-center h-[52px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden px-2">
-                <input type="file" id="ur-file-input" accept=".xlsx" class="text-sm file:mr-3 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 dark:file:bg-slate-800 dark:file:text-slate-300 cursor-pointer w-full">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full items-end">
+            <div class="input-wrapper sm:col-span-1">
+                <label class="input-label">Upload workbook</label>
+                <div class="relative flex items-center h-[52px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden px-2">
+                    <input type="file" id="ur-file-input" accept=".xlsx,.xls" class="text-sm file:mr-3 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 dark:file:bg-slate-800 dark:file:text-slate-300 cursor-pointer w-full">
+                </div>
+            </div>
+            <div class="input-wrapper sm:col-span-1">
+                <label for="ur-sheet" class="input-label">Sheet</label>
+                <select id="ur-sheet" class="input-field h-[52px]" disabled>
+                    <option value="">— choose a file first —</option>
+                </select>
             </div>
             <button id="ur-apply-btn" class="btn-success h-[52px] px-6 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 📤 Apply Changes
@@ -131,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const categorySelect = document.getElementById('ur-category');
     const downloadBtn = document.getElementById('ur-download-btn');
     const fileInput = document.getElementById('ur-file-input');
+    const sheetSelect = document.getElementById('ur-sheet');
     const applyBtn = document.getElementById('ur-apply-btn');
     const headerRow = document.getElementById('ur-header-row');
     const tbody = document.getElementById('ur-table-body');
@@ -374,38 +384,67 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Upload + Apply ---
-    fileInput.addEventListener('change', () => { applyBtn.disabled = !fileInput.files.length; });
+    let uploadedWorkbook = null;
 
-    applyBtn.addEventListener('click', () => {
+    const resetSheetSelect = (placeholder) => {
+        sheetSelect.innerHTML = `<option value="">${placeholder}</option>`;
+        sheetSelect.disabled = true;
+    };
+
+    fileInput.addEventListener('change', () => {
+        uploadedWorkbook = null;
+        applyBtn.disabled = true;
         const file = fileInput.files[0];
-        if (!file) return;
+        if (!file) { resetSheetSelect('— choose a file first —'); return; }
+
         const reader = new FileReader();
         reader.onload = (e) => {
-            let records, fileHeaders;
             try {
-                const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                const asRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-                fileHeaders = (asRows[0] || []).map(String);
-                records = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                uploadedWorkbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
             } catch (err) {
                 alert('Could not read the spreadsheet: ' + err.message);
+                resetSheetSelect('— unreadable file —');
                 return;
             }
-            const uploadPermCols = fileHeaders.filter(h => !META_COLUMNS.includes(h));
-            const actionable = records.filter(r => ['NEW', 'MODIFY'].includes(String(r.Action || '').trim().toUpperCase()));
+            const names = uploadedWorkbook.SheetNames || [];
+            if (!names.length) { resetSheetSelect('— no sheets found —'); return; }
 
-            if (!actionable.length) {
-                alert('No rows have an Action of NEW or MODIFY. Set the Action column, then re-upload.');
-                return;
-            }
-            if (!confirm(`Apply ${actionable.length} role change(s) to RingCentral?\n\nPredefined (read-only) roles are skipped automatically.`)) return;
-
-            handleApply(actionable, uploadPermCols);
+            // Populate the sheet picker; default to "User Roles" if present.
+            sheetSelect.innerHTML = names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+            const preferred = names.find(n => n.toLowerCase() === 'user roles');
+            sheetSelect.value = preferred || names[0];
+            sheetSelect.disabled = names.length < 2;  // only choosable when there's a choice
+            applyBtn.disabled = false;
         };
         reader.readAsArrayBuffer(file);
-        fileInput.value = '';
-        applyBtn.disabled = true;
+    });
+
+    applyBtn.addEventListener('click', () => {
+        if (!uploadedWorkbook) { alert('Please choose a file first.'); return; }
+        const sheetName = sheetSelect.value || uploadedWorkbook.SheetNames[0];
+        const ws = uploadedWorkbook.Sheets[sheetName];
+        if (!ws) { alert(`Sheet "${sheetName}" was not found in the workbook.`); return; }
+
+        let records, fileHeaders;
+        try {
+            const asRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            fileHeaders = (asRows[0] || []).map(String);
+            records = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        } catch (err) {
+            alert('Could not parse the selected sheet: ' + err.message);
+            return;
+        }
+
+        const uploadPermCols = fileHeaders.filter(h => !META_COLUMNS.includes(h));
+        const actionable = records.filter(r => ['NEW', 'MODIFY'].includes(String(r.Action || '').trim().toUpperCase()));
+
+        if (!actionable.length) {
+            alert(`No rows on sheet "${sheetName}" have an Action of NEW or MODIFY. Set the Action column, then re-upload.`);
+            return;
+        }
+        if (!confirm(`Apply ${actionable.length} role change(s) from sheet "${sheetName}" to RingCentral?\n\nPredefined (read-only) roles are skipped automatically.`)) return;
+
+        handleApply(actionable, uploadPermCols);
     });
 
     const handleApply = async (records, uploadPermCols) => {

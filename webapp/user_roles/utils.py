@@ -187,13 +187,60 @@ def _build_role_body(record, permission_columns):
     return body
 
 
+def _stored_permission_count(response):
+    """Number of permissions RingCentral actually stored, from a role response."""
+    try:
+        data = response.json()
+    except Exception:
+        return None
+    if isinstance(data, dict) and isinstance(data.get('permissions'), list):
+        return len(data['permissions'])
+    return None
+
+
+def _create_role(body):
+    """Create a custom role, then enforce the requested permission set.
+
+    RingCentral's POST create initialises a new custom role from a default
+    permission template and does NOT reliably apply the ``permissions`` array
+    from the POST body (the role comes back looking like a copy of a predefined
+    role such as "Standard (International)"). So we POST to create the role,
+    then immediately PUT the full desired state — including permissions — onto
+    the returned role id. The PUT is a no-op if the POST already applied them.
+
+    Returns (final_response, stored_permission_count).
+    """
+    create_resp = rc_api_call("/restapi/v1.0/account/~/user-role",
+                              method="POST", json=body, return_response=True)
+    if create_resp is None or not getattr(create_resp, 'ok', False):
+        return create_resp, None
+
+    new_id = None
+    try:
+        new_id = (create_resp.json() or {}).get('id')
+    except Exception:
+        new_id = None
+
+    # No permissions requested, or we couldn't read the new id — nothing to enforce.
+    if not new_id or not body.get('permissions'):
+        return create_resp, _stored_permission_count(create_resp)
+
+    put_resp = rc_api_call(f"/restapi/v1.0/account/~/user-role/{new_id}",
+                           method="PUT", json=body, return_response=True)
+    if put_resp is not None and getattr(put_resp, 'ok', False):
+        return put_resp, _stored_permission_count(put_resp)
+    # The role was created but enforcing permissions failed — surface that.
+    return put_resp, None
+
+
 def apply_roles_from_records(records, permission_columns, task_id=None):
     """Stream create/update of custom roles, one chunk per record.
 
     Only rows whose Action is NEW or MODIFY are acted on. Predefined
     (non-custom) roles are refused for MODIFY – they are read-only in RC.
 
-      NEW    -> POST /restapi/v1.0/account/~/user-role
+      NEW    -> POST /restapi/v1.0/account/~/user-role, then PUT to enforce
+                the requested permission set (see _create_role).
       MODIFY -> PUT  /restapi/v1.0/account/~/user-role/{roleId}
     """
     total = len(records)
@@ -224,6 +271,7 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
             body = _build_role_body(record, permission_columns)
             if not body["displayName"]:
                 raise ValueError("DisplayName is required.")
+            requested = len(body["permissions"])
 
             if action == "MODIFY":
                 if not role_id:
@@ -232,13 +280,16 @@ def apply_roles_from_records(records, permission_columns, task_id=None):
                     raise ValueError("Predefined roles are read-only and cannot be modified.")
                 endpoint = f"/restapi/v1.0/account/~/user-role/{role_id}"
                 response = rc_api_call(endpoint, method="PUT", json=body, return_response=True)
+                stored = _stored_permission_count(response) if getattr(response, 'ok', False) else None
             else:  # NEW
-                endpoint = "/restapi/v1.0/account/~/user-role"
-                response = rc_api_call(endpoint, method="POST", json=body, return_response=True)
+                response, stored = _create_role(body)
 
             if response is not None and getattr(response, 'ok', False):
+                # Report the count RC actually stored so any mismatch is visible.
+                shown = stored if stored is not None else requested
+                note = "" if (stored is None or stored == requested) else f" (requested {requested})"
                 item = {"name": name, "status": "success",
-                        "message": f"{action} succeeded ({len(body['permissions'])} permissions)."}
+                        "message": f"{action} succeeded — {shown} permissions{note}."}
             else:
                 detail = _error_detail(response)
                 item = {"name": name, "status": "error",
