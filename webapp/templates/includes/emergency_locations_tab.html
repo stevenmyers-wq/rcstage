@@ -36,7 +36,8 @@
             <h4 class="text-heading text-base text-purple-900 dark:text-purple-100 mb-2">2. Create / Update / Delete</h4>
             <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
                 <li>Edit the sheet. Set <code>Action</code> to <code>MODIFY</code>, <code>NEW</code> or <code>DELETE</code>.</li>
-                <li>For <code>NEW</code>, clear <code>LocationId</code>, set <code>Name</code>, <code>SiteId</code> and the <code>Address.*</code> fields.</li>
+                <li>For <code>NEW</code>, clear <code>LocationId</code>, set <code>Name</code>, <code>SiteId</code>, <code>AddressFormatId</code> and the <code>Address.*</code> fields.</li>
+                <li><strong>Non-US:</strong> <code>AddressFormatId</code> is country-specific (e.g. US 19, AU 33, NZ 174) — the easiest path is to copy a row from an existing location in that country. Use <em>Get raw example</em> if unsure.</li>
                 <li>Upload, pick the <strong>Sheet</strong>, and click <strong>Apply Changes</strong>.</li>
             </ol>
         </div>
@@ -145,7 +146,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Must match META_COLUMNS in webapp/emergency_locations/utils.py.
     // Everything starting with "Address." is an address column (discovered live).
-    const META_COLUMNS = ["Action", "LocationId", "Name", "Visibility", "SiteId", "SiteName", "UsageStatus", "AddressStatus", "SyncStatus"];
+    // AddressFormatId is top-level (not under Address.) and country-specific —
+    // it is what makes non-US ("special format") locations validate on create.
+    const META_COLUMNS = ["Action", "LocationId", "Name", "Visibility", "SiteId", "SiteName", "AddressFormatId", "AddressFormatStatus", "UsageStatus", "AddressStatus"];
     const ADDR_PREFIX = "Address.";
     const isAddrCol = (h) => h.startsWith(ADDR_PREFIX);
 
@@ -312,10 +315,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const td = document.createElement('td');
                 td.className = 'px-3 py-2 text-sm text-slate-700 dark:text-slate-300';
                 const content = String(row[header] ?? '');
-                if (header === 'AddressStatus') {
-                    const ok = content.toLowerCase() === 'valid';
+                if (header === 'AddressStatus' || header === 'AddressFormatStatus') {
+                    const good = ['valid', 'actual'].includes(content.toLowerCase());
                     td.innerHTML = content
-                        ? `<span class="px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-full ${ok ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}">${content}</span>`
+                        ? `<span class="px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-full ${good ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}">${content}</span>`
                         : '<span class="text-slate-300 dark:text-slate-700">·</span>';
                 } else {
                     td.textContent = content;
