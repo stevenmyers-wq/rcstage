@@ -89,8 +89,12 @@ def _role_permission_ids(detail):
 # AUDIT
 # ===============================================================
 
-def fetch_roles():
+def fetch_roles(category='all'):
     """Stream every user role as a flat matrix row, with live progress.
+
+    ``category`` selects which roles to include:
+      'all'    – every role (predefined + custom)
+      'custom' – custom roles only
 
     Emits NDJSON-friendly chunks:
       {"type": "start",   "message": ...}
@@ -99,12 +103,21 @@ def fetch_roles():
       {"type": "progress","current": i, "total": N, "name": ...}
       {"type": "done",    "data": [ ...rows... ], "permissions": [...]}
     """
+    category = (category or 'all').lower()
+
     yield {"type": "start", "message": "Loading permission dictionary…"}
     permission_columns = _assignable_permission_ids()
     yield {"type": "columns", "permissions": permission_columns}
 
-    yield {"type": "start", "message": "Loading account user roles…"}
+    label = "custom user roles" if category == 'custom' else "account user roles"
+    yield {"type": "start", "message": f"Loading {label}…"}
     role_summaries = _get_all_records("/restapi/v1.0/account/~/user-role")
+
+    if category == 'custom':
+        # The collection resource carries the `custom` flag, so we can filter
+        # before spending a detail call per role.
+        role_summaries = [r for r in role_summaries if r.get('custom')]
+
     total = len(role_summaries)
     yield {"type": "total", "total": total}
 

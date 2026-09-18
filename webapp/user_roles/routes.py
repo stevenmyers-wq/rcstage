@@ -35,9 +35,15 @@ def _ndjson_stream(chunks, on_error):
 @user_roles_bp.route('/roles', methods=['GET'])
 @require_rc_token
 def get_roles():
-    """Streams every account user role as a permission-matrix row."""
+    """Streams account user roles as permission-matrix rows.
+
+    Query param ``category`` = 'all' (default) or 'custom' (custom roles only).
+    """
+    category = request.args.get('category', 'all').lower()
+    if category not in ('all', 'custom'):
+        return jsonify({"error": "category must be 'all' or 'custom'."}), 400
     return _ndjson_stream(
-        utils.fetch_roles(),
+        utils.fetch_roles(category=category),
         ("An internal error occurred while fetching roles.", "Error fetching roles: {}"),
     )
 
