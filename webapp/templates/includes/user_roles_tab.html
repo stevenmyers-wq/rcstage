@@ -129,12 +129,15 @@
                 <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
                     data-method="GET" data-path="/restapi/v1.0/account/~/user-role" data-body="">List roles</button>
                 <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="GET" data-path="/restapi/v1.0/account/~/user-role/ROLE_ID?advancedPermissions=true" data-body="">Get role (advanced)</button>
+                    data-method="GET" data-path="/restapi/v1.0/account/~/user-role/ROLE_ID" data-body="">Get role</button>
                 <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
                     data-method="GET" data-path="/restapi/v1.0/dictionary/permission?perPage=1000" data-body="">List permissions</button>
                 <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
-                    data-method="PUT" data-path="/restapi/v1.0/account/~/user-role/ROLE_ID?advancedPermissions=true"
-                    data-body='{"permissions":[{"id":"InternalCalls","permissionsCapabilities":{"enabled":true}}]}'>PUT sample</button>
+                    data-method="PUT" data-path="/restapi/v1.0/account/~/user-role/ROLE_ID"
+                    data-body='{"permissions":[{"id":"ReadCompanyInfo"},{"id":"ReadUserInfo"}]}'>PUT sample</button>
+                <button type="button" class="ur-dbg-fill btn-secondary !py-1.5 !px-3 text-xs"
+                    data-method="POST" data-path="/restapi/v1.0/account/~/user-role"
+                    data-body='{"displayName":"ZZ Debug Role","description":"debug test","scope":"Self","permissions":[{"id":"ReadCompanyInfo"},{"id":"ReadUserInfo"},{"id":"Groups"}]}'>POST sample</button>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
