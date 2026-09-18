@@ -57,6 +57,30 @@
         <pre id="el-raw-output" class="hidden mt-4 max-h-80 overflow-auto bg-slate-900 dark:bg-[#0b1120] text-emerald-300 text-xs font-mono p-4 rounded-xl shadow-inner"></pre>
     </details>
 
+    <!-- Debug: dictionary explorer (coded values behind ERL fields) -->
+    <details class="card !p-5 bg-sky-50/50 dark:bg-sky-900/10 border-sky-100 dark:border-sky-800/50 shadow-sm">
+        <summary class="cursor-pointer text-heading text-base text-sky-900 dark:text-sky-100">📖 Debug — dictionary explorer (country / state / format / street type)</summary>
+        <p class="text-slate-600 dark:text-slate-400 text-sm font-medium mt-2 mb-3">Look up the coded values ERLs use. <strong>Street types</strong> lists the codes RC currently accepts on this account (grouped by country + format id). <strong>Countries</strong> / <strong>States</strong> give the id ↔ name mappings. <strong>Probe</strong> tries candidate RC dictionary endpoints to find official enums. Or paste any <code>/restapi/…</code> path.</p>
+        <div class="flex flex-wrap gap-2 items-end">
+            <button data-dict="streettype" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🛣 Street types in use</button>
+            <button data-dict="country" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🌍 Countries</button>
+            <div class="input-wrapper w-40">
+                <label for="el-dict-country" class="input-label">Country ID (for states)</label>
+                <input type="text" id="el-dict-country" class="input-field h-[42px] font-mono" placeholder="e.g. 15 (AU)">
+            </div>
+            <button data-dict="state" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🗺 States</button>
+            <button data-dict="probe" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🔬 Probe endpoints</button>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-3 sm:items-end mt-3">
+            <div class="input-wrapper flex-grow">
+                <label for="el-dict-path" class="input-label">Raw path (advanced)</label>
+                <input type="text" id="el-dict-path" class="input-field font-mono" placeholder="/restapi/v1.0/dictionary/country">
+            </div>
+            <button id="el-dict-path-btn" class="btn-secondary h-[52px] px-6">Fetch path</button>
+        </div>
+        <pre id="el-dict-output" class="hidden mt-4 max-h-96 overflow-auto bg-slate-900 dark:bg-[#0b1120] text-sky-200 text-xs font-mono p-4 rounded-xl shadow-inner"></pre>
+    </details>
+
     <!-- Controls -->
     <div class="flex flex-col gap-4 w-full border-b border-slate-200 dark:border-slate-800/80 pb-6">
         <div class="flex flex-col sm:flex-row gap-4 w-full sm:items-end">
@@ -292,6 +316,48 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             rawBtn.disabled = false;
         }
+    });
+
+    // --- Debug: dictionary explorer ---
+    const dictOutput = document.getElementById('el-dict-output');
+    const dictCountryInput = document.getElementById('el-dict-country');
+    const dictPathInput = document.getElementById('el-dict-path');
+    const dictPathBtn = document.getElementById('el-dict-path-btn');
+
+    const runDictQuery = async (qs, buttons) => {
+        buttons.forEach(b => b.disabled = true);
+        dictOutput.classList.remove('hidden');
+        dictOutput.textContent = 'Fetching…';
+        try {
+            const res = await fetch(`/api/emergency_locations/dictionary?${qs}`);
+            const data = await res.json();
+            dictOutput.textContent = JSON.stringify(data, null, 2);
+            dictOutput.classList.toggle('text-rose-300', !res.ok);
+        } catch (e) {
+            dictOutput.textContent = 'Error: ' + e.message;
+        } finally {
+            buttons.forEach(b => b.disabled = false);
+        }
+    };
+
+    const dictButtons = Array.from(document.querySelectorAll('.el-dict-btn'));
+    dictButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const kind = btn.dataset.dict;
+            let qs = `kind=${encodeURIComponent(kind)}`;
+            if (kind === 'state') {
+                const cid = dictCountryInput.value.trim();
+                if (!cid) { alert('Enter a Country ID first (use the Countries button to find it).'); return; }
+                qs += `&countryId=${encodeURIComponent(cid)}`;
+            }
+            runDictQuery(qs, dictButtons);
+        });
+    });
+
+    dictPathBtn.addEventListener('click', () => {
+        const p = dictPathInput.value.trim();
+        if (!p) { alert('Enter a /restapi/… path.'); return; }
+        runDictQuery(`path=${encodeURIComponent(p)}`, [dictPathBtn]);
     });
 
     // --- Render ---

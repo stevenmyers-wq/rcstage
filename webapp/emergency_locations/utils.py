@@ -262,6 +262,141 @@ def fetch_raw_examples(location_id=None, limit=3):
 
 
 # ===============================================================
+# DEBUG — dictionary explorer (coded values: country/state/format/streetType)
+# ===============================================================
+
+# Candidate RC dictionary endpoints to probe for the enums behind an ERL's coded
+# fields (addressFormatId, streetType, stateId, countryId). RingCentral's docs
+# are not reachable from this environment, so rather than hard-code a guess we
+# hit each candidate live and report which respond — the ones that return data
+# are the real dictionaries to build on. Add more here as we learn them.
+DICTIONARY_PROBE_ENDPOINTS = [
+    "/restapi/v1.0/dictionary/country?perPage=1000",
+    "/restapi/v1.0/dictionary/state?perPage=1000",
+    "/restapi/v1.0/dictionary/location",
+    "/restapi/v1.0/dictionary/emergency-address-format",
+    "/restapi/v1.0/dictionary/address-format",
+    "/restapi/v1.0/dictionary/street-type",
+    "/restapi/v1.0/dictionary/emergency-location",
+    "/restapi/v1.0/dictionary/emergency-address",
+    "/restapi/v1.0/account/~/emergency-address-auto-update/settings",
+]
+
+
+def _json_or_text(response):
+    """Best-effort JSON body from an RC response, falling back to trimmed text."""
+    if response is None:
+        return {"error": "no response"}
+    try:
+        return response.json()
+    except Exception:
+        return {"raw": (getattr(response, 'text', '') or '')[:2000]}
+
+
+def _safe_rc_path(path):
+    """Constrain a free-form path to the RingCentral REST API.
+
+    Prevents the passthrough from being pointed at an arbitrary host: only
+    ``/restapi/...`` relative paths are allowed (absolute URLs are rejected).
+    """
+    path = (path or "").strip()
+    if not path or path.lower().startswith(("http://", "https://")):
+        return None
+    if not path.startswith("/"):
+        path = "/" + path
+    return path if path.startswith("/restapi/") else None
+
+
+def _dict_records(endpoint):
+    """Page through an RC dictionary endpoint, returning trimmed id/code/name rows."""
+    rows = []
+    for rec in _get_all_records(endpoint):
+        rows.append({
+            "id": rec.get("id"),
+            "isoCode": rec.get("isoCode"),
+            "name": rec.get("name"),
+        })
+    return rows
+
+
+def explore_dictionary(kind=None, country_id=None, path=None):
+    """Look up the coded values behind ERL fields.
+
+    kinds:
+      country    — /dictionary/country (id, isoCode, name)
+      state      — /dictionary/state?countryId=… (id, isoCode, name)
+      streettype — distinct streetType / buildingNumber values actually IN USE on
+                   the account's ERLs, grouped by country + addressFormatId. This
+                   is a guaranteed-valid source of codes RC has accepted, even if
+                   no public dictionary endpoint exists.
+      probe      — hit each DICTIONARY_PROBE_ENDPOINTS candidate and report status
+                   + a small sample, to discover official enums empirically.
+      (path)     — raw passthrough of any /restapi/… path.
+    """
+    if path:
+        safe = _safe_rc_path(path)
+        if not safe:
+            return {"error": "Path must be a RingCentral API path starting with /restapi/."}
+        resp = rc_api_call(safe, return_response=True)
+        return {"mode": "path", "path": safe,
+                "status": getattr(resp, 'status_code', None), "body": _json_or_text(resp)}
+
+    kind = (kind or "").lower()
+
+    if kind == "country":
+        return {"mode": "country", "records": _dict_records("/restapi/v1.0/dictionary/country")}
+
+    if kind == "state":
+        if not country_id:
+            return {"error": "countryId is required for the state dictionary."}
+        ep = f"/restapi/v1.0/dictionary/state?countryId={country_id}"
+        return {"mode": "state", "countryId": str(country_id), "records": _dict_records(ep)}
+
+    if kind == "streettype":
+        # Aggregate the codes RC currently accepts, straight from live ERLs.
+        groups = {}
+        for rec in _get_all_records(ERL_ENDPOINT):
+            addr = rec.get("address") or {}
+            key = f"{addr.get('country', '?')} / addressFormatId {rec.get('addressFormatId', '?')}"
+            g = groups.setdefault(key, {
+                "country": addr.get("country"),
+                "addressFormatId": rec.get("addressFormatId"),
+                "addressFormatStatus": rec.get("addressFormatStatus"),
+                "streetTypes": set(),
+                "hasBuildingNumber": False,
+                "count": 0,
+            })
+            g["count"] += 1
+            if addr.get("streetType"):
+                g["streetTypes"].add(str(addr["streetType"]))
+            if addr.get("buildingNumber"):
+                g["hasBuildingNumber"] = True
+        # sets aren't JSON serialisable — sort to lists
+        for g in groups.values():
+            g["streetTypes"] = sorted(g["streetTypes"])
+        return {"mode": "streettype", "groups": list(groups.values())}
+
+    if kind == "probe":
+        results = []
+        for ep in DICTIONARY_PROBE_ENDPOINTS:
+            resp = rc_api_call(ep, return_response=True)
+            body = _json_or_text(resp)
+            sample = body
+            if isinstance(body, dict) and isinstance(body.get("records"), list):
+                sample = {"recordCount": len(body["records"]),
+                          "firstRecord": body["records"][0] if body["records"] else None}
+            results.append({
+                "endpoint": ep,
+                "status": getattr(resp, 'status_code', None),
+                "ok": getattr(resp, 'ok', False),
+                "sample": sample,
+            })
+        return {"mode": "probe", "results": results}
+
+    return {"error": "Unknown dictionary kind. Use country, state, streettype, probe, or a path."}
+
+
+# ===============================================================
 # CREATE / UPDATE / DELETE
 # ===============================================================
 
