@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 from webapp.auth_utils import require_rc_token
 from webapp.usage_tracking import track_usage
 from webapp import task_control
+from webapp.rc_api import rc_api_call
 from . import utils
 
 user_roles_bp = Blueprint(
@@ -75,3 +76,56 @@ def upload_roles():
         chunks(),
         ("An internal error occurred during the update process.", "Error during upload process: {}"),
     )
+
+
+# Debug passthrough is limited to role/permission endpoints so it can't be used
+# as a general RC API proxy.
+_DEBUG_ALLOWED = ('user-role', 'dictionary/permission')
+
+
+@user_roles_bp.route('/debug', methods=['POST'])
+@require_rc_token
+def debug_request():
+    """Send a hand-crafted request to a RingCentral role/permission endpoint and
+    return the raw status and response body. Used to work out the exact request
+    shape RC accepts for role permissions.
+
+    Body: {"method": "GET|POST|PUT|DELETE", "path": "/restapi/...", "body": {..}|null}
+    Only paths targeting user-role or dictionary/permission are allowed.
+    """
+    data = request.get_json(silent=True) or {}
+    method = str(data.get('method', 'GET')).upper()
+    path = str(data.get('path', '')).strip()
+    body = data.get('body')
+
+    if method not in ('GET', 'POST', 'PUT', 'DELETE'):
+        return jsonify({"error": "method must be GET, POST, PUT or DELETE."}), 400
+    if not path.startswith('/restapi/'):
+        return jsonify({"error": "path must start with /restapi/."}), 400
+    if not any(seg in path for seg in _DEBUG_ALLOWED):
+        return jsonify({"error": "path must target a user-role or dictionary/permission endpoint."}), 400
+    if isinstance(body, str):
+        # Allow a raw JSON string body; parse it so we send real JSON.
+        try:
+            body = json.loads(body) if body.strip() else None
+        except json.JSONDecodeError as e:
+            return jsonify({"error": f"body is not valid JSON: {e}"}), 400
+
+    kwargs = {"method": method, "return_response": True}
+    if body is not None and method in ('POST', 'PUT'):
+        kwargs["json"] = body
+
+    response = rc_api_call(path, **kwargs)
+
+    status = getattr(response, 'status_code', None)
+    try:
+        parsed = response.json()
+    except Exception:
+        parsed = getattr(response, 'text', '')
+
+    return jsonify({
+        "request": {"method": method, "path": path, "body": body},
+        "status": status,
+        "ok": bool(getattr(response, 'ok', False)),
+        "response": parsed,
+    })
