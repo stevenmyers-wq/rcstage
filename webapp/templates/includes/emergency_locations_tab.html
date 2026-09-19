@@ -37,7 +37,7 @@
             <ol class="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 text-sm font-medium">
                 <li>Edit the sheet. Set <code>Action</code> to <code>MODIFY</code>, <code>NEW</code> or <code>DELETE</code>.</li>
                 <li>For <code>NEW</code>, clear <code>LocationId</code>, set <code>Name</code>, <code>SiteId</code>, <code>AddressFormatId</code> and the <code>Address.*</code> fields.</li>
-                <li><strong>Non-US:</strong> <code>AddressFormatId</code> is country-specific (e.g. US 19, AU 33, NZ 174) — the easiest path is to copy a row from an existing location in that country. Use <em>Get raw example</em> if unsure.</li>
+                <li><strong>Friendly values are accepted.</strong> You can enter <code>Country</code>/<code>Address.state</code>/<code>Address.streetType</code> by name (e.g. "Australia", "Queensland", "Drive") — the tool resolves them to RC codes, auto-selects the country's address format, fills <code>stateId</code>, and <strong>validates the row before sending</strong> (a bad street type, zip, or missing required field is rejected up front with a clear message, instead of RC silently dropping it).</li>
                 <li>Upload, pick the <strong>Sheet</strong>, and click <strong>Apply Changes</strong>.</li>
             </ol>
         </div>
