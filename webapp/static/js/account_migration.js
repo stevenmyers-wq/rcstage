@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnExport = document.getElementById('btn-start-export');
     const btnAudit = document.getElementById('btn-start-audit');
     const btnImport = document.getElementById('btn-start-import');
-    const unbindCb = document.getElementById('unbind-devices-cb');
     const fileInput = document.getElementById('import-zip-file');
     const filenameDisplay = document.getElementById('import-filename');
     
@@ -226,10 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadHistory();
 
     btnExport.addEventListener('click', async () => {
-        if (unbindCb.checked) {
-            if (!confirm("WARNING: You have selected to UNBIND physical devices. This will remove digital lines from phones. Proceed?")) return;
-        }
-
         setActionsDisabled(true);
         const taskId = 'export_' + Date.now();
         openProgressModal("Exporting Account Data");
@@ -238,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/migration/export', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task_id: taskId, unbind_devices: unbindCb.checked })
+                body: JSON.stringify({ task_id: taskId })
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Export failed to start.");

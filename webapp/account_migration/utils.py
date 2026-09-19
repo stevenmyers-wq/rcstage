@@ -243,6 +243,17 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
     devices = fetch_all_pages('/restapi/v1.0/account/~/device', token, task_id)
     sites = fetch_all_pages('/restapi/v1.0/account/~/sites', token, task_id)
 
+    # Emergency Response Locations (ERLs). The list resource usually carries the
+    # full location, but read the single-resource detail so the true (possibly
+    # international) address shape and any detail-only fields round-trip on import.
+    emergency_locations = []
+    for erl in fetch_all_pages('/restapi/v1.0/account/~/emergency-locations', token, task_id):
+        loc_id = erl.get('id')
+        detail = None
+        if loc_id:
+            detail = safe_rc_api_call(f'/restapi/v1.0/account/~/emergency-locations/{loc_id}', task_id=task_id, method='GET', token=token, raise_error=False)
+        emergency_locations.append(detail or erl)
+
     cost_centers = []
     try:
         cc_resp = safe_rc_api_call('/restapi/v1.0/account/~/cost-center', task_id=task_id, method='GET', token=token, raise_error=False)
@@ -252,7 +263,19 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
         pass
 
     templates = fetch_all_pages('/restapi/v1.0/account/~/templates', token, task_id)
-    custom_roles = fetch_all_pages('/restapi/v1.0/account/~/custom-roles', token, task_id)
+
+    # Custom user roles. Read from the /user-role resource (the same one the User
+    # Roles tool uses) and pull each custom role's detail so its granted
+    # permission set is captured — the list resource alone omits permissions, so
+    # without the detail the role would be recreated empty. Predefined roles are
+    # account-independent (constant ids) and are skipped; they don't need copying.
+    custom_roles = []
+    for role in fetch_all_pages('/restapi/v1.0/account/~/user-role', token, task_id):
+        if not role.get('custom'):
+            continue
+        role_id = role.get('id')
+        detail = safe_rc_api_call(f'/restapi/v1.0/account/~/user-role/{role_id}', task_id=task_id, method='GET', token=token, raise_error=False) or role
+        custom_roles.append(detail)
     call_recording = safe_rc_api_call('/restapi/v1.0/account/~/call-recording', task_id=task_id, method='GET', token=token, raise_error=False)
     company_business_hours = safe_rc_api_call('/restapi/v1.0/account/~/business-hours', task_id=task_id, method='GET', token=token, raise_error=False)
     business_address = safe_rc_api_call('/restapi/v1.0/account/~/business-address', task_id=task_id, method='GET', token=token, raise_error=False)
@@ -279,6 +302,7 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
         "park_locations": park_locations,
         "phone_numbers": phone_numbers,
         "devices": devices,
+        "emergency_locations": emergency_locations,
         "extensions_raw": extensions,
         "detailed_extensions": {},
         "custom_audio_map": []
@@ -385,7 +409,7 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
 
 
 # --- EXPORT LOGIC ---
-def run_account_export(task_id, unbind_devices=False, token=None):
+def run_account_export(task_id, token=None):
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -396,23 +420,6 @@ def run_account_export(task_id, unbind_devices=False, token=None):
         phone_numbers = config_data["phone_numbers"]
         devices = config_data["devices"]
 
-        if unbind_devices:
-            # Free physical MACs on the LOSING account so they can be pushed to
-            # the winning tenant on import. A MAC can only live on one tenant, so
-            # unbinding the line isn't enough — the device is unbound then deleted.
-            # Device details were already captured in config_data["devices"] above.
-            for i, dev in enumerate(devices):
-                if dev.get('type') not in ('HardPhone', 'OtherPhone') or not dev.get('serial'):
-                    continue
-                update_progress(task_id, 90, 100, f"Releasing device {dev.get('name', 'Unknown')} to free its MAC...")
-                dev_id = dev.get('id')
-                try:
-                    if dev.get('phoneLines'):
-                        safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev_id}', task_id=task_id, method='PUT', json_payload={"phoneLines": []}, token=token, raise_error=False)
-                    safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev_id}', task_id=task_id, method='DELETE', token=token, raise_error=False)
-                except Exception:
-                    pass
-        
         update_progress(task_id, 95, 100, "Compiling Configuration Files...")
         zip_file.writestr("config.json", json.dumps(config_data, indent=4))
         
@@ -509,6 +516,7 @@ def _build_audit_workbook(config_data):
         {"Metric": "Custom Roles", "Value": len(config_data.get('custom_roles', []))},
         {"Metric": "Phone Numbers", "Value": len(config_data.get('phone_numbers', []))},
         {"Metric": "Devices", "Value": len(config_data.get('devices', []))},
+        {"Metric": "Emergency Locations", "Value": len(config_data.get('emergency_locations', []))},
         {"Metric": "Templates", "Value": len(config_data.get('templates', []))},
         {"Metric": "Custom Greetings", "Value": len(config_data.get('custom_audio_map', []))},
     ]
@@ -582,7 +590,8 @@ def _build_audit_workbook(config_data):
     # --- Custom Roles ---
     role_rows = [{
         "Role Name": r.get('displayName', r.get('id', '')),
-        "Based On": r.get('basedOn', ''),
+        "Scope": r.get('scope', ''),
+        "Permissions": len([p for p in (r.get('permissions') or []) if p.get('id')]),
         "Description": r.get('description', ''),
     } for r in config_data.get('custom_roles', [])]
 
@@ -606,6 +615,27 @@ def _build_audit_workbook(config_data):
         "Status": dv.get('status', ''),
         "Assigned To": assigned_to(dv.get('extension')) or 'Unassigned',
     } for dv in config_data.get('devices', [])]
+
+    # --- Emergency Locations (ERLs) ---
+    def _compact_address(addr):
+        if not isinstance(addr, dict):
+            return ''
+        parts = []
+        for v in addr.values():
+            if isinstance(v, dict):
+                v = v.get('name') or v.get('id')
+            if v not in (None, ''):
+                parts.append(str(v))
+        return ', '.join(parts)
+
+    erl_rows = [{
+        "Name": e.get('name', ''),
+        "Visibility": e.get('visibility', ''),
+        "Site": (e.get('site') or {}).get('name', ''),
+        "Address": _compact_address(e.get('address')),
+        "Address Status": e.get('addressStatus', ''),
+        "Usage Status": e.get('usageStatus', ''),
+    } for e in config_data.get('emergency_locations', [])]
 
     # --- Answering Rules (custom, per extension) ---
     ar_rows = []
@@ -640,9 +670,10 @@ def _build_audit_workbook(config_data):
         ("Answering Rules", ar_rows, ["Extension", "Ext #", "Rule Name", "Enabled", "Call Handling"]),
         ("Phone Numbers", pn_rows, ["Phone Number", "Type", "Usage", "Status", "Label", "Assigned To"]),
         ("Devices", dev_rows, ["Device Name", "Type", "Model", "Serial / MAC", "Site", "Status", "Assigned To"]),
+        ("Emergency Locations", erl_rows, ["Name", "Visibility", "Site", "Address", "Address Status", "Usage Status"]),
         ("Sites", site_rows, ["Site Name", "Extension #", "Site ID"]),
         ("Cost Centers", cc_rows, ["Name", "Billing Code"]),
-        ("Custom Roles", role_rows, ["Role Name", "Based On", "Description"]),
+        ("Custom Roles", role_rows, ["Role Name", "Scope", "Permissions", "Description"]),
         ("Custom Greetings", greet_rows, ["Extension", "Extension Type", "Greeting Type"]),
         ("Templates", tpl_rows, ["Template Name"]),
     ]
@@ -720,13 +751,13 @@ def _run_with_auth(app, task_id, auth_data, fn):
             _mig_ctx.reset(token_ctx)
 
 
-def run_export_background(app, task_id, unbind_devices, auth_data, user_email=None):
+def run_export_background(app, task_id, auth_data, user_email=None):
     from . import storage
     try:
         storage.record_status(task_id, "running", kind="export", user_email=user_email)
 
         def _do():
-            buf = run_account_export(task_id, unbind_devices, auth_data.get("access_token"))
+            buf = run_account_export(task_id, auth_data.get("access_token"))
             data = buf.getvalue()
             entry = migration_progress_store.get(task_id, {})
             fname = f"RC_Migration_Export_{int(time.time())}.zip"
@@ -861,6 +892,52 @@ def _norm_mac(value):
     return ''.join(c for c in str(value or '') if c in '0123456789abcdefABCDEF').lower()
 
 
+# --- ROLE HELPERS (mirrors the User Roles tool's create-then-enforce logic) ---
+# The RC role model is account-independent for its permission catalog, so this is
+# cached once per process like the User Roles tool does.
+_ASSIGNABLE_PERMS_CACHE = None
+
+
+def _assignable_permission_ids(task_id=None, token=None):
+    """Set of assignable permission ids from /dictionary/permission.
+
+    Only *assignable* permissions may be put on a role; sending a non-assignable
+    permission makes RingCentral reject or ignore the whole permission set, so
+    they are filtered out before a role is created."""
+    global _ASSIGNABLE_PERMS_CACHE
+    if _ASSIGNABLE_PERMS_CACHE is not None:
+        return _ASSIGNABLE_PERMS_CACHE
+    assignable = set()
+    for perm in fetch_all_pages('/restapi/v1.0/dictionary/permission', token, task_id):
+        pid = perm.get('id')
+        if pid and bool(perm.get('assignable', True)):
+            assignable.add(pid)
+    _ASSIGNABLE_PERMS_CACHE = assignable
+    return assignable
+
+
+def _permission_is_granted(perm):
+    """Whether a role's permission entry is actually granted. With advanced
+    permissions an entry carries a ``permissionsCapabilities.enabled`` flag;
+    otherwise presence means granted."""
+    caps = perm.get('permissionsCapabilities')
+    if isinstance(caps, dict) and 'enabled' in caps:
+        return bool(caps.get('enabled'))
+    return True
+
+
+def _role_permissions_payload(role_detail, assignable):
+    """The permissions array to send when recreating a role: each granted,
+    assignable permission as a simple {"id": ...} entry (this account's role
+    model rejects the permissionsCapabilities form on write)."""
+    perms = []
+    for perm in (role_detail.get('permissions') or []):
+        pid = perm.get('id')
+        if pid and pid in assignable and _permission_is_granted(perm):
+            perms.append({"id": pid})
+    return perms
+
+
 # --- IMPORT LOGIC ---
 def run_account_import(task_id, zip_bytes, token=None):
     try:
@@ -924,18 +1001,35 @@ def run_account_import(task_id, zip_bytes, token=None):
 
             # ============================================================
             # Pass 2: Custom roles
+            # Mirrors the User Roles tool: create on the /user-role resource, then
+            # PUT the full body back onto the new id to enforce the permission set
+            # (RC's POST create seeds a default template and does not reliably
+            # apply the permissions array). Only assignable permissions are sent.
             # ============================================================
             update_progress(task_id, 6, 100, "Recreating custom roles...")
+            assignable_perms = _assignable_permission_ids(task_id, token)
             for role in config.get("custom_roles", []):
                 if _stopped_and_marked(task_id):
                     return
+                role_label = role.get('displayName', role.get('id', ''))
                 try:
-                    payload = _clean(role, drop=('id', 'uri', 'lastUpdated', 'default', 'assignable'))
-                    new_role = safe_rc_api_call('/restapi/v1.0/account/~/custom-roles', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
-                    old_to_new_roles[str(role['id'])] = str(new_role['id'])
-                    add_result(task_id, 'Custom Role', role.get('displayName', role.get('id', '')), 'Created')
+                    body = {
+                        "displayName": role.get('displayName', '') or str(role.get('id', '')),
+                        "description": role.get('description', '') or '',
+                        "permissions": _role_permissions_payload(role, assignable_perms),
+                    }
+                    if role.get('scope'):
+                        body['scope'] = role['scope']
+                    new_role = safe_rc_api_call('/restapi/v1.0/account/~/user-role', task_id=task_id, method='POST', json_payload=body, token=token, raise_error=True)
+                    new_id = str(new_role['id'])
+                    # Enforce the requested permissions — the POST body is not
+                    # reliably applied, so PUT the full state onto the new role.
+                    if body['permissions']:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/user-role/{new_id}', task_id=task_id, method='PUT', json_payload=body, token=token, raise_error=False)
+                    old_to_new_roles[str(role['id'])] = new_id
+                    add_result(task_id, 'Custom Role', role_label, 'Created', f"{len(body['permissions'])} permission(s)")
                 except Exception as e:
-                    add_result(task_id, 'Custom Role', role.get('displayName', role.get('id', '')), 'Failed', str(e))
+                    add_result(task_id, 'Custom Role', role_label, 'Failed', str(e))
 
             # ============================================================
             # Pass 3: Sites
@@ -958,6 +1052,35 @@ def run_account_import(task_id, zip_bytes, token=None):
                     add_result(task_id, 'Site', site.get('name', ''), 'Created')
                 except Exception as e:
                     add_result(task_id, 'Site', site.get('name', ''), 'Failed', str(e))
+
+            # ============================================================
+            # Pass 3b: Emergency Response Locations (ERLs)
+            # Recreate the address definitions themselves — depends on sites
+            # (Pass 3) for the site remap. The captured object is RC's own stored
+            # shape, so its address/addressFormatId round-trip as-is. Per-number /
+            # per-device E911 assignment and carrier validation remain manual
+            # (see the manual worklist).
+            # ============================================================
+            update_progress(task_id, 14, 100, "Recreating emergency response locations...")
+            for erl in config.get("emergency_locations", []):
+                if _stopped_and_marked(task_id):
+                    return
+                erl_name = erl.get('name', '') or 'Emergency location'
+                try:
+                    payload = {"name": erl.get('name')}
+                    if erl.get('visibility'):
+                        payload['visibility'] = erl['visibility']
+                    site_ref = _mapped_ref(erl.get('site'), old_to_new_sites)
+                    if site_ref:
+                        payload['site'] = site_ref
+                    if erl.get('addressFormatId'):
+                        payload['addressFormatId'] = erl['addressFormatId']
+                    if erl.get('address'):
+                        payload['address'] = erl['address']
+                    safe_rc_api_call('/restapi/v1.0/account/~/emergency-locations', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
+                    add_result(task_id, 'Emergency Location', erl_name, 'Created')
+                except Exception as e:
+                    add_result(task_id, 'Emergency Location', erl_name, 'Failed', str(e))
 
             # ============================================================
             # Pass 4: Group / structure extensions
@@ -1139,17 +1262,19 @@ def run_account_import(task_id, zip_bytes, token=None):
                     except Exception:
                         pass
 
-                # Assigned role (remap custom-role ids; predefined ids pass through)
+                # Assigned role (remap custom-role ids to those created in Pass 2;
+                # predefined role ids are account-independent and pass through).
                 ar = details.get('assigned_role')
                 if ar and ar.get('records'):
-                    recs = []
-                    for r in ar['records']:
-                        rid = str(r.get('id'))
-                        recs.append({"id": old_to_new_roles.get(rid, rid)})
-                    try:
-                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/assigned-role', task_id=task_id, method='PUT', json_payload={"records": recs}, token=token, raise_error=False)
-                    except Exception:
-                        pass
+                    recs = [{"id": old_to_new_roles.get(str(r.get('id')), str(r.get('id')))}
+                            for r in ar['records'] if r.get('id')]
+                    if recs:
+                        try:
+                            safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/assigned-role', task_id=task_id, method='PUT', json_payload={"records": recs}, token=token, raise_error=True)
+                            add_result(task_id, 'Role Assignment', label, 'Applied',
+                                       ', '.join(str(r.get('displayName') or r.get('id')) for r in ar['records']))
+                        except Exception as e:
+                            add_result(task_id, 'Role Assignment', label, 'Failed', str(e))
 
                 # Presence / BLF monitored lines (remap; drop unmapped)
                 pl = details.get('presence_line') or []
@@ -1256,8 +1381,8 @@ def run_account_import(task_id, zip_bytes, token=None):
             # Pass 10: Devices — push the source MAC/model onto each migrated
             # user's pre-provisioned device slot, via the same
             # /device/bulk-update path the Device Swap tool uses. Assumes the
-            # MAC was freed on the losing account (see the export "Release &
-            # Delete Devices" option) and the winning user has an Existing Phone
+            # MAC has already been freed on the losing account (a MAC can only
+            # live on one tenant) and the winning user has an Existing Phone
             # slot from the license/device prerequisite.
             # ============================================================
             update_progress(task_id, 90, 100, "Pushing devices onto the winning account...")
@@ -1355,4 +1480,4 @@ def _emit_manual_worklist(task_id, config, detailed_exts, old_to_new_exts):
     add_result(task_id, 'Manual — Licenses', 'License & add-on parity', 'Manual',
                'Confirm the winning account has matching licenses and add-on features (e.g. Call Queue Routing Options) enabled.')
     add_result(task_id, 'Manual — E911', 'Emergency response locations', 'Manual',
-               'Emergency addresses are regulated and must be re-registered/validated per number & device on the target.')
+               'Location definitions are recreated automatically (see the Emergency Location rows). Per-number and per-device E911 assignment and carrier address validation are regulated and must still be confirmed on the target.')
