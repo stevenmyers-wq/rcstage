@@ -1,1435 +1,1154 @@
-Probe
+openapi: 3.0.3
+info:
+  title: RingCentral Emergency Locations API
+  description: API for Emergency Locations
+  contact:
+    name: RingCentral Connect Platform
+    url: http://developers.ringcentral.com
+    email: platform@ringcentral.com
+  license:
+    name: RingCentral API License Agreement and Terms of Use
+    url: https://www.ringcentral.com/legal/apilitos.html
+  version: 1.0.40
+servers:
+  - url: https://platform.ringcentral.com
 
-{
-  "mode": "probe",
-  "results": [
-    {
-      "endpoint": "/restapi/v1.0/dictionary/country?perPage=1000",
-      "ok": true,
-      "sample": {
-        "firstRecord": {
-          "callingCode": "93",
-          "emergencyCalling": false,
-          "freeSoftphoneLine": false,
-          "id": "89",
-          "isoCode": "AF",
-          "localDialing": false,
-          "loginAllowed": false,
-          "name": "Afghanistan",
-          "numberSelling": false,
-          "signupAllowed": false,
-          "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/country/89"
-        },
-        "recordCount": 239
-      },
-      "status": 200
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/state?perPage=1000",
-      "ok": true,
-      "sample": {
-        "firstRecord": {
-          "country": {
-            "id": "1",
-            "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/country/1"
-          },
-          "id": "12",
-          "isoCode": "AL",
-          "name": "Alabama",
-          "uri": "https://platform.ringcentral.com/restapi/v1.0/dictionary/state/12"
-        },
-        "recordCount": 54
-      },
-      "status": 200
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/location",
-      "ok": false,
-      "sample": {
-        "errorCode": "InvalidParameter",
-        "errors": [
-          {
-            "errorCode": "CMN-101",
-            "message": "Parameter [stateId] value is invalid.",
-            "parameterName": "stateId"
-          }
-        ],
-        "message": "Parameter [stateId] value is invalid.",
-        "parameterName": "stateId"
-      },
-      "status": 400
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/emergency-address-format",
-      "ok": false,
-      "sample": {
-        "errorCode": "AGW-404",
-        "errors": [],
-        "message": "Resource not found"
-      },
-      "status": 404
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/address-format",
-      "ok": false,
-      "sample": {
-        "errorCode": "AGW-404",
-        "errors": [],
-        "message": "Resource not found"
-      },
-      "status": 404
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/street-type",
-      "ok": false,
-      "sample": {
-        "errorCode": "AGW-404",
-        "errors": [],
-        "message": "Resource not found"
-      },
-      "status": 404
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/emergency-location",
-      "ok": false,
-      "sample": {
-        "errorCode": "AGW-404",
-        "errors": [],
-        "message": "Resource not found"
-      },
-      "status": 404
-    },
-    {
-      "endpoint": "/restapi/v1.0/dictionary/emergency-address",
-      "ok": false,
-      "sample": {
-        "errorCode": "AGW-404",
-        "errors": [],
-        "message": "Resource not found"
-      },
-      "status": 404
-    },
-    {
-      "endpoint": "/restapi/v1.0/account/~/emergency-address-auto-update/settings",
-      "ok": false,
-      "sample": {
-        "errorCode": "AGW-404",
-        "errors": [],
-        "message": "Resource not found"
-      },
-      "status": 404
-    }
-  ]
-}
+x-auth-required: true
+x-auth-context-type: User
+x-service-version: "v1"
+x-service-interface: "rest"
+x-service-name: "pas"
+x-internal-api: false
+x-failover-strategy: "Hardening"
+x-blacklisting-strategy: "Hardening"
+x-balancing-method: "ConsistentHashByHeader"
+x-availability: "Limited"
+x-team: Platform IPA
+x-docs-level: Internal
 
+tags:
+- name: Automatic Location Updates
 
+paths:
+  /restapi/v1.0/account/{accountId}/emergency-locations:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: List Emergency Locations
+      description: Returns emergency response locations for the current account.
+      operationId: listEmergencyLocations
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/SiteIdQuery'
+        - name: searchString
+          in: query
+          description: |
+            Filters entries containing the specified substring in 'address'
+            and 'name' fields. The character range is 0-64; not case-sensitive.
+            If empty then the filter is ignored
+          schema:
+            type: string
+            maxLength: 64
+        - name: addressStatus
+          in: query
+          description: |
+            Status of emergency address to filter results by
+          schema:
+            $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyAddressStatus'
+        - name: usageStatus
+          in: query
+          description: |
+            Status of emergency location to filter results by
+          schema:
+            $ref: '#/components/schemas/EmergencyLocationUsageStatus'
+        - name: domesticCountryId
+          in: query
+          description: |
+            Domestic country ID to filter results by
+          schema:
+            type: string
+        - name: orderBy
+          in: query
+          description: |
+            Comma-separated list of fields to order results, prefixed by
+            plus sign '+' (ascending order) or minus sign '-' (descending order)
+          schema:
+            type: string
+            enum:
+            - '+name'
+            - '+siteName'
+            - '+address'
+            - '+addressStatus'
+            - '+usageStatus'
+            - '-name'
+            - '-siteName'
+            - '-address'
+            - '-addressStatus'
+            - '-usageStatus'
+            default: '+address'
+        - name: visibility
+          in: query
+          description: Visibility of emergency location to filter results by
+          schema:
+            type: string
+            enum:
+              - Public
+            default: Public
+        - name: perPage
+          in: query
+          description: |
+            Indicates a page size (number of items). The values
+            supported: `Max` or numeric value. If not specified,
+            100 records are returned per one page
+          schema:
+            type: integer
+            format: int32
+            default: 100
+        - name: page
+          in: query
+          description: |
+            Indicates the page number to retrieve. Only positive number values
+            are supported
+          schema:
+            type: integer
+            format: int32
+            default: 1
+      responses:
+        "200":
+          description: Emergency locations list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyLocationsResource'
+      
+      x-app-permission: "ReadAccounts"
+      x-user-permission: "ConfigureEmergencyMaps"
+      x-throttling-group: "Light"
+      x-availability: "High"
+      x-docs-level: Public
+      x-beta-api: true
+      x-feature: ReadCompanyInfo
+    post:
+      tags:
+        - Automatic Location Updates
+      summary: Add Emergency Location
+      operationId: createEmergencyLocation
+      description: Creates a new emergency response location for a company.
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+      requestBody:
+        description: JSON body
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergencyLocationRequestResource'
+        required: true
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyLocationResponseResource'
+        "409":
+          $ref: '../common/error-responses-oaf.yml#/components/responses/Conflict'
+      
+      x-app-permission: "EditAccounts"
+      x-user-permission: "ConfigureEmergencyMaps"
+      x-throttling-group: "Medium"
+      x-feature: EditSoftPhoneAutoLocationUpdate OR EditHardPhoneAutoLocationUpdate
+      x-docs-level: Public
+      x-beta-api: true
 
-Street types in use
+  /restapi/v1.0/account/{accountId}/emergency-locations/{locationId}:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: Get Emergency Location
+      description: Returns emergency response location by ID. Available for Admin users only.
+      operationId: readEmergencyLocation
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+        - name: syncEmergencyAddress
+          in: query
+          description: |
+            If true, the emergency addresses will be synchronized with the
+            external provider data
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Emergency location information
+          content:
+            application/json:
+              schema:
+                $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/CommonEmergencyLocationResource'
+      
+      x-app-permission: "EditAccounts"
+      x-user-permission: "ConfigureEmergencyMaps"
+      x-feature: EditSoftPhoneAutoLocationUpdate OR EditHardPhoneAutoLocationUpdate OR ReadEmergencyLocations
+      x-throttling-group: "Light"
+      x-docs-level: Public
+      x-beta-api: true
+    put:
+      tags:
+        - Automatic Location Updates
+      summary: Update Emergency Location
+      description: Updates the specified emergency response location.
+      operationId: updateEmergencyLocation
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+      requestBody:
+        description: JSON body
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergencyLocationRequestResource'
+        required: true
+      responses:
+        "200":
+          description: Updated emergency location information
+          content:
+            application/json:
+              schema:
+                $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyLocationResponseResource'
+      
+      x-app-permission: "EditAccounts"
+      x-user-permission: "ConfigureEmergencyMaps"
+      x-feature: EditSoftPhoneAutoLocationUpdate OR EditHardPhoneAutoLocationUpdate OR EditEmergencyLocations
+      x-throttling-group: "Heavy"
+      x-docs-level: Public
+      x-beta-api: true
+    delete:
+      tags:
+        - Automatic Location Updates
+      operationId: deleteEmergencyLocation
+      summary: Delete Emergency Location
+      description: Deletes the specified emergency response location.
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+        - name: validateOnly
+          in: query
+          description: |
+            Flag indicating that validation of emergency location(s) is required
+            before deletion
+          required: false
+          schema:
+            type: boolean
+        - name: newLocationId
+          in: query
+          description: |
+            Internal identifier of an emergency response location
+            that should be used instead of a deleted one.
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful validation
+        "204":
+          description: No content
+        "207":
+          description: Multi-status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetLocationDeletionMultiResponse'
+      
+      x-app-permission: "EditAccounts"
+      x-user-permission: "ConfigureEmergencyMaps"
+      x-throttling-group: "Heavy"
+      x-feature: EditEmergencyLocations
+      x-docs-level: Public
 
-{
-  "groups": [
-    {
-      "addressFormatId": "174",
-      "addressFormatStatus": "Actual",
-      "count": 1,
-      "country": "NZ",
-      "hasBuildingNumber": false,
-      "streetTypes": []
-    },
-    {
-      "addressFormatId": "33",
-      "addressFormatStatus": "Outdated",
-      "count": 2,
-      "country": "AU",
-      "hasBuildingNumber": false,
-      "streetTypes": []
-    },
-    {
-      "addressFormatId": "19",
-      "addressFormatStatus": "Actual",
-      "count": 4,
-      "country": "US",
-      "hasBuildingNumber": false,
-      "streetTypes": []
-    },
-    {
-      "addressFormatId": "236",
-      "addressFormatStatus": "Outdated",
-      "count": 1,
-      "country": "GB",
-      "hasBuildingNumber": false,
-      "streetTypes": []
-    },
-    {
-      "addressFormatId": "1",
-      "addressFormatStatus": "Actual",
-      "count": 2,
-      "country": "AU",
-      "hasBuildingNumber": true,
-      "streetTypes": [
-        "Dr",
-        "St"
-      ]
-    }
-  ],
-  "mode": "streettype"
-}
+  /restapi/v1.0/account/{accountId}/extension/{extensionId}/emergency-locations:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: List User Emergency Locations
+      description: Returns a list of emergency response locations available for the particular
+        extension.
+      operationId: getExtensionEmergencyLocations
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/ExtensionId'
+        - $ref: '#/components/parameters/SiteIdQuery'
+        - name: searchString
+          in: query
+          description: |
+            Filters entries by the specified substring (search by chassis
+            ID, switch name or address) The characters range is 0-64 (if
+            empty the filter is ignored)
+          schema:
+            type: string
+        - name: domesticCountryId
+          in: query
+          description: |
+            Domestic country ID to filter results by
+          schema:
+            type: string
+        - name: orderBy
+          in: query
+          description: |
+            Comma-separated list of fields to order results prefixed by '+'
+            sign (ascending order) or '-' sign (descending order). The default
+            sorting is by `name`
+          schema:
+            type: string
+            default: "+visibility"
+            enum:
+            - +name
+            - +siteName
+            - +address
+            - +addressStatus
+            - +usageStatus
+            - +visibility
+            - -name
+            - -siteName
+            - -address
+            - -addressStatus
+            - -usageStatus
+            - -visibility
+        - name: perPage
+          in: query
+          description: |
+            Indicates a page size (number of items). The values supported:
+            `Max` or numeric value. If not specified, 100 records are returned
+            per one page
+          schema:
+            format: int32
+            type: integer
+        - name: page
+          in: query
+          description: |
+            Indicates a page number to retrieve. Only positive
+            number values are supported
+          schema:
+            type: integer
+            default: 1
+            format: int32
+        - name: visibility
+          in: query
+          description: |
+            Visibility of emergency location to filter results by
+          schema:
+            type: string
+            enum:
+              - Public
+            default: Public
+      responses:
+        "200":
+          description: User emergency location list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyLocationsResource'
+      
+      x-app-permission: "ReadAccounts"
+      x-throttling-group: "Light"
+      x-availability: "High"
+      x-docs-level: Public
+    post:
+      tags:
+        - Automatic Location Updates
+      summary: Create User Emergency Location
+      description: Creates a personal emergency response location for the current user.
+      operationId: createExtensionEmergencyLocation
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/ExtensionId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserEmergencyLocationRequest'
+        required: true
+      responses:
+        "200":
+          description: Emergency location information
+          content:
+            application/json:
+              schema:
+                $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyLocationResponseResource'
+      
+      x-docs-level: Public
+      x-app-permission: "EditAccounts"
+      x-user-permission: EmergencyFramework
+      x-feature: EmergencyFramework or NewEmergencyCallingFramework
+      x-throttling-group: "Heavy"
 
+  /restapi/v1.0/account/{accountId}/extension/{extensionId}/emergency-locations/{locationId}:
+    put:
+      tags:
+        - Automatic Location Updates
+      summary: Update User Emergency Location
+      description: |
+        Updates a personal emergency response location by the current user or admin.
+      operationId: updateExtensionEmergencyLocation
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/ExtensionId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergencyLocationRequestResource'
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyLocationResponseResource'
+      
+      x-docs-level: Public
+      x-app-permission: "EditAccounts"
+      x-user-permission: "EmergencyFramework"
+      x-throttling-group: "Light"
+      x-feature: EmergencyFramework or NewEmergencyCallingFramework
+    delete:
+      tags:
+        - Automatic Location Updates
+      summary: Delete User Emergency Location
+      description: |
+        Deletes a personal emergency response location by ID by
+        the current user or admin. Multiple personal emergency response
+        locations can be deleted by single API call.
+      operationId: deleteExtensionEmergencyLocation
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/ExtensionId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+        - name: validateOnly
+          in: query
+          description: |
+            Flag indicating that only validation of Emergency Response Locations
+            to be deleted is required
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "204":
+          description: No content
+      
+      x-docs-level: Public
+      x-app-permission: "EditAccounts"
+      x-feature: EmergencyFramework or NewEmergencyCallingFramework
+      x-user-permission: "EmergencyFramework"
+      x-throttling-group: "Heavy"
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: Get User Emergency Location
+      description: Returns a personal emergency response location for the current user.
+      operationId: getExtensionEmergencyLocation
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/ExtensionId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/CommonEmergencyLocationResource'
+      
+      x-app-permission: "ReadAccounts"
+      x-throttling-group: "Light"
+      x-availability: "High"
+      x-docs-level: Public
 
-Countries
+  /restapi/v1.0/account/{accountId}/emergency-calling:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: Get Emergency Calling Configuration
+      description: Returns emergency calling configuration.
+      operationId: getEmergencyCallingConfiguration
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+      responses:
+        "200":
+          description: Emergency Calling Configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyCallingConfigInfo'
+      
+      x-app-permission: "ReadAccounts"
+      x-user-permission: "ReadCompanyInfo"
+      x-throttling-group: "Light"
+      x-availability: "High"
+      x-feature: ReadCompanyInfo
+      x-docs-level: Internal
 
-{
-  "mode": "country",
-  "records": [
-    {
-      "id": "89",
-      "isoCode": "AF",
-      "name": "Afghanistan"
-    },
-    {
-      "id": "3",
-      "isoCode": "AL",
-      "name": "Albania"
-    },
-    {
-      "id": "4",
-      "isoCode": "DZ",
-      "name": "Algeria"
-    },
-    {
-      "id": "5",
-      "isoCode": "AS",
-      "name": "American Samoa"
-    },
-    {
-      "id": "6",
-      "isoCode": "AD",
-      "name": "Andorra"
-    },
-    {
-      "id": "7",
-      "isoCode": "AO",
-      "name": "Angola"
-    },
-    {
-      "id": "8",
-      "isoCode": "AI",
-      "name": "Anguilla"
-    },
-    {
-      "id": "9",
-      "isoCode": "AQ",
-      "name": "Antarctica"
-    },
-    {
-      "id": "10",
-      "isoCode": "AG",
-      "name": "Antigua and Barbuda"
-    },
-    {
-      "id": "11",
-      "isoCode": "AR",
-      "name": "Argentina"
-    },
-    {
-      "id": "12",
-      "isoCode": "AM",
-      "name": "Armenia"
-    },
-    {
-      "id": "13",
-      "isoCode": "AW",
-      "name": "Aruba"
-    },
-    {
-      "id": "15",
-      "isoCode": "AU",
-      "name": "Australia"
-    },
-    {
-      "id": "16",
-      "isoCode": "AT",
-      "name": "Austria"
-    },
-    {
-      "id": "17",
-      "isoCode": "AZ",
-      "name": "Azerbaijan"
-    },
-    {
-      "id": "18",
-      "isoCode": "BS",
-      "name": "Bahamas"
-    },
-    {
-      "id": "19",
-      "isoCode": "BH",
-      "name": "Bahrain"
-    },
-    {
-      "id": "20",
-      "isoCode": "BD",
-      "name": "Bangladesh"
-    },
-    {
-      "id": "21",
-      "isoCode": "BB",
-      "name": "Barbados"
-    },
-    {
-      "id": "22",
-      "isoCode": "BY",
-      "name": "Belarus"
-    },
-    {
-      "id": "23",
-      "isoCode": "BE",
-      "name": "Belgium"
-    },
-    {
-      "id": "24",
-      "isoCode": "BZ",
-      "name": "Belize"
-    },
-    {
-      "id": "25",
-      "isoCode": "BJ",
-      "name": "Benin"
-    },
-    {
-      "id": "26",
-      "isoCode": "BM",
-      "name": "Bermuda"
-    },
-    {
-      "id": "27",
-      "isoCode": "BT",
-      "name": "Bhutan"
-    },
-    {
-      "id": "28",
-      "isoCode": "BO",
-      "name": "Bolivia"
-    },
-    {
-      "id": "291",
-      "isoCode": "BQ",
-      "name": "Bonaire, Saint Eustatius and Saba (Caribbean Netherlands)"
-    },
-    {
-      "id": "29",
-      "isoCode": "BA",
-      "name": "Bosnia and Herzegovina"
-    },
-    {
-      "id": "30",
-      "isoCode": "BW",
-      "name": "Botswana"
-    },
-    {
-      "id": "31",
-      "isoCode": "BR",
-      "name": "Brazil"
-    },
-    {
-      "id": "33",
-      "isoCode": "BN",
-      "name": "Brunei Darussalam"
-    },
-    {
-      "id": "34",
-      "isoCode": "BG",
-      "name": "Bulgaria"
-    },
-    {
-      "id": "35",
-      "isoCode": "BF",
-      "name": "Burkina Faso"
-    },
-    {
-      "id": "36",
-      "isoCode": "BI",
-      "name": "Burundi"
-    },
-    {
-      "id": "37",
-      "isoCode": "KH",
-      "name": "Cambodia"
-    },
-    {
-      "id": "38",
-      "isoCode": "CM",
-      "name": "Cameroon"
-    },
-    {
-      "id": "39",
-      "isoCode": "CA",
-      "name": "Canada"
-    },
-    {
-      "id": "40",
-      "isoCode": "CV",
-      "name": "Cape Verde"
-    },
-    {
-      "id": "41",
-      "isoCode": "KY",
-      "name": "Cayman Islands"
-    },
-    {
-      "id": "42",
-      "isoCode": "CF",
-      "name": "Central African Republic"
-    },
-    {
-      "id": "43",
-      "isoCode": "TD",
-      "name": "Chad"
-    },
-    {
-      "id": "45",
-      "isoCode": "CL",
-      "name": "Chile"
-    },
-    {
-      "id": "46",
-      "isoCode": "CN",
-      "name": "China"
-    },
-    {
-      "id": "49",
-      "isoCode": "CO",
-      "name": "Colombia"
-    },
-    {
-      "id": "50",
-      "isoCode": "KM",
-      "name": "Comoros"
-    },
-    {
-      "id": "51",
-      "isoCode": "CG",
-      "name": "Congo"
-    },
-    {
-      "id": "14",
-      "isoCode": "CD",
-      "name": "Congo, Democratic Republic"
-    },
-    {
-      "id": "52",
-      "isoCode": "CK",
-      "name": "Cook Islands"
-    },
-    {
-      "id": "53",
-      "isoCode": "CR",
-      "name": "Costa Rica"
-    },
-    {
-      "id": "54",
-      "isoCode": "HR",
-      "name": "Croatia"
-    },
-    {
-      "id": "55",
-      "isoCode": "CU",
-      "name": "Cuba"
-    },
-    {
-      "id": "273",
-      "isoCode": "CW",
-      "name": "Curacao"
-    },
-    {
-      "id": "56",
-      "isoCode": "CY",
-      "name": "Cyprus"
-    },
-    {
-      "id": "57",
-      "isoCode": "CZ",
-      "name": "Czech Republic"
-    },
-    {
-      "id": "58",
-      "isoCode": "DK",
-      "name": "Denmark"
-    },
-    {
-      "id": "60",
-      "isoCode": "DJ",
-      "name": "Djibouti"
-    },
-    {
-      "id": "61",
-      "isoCode": "DM",
-      "name": "Dominica"
-    },
-    {
-      "id": "62",
-      "isoCode": "DO",
-      "name": "Dominican Republic"
-    },
-    {
-      "id": "64",
-      "isoCode": "EC",
-      "name": "Ecuador"
-    },
-    {
-      "id": "65",
-      "isoCode": "EG",
-      "name": "Egypt"
-    },
-    {
-      "id": "66",
-      "isoCode": "SV",
-      "name": "El Salvador"
-    },
-    {
-      "id": "67",
-      "isoCode": "GQ",
-      "name": "Equatorial Guinea"
-    },
-    {
-      "id": "68",
-      "isoCode": "ER",
-      "name": "Eritrea"
-    },
-    {
-      "id": "69",
-      "isoCode": "EE",
-      "name": "Estonia"
-    },
-    {
-      "id": "70",
-      "isoCode": "ET",
-      "name": "Ethiopia"
-    },
-    {
-      "id": "71",
-      "isoCode": "FK",
-      "name": "Falkland Islands (Malvinas)"
-    },
-    {
-      "id": "72",
-      "isoCode": "FO",
-      "name": "Faroe Islands"
-    },
-    {
-      "id": "73",
-      "isoCode": "FJ",
-      "name": "Fiji"
-    },
-    {
-      "id": "74",
-      "isoCode": "FI",
-      "name": "Finland"
-    },
-    {
-      "id": "75",
-      "isoCode": "FR",
-      "name": "France"
-    },
-    {
-      "id": "77",
-      "isoCode": "GF",
-      "name": "French Guiana"
-    },
-    {
-      "id": "78",
-      "isoCode": "PF",
-      "name": "French Polynesia"
-    },
-    {
-      "id": "80",
-      "isoCode": "GA",
-      "name": "Gabon"
-    },
-    {
-      "id": "81",
-      "isoCode": "GM",
-      "name": "Gambia"
-    },
-    {
-      "id": "82",
-      "isoCode": "GE",
-      "name": "Georgia"
-    },
-    {
-      "id": "83",
-      "isoCode": "DE",
-      "name": "Germany"
-    },
-    {
-      "id": "84",
-      "isoCode": "GH",
-      "name": "Ghana"
-    },
-    {
-      "id": "85",
-      "isoCode": "GI",
-      "name": "Gibraltar"
-    },
-    {
-      "id": "86",
-      "isoCode": "GR",
-      "name": "Greece"
-    },
-    {
-      "id": "87",
-      "isoCode": "GL",
-      "name": "Greenland"
-    },
-    {
-      "id": "88",
-      "isoCode": "GD",
-      "name": "Grenada"
-    },
-    {
-      "id": "90",
-      "isoCode": "GP",
-      "name": "Guadeloupe"
-    },
-    {
-      "id": "91",
-      "isoCode": "GU",
-      "name": "Guam"
-    },
-    {
-      "id": "93",
-      "isoCode": "GT",
-      "name": "Guatemala"
-    },
-    {
-      "id": "245",
-      "isoCode": "GG",
-      "name": "Guernsey"
-    },
-    {
-      "id": "95",
-      "isoCode": "GN",
-      "name": "Guinea"
-    },
-    {
-      "id": "96",
-      "isoCode": "GW",
-      "name": "Guinea-Bissau"
-    },
-    {
-      "id": "97",
-      "isoCode": "GY",
-      "name": "Guyana"
-    },
-    {
-      "id": "98",
-      "isoCode": "HT",
-      "name": "Haiti"
-    },
-    {
-      "id": "99",
-      "isoCode": "HN",
-      "name": "Honduras"
-    },
-    {
-      "id": "100",
-      "isoCode": "HK",
-      "name": "Hong Kong"
-    },
-    {
-      "id": "101",
-      "isoCode": "HU",
-      "name": "Hungary"
-    },
-    {
-      "id": "102",
-      "isoCode": "IS",
-      "name": "Iceland"
-    },
-    {
-      "id": "103",
-      "isoCode": "IN",
-      "name": "India"
-    },
-    {
-      "id": "104",
-      "isoCode": "ID",
-      "name": "Indonesia"
-    },
-    {
-      "id": "105",
-      "isoCode": "IR",
-      "name": "Iran"
-    },
-    {
-      "id": "106",
-      "isoCode": "IQ",
-      "name": "Iraq"
-    },
-    {
-      "id": "107",
-      "isoCode": "IE",
-      "name": "Ireland"
-    },
-    {
-      "id": "247",
-      "isoCode": "IM",
-      "name": "Isle of Man"
-    },
-    {
-      "id": "108",
-      "isoCode": "IL",
-      "name": "Israel"
-    },
-    {
-      "id": "109",
-      "isoCode": "IT",
-      "name": "Italy"
-    },
-    {
-      "id": "110",
-      "isoCode": "CI",
-      "name": "Ivory Coast"
-    },
-    {
-      "id": "111",
-      "isoCode": "JM",
-      "name": "Jamaica"
-    },
-    {
-      "id": "112",
-      "isoCode": "JP",
-      "name": "Japan"
-    },
-    {
-      "id": "248",
-      "isoCode": "JE",
-      "name": "Jersey"
-    },
-    {
-      "id": "114",
-      "isoCode": "JO",
-      "name": "Jordan"
-    },
-    {
-      "id": "115",
-      "isoCode": "KZ",
-      "name": "Kazakhstan"
-    },
-    {
-      "id": "116",
-      "isoCode": "KE",
-      "name": "Kenya"
-    },
-    {
-      "id": "117",
-      "isoCode": "KI",
-      "name": "Kiribati"
-    },
-    {
-      "id": "280",
-      "isoCode": "XK",
-      "name": "Kosovo"
-    },
-    {
-      "id": "118",
-      "isoCode": "KW",
-      "name": "Kuwait"
-    },
-    {
-      "id": "119",
-      "isoCode": "KG",
-      "name": "Kyrgyzstan"
-    },
-    {
-      "id": "120",
-      "isoCode": "LA",
-      "name": "Laos"
-    },
-    {
-      "id": "121",
-      "isoCode": "LV",
-      "name": "Latvia"
-    },
-    {
-      "id": "122",
-      "isoCode": "LB",
-      "name": "Lebanon"
-    },
-    {
-      "id": "123",
-      "isoCode": "LS",
-      "name": "Lesotho"
-    },
-    {
-      "id": "124",
-      "isoCode": "LR",
-      "name": "Liberia"
-    },
-    {
-      "id": "125",
-      "isoCode": "LY",
-      "name": "Libya"
-    },
-    {
-      "id": "126",
-      "isoCode": "LI",
-      "name": "Liechtenstein"
-    },
-    {
-      "id": "127",
-      "isoCode": "LT",
-      "name": "Lithuania"
-    },
-    {
-      "id": "128",
-      "isoCode": "LU",
-      "name": "Luxembourg"
-    },
-    {
-      "id": "129",
-      "isoCode": "MO",
-      "name": "Macao"
-    },
-    {
-      "id": "130",
-      "isoCode": "MK",
-      "name": "Macedonia"
-    },
-    {
-      "id": "131",
-      "isoCode": "MG",
-      "name": "Madagascar"
-    },
-    {
-      "id": "132",
-      "isoCode": "MW",
-      "name": "Malawi"
-    },
-    {
-      "id": "133",
-      "isoCode": "MY",
-      "name": "Malaysia"
-    },
-    {
-      "id": "134",
-      "isoCode": "MV",
-      "name": "Maldives"
-    },
-    {
-      "id": "135",
-      "isoCode": "ML",
-      "name": "Mali"
-    },
-    {
-      "id": "136",
-      "isoCode": "MT",
-      "name": "Malta"
-    },
-    {
-      "id": "138",
-      "isoCode": "MH",
-      "name": "Marshall Islands"
-    },
-    {
-      "id": "139",
-      "isoCode": "MQ",
-      "name": "Martinique"
-    },
-    {
-      "id": "140",
-      "isoCode": "MR",
-      "name": "Mauritania"
-    },
-    {
-      "id": "141",
-      "isoCode": "MU",
-      "name": "Mauritius"
-    },
-    {
-      "id": "142",
-      "isoCode": "YT",
-      "name": "Mayotte"
-    },
-    {
-      "id": "143",
-      "isoCode": "MX",
-      "name": "Mexico"
-    },
-    {
-      "id": "144",
-      "isoCode": "FM",
-      "name": "Micronesia, Federated States"
-    },
-    {
-      "id": "147",
-      "isoCode": "MD",
-      "name": "Moldova"
-    },
-    {
-      "id": "148",
-      "isoCode": "MC",
-      "name": "Monaco"
-    },
-    {
-      "id": "149",
-      "isoCode": "MN",
-      "name": "Mongolia"
-    },
-    {
-      "id": "240",
-      "isoCode": "ME",
-      "name": "Montenegro"
-    },
-    {
-      "id": "150",
-      "isoCode": "MS",
-      "name": "Montserrat"
-    },
-    {
-      "id": "151",
-      "isoCode": "MA",
-      "name": "Morocco"
-    },
-    {
-      "id": "152",
-      "isoCode": "MZ",
-      "name": "Mozambique"
-    },
-    {
-      "id": "153",
-      "isoCode": "MM",
-      "name": "Myanmar"
-    },
-    {
-      "id": "154",
-      "isoCode": "NA",
-      "name": "Namibia"
-    },
-    {
-      "id": "155",
-      "isoCode": "NR",
-      "name": "Nauru"
-    },
-    {
-      "id": "156",
-      "isoCode": "NP",
-      "name": "Nepal"
-    },
-    {
-      "id": "157",
-      "isoCode": "NL",
-      "name": "Netherlands"
-    },
-    {
-      "id": "145",
-      "isoCode": "AN",
-      "name": "Netherlands Antilles"
-    },
-    {
-      "id": "159",
-      "isoCode": "NC",
-      "name": "New Caledonia"
-    },
-    {
-      "id": "160",
-      "isoCode": "NZ",
-      "name": "New Zealand"
-    },
-    {
-      "id": "161",
-      "isoCode": "NI",
-      "name": "Nicaragua"
-    },
-    {
-      "id": "162",
-      "isoCode": "NE",
-      "name": "Niger"
-    },
-    {
-      "id": "163",
-      "isoCode": "NG",
-      "name": "Nigeria"
-    },
-    {
-      "id": "164",
-      "isoCode": "NU",
-      "name": "Niue"
-    },
-    {
-      "id": "249",
-      "isoCode": "NF",
-      "name": "Norfolk Island"
-    },
-    {
-      "id": "166",
-      "isoCode": "KP",
-      "name": "North Korea"
-    },
-    {
-      "id": "146",
-      "isoCode": "MP",
-      "name": "Northern Mariana Islands"
-    },
-    {
-      "id": "167",
-      "isoCode": "NO",
-      "name": "Norway"
-    },
-    {
-      "id": "168",
-      "isoCode": "OM",
-      "name": "Oman"
-    },
-    {
-      "id": "169",
-      "isoCode": "PK",
-      "name": "Pakistan"
-    },
-    {
-      "id": "170",
-      "isoCode": "PW",
-      "name": "Palau"
-    },
-    {
-      "id": "232",
-      "isoCode": "PS",
-      "name": "Palestinian Territory"
-    },
-    {
-      "id": "171",
-      "isoCode": "PA",
-      "name": "Panama"
-    },
-    {
-      "id": "172",
-      "isoCode": "PG",
-      "name": "Papua New Guinea"
-    },
-    {
-      "id": "173",
-      "isoCode": "PY",
-      "name": "Paraguay"
-    },
-    {
-      "id": "174",
-      "isoCode": "PE",
-      "name": "Peru"
-    },
-    {
-      "id": "175",
-      "isoCode": "PH",
-      "name": "Philippines"
-    },
-    {
-      "id": "176",
-      "isoCode": "PL",
-      "name": "Poland"
-    },
-    {
-      "id": "177",
-      "isoCode": "PT",
-      "name": "Portugal"
-    },
-    {
-      "id": "179",
-      "isoCode": "PR",
-      "name": "Puerto Rico"
-    },
-    {
-      "id": "180",
-      "isoCode": "QA",
-      "name": "Qatar"
-    },
-    {
-      "id": "181",
-      "isoCode": "RE",
-      "name": "Reunion"
-    },
-    {
-      "id": "182",
-      "isoCode": "RO",
-      "name": "Romania"
-    },
-    {
-      "id": "2",
-      "isoCode": "RU",
-      "name": "Russia"
-    },
-    {
-      "id": "183",
-      "isoCode": "RW",
-      "name": "Rwanda"
-    },
-    {
-      "id": "251",
-      "isoCode": "BL",
-      "name": "Saint Barthelemy"
-    },
-    {
-      "id": "197",
-      "isoCode": "SH",
-      "name": "Saint Helena"
-    },
-    {
-      "id": "158",
-      "isoCode": "KN",
-      "name": "Saint Kitts and Nevis"
-    },
-    {
-      "id": "199",
-      "isoCode": "LC",
-      "name": "Saint Lucia"
-    },
-    {
-      "id": "252",
-      "isoCode": "MF",
-      "name": "Saint Martin (French part)"
-    },
-    {
-      "id": "200",
-      "isoCode": "PM",
-      "name": "Saint Pierre and Miquelon"
-    },
-    {
-      "id": "201",
-      "isoCode": "VC",
-      "name": "Saint Vincent and the Grenadines"
-    },
-    {
-      "id": "44",
-      "isoCode": "WS",
-      "name": "Samoa"
-    },
-    {
-      "id": "185",
-      "isoCode": "SM",
-      "name": "San Marino"
-    },
-    {
-      "id": "178",
-      "isoCode": "ST",
-      "name": "Sao Tome and Principe"
-    },
-    {
-      "id": "187",
-      "isoCode": "SA",
-      "name": "Saudi Arabia"
-    },
-    {
-      "id": "94",
-      "isoCode": "SN",
-      "name": "Senegal"
-    },
-    {
-      "id": "76",
-      "isoCode": "RS",
-      "name": "Serbia"
-    },
-    {
-      "id": "186",
-      "isoCode": "SC",
-      "name": "Seychelles"
-    },
-    {
-      "id": "198",
-      "isoCode": "SL",
-      "name": "Sierra Leone"
-    },
-    {
-      "id": "188",
-      "isoCode": "SG",
-      "name": "Singapore"
-    },
-    {
-      "id": "268",
-      "isoCode": "SX",
-      "name": "Sint Maarten"
-    },
-    {
-      "id": "189",
-      "isoCode": "SK",
-      "name": "Slovakia"
-    },
-    {
-      "id": "190",
-      "isoCode": "SI",
-      "name": "Slovenia"
-    },
-    {
-      "id": "191",
-      "isoCode": "SB",
-      "name": "Solomon Islands"
-    },
-    {
-      "id": "192",
-      "isoCode": "SO",
-      "name": "Somalia"
-    },
-    {
-      "id": "193",
-      "isoCode": "ZA",
-      "name": "South Africa"
-    },
-    {
-      "id": "194",
-      "isoCode": "KR",
-      "name": "South Korea"
-    },
-    {
-      "id": "267",
-      "isoCode": "SS",
-      "name": "South Sudan"
-    },
-    {
-      "id": "195",
-      "isoCode": "ES",
-      "name": "Spain"
-    },
-    {
-      "id": "196",
-      "isoCode": "LK",
-      "name": "Sri Lanka"
-    },
-    {
-      "id": "202",
-      "isoCode": "SD",
-      "name": "Sudan"
-    },
-    {
-      "id": "203",
-      "isoCode": "SR",
-      "name": "Suriname"
-    },
-    {
-      "id": "204",
-      "isoCode": "SZ",
-      "name": "Swaziland"
-    },
-    {
-      "id": "205",
-      "isoCode": "SE",
-      "name": "Sweden"
-    },
-    {
-      "id": "206",
-      "isoCode": "CH",
-      "name": "Switzerland"
-    },
-    {
-      "id": "207",
-      "isoCode": "SY",
-      "name": "Syria"
-    },
-    {
-      "id": "208",
-      "isoCode": "TW",
-      "name": "Taiwan"
-    },
-    {
-      "id": "209",
-      "isoCode": "TJ",
-      "name": "Tajikistan"
-    },
-    {
-      "id": "210",
-      "isoCode": "TZ",
-      "name": "Tanzania, United Republic"
-    },
-    {
-      "id": "211",
-      "isoCode": "TH",
-      "name": "Thailand"
-    },
-    {
-      "id": "137",
-      "isoCode": "TL",
-      "name": "Timor-Leste"
-    },
-    {
-      "id": "212",
-      "isoCode": "TG",
-      "name": "Togo"
-    },
-    {
-      "id": "213",
-      "isoCode": "TK",
-      "name": "Tokelau"
-    },
-    {
-      "id": "214",
-      "isoCode": "TO",
-      "name": "Tonga"
-    },
-    {
-      "id": "215",
-      "isoCode": "TT",
-      "name": "Trinidad and Tobago"
-    },
-    {
-      "id": "216",
-      "isoCode": "TN",
-      "name": "Tunisia"
-    },
-    {
-      "id": "217",
-      "isoCode": "TR",
-      "name": "Türkiye"
-    },
-    {
-      "id": "218",
-      "isoCode": "TM",
-      "name": "Turkmenistan"
-    },
-    {
-      "id": "219",
-      "isoCode": "TC",
-      "name": "Turks and Caicos Islands"
-    },
-    {
-      "id": "220",
-      "isoCode": "TV",
-      "name": "Tuvalu"
-    },
-    {
-      "id": "221",
-      "isoCode": "UG",
-      "name": "Uganda"
-    },
-    {
-      "id": "222",
-      "isoCode": "UA",
-      "name": "Ukraine"
-    },
-    {
-      "id": "223",
-      "isoCode": "AE",
-      "name": "United Arab Emirates"
-    },
-    {
-      "id": "224",
-      "isoCode": "GB",
-      "name": "United Kingdom"
-    },
-    {
-      "id": "1",
-      "isoCode": "US",
-      "name": "United States"
-    },
-    {
-      "id": "225",
-      "isoCode": "UY",
-      "name": "Uruguay"
-    },
-    {
-      "id": "227",
-      "isoCode": "UZ",
-      "name": "Uzbekistan"
-    },
-    {
-      "id": "228",
-      "isoCode": "VU",
-      "name": "Vanuatu"
-    },
-    {
-      "id": "229",
-      "isoCode": "VA",
-      "name": "Vatican City"
-    },
-    {
-      "id": "230",
-      "isoCode": "VE",
-      "name": "Venezuela"
-    },
-    {
-      "id": "231",
-      "isoCode": "VN",
-      "name": "Vietnam"
-    },
-    {
-      "id": "32",
-      "isoCode": "VG",
-      "name": "Virgin Islands, British"
-    },
-    {
-      "id": "226",
-      "isoCode": "VI",
-      "name": "Virgin Islands, U.S."
-    },
-    {
-      "id": "233",
-      "isoCode": "WF",
-      "name": "Wallis and Futuna"
-    },
-    {
-      "id": "63",
-      "isoCode": "YE",
-      "name": "Yemen"
-    },
-    {
-      "id": "59",
-      "isoCode": "ZM",
-      "name": "Zambia"
-    },
-    {
-      "id": "92",
-      "isoCode": "ZW",
-      "name": "Zimbabwe"
-    }
-  ]
-}
+  /restapi/v1.0/account/{accountId}/emergency-calling/activate-emergency-locations:
+    post:
+      tags:
+        - Automatic Location Updates
+      description: |
+        Allows to activate Emergency Response Locations feature for the current
+        account.
+      summary: Activate Emergency Locations
+      operationId: activateEmergencyLocations
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+      responses:
+        "202":
+          description: Accepted - Async task for adding ELINs has been created
+        "204":
+          description: No content - Feature has been activated
+      
+      x-app-permission: "EditAccounts"
+      x-user-permission: "EditEmergencyLocations"
+      x-throttling-group: "Heavy"
+      x-feature: EditEmergencyLocations
 
+  /restapi/v1.0/account/{accountId}/emergency-calling/locations/{locationId}:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: Get Emergency Address
+      description: Returns an emergency address by an emergency response location ID. Available for regular users.
+      operationId: readEmergencyAddressByErlId
+      parameters:
+        - $ref: '../common/common-params-oaf.yml#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/EmergencyLocationId'
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyAddressResource'
+      
+      x-app-permission: "EditAccounts"
+      x-throttling-group: "Medium"
+      x-feature: AdditionalEmergencyRoutingOptions AND NewEmergencyCallingFramework
+      x-docs-level: Internal
 
-States
+  /restapi/v1.0/address-validation/emergency/validate:
+    post:
+      tags:
+        - Automatic Location Updates
+      summary: Validate Emergency Address
+      description: Validates address in external Emergency Address Service.
+      operationId: validateEmergencyAddress
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateEmergencyAddressRequest'
+        required: true
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateEmergencyAddress'
+      
+      x-app-permission: "EditAccounts"
+      x-throttling-group: "Medium"
+      x-internal-api: false
+      x-docs-level: Internal
+      x-availability: "High"
 
-{
-  "countryId": "15",
-  "mode": "state",
-  "records": [
-    {
-      "id": "750",
-      "isoCode": null,
-      "name": "Australia"
-    },
-    {
-      "id": "768",
-      "isoCode": "ACT",
-      "name": "Australian Capital Territory"
-    },
-    {
-      "id": "769",
-      "isoCode": "NSW",
-      "name": "New South Wales"
-    },
-    {
-      "id": "770",
-      "isoCode": "NT",
-      "name": "Northern Territory"
-    },
-    {
-      "id": "771",
-      "isoCode": "QLD",
-      "name": "Queensland"
-    },
-    {
-      "id": "772",
-      "isoCode": "SA",
-      "name": "South Australia"
-    },
-    {
-      "id": "773",
-      "isoCode": "TAS",
-      "name": "Tasmania"
-    },
-    {
-      "id": "767",
-      "isoCode": "VIC",
-      "name": "Victoria"
-    },
-    {
-      "id": "774",
-      "isoCode": "WA",
-      "name": "Western Australia"
-    }
-  ]
-}
+  /restapi/v1.0/dictionary/address-formats:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: List Address Formats for Emergency Locations
+      description: Returns available address formats for ERLs.
+      operationId: listAddressFormatsErl
+      parameters:
+      - name: countryId
+        in: query
+        description: |
+          Internal identifier of a country. If not specified, the response
+          is returned for all countries
+        schema:
+          type: string
+      - name: addressType
+        in: query
+        description: |
+          Address format type for filtration
+        schema:
+          type: string
+          enum:
+            - Emergency
+            - Shipping
+      responses:
+        "200":
+          description: Emergency address formats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressFormatResourceCollection'
+      x-throttling-group: "Light"
+      x-availability: "High"
+      x-docs-level: Internal
+      x-auth-context-type: [User, Brand]
+
+  /restapi/v1.0/dictionary/address-formats/{addressFormatId}:
+    get:
+      tags:
+        - Automatic Location Updates
+      summary: Get Address Format
+      description: Returns address format by ID.
+      operationId: getAddressFormatById
+      parameters:
+        - name: addressFormatId
+          in: path
+          required: true
+          description: |
+            Internal identifier of an address format
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Emergency address format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressFormatResource'
+      x-throttling-group: "Light"
+      x-availability: "High"
+      x-docs-level: Internal
+      x-auth-context-type: [ User, Brand ]
+
+components:
+  parameters:
+
+    EmergencyLocationId:
+      name: locationId
+      in: path
+      description: Internal identifier of an emergency response location
+      required: true
+      schema:
+        type: string
+
+    SiteIdQuery:
+      name: siteId
+      in: query
+      description: |
+        Internal identifier of a site for filtering. To indicate company main
+        site `main-site` value should be specified. Supported only if multi-site feature
+        is enabled for the account. Multiple values are supported.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+
+  schemas:
+
+    AddressFormatResourceCollection:
+      type: object
+      required:
+        - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/AddressFormatResource'
+
+    AddressFormatResource:
+      type: object
+      required:
+        - id
+        - validationVersion
+        - applicableToAddressTypes
+        - country
+        - fields
+        - primary
+        - allowed
+      properties:
+        id:
+          type: string
+          description: |
+            Internal identifier of an address format
+        validationVersion:
+          type: string
+          description: |
+            Defines which validation provider will be used for address normalisation. 
+            (V1-SmartyStreets,V2-Informatica,V3-DASH,V4-DLR)
+          enum:
+            - None
+            - V1
+            - V2
+            - V3
+            - V4
+        applicableToAddressTypes:
+          type: array
+          description: List of address types
+          items:
+            $ref: '#/components/schemas/LocationType'
+        country:
+          $ref: '#/components/schemas/CountryInfoResource'
+        fields:
+          type: array
+          description: List of address types
+          items:
+            $ref: '#/components/schemas/AddressFormatField'
+        dependencies:
+          type: array
+          minItems: 1
+          description: |
+            An array of dependencies which override certain format validation policies. 
+            Is utilised to create a validation rule of two address format fields.
+          items:
+            $ref: '#/components/schemas/AddressFormatDependencyResource'
+        primary:
+          type: boolean
+          description: |
+            Is the format primary
+        allowed:
+          type: boolean
+          description: |
+            Is the format deprecated
+
+    AddressFormatDependencyResource:
+      type: object
+      required:
+        - fieldId
+        - dependentFieldId
+        - logicalOperator
+        - type
+      properties:
+        fieldId:
+          type: string
+          description: The id of the primary address format field
+        dependentFieldId:
+          type: string
+          description: The id of the dependent address format field
+        logicalOperator:
+          type: string
+          enum:
+            - OR
+            - AND
+          description: Logical operator to apply to the logic of handling dependencies
+        type:
+          type: string
+          enum:
+            - MandatoryGroup
+          description: Defines which address format validation policy is being overridden
+
+    LocationType:
+      type: string
+      enum:
+        - Emergency
+        - Shipping
+      description: |
+        Address types (Emergency or Shipping)
+
+    CountryInfoResource:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Internal identifier of a country
+        name:
+          type: string
+          description: Official name of a country
+        isoCode:
+          $ref: '../common/common-schemas-oaf.yml#/components/schemas/CountryIsoCode'
+        addressFormatImposed:
+          type: boolean
+          description: Is validation against address formats required
+
+    AddressFormatField:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - metadata
+      properties:
+        id:
+          type: string
+          description: Internal identifier of a field
+        name:
+          type: string
+          description: Name of a field
+        type:
+          type: string
+          enum:
+            - string
+            - integer
+            - number
+            - boolean
+          description: Type of field
+        skipValidation:
+          type: boolean
+          description: |
+            Is utilised to skip validation of a certain address field
+        metadata:
+          $ref: '#/components/schemas/AddressFormatMetadata'
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/AddressFormatOption'
+
+    AddressFormatMetadata:
+      type: object
+      properties:
+        mandatory:
+          type: boolean
+        regexp:
+          type: string
+          description: |
+            Java regexp for format field validation
+        maxLength:
+          type: integer
+          format: int32
+          minimum: 0
+        order:
+          type: integer
+          format: int32
+          minimum: 0
+        defaultValue:
+          type: string
+          description: Default value of a field
+        hidden:
+          type: boolean
+          description: Is the field invisible in the UI
+
+    AddressFormatOption:
+      type: object
+      properties:
+        label:
+          type: string
+          description: |
+            Name of of 'key' parameter
+        key:
+          type: string
+          description: |
+            Required value of a field
+
+    EmergencyLocationsResource:
+      type: object
+      properties:
+        uri: 
+          type: string
+          description: Link to an emergency locations resource
+        records:
+          type: array
+          items:
+            $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/CommonEmergencyLocationResource'
+        paging:
+          $ref: '#/components/schemas/EmergencyLocationsPaging'
+        navigation:
+              $ref: '../common/pagination-oaf.yml#/components/schemas/PageNavigationModel'
+
+    EmergencyLocationRequestResource:
+      type: object
+      properties:
+        address:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyAddressResourceRequest'
+        name:
+          type: string
+          description: Emergency response location name
+        site:
+          $ref: '../common/common-schemas-oaf.yml#/components/schemas/SiteBasicInfo'
+        addressFormatId:
+          type: string
+          description: Address format ID
+        visibility:
+          type: string
+          description: |
+            Visibility of an emergency response location. If `Private`
+            is set, then a location is visible only for restricted number of users,
+            specified in `owners` array
+          default: Public
+          enum:
+          #- Private
+          - Public
+        #owners:
+          #type: array
+          #description: List of private location owners
+          #items:
+            #$ref: '#/components/schemas/LocationOwnerInfo'
+        trusted:
+          allOf:
+            - $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/TrustedFlag'
+            - default: false
+
+    EmergencyAddressResource:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Internal identifier of an emergency response location
+        addressFormatId:
+          type: string
+          description: Address format ID
+        addressFormatStatus:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/AddressFormatStatus'
+        address:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyLocationAddressResource'
+        addressStatus:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyAddressStatus'
+        trusted:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/TrustedFlag'
+
+    EmergencyLocationUsageStatus:
+      type: string
+      enum:
+        - Active
+        - Inactive
+
+    ValidateEmergencyAddressRequest:
+      type: object
+      properties:
+        addressFormatId:
+          type: string
+          description: Address format ID
+        address:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyAddressResourceRequest'
+        phoneCountryId:
+          type: string
+          description: |
+            Internal identifier of a country the phone number belongs to.
+            Specifies if address is out of country
+
+    ValidateEmergencyAddress:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of emergency address upon validation
+          enum:
+          - Valid
+          - Ambiguous
+          - Invalid
+          - OutOfCountryForbidden
+        reason:
+          type: string
+          description: Reason for validation failure
+          example: "Only local emergency address is allowed for the selected country"
+        addressFormatId:
+          type: string
+          description: Address format ID
+        suggestedAddresses:
+          type: array
+          description: |
+            List of addresses suggested by Emergency Address
+            Service provider
+          items:
+            $ref: '#/components/schemas/ValidateEmergencyAddressInfoResponse'
+
+    ValidateEmergencyAddressInfoResponse:
+      type: object
+      properties:
+        customerName:
+          type: string
+          description: Customer name
+        country:
+          type: string
+          description: Country name
+        countryName:
+          type: string
+          description: Full name of a country
+        countryId:
+          type: string
+          description: Internal identifier of a country
+        state:
+          type: string
+          description: |
+            State/Province name. Mandatory for the USA, the UK and Canada
+        stateId:
+          type: string
+          description: Internal identifier of a state
+        stateName:
+          type: string
+          description: Full name of a state
+        city:
+          type: string
+          description: City name
+        street:
+          type: string
+          description: First line address
+        street2:
+          type: string
+          description: |
+            Second line address (apartment, suite, unit, building, floor,
+            etc.)
+        zip:
+          type: string
+          description: Postal (Zip) code
+        outOfCountry:
+          type: boolean
+          description: |
+            Specifies if emergency address is out of country
+      additionalProperties:
+        description: |
+          Any address fields are accepted but within the boundaries of the address format (specific or default for a certain country)
+        type: string
+
+    EmergencyLocationsPaging:
+      required:
+        - page
+        - totalPages
+        - perPage
+        - totalElements
+        - pageStart
+        - pageEnd
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        totalPages:
+          type: integer
+          format: int32
+        perPage:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int32
+        pageStart:
+          type: integer
+          format: int32
+        pageEnd:
+          type: integer
+          format: int32
+
+    EmergencyCallingConfigInfo:
+      type: object
+      properties:
+        softPhoneAutoLocationUpdate:
+          $ref: '#/components/schemas/SoftPhoneLocationAutoUpdateInfo'
+        hardPhoneAutoLocationUpdate:
+          $ref: '#/components/schemas/HardPhoneLocationAutoUpdateInfo'
+        emergencyLocations:
+          $ref: '#/components/schemas/ERLFeatureInfo'
+
+    SoftPhoneLocationAutoUpdateInfo:
+      type: object
+      properties:
+        status:
+          type: string
+          description: |
+            Feature (Automatic Location Updates) activation status for soft phones
+          enum:
+          - Active
+          - Inactive
+          - Unavailable
+
+    HardPhoneLocationAutoUpdateInfo:
+      type: object
+      properties:
+        status:
+          type: string
+          description: |
+            Feature (Automatic Location Updates) activation status for desk phones
+          enum:
+          - Active
+          - Inactive
+          - Unavailable
+
+    GetLocationDeletionMultiResponse:
+      type: object
+      properties:
+        deletion:
+          type: string
+          enum:
+          - Forbidden
+          - Restricted
+          - Allowed
+        reassignment:
+          type: string
+          enum:
+          - Forbidden
+          - Allowed
+        emergencyLocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationDeletionInfo'
+
+    LocationDeletionInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        deletion:
+          type: string
+          description: |
+            Identifies the possibility and status of emergency location
+            deletion
+          enum:
+          - Failed
+          - Completed
+          - Forbidden
+          - Restricted
+          - Allowed
+        errors:
+          $ref: '#/components/schemas/LocationDeletionErrorInfo'
+
+    LocationDeletionErrorInfo:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        additionalInfo:
+          type: string
+          description: Additional attribute for this error, for example `parameterName`
+
+    CreateUserEmergencyLocationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of a new personal emergency response location
+        addressFormatId:
+          type: string
+          description: Address format ID
+        trusted:
+          allOf:
+            - $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/TrustedFlag'
+            - default: false
+        address:
+          $ref: '../common/emergency-addresses-oaf.yml#/components/schemas/EmergencyAddressResourceRequest'
+        site:
+          $ref: '../common/common-schemas-oaf.yml#/components/schemas/SiteBasicInfo'
+
+    ERLFeatureInfo:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Feature (Emergency Response Locations) activation status
+          enum:
+          - Active
+          - Inactive
+          - Unavailable
+          - ActivationInProgress
+        maxEmergencyLocations:
+          type: integer
+          format: int32
+          description: Max supported number of emergency response locations on account
+        adjustmentProcessStatus:
+          type: string
+          description: |
+            Specifies if the emergency location identification numbers
+            (ELIN) provisioning is on (active) or completed (inactive). It is not
+            allowed to manage emergency response locations (ERL) data/settings when
+            this process is active
+          enum:
+          - Active
+          - Inactive
