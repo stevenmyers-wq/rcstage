@@ -262,29 +262,24 @@ def fetch_raw_examples(location_id=None, limit=3):
 
 
 # ===============================================================
-# DEBUG — dictionary explorer (coded values: country/state/format/streetType)
+# DEBUG — reference snapshot (bake the coded values into the repo)
 # ===============================================================
-
-# Candidate RC dictionary endpoints to probe for the enums behind an ERL's coded
-# fields (addressFormatId, streetType, stateId, countryId). RingCentral's docs
-# are not reachable from this environment, so we hit each candidate live and
-# report which respond.
 #
-# Probed live (see misc/1234): only /dictionary/country and /dictionary/state
-# return data. /dictionary/location exists but requires a stateId. Every
-# address-format / street-type / emergency-address candidate returned 404 —
-# RingCentral exposes NO dictionary for address formats or street types, so the
-# only source for those codes is what is already in use on the account (see the
-# 'streettype' aggregation below). The 404 candidates are kept here, commented,
-# as a record of what was checked; the raw-path box covers any future guess.
-DICTIONARY_PROBE_ENDPOINTS = [
-    "/restapi/v1.0/dictionary/country?perPage=1000",
-    "/restapi/v1.0/dictionary/state?perPage=1000",
-    "/restapi/v1.0/dictionary/location",
-    # 404 (confirmed absent): dictionary/emergency-address-format,
-    # dictionary/address-format, dictionary/street-type,
-    # dictionary/emergency-address, account/~/emergency-address-auto-update/settings
-]
+# The real RC dictionaries (confirmed from the Emergency Locations OpenAPI schema):
+#   GET /restapi/v1.0/dictionary/country                         countries
+#   GET /restapi/v1.0/dictionary/state?countryId={id}           states/provinces
+#   GET /restapi/v1.0/dictionary/address-formats?addressType=Emergency
+#                                                                emergency address formats
+#   GET /restapi/v1.0/dictionary/address-formats/{id}           one format incl. fields+options
+#
+# build_reference_snapshot() assembles all of these into one JSON blob in the
+# exact shape we commit as reference_data.json — run it once (debug button),
+# drop the output in misc/1234, and it becomes the baked-in reference the
+# template + backend friendly-value matching read from. Re-run to refresh.
+
+COUNTRY_ENDPOINT = "/restapi/v1.0/dictionary/country"
+STATE_ENDPOINT = "/restapi/v1.0/dictionary/state"
+ADDRESS_FORMATS_ENDPOINT = "/restapi/v1.0/dictionary/address-formats"
 
 
 def _json_or_text(response):
@@ -323,19 +318,94 @@ def _dict_records(endpoint):
     return rows
 
 
-def explore_dictionary(kind=None, country_id=None, path=None):
+def _trim_format(detail):
+    """Reduce an address-format resource to the fields the tool needs.
+
+    Keeps each field's id/name/type, the metadata that governs validation
+    (mandatory, regexp, maxLength, order, defaultValue, hidden) and — crucially —
+    the allowed ``options`` (e.g. the streetType {label, key} enum). Also keeps
+    the format's country, primary/allowed flags, validation version and the
+    MandatoryGroup dependencies that explain why partial rows are rejected.
+    """
+    country = detail.get("country") or {}
+    fields = []
+    for fld in (detail.get("fields") or []):
+        md = fld.get("metadata") or {}
+        fields.append({
+            "id": fld.get("id"),
+            "name": fld.get("name"),
+            "type": fld.get("type"),
+            "mandatory": md.get("mandatory"),
+            "regexp": md.get("regexp"),
+            "maxLength": md.get("maxLength"),
+            "order": md.get("order"),
+            "defaultValue": md.get("defaultValue"),
+            "hidden": md.get("hidden"),
+            "options": [{"label": o.get("label"), "key": o.get("key")}
+                        for o in (fld.get("options") or [])],
+        })
+    return {
+        "id": detail.get("id"),
+        "countryId": country.get("id"),
+        "countryIso": country.get("isoCode"),
+        "countryName": country.get("name"),
+        "addressFormatImposed": country.get("addressFormatImposed"),
+        "validationVersion": detail.get("validationVersion"),
+        "primary": detail.get("primary"),
+        # NB: schema says `allowed` means "is the format deprecated".
+        "allowed": detail.get("allowed"),
+        "applicableToAddressTypes": detail.get("applicableToAddressTypes"),
+        "dependencies": detail.get("dependencies"),
+        "fields": fields,
+    }
+
+
+def build_reference_snapshot():
+    """Assemble the full ERL reference (countries, states, formats) as one JSON.
+
+    Output is the exact shape committed as reference_data.json:
+      { schemaVersion, countries[], states{countryId: [...]}, formats[] }
+    States are fetched only for countries that have an emergency address format
+    (the relevant subset), each format is expanded via its detail endpoint so we
+    capture fields + streetType options.
+    """
+    countries = _dict_records(COUNTRY_ENDPOINT)
+
+    formats = []
+    country_ids = set()
+    for fmt in _get_all_records(f"{ADDRESS_FORMATS_ENDPOINT}?addressType=Emergency"):
+        fid = fmt.get("id")
+        detail = rc_api_call(f"{ADDRESS_FORMATS_ENDPOINT}/{fid}") if fid else None
+        trimmed = _trim_format(detail if isinstance(detail, dict) and detail.get("fields") else fmt)
+        formats.append(trimmed)
+        if trimmed.get("countryId"):
+            country_ids.add(str(trimmed["countryId"]))
+
+    states = {}
+    for cid in sorted(country_ids, key=lambda x: int(x) if str(x).isdigit() else 0):
+        states[cid] = _dict_records(f"{STATE_ENDPOINT}?countryId={cid}")
+
+    return {
+        "schemaVersion": 1,
+        "counts": {"countries": len(countries),
+                   "formats": len(formats),
+                   "statesForCountries": len(states)},
+        "countries": countries,
+        "states": states,
+        "formats": formats,
+    }
+
+
+def explore_dictionary(kind=None, country_id=None, path=None, format_id=None):
     """Look up the coded values behind ERL fields.
 
     kinds:
-      country    — /dictionary/country (id, isoCode, name)
-      state      — /dictionary/state?countryId=… (id, isoCode, name)
-      streettype — distinct streetType / buildingNumber values actually IN USE on
-                   the account's ERLs, grouped by country + addressFormatId. This
-                   is a guaranteed-valid source of codes RC has accepted, even if
-                   no public dictionary endpoint exists.
-      probe      — hit each DICTIONARY_PROBE_ENDPOINTS candidate and report status
-                   + a small sample, to discover official enums empirically.
-      (path)     — raw passthrough of any /restapi/… path.
+      snapshot — assemble the full reference (countries + states + formats incl.
+                 fields/options) in the shape committed as reference_data.json.
+      formats  — /dictionary/address-formats?addressType=Emergency (optionally
+                 &countryId=…): the emergency address formats.
+      format   — /dictionary/address-formats/{id}: one format incl. fields+options.
+      (path)   — raw passthrough of any /restapi/… path.
     """
     if path:
         safe = _safe_rc_path(path)
@@ -347,73 +417,22 @@ def explore_dictionary(kind=None, country_id=None, path=None):
 
     kind = (kind or "").lower()
 
-    if kind == "country":
-        return {"mode": "country", "records": _dict_records("/restapi/v1.0/dictionary/country")}
+    if kind == "snapshot":
+        return {"mode": "snapshot", **build_reference_snapshot()}
 
-    if kind == "state":
-        if not country_id:
-            return {"error": "countryId is required for the state dictionary."}
-        ep = f"/restapi/v1.0/dictionary/state?countryId={country_id}"
-        return {"mode": "state", "countryId": str(country_id), "records": _dict_records(ep)}
+    if kind == "formats":
+        ep = f"{ADDRESS_FORMATS_ENDPOINT}?addressType=Emergency"
+        if country_id:
+            ep += f"&countryId={country_id}"
+        return {"mode": "formats", "records": _get_all_records(ep)}
 
-    if kind == "streettype":
-        # RC has no address-format / street-type dictionary (all 404 on probe),
-        # so aggregate the codes and field shapes RC currently accepts straight
-        # from live ERLs, grouped by country + addressFormatId. This is the
-        # authoritative "what do I put in the sheet for this country" answer.
-        groups = {}
-        for rec in _get_all_records(ERL_ENDPOINT):
-            addr = rec.get("address") or {}
-            key = f"{addr.get('country', '?')} / addressFormatId {rec.get('addressFormatId', '?')}"
-            g = groups.setdefault(key, {
-                "country": addr.get("country"),
-                "addressFormatId": rec.get("addressFormatId"),
-                "addressFormatStatus": rec.get("addressFormatStatus"),
-                "streetTypes": set(),
-                "hasBuildingNumber": False,
-                # Union of address field names seen for this format, so the
-                # operator knows exactly which Address.* columns to fill.
-                "addressFields": set(),
-                "count": 0,
-            })
-            g["count"] += 1
-            g["addressFields"].update(k for k in addr.keys())
-            if addr.get("streetType"):
-                g["streetTypes"].add(str(addr["streetType"]))
-            if addr.get("buildingNumber"):
-                g["hasBuildingNumber"] = True
-        # sets aren't JSON serialisable — sort to lists
-        for g in groups.values():
-            g["streetTypes"] = sorted(g["streetTypes"])
-            g["addressFields"] = sorted(g["addressFields"])
-        # Prefer 'Actual' (current) formats first, then by country.
-        ordered = sorted(groups.values(),
-                         key=lambda g: (g["country"] or "", g["addressFormatStatus"] != "Actual"))
-        return {"mode": "streettype",
-                "note": ("RingCentral exposes no dictionary for address formats or "
-                         "street types; these are the codes/fields in use on this "
-                         "account. Prefer an 'Actual' format; copy an existing "
-                         "same-country row as a template."),
-                "groups": ordered}
+    if kind == "format":
+        if not format_id:
+            return {"error": "format_id is required for a single address format."}
+        return {"mode": "format", "id": str(format_id),
+                "format": rc_api_call(f"{ADDRESS_FORMATS_ENDPOINT}/{format_id}")}
 
-    if kind == "probe":
-        results = []
-        for ep in DICTIONARY_PROBE_ENDPOINTS:
-            resp = rc_api_call(ep, return_response=True)
-            body = _json_or_text(resp)
-            sample = body
-            if isinstance(body, dict) and isinstance(body.get("records"), list):
-                sample = {"recordCount": len(body["records"]),
-                          "firstRecord": body["records"][0] if body["records"] else None}
-            results.append({
-                "endpoint": ep,
-                "status": getattr(resp, 'status_code', None),
-                "ok": getattr(resp, 'ok', False),
-                "sample": sample,
-            })
-        return {"mode": "probe", "results": results}
-
-    return {"error": "Unknown dictionary kind. Use country, state, streettype, probe, or a path."}
+    return {"error": "Unknown dictionary kind. Use snapshot, formats, format, or a path."}
 
 
 # ===============================================================

@@ -57,24 +57,18 @@
         <pre id="el-raw-output" class="hidden mt-4 max-h-80 overflow-auto bg-slate-900 dark:bg-[#0b1120] text-emerald-300 text-xs font-mono p-4 rounded-xl shadow-inner"></pre>
     </details>
 
-    <!-- Debug: dictionary explorer (coded values behind ERL fields) -->
+    <!-- Debug: reference snapshot (bake the coded values into the repo) -->
     <details class="card !p-5 bg-sky-50/50 dark:bg-sky-900/10 border-sky-100 dark:border-sky-800/50 shadow-sm">
-        <summary class="cursor-pointer text-heading text-base text-sky-900 dark:text-sky-100">📖 Debug — dictionary explorer (country / state / format / street type)</summary>
-        <p class="text-slate-600 dark:text-slate-400 text-sm font-medium mt-2 mb-3">Look up the coded values ERLs use. <strong>Street types</strong> lists the codes RC currently accepts on this account (grouped by country + format id). <strong>Countries</strong> / <strong>States</strong> give the id ↔ name mappings. <strong>Probe</strong> tries candidate RC dictionary endpoints to find official enums. Or paste any <code>/restapi/…</code> path.</p>
+        <summary class="cursor-pointer text-heading text-base text-sky-900 dark:text-sky-100">🧭 Debug — reference snapshot (country / state / address-format ids)</summary>
+        <p class="text-slate-600 dark:text-slate-400 text-sm font-medium mt-2 mb-3"><strong>Generate reference snapshot</strong> assembles every country, its states, and every emergency address format (with mandatory fields + street-type options) into one JSON — the list we bake into the code so the template/matching never has to guess an id. Run it once and paste the output into <code>misc/1234</code>. <strong>List address formats</strong> shows just the formats. Or paste any <code>/restapi/…</code> path.</p>
         <div class="flex flex-wrap gap-2 items-end">
-            <button data-dict="streettype" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🛣 Street types in use</button>
-            <button data-dict="country" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🌍 Countries</button>
-            <div class="input-wrapper w-40">
-                <label for="el-dict-country" class="input-label">Country ID (for states)</label>
-                <input type="text" id="el-dict-country" class="input-field h-[42px] font-mono" placeholder="e.g. 15 (AU)">
-            </div>
-            <button data-dict="state" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🗺 States</button>
-            <button data-dict="probe" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🔬 Probe endpoints</button>
+            <button data-dict="snapshot" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">🧭 Generate reference snapshot</button>
+            <button data-dict="formats" class="el-dict-btn btn-secondary !py-2 px-4 text-sm">📋 List address formats</button>
         </div>
         <div class="flex flex-col sm:flex-row gap-3 sm:items-end mt-3">
             <div class="input-wrapper flex-grow">
                 <label for="el-dict-path" class="input-label">Raw path (advanced)</label>
-                <input type="text" id="el-dict-path" class="input-field font-mono" placeholder="/restapi/v1.0/dictionary/country">
+                <input type="text" id="el-dict-path" class="input-field font-mono" placeholder="/restapi/v1.0/dictionary/address-formats?addressType=Emergency">
             </div>
             <button id="el-dict-path-btn" class="btn-secondary h-[52px] px-6">Fetch path</button>
         </div>
@@ -352,16 +346,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Debug: dictionary explorer ---
+    // --- Debug: reference snapshot ---
     const dictOutput = document.getElementById('el-dict-output');
-    const dictCountryInput = document.getElementById('el-dict-country');
     const dictPathInput = document.getElementById('el-dict-path');
     const dictPathBtn = document.getElementById('el-dict-path-btn');
 
     const runDictQuery = async (qs, buttons) => {
         buttons.forEach(b => b.disabled = true);
         dictOutput.classList.remove('hidden');
-        dictOutput.textContent = 'Fetching…';
+        dictOutput.textContent = 'Fetching… (the snapshot makes many calls; give it a moment)';
         try {
             const res = await fetch(`/api/emergency_locations/dictionary?${qs}`);
             const data = await res.json();
@@ -377,14 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dictButtons = Array.from(document.querySelectorAll('.el-dict-btn'));
     dictButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            const kind = btn.dataset.dict;
-            let qs = `kind=${encodeURIComponent(kind)}`;
-            if (kind === 'state') {
-                const cid = dictCountryInput.value.trim();
-                if (!cid) { alert('Enter a Country ID first (use the Countries button to find it).'); return; }
-                qs += `&countryId=${encodeURIComponent(cid)}`;
-            }
-            runDictQuery(qs, dictButtons);
+            runDictQuery(`kind=${encodeURIComponent(btn.dataset.dict)}`, dictButtons);
         });
     });
 
