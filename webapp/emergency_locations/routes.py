@@ -70,18 +70,21 @@ def get_raw_example():
 @emergency_locations_bp.route('/dictionary', methods=['GET'])
 @require_rc_token
 def get_dictionary():
-    """DEBUG: look up the coded values behind ERL fields.
+    """DEBUG: look up / snapshot the coded values behind ERL fields.
 
     Query params:
-      kind      — country | state | streettype | probe
-      countryId — required when kind=state
+      kind      — snapshot | formats | format
+      countryId — optional filter for kind=formats
+      formatId  — required when kind=format
       path      — raw passthrough of any /restapi/… path (overrides kind)
     """
     kind = (request.args.get('kind') or '').strip() or None
     country_id = (request.args.get('countryId') or '').strip() or None
+    format_id = (request.args.get('formatId') or '').strip() or None
     path = (request.args.get('path') or '').strip() or None
     try:
-        return jsonify(utils.explore_dictionary(kind=kind, country_id=country_id, path=path))
+        return jsonify(utils.explore_dictionary(
+            kind=kind, country_id=country_id, path=path, format_id=format_id))
     except Exception as e:
         print(f"Error exploring ERL dictionary: {e}")
         return jsonify({"error": "An internal error occurred while exploring the dictionary."}), 500
