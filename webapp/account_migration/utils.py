@@ -243,6 +243,17 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
     devices = fetch_all_pages('/restapi/v1.0/account/~/device', token, task_id)
     sites = fetch_all_pages('/restapi/v1.0/account/~/sites', token, task_id)
 
+    # Emergency Response Locations (ERLs). The list resource usually carries the
+    # full location, but read the single-resource detail so the true (possibly
+    # international) address shape and any detail-only fields round-trip on import.
+    emergency_locations = []
+    for erl in fetch_all_pages('/restapi/v1.0/account/~/emergency-locations', token, task_id):
+        loc_id = erl.get('id')
+        detail = None
+        if loc_id:
+            detail = safe_rc_api_call(f'/restapi/v1.0/account/~/emergency-locations/{loc_id}', task_id=task_id, method='GET', token=token, raise_error=False)
+        emergency_locations.append(detail or erl)
+
     cost_centers = []
     try:
         cc_resp = safe_rc_api_call('/restapi/v1.0/account/~/cost-center', task_id=task_id, method='GET', token=token, raise_error=False)
@@ -279,6 +290,7 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
         "park_locations": park_locations,
         "phone_numbers": phone_numbers,
         "devices": devices,
+        "emergency_locations": emergency_locations,
         "extensions_raw": extensions,
         "detailed_extensions": {},
         "custom_audio_map": []
@@ -385,7 +397,7 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
 
 
 # --- EXPORT LOGIC ---
-def run_account_export(task_id, unbind_devices=False, token=None):
+def run_account_export(task_id, token=None):
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -396,23 +408,6 @@ def run_account_export(task_id, unbind_devices=False, token=None):
         phone_numbers = config_data["phone_numbers"]
         devices = config_data["devices"]
 
-        if unbind_devices:
-            # Free physical MACs on the LOSING account so they can be pushed to
-            # the winning tenant on import. A MAC can only live on one tenant, so
-            # unbinding the line isn't enough — the device is unbound then deleted.
-            # Device details were already captured in config_data["devices"] above.
-            for i, dev in enumerate(devices):
-                if dev.get('type') not in ('HardPhone', 'OtherPhone') or not dev.get('serial'):
-                    continue
-                update_progress(task_id, 90, 100, f"Releasing device {dev.get('name', 'Unknown')} to free its MAC...")
-                dev_id = dev.get('id')
-                try:
-                    if dev.get('phoneLines'):
-                        safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev_id}', task_id=task_id, method='PUT', json_payload={"phoneLines": []}, token=token, raise_error=False)
-                    safe_rc_api_call(f'/restapi/v1.0/account/~/device/{dev_id}', task_id=task_id, method='DELETE', token=token, raise_error=False)
-                except Exception:
-                    pass
-        
         update_progress(task_id, 95, 100, "Compiling Configuration Files...")
         zip_file.writestr("config.json", json.dumps(config_data, indent=4))
         
@@ -509,6 +504,7 @@ def _build_audit_workbook(config_data):
         {"Metric": "Custom Roles", "Value": len(config_data.get('custom_roles', []))},
         {"Metric": "Phone Numbers", "Value": len(config_data.get('phone_numbers', []))},
         {"Metric": "Devices", "Value": len(config_data.get('devices', []))},
+        {"Metric": "Emergency Locations", "Value": len(config_data.get('emergency_locations', []))},
         {"Metric": "Templates", "Value": len(config_data.get('templates', []))},
         {"Metric": "Custom Greetings", "Value": len(config_data.get('custom_audio_map', []))},
     ]
@@ -607,6 +603,27 @@ def _build_audit_workbook(config_data):
         "Assigned To": assigned_to(dv.get('extension')) or 'Unassigned',
     } for dv in config_data.get('devices', [])]
 
+    # --- Emergency Locations (ERLs) ---
+    def _compact_address(addr):
+        if not isinstance(addr, dict):
+            return ''
+        parts = []
+        for v in addr.values():
+            if isinstance(v, dict):
+                v = v.get('name') or v.get('id')
+            if v not in (None, ''):
+                parts.append(str(v))
+        return ', '.join(parts)
+
+    erl_rows = [{
+        "Name": e.get('name', ''),
+        "Visibility": e.get('visibility', ''),
+        "Site": (e.get('site') or {}).get('name', ''),
+        "Address": _compact_address(e.get('address')),
+        "Address Status": e.get('addressStatus', ''),
+        "Usage Status": e.get('usageStatus', ''),
+    } for e in config_data.get('emergency_locations', [])]
+
     # --- Answering Rules (custom, per extension) ---
     ar_rows = []
     for _eid, d in detailed.items():
@@ -640,6 +657,7 @@ def _build_audit_workbook(config_data):
         ("Answering Rules", ar_rows, ["Extension", "Ext #", "Rule Name", "Enabled", "Call Handling"]),
         ("Phone Numbers", pn_rows, ["Phone Number", "Type", "Usage", "Status", "Label", "Assigned To"]),
         ("Devices", dev_rows, ["Device Name", "Type", "Model", "Serial / MAC", "Site", "Status", "Assigned To"]),
+        ("Emergency Locations", erl_rows, ["Name", "Visibility", "Site", "Address", "Address Status", "Usage Status"]),
         ("Sites", site_rows, ["Site Name", "Extension #", "Site ID"]),
         ("Cost Centers", cc_rows, ["Name", "Billing Code"]),
         ("Custom Roles", role_rows, ["Role Name", "Based On", "Description"]),
@@ -720,13 +738,13 @@ def _run_with_auth(app, task_id, auth_data, fn):
             _mig_ctx.reset(token_ctx)
 
 
-def run_export_background(app, task_id, unbind_devices, auth_data, user_email=None):
+def run_export_background(app, task_id, auth_data, user_email=None):
     from . import storage
     try:
         storage.record_status(task_id, "running", kind="export", user_email=user_email)
 
         def _do():
-            buf = run_account_export(task_id, unbind_devices, auth_data.get("access_token"))
+            buf = run_account_export(task_id, auth_data.get("access_token"))
             data = buf.getvalue()
             entry = migration_progress_store.get(task_id, {})
             fname = f"RC_Migration_Export_{int(time.time())}.zip"
@@ -958,6 +976,35 @@ def run_account_import(task_id, zip_bytes, token=None):
                     add_result(task_id, 'Site', site.get('name', ''), 'Created')
                 except Exception as e:
                     add_result(task_id, 'Site', site.get('name', ''), 'Failed', str(e))
+
+            # ============================================================
+            # Pass 3b: Emergency Response Locations (ERLs)
+            # Recreate the address definitions themselves — depends on sites
+            # (Pass 3) for the site remap. The captured object is RC's own stored
+            # shape, so its address/addressFormatId round-trip as-is. Per-number /
+            # per-device E911 assignment and carrier validation remain manual
+            # (see the manual worklist).
+            # ============================================================
+            update_progress(task_id, 14, 100, "Recreating emergency response locations...")
+            for erl in config.get("emergency_locations", []):
+                if _stopped_and_marked(task_id):
+                    return
+                erl_name = erl.get('name', '') or 'Emergency location'
+                try:
+                    payload = {"name": erl.get('name')}
+                    if erl.get('visibility'):
+                        payload['visibility'] = erl['visibility']
+                    site_ref = _mapped_ref(erl.get('site'), old_to_new_sites)
+                    if site_ref:
+                        payload['site'] = site_ref
+                    if erl.get('addressFormatId'):
+                        payload['addressFormatId'] = erl['addressFormatId']
+                    if erl.get('address'):
+                        payload['address'] = erl['address']
+                    safe_rc_api_call('/restapi/v1.0/account/~/emergency-locations', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
+                    add_result(task_id, 'Emergency Location', erl_name, 'Created')
+                except Exception as e:
+                    add_result(task_id, 'Emergency Location', erl_name, 'Failed', str(e))
 
             # ============================================================
             # Pass 4: Group / structure extensions
@@ -1256,8 +1303,8 @@ def run_account_import(task_id, zip_bytes, token=None):
             # Pass 10: Devices — push the source MAC/model onto each migrated
             # user's pre-provisioned device slot, via the same
             # /device/bulk-update path the Device Swap tool uses. Assumes the
-            # MAC was freed on the losing account (see the export "Release &
-            # Delete Devices" option) and the winning user has an Existing Phone
+            # MAC has already been freed on the losing account (a MAC can only
+            # live on one tenant) and the winning user has an Existing Phone
             # slot from the license/device prerequisite.
             # ============================================================
             update_progress(task_id, 90, 100, "Pushing devices onto the winning account...")
@@ -1355,4 +1402,4 @@ def _emit_manual_worklist(task_id, config, detailed_exts, old_to_new_exts):
     add_result(task_id, 'Manual — Licenses', 'License & add-on parity', 'Manual',
                'Confirm the winning account has matching licenses and add-on features (e.g. Call Queue Routing Options) enabled.')
     add_result(task_id, 'Manual — E911', 'Emergency response locations', 'Manual',
-               'Emergency addresses are regulated and must be re-registered/validated per number & device on the target.')
+               'Location definitions are recreated automatically (see the Emergency Location rows). Per-number and per-device E911 assignment and carrier address validation are regulated and must still be confirmed on the target.')

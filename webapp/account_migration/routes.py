@@ -54,7 +54,6 @@ def start_export():
     account can't overrun the Cloud Run request timeout."""
     data = request.get_json() or {}
     task_id = data.get('task_id')
-    unbind_devices = data.get('unbind_devices', False)
     if not task_id:
         return jsonify({'error': 'No task ID provided'}), 400
 
@@ -63,7 +62,7 @@ def start_export():
         return jsonify({'error': 'Unauthorized'}), 401
 
     _start('export', task_id, utils.run_export_background,
-           (task_id, unbind_devices, auth_data, _current_email()))
+           (task_id, auth_data, _current_email()))
     return jsonify({'success': True, 'task_id': task_id})
 
 
