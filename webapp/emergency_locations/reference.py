@@ -185,6 +185,54 @@ def prepare_address(address, format_id=None, country_hint=None, require_mandator
     return addr, format_id2, errors, notes
 
 
+def _country_by_id(country_id):
+    for c in _load().get("countries", []):
+        if str(c.get("id")) == str(country_id):
+            return c
+    return None
+
+
+def ui_countries():
+    """Countries that have at least one emergency address format (i.e. you can
+    create an ERL for them), each with its primary format id — for a template
+    country picker. Sorted by name."""
+    if not loaded():
+        return []
+    by_country = {}
+    for f in _load().get("formats", []):
+        cid = str(f.get("countryId") or "")
+        if not cid:
+            continue
+        entry = by_country.setdefault(cid, {"formatCount": 0, "primaryFormatId": None})
+        entry["formatCount"] += 1
+        if f.get("primary"):
+            entry["primaryFormatId"] = f.get("id")
+    out = []
+    for cid, meta in by_country.items():
+        c = _country_by_id(cid) or {}
+        out.append({
+            "id": cid,
+            "isoCode": c.get("isoCode"),
+            "name": c.get("name") or cid,
+            "primaryFormatId": meta["primaryFormatId"],
+            "formatCount": meta["formatCount"],
+        })
+    return sorted(out, key=lambda r: (r["name"] or ""))
+
+
+def ui_country_detail(country_id):
+    """Per-country reference for building a template + reference sheet:
+    the country, its emergency formats (trimmed field specs, primary first),
+    and its state list."""
+    if not loaded():
+        return {"error": "reference data not loaded"}
+    country = _country_by_id(country_id)
+    fmts = sorted(formats_for_country(country_id),
+                  key=lambda f: (not f.get("primary")))
+    states = _load().get("states", {}).get(str(country_id), [])
+    return {"country": country, "formats": fmts, "states": states}
+
+
 def validate_address(fmt, address, require_mandatory=True):
     """List the ways ``address`` violates the format spec (empty list = valid)."""
     errs = []
