@@ -26,6 +26,7 @@ an operator can inspect the real international shape.
 """
 from webapp.rc_api import rc_api_call
 from webapp import task_control
+from . import reference
 
 ERL_ENDPOINT = "/restapi/v1.0/account/~/emergency-locations"
 
@@ -513,8 +514,18 @@ def _address_from_row(record, address_columns):
     return address
 
 
-def _build_location_body(record, address_columns):
-    """Construct the create/update request body from a sheet row."""
+def _build_location_body(record, address_columns, require_mandatory=True):
+    """Construct the create/update request body from a sheet row.
+
+    Returns ``(body, errors, notes)``. Friendly values (country/state/street-type
+    by name) are resolved to RC codes via the baked-in reference, the country's
+    primary address format is chosen when none is given, and the address is
+    validated against RC's format spec. ``errors`` (missing mandatory field,
+    invalid option, bad regexp/length) let the caller fail the row BEFORE the
+    write instead of RC silently dropping fields; ``notes`` records what was
+    auto-resolved. If the reference can't identify a format, the raw address is
+    used unchanged and there are no errors (raw ``Address.*`` still works).
+    """
     body = {"name": str(record.get("Name", "")).strip()}
 
     visibility = str(record.get("Visibility", "")).strip()
@@ -525,16 +536,24 @@ def _build_location_body(record, address_columns):
     if site_id:
         body["site"] = {"id": site_id}
 
-    # Top-level, country-specific format id — required for non-US ("special
-    # format") locations to validate. Send it whenever the row carries one.
-    address_format_id = str(record.get("AddressFormatId", "")).strip()
+    address_format_id = str(record.get("AddressFormatId", "")).strip() or None
+    address = _address_from_row(record, address_columns)
+
+    # A "Country" meta column (friendly) can seed resolution when the address
+    # itself doesn't carry a country.
+    country_hint = str(record.get("Country", "")).strip() or None
+
+    errors, notes = [], []
+    if address:
+        address, address_format_id, errors, notes = reference.prepare_address(
+            address, format_id=address_format_id, country_hint=country_hint,
+            require_mandatory=require_mandatory)
+
     if address_format_id:
         body["addressFormatId"] = address_format_id
-
-    address = _address_from_row(record, address_columns)
     if address:
         body["address"] = address
-    return body
+    return body, errors, notes
 
 
 def _flatten_scalars(obj, prefix=""):
@@ -650,6 +669,7 @@ def apply_locations_from_records(records, address_columns, task_id=None):
         name = str(record.get("Name", "")).strip()
         loc_id = str(record.get("LocationId", "")).strip()
         label = name or loc_id or f"Row {i + 1}"
+        notes = []
 
         if action not in ("NEW", "MODIFY", "DELETE"):
             # Advance the bar even for untouched rows so it tracks true position.
@@ -666,18 +686,27 @@ def apply_locations_from_records(records, address_columns, task_id=None):
             elif action == "MODIFY":
                 if not loc_id:
                     raise ValueError("LocationId is required to MODIFY a location.")
-                body = _build_location_body(record, address_columns)
+                # On MODIFY only validate the fields that are supplied (a partial
+                # update is legitimate), so don't enforce mandatory-presence.
+                body, errs, notes = _build_location_body(record, address_columns,
+                                                         require_mandatory=False)
                 if not body.get("name"):
                     raise ValueError("Name is required.")
+                if errs:
+                    raise ValueError("Address rejected before sending — " + "; ".join(errs))
                 response = rc_api_call(f"{ERL_ENDPOINT}/{loc_id}",
                                        method="PUT", json=body, return_response=True)
                 verb = "MODIFY"
             else:  # NEW
-                body = _build_location_body(record, address_columns)
+                body, errs, notes = _build_location_body(record, address_columns,
+                                                         require_mandatory=True)
                 if not body.get("name"):
                     raise ValueError("Name is required.")
                 if not body.get("address"):
                     raise ValueError("At least one Address.* field is required to create a location.")
+                if errs:
+                    # Pre-flight: fail clearly instead of letting RC silently drop fields.
+                    raise ValueError("Address rejected before sending — " + "; ".join(errs))
                 response = rc_api_call(ERL_ENDPOINT,
                                        method="POST", json=body, return_response=True)
                 verb = "NEW"
@@ -695,9 +724,12 @@ def apply_locations_from_records(records, address_columns, task_id=None):
                     # A dropped field means the write "didn't stick" — surface it as
                     # a warning so the operator sees it in the log and results file.
                     status = "warning" if dropped else "success"
+                    msg = prefix + diff_msg
+                    if notes:
+                        msg += " | auto-resolved: " + "; ".join(notes)
                     item = {"name": label, "status": status,
-                            "message": prefix + diff_msg, "locationId": new_id,
-                            "dropped": dropped, "changed": changed}
+                            "message": msg, "locationId": new_id,
+                            "dropped": dropped, "changed": changed, "notes": notes}
             else:
                 detail = _error_detail(response)
                 item = {"name": label, "status": "error",
