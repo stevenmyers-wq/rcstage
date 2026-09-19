@@ -263,7 +263,19 @@ def _collect_config_data(task_id, token=None, zip_file=None, download_audio=True
         pass
 
     templates = fetch_all_pages('/restapi/v1.0/account/~/templates', token, task_id)
-    custom_roles = fetch_all_pages('/restapi/v1.0/account/~/custom-roles', token, task_id)
+
+    # Custom user roles. Read from the /user-role resource (the same one the User
+    # Roles tool uses) and pull each custom role's detail so its granted
+    # permission set is captured — the list resource alone omits permissions, so
+    # without the detail the role would be recreated empty. Predefined roles are
+    # account-independent (constant ids) and are skipped; they don't need copying.
+    custom_roles = []
+    for role in fetch_all_pages('/restapi/v1.0/account/~/user-role', token, task_id):
+        if not role.get('custom'):
+            continue
+        role_id = role.get('id')
+        detail = safe_rc_api_call(f'/restapi/v1.0/account/~/user-role/{role_id}', task_id=task_id, method='GET', token=token, raise_error=False) or role
+        custom_roles.append(detail)
     call_recording = safe_rc_api_call('/restapi/v1.0/account/~/call-recording', task_id=task_id, method='GET', token=token, raise_error=False)
     company_business_hours = safe_rc_api_call('/restapi/v1.0/account/~/business-hours', task_id=task_id, method='GET', token=token, raise_error=False)
     business_address = safe_rc_api_call('/restapi/v1.0/account/~/business-address', task_id=task_id, method='GET', token=token, raise_error=False)
@@ -578,7 +590,8 @@ def _build_audit_workbook(config_data):
     # --- Custom Roles ---
     role_rows = [{
         "Role Name": r.get('displayName', r.get('id', '')),
-        "Based On": r.get('basedOn', ''),
+        "Scope": r.get('scope', ''),
+        "Permissions": len([p for p in (r.get('permissions') or []) if p.get('id')]),
         "Description": r.get('description', ''),
     } for r in config_data.get('custom_roles', [])]
 
@@ -660,7 +673,7 @@ def _build_audit_workbook(config_data):
         ("Emergency Locations", erl_rows, ["Name", "Visibility", "Site", "Address", "Address Status", "Usage Status"]),
         ("Sites", site_rows, ["Site Name", "Extension #", "Site ID"]),
         ("Cost Centers", cc_rows, ["Name", "Billing Code"]),
-        ("Custom Roles", role_rows, ["Role Name", "Based On", "Description"]),
+        ("Custom Roles", role_rows, ["Role Name", "Scope", "Permissions", "Description"]),
         ("Custom Greetings", greet_rows, ["Extension", "Extension Type", "Greeting Type"]),
         ("Templates", tpl_rows, ["Template Name"]),
     ]
@@ -879,6 +892,52 @@ def _norm_mac(value):
     return ''.join(c for c in str(value or '') if c in '0123456789abcdefABCDEF').lower()
 
 
+# --- ROLE HELPERS (mirrors the User Roles tool's create-then-enforce logic) ---
+# The RC role model is account-independent for its permission catalog, so this is
+# cached once per process like the User Roles tool does.
+_ASSIGNABLE_PERMS_CACHE = None
+
+
+def _assignable_permission_ids(task_id=None, token=None):
+    """Set of assignable permission ids from /dictionary/permission.
+
+    Only *assignable* permissions may be put on a role; sending a non-assignable
+    permission makes RingCentral reject or ignore the whole permission set, so
+    they are filtered out before a role is created."""
+    global _ASSIGNABLE_PERMS_CACHE
+    if _ASSIGNABLE_PERMS_CACHE is not None:
+        return _ASSIGNABLE_PERMS_CACHE
+    assignable = set()
+    for perm in fetch_all_pages('/restapi/v1.0/dictionary/permission', token, task_id):
+        pid = perm.get('id')
+        if pid and bool(perm.get('assignable', True)):
+            assignable.add(pid)
+    _ASSIGNABLE_PERMS_CACHE = assignable
+    return assignable
+
+
+def _permission_is_granted(perm):
+    """Whether a role's permission entry is actually granted. With advanced
+    permissions an entry carries a ``permissionsCapabilities.enabled`` flag;
+    otherwise presence means granted."""
+    caps = perm.get('permissionsCapabilities')
+    if isinstance(caps, dict) and 'enabled' in caps:
+        return bool(caps.get('enabled'))
+    return True
+
+
+def _role_permissions_payload(role_detail, assignable):
+    """The permissions array to send when recreating a role: each granted,
+    assignable permission as a simple {"id": ...} entry (this account's role
+    model rejects the permissionsCapabilities form on write)."""
+    perms = []
+    for perm in (role_detail.get('permissions') or []):
+        pid = perm.get('id')
+        if pid and pid in assignable and _permission_is_granted(perm):
+            perms.append({"id": pid})
+    return perms
+
+
 # --- IMPORT LOGIC ---
 def run_account_import(task_id, zip_bytes, token=None):
     try:
@@ -942,18 +1001,35 @@ def run_account_import(task_id, zip_bytes, token=None):
 
             # ============================================================
             # Pass 2: Custom roles
+            # Mirrors the User Roles tool: create on the /user-role resource, then
+            # PUT the full body back onto the new id to enforce the permission set
+            # (RC's POST create seeds a default template and does not reliably
+            # apply the permissions array). Only assignable permissions are sent.
             # ============================================================
             update_progress(task_id, 6, 100, "Recreating custom roles...")
+            assignable_perms = _assignable_permission_ids(task_id, token)
             for role in config.get("custom_roles", []):
                 if _stopped_and_marked(task_id):
                     return
+                role_label = role.get('displayName', role.get('id', ''))
                 try:
-                    payload = _clean(role, drop=('id', 'uri', 'lastUpdated', 'default', 'assignable'))
-                    new_role = safe_rc_api_call('/restapi/v1.0/account/~/custom-roles', task_id=task_id, method='POST', json_payload=payload, token=token, raise_error=True)
-                    old_to_new_roles[str(role['id'])] = str(new_role['id'])
-                    add_result(task_id, 'Custom Role', role.get('displayName', role.get('id', '')), 'Created')
+                    body = {
+                        "displayName": role.get('displayName', '') or str(role.get('id', '')),
+                        "description": role.get('description', '') or '',
+                        "permissions": _role_permissions_payload(role, assignable_perms),
+                    }
+                    if role.get('scope'):
+                        body['scope'] = role['scope']
+                    new_role = safe_rc_api_call('/restapi/v1.0/account/~/user-role', task_id=task_id, method='POST', json_payload=body, token=token, raise_error=True)
+                    new_id = str(new_role['id'])
+                    # Enforce the requested permissions — the POST body is not
+                    # reliably applied, so PUT the full state onto the new role.
+                    if body['permissions']:
+                        safe_rc_api_call(f'/restapi/v1.0/account/~/user-role/{new_id}', task_id=task_id, method='PUT', json_payload=body, token=token, raise_error=False)
+                    old_to_new_roles[str(role['id'])] = new_id
+                    add_result(task_id, 'Custom Role', role_label, 'Created', f"{len(body['permissions'])} permission(s)")
                 except Exception as e:
-                    add_result(task_id, 'Custom Role', role.get('displayName', role.get('id', '')), 'Failed', str(e))
+                    add_result(task_id, 'Custom Role', role_label, 'Failed', str(e))
 
             # ============================================================
             # Pass 3: Sites
@@ -1186,17 +1262,19 @@ def run_account_import(task_id, zip_bytes, token=None):
                     except Exception:
                         pass
 
-                # Assigned role (remap custom-role ids; predefined ids pass through)
+                # Assigned role (remap custom-role ids to those created in Pass 2;
+                # predefined role ids are account-independent and pass through).
                 ar = details.get('assigned_role')
                 if ar and ar.get('records'):
-                    recs = []
-                    for r in ar['records']:
-                        rid = str(r.get('id'))
-                        recs.append({"id": old_to_new_roles.get(rid, rid)})
-                    try:
-                        safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/assigned-role', task_id=task_id, method='PUT', json_payload={"records": recs}, token=token, raise_error=False)
-                    except Exception:
-                        pass
+                    recs = [{"id": old_to_new_roles.get(str(r.get('id')), str(r.get('id')))}
+                            for r in ar['records'] if r.get('id')]
+                    if recs:
+                        try:
+                            safe_rc_api_call(f'/restapi/v1.0/account/~/extension/{new_id}/assigned-role', task_id=task_id, method='PUT', json_payload={"records": recs}, token=token, raise_error=True)
+                            add_result(task_id, 'Role Assignment', label, 'Applied',
+                                       ', '.join(str(r.get('displayName') or r.get('id')) for r in ar['records']))
+                        except Exception as e:
+                            add_result(task_id, 'Role Assignment', label, 'Failed', str(e))
 
                 # Presence / BLF monitored lines (remap; drop unmapped)
                 pl = details.get('presence_line') or []
