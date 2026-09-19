@@ -214,56 +214,7 @@ def fetch_locations(site_id=None):
 
 
 # ===============================================================
-# DEBUG — raw example (international format inspection)
-# ===============================================================
-
-def fetch_raw_examples(location_id=None, limit=3):
-    """Return raw ERL JSON, untouched, for format inspection.
-
-    - ``location_id`` given → the single-resource GET response for that ERL.
-    - otherwise → the raw list response plus the detail of the first ``limit``
-      locations, so an operator can compare the list shape with the per-id shape
-      (and capture a real non-US address structure).
-    """
-    if location_id:
-        detail = rc_api_call(f"{ERL_ENDPOINT}/{location_id}", return_response=True)
-        body = None
-        try:
-            body = detail.json()
-        except Exception:
-            body = {"error": getattr(detail, 'text', 'no body')}
-        return {
-            "mode": "single",
-            "locationId": location_id,
-            "status": getattr(detail, 'status_code', None),
-            "location": body,
-        }
-
-    list_resp = rc_api_call(ERL_ENDPOINT, return_response=True)
-    try:
-        list_body = list_resp.json()
-    except Exception:
-        list_body = {"error": getattr(list_resp, 'text', 'no body')}
-
-    examples = []
-    records = (list_body or {}).get('records', []) if isinstance(list_body, dict) else []
-    for rec in records[:max(0, int(limit or 0))]:
-        rid = rec.get('id')
-        if not rid:
-            continue
-        detail = rc_api_call(f"{ERL_ENDPOINT}/{rid}")
-        examples.append({"id": rid, "detail": detail})
-
-    return {
-        "mode": "list",
-        "status": getattr(list_resp, 'status_code', None),
-        "list": list_body,
-        "details": examples,
-    }
-
-
-# ===============================================================
-# DEBUG — reference snapshot (bake the coded values into the repo)
+# MAINTENANCE — reference snapshot (bake the coded values into the repo)
 # ===============================================================
 #
 # The real RC dictionaries (confirmed from the Emergency Locations OpenAPI schema):
@@ -434,52 +385,6 @@ def explore_dictionary(kind=None, country_id=None, path=None, format_id=None):
                 "format": rc_api_call(f"{ADDRESS_FORMATS_ENDPOINT}/{format_id}")}
 
     return {"error": "Unknown dictionary kind. Use snapshot, formats, format, or a path."}
-
-
-# ===============================================================
-# DEBUG — raw test write (iterate on the exact body that sticks)
-# ===============================================================
-
-def test_write(body, location_id=None):
-    """Send one exact body to the ERL endpoint and report the full round-trip.
-
-    Bounded to the emergency-locations resource: POST to create when
-    ``location_id`` is omitted, otherwise PUT to that id. Returns the request
-    sent, RC's raw status + response body, and a fresh GET of the resulting
-    record — so an operator can pin down precisely which body makes structured
-    fields (buildingNumber / streetType) persist, and see any validation error
-    or normalisation RC applies. Read-heavy debugging tool; it does write, so it
-    is only reachable behind the same auth as the rest of the tool.
-    """
-    if not isinstance(body, dict) or not body:
-        return {"error": "A non-empty JSON body is required."}
-
-    if location_id:
-        resp = rc_api_call(f"{ERL_ENDPOINT}/{location_id}", method="PUT",
-                           json=body, return_response=True)
-        verb = "PUT"
-    else:
-        resp = rc_api_call(ERL_ENDPOINT, method="POST", json=body, return_response=True)
-        verb = "POST"
-
-    resp_body = _json_or_text(resp)
-    result_id = location_id
-    if not result_id and isinstance(resp_body, dict):
-        result_id = resp_body.get('id')
-
-    stored = None
-    if result_id:
-        stored = rc_api_call(f"{ERL_ENDPOINT}/{result_id}")
-
-    return {
-        "verb": verb,
-        "endpoint": ERL_ENDPOINT + (f"/{location_id}" if location_id else ""),
-        "requestBody": body,
-        "status": getattr(resp, 'status_code', None),
-        "ok": getattr(resp, 'ok', False),
-        "response": resp_body,
-        "storedAfter": stored,
-    }
 
 
 # ===============================================================

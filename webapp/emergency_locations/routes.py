@@ -46,31 +46,11 @@ def get_locations():
     )
 
 
-@emergency_locations_bp.route('/raw', methods=['GET'])
-@require_rc_token
-def get_raw_example():
-    """DEBUG: raw ERL JSON for inspecting the (esp. international) address format.
-
-    Query params:
-      locationId — return the single-resource GET body for that ERL.
-      limit      — when locationId is omitted, how many locations to detail (default 3).
-    """
-    location_id = (request.args.get('locationId') or '').strip() or None
-    try:
-        limit = int(request.args.get('limit', 3))
-    except (TypeError, ValueError):
-        limit = 3
-    try:
-        return jsonify(utils.fetch_raw_examples(location_id=location_id, limit=limit))
-    except Exception as e:
-        print(f"Error fetching raw ERL example: {e}")
-        return jsonify({"error": "An internal error occurred while fetching the raw example."}), 500
-
-
 @emergency_locations_bp.route('/dictionary', methods=['GET'])
 @require_rc_token
 def get_dictionary():
-    """DEBUG: look up / snapshot the coded values behind ERL fields.
+    """Maintenance: snapshot the coded values behind ERL fields to refresh
+    reference_data.json. No UI — reached directly by a maintainer.
 
     Query params:
       kind      — snapshot | formats | format
@@ -132,27 +112,6 @@ def download_template():
     resp.headers['Content-Disposition'] = (
         f'attachment; filename="RC_ERL_Template_{date.today().isoformat()}.xlsx"')
     return resp
-
-
-@emergency_locations_bp.route('/test-write', methods=['POST'])
-@require_rc_token
-def test_write():
-    """DEBUG: send one exact body to the ERL endpoint and return the round-trip.
-
-    Body: {"body": {...RC location body...}, "locationId": "optional — PUT if set,
-    POST (create) if omitted"}. Use to iterate on the exact structured-address
-    body that makes buildingNumber / streetType persist.
-    """
-    data = request.get_json(silent=True) or {}
-    body = data.get('body')
-    location_id = (data.get('locationId') or '').strip() or None
-    if not isinstance(body, dict) or not body:
-        return jsonify({"error": "Request must include a non-empty 'body' object."}), 400
-    try:
-        return jsonify(utils.test_write(body, location_id=location_id))
-    except Exception as e:
-        print(f"Error during ERL test write: {e}")
-        return jsonify({"error": "An internal error occurred during the test write."}), 500
 
 
 @emergency_locations_bp.route('/upload', methods=['POST'])
