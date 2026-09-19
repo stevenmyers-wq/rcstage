@@ -90,6 +90,27 @@ def get_dictionary():
         return jsonify({"error": "An internal error occurred while exploring the dictionary."}), 500
 
 
+@emergency_locations_bp.route('/reference', methods=['GET'])
+@require_rc_token
+def get_reference():
+    """Baked-in reference for the UI (template picker + reference sheet).
+
+    No params  → the list of countries you can create an ERL for (id, iso, name,
+                 primaryFormatId), for the template country picker.
+    ?countryId → that country's emergency formats (field specs) + state list, for
+                 building the template columns and the Reference sheet.
+    """
+    from . import reference
+    country_id = (request.args.get('countryId') or '').strip() or None
+    try:
+        if country_id:
+            return jsonify(reference.ui_country_detail(country_id))
+        return jsonify({"countries": reference.ui_countries()})
+    except Exception as e:
+        print(f"Error building ERL reference: {e}")
+        return jsonify({"error": "An internal error occurred while building the reference."}), 500
+
+
 @emergency_locations_bp.route('/test-write', methods=['POST'])
 @require_rc_token
 def test_write():
