@@ -82,8 +82,9 @@ def build_template_workbook():
         if name in ALWAYS_REQUIRED:
             cell.comment = Comment("Required.", "RCAU")
     ws[f"{_COL['Address.state']}1"].comment = Comment(
-        "Required only where the country's format uses it (see Ref Countries). "
-        "Pick from the dropdown — it follows the Country cell.", "RCAU")
+        "State/province — pick from the dropdown (it follows the Country cell). "
+        "Some countries have no states (e.g. New Zealand): leave this blank and "
+        "put the city/locality (Auckland, etc.) in the City column.", "RCAU")
     ws[f"{_COL['Address.streetType']}1"].comment = Comment(
         "Required only for structured formats (e.g. AU). Dropdown follows Country.", "RCAU")
     ws[f"{_COL['SiteId']}1"].comment = Comment(
@@ -92,7 +93,7 @@ def build_template_workbook():
     # Example row (AU): valid-shaped, friendly, ready to edit.
     example_site = sites[0]["name"] if sites else "main-site"
     ws.append([
-        "NEW", "", "Example site - rename me", "Public", example_site, "AU",
+        "NEW", "", "Example site - rename me", "Public", example_site, "Australia",
         "Example site", "", "190",
         "Henty", "Drive", "Redbank Plains", "Queensland",
         "4301", "",
@@ -144,8 +145,24 @@ def build_template_workbook():
         if not key:
             continue
 
-        states = states_by_country.get(str(c.get("id")), [])
-        names = [s.get("name") for s in states if s.get("name")]
+        fmt = fmt_by_id.get(str(c.get("primaryFormatId")))
+        state_field = None
+        if fmt:
+            for fld in (fmt.get("fields") or []):
+                if fld.get("id") == "state":
+                    state_field = fld
+                    break
+
+        # State values: prefer the format's own state options (authoritative for
+        # this country — e.g. AU's 9 states). Otherwise fall back to the state
+        # dictionary, dropping the pseudo "national" row (name == country name,
+        # e.g. the lone "New Zealand"/"Australia" entry) that isn't a real state.
+        if state_field and state_field.get("options"):
+            names = [o.get("label") or o.get("key") for o in state_field["options"]]
+        else:
+            cname = (c.get("name") or "").strip().lower()
+            names = [s.get("name") for s in states_by_country.get(str(c.get("id")), [])
+                     if s.get("name") and s.get("name").strip().lower() != cname]
         if names:
             start = st_row
             for nm in names:
@@ -156,7 +173,6 @@ def build_template_workbook():
         else:
             _add_name(f"st_{key}", empty_ref_st)
 
-        fmt = fmt_by_id.get(str(c.get("primaryFormatId")))
         opts = []
         if fmt:
             for fld in (fmt.get("fields") or []):
@@ -176,7 +192,15 @@ def build_template_workbook():
     ws_st.sheet_state = "hidden"
     ws_sty.sheet_state = "hidden"
 
-    country_range = f"'Ref Countries'!$A$2:$A${len(countries) + 1}"
+    n = len(countries) + 1
+    # Country dropdown shows full NAMES (col B). The dependent state/street-type
+    # dropdowns key off the ISO code, so convert the selected name → ISO inline
+    # with INDEX/MATCH against Ref Countries (name col B → iso col A). No hidden
+    # helper column needed. (The upload resolver also accepts the full name.)
+    name_range = f"'Ref Countries'!$B$2:$B${n}"
+    cc = _COL["Country"]
+    iso_lookup = (f"INDEX('Ref Countries'!$A$2:$A${n},"
+                  f"MATCH(${cc}2,'Ref Countries'!$B$2:$B${n},0))")
 
     # --- Data validation dropdowns ---
     def _dv(formula, allow_blank=True):
@@ -187,13 +211,12 @@ def build_template_workbook():
     validations = []
     dv_action = _dv('"NEW,MODIFY,DELETE"'); dv_action.add(f"{_COL['Action']}2:{_COL['Action']}{MAX_ROWS}"); validations.append(dv_action)
     dv_vis = _dv('"Public"'); dv_vis.add(f"{_COL['Visibility']}2:{_COL['Visibility']}{MAX_ROWS}"); validations.append(dv_vis)
-    dv_ctry = _dv(country_range); dv_ctry.add(f"{_COL['Country']}2:{_COL['Country']}{MAX_ROWS}"); validations.append(dv_ctry)
+    dv_ctry = _dv(name_range); dv_ctry.add(f"{cc}2:{cc}{MAX_ROWS}"); validations.append(dv_ctry)
     if site_name_range:
         dv_site = _dv(site_name_range); dv_site.add(f"{_COL['SiteId']}2:{_COL['SiteId']}{MAX_ROWS}"); validations.append(dv_site)
 
-    cc = _COL["Country"]
-    dv_state = _dv(f'=INDIRECT("st_"&${cc}2)'); dv_state.add(f"{_COL['Address.state']}2:{_COL['Address.state']}{MAX_ROWS}"); validations.append(dv_state)
-    dv_stype = _dv(f'=INDIRECT("sty_"&${cc}2)'); dv_stype.add(f"{_COL['Address.streetType']}2:{_COL['Address.streetType']}{MAX_ROWS}"); validations.append(dv_stype)
+    dv_state = _dv(f'=INDIRECT("st_"&{iso_lookup})'); dv_state.add(f"{_COL['Address.state']}2:{_COL['Address.state']}{MAX_ROWS}"); validations.append(dv_state)
+    dv_stype = _dv(f'=INDIRECT("sty_"&{iso_lookup})'); dv_stype.add(f"{_COL['Address.streetType']}2:{_COL['Address.streetType']}{MAX_ROWS}"); validations.append(dv_stype)
 
     for dv in validations:
         ws.add_data_validation(dv)
