@@ -111,6 +111,29 @@ def get_reference():
         return jsonify({"error": "An internal error occurred while building the reference."}), 500
 
 
+@emergency_locations_bp.route('/template.xlsx', methods=['GET'])
+@require_rc_token
+def download_template():
+    """Download the format-aware 'new location' template workbook (all countries).
+
+    Real Excel dropdowns for Action/Visibility/Country/Site and dependent
+    state/street-type lists; required fields noted on the Ref Countries sheet.
+    """
+    from datetime import date
+    from . import template
+    try:
+        data = template.build_template_workbook()
+    except Exception as e:
+        print(f"Error building ERL template: {e}")
+        return jsonify({"error": "An internal error occurred while building the template."}), 500
+    resp = Response(
+        data,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename="RC_ERL_Template_{date.today().isoformat()}.xlsx"')
+    return resp
+
+
 @emergency_locations_bp.route('/test-write', methods=['POST'])
 @require_rc_token
 def test_write():

@@ -514,7 +514,38 @@ def _address_from_row(record, address_columns):
     return address
 
 
-def _build_location_body(record, address_columns, require_mandatory=True):
+def _account_sites_by_name():
+    """{lower site name: site id} for resolving a friendly SiteId on upload.
+
+    Also maps the id to itself and the literal 'main-site' so a row that already
+    carries an id (or the company-main sentinel) passes through unchanged.
+    """
+    mapping = {}
+    try:
+        for s in _get_all_records("/restapi/v1.0/account/~/sites"):
+            sid = s.get("id")
+            if sid is None:
+                continue
+            sid = str(sid)
+            mapping[sid.lower()] = sid
+            name = s.get("name")
+            if name:
+                mapping[str(name).strip().lower()] = sid
+    except Exception as e:
+        print(f"Emergency Locations: could not load sites for name resolution: {e}")
+    mapping.setdefault("main-site", "main-site")
+    return mapping
+
+
+def _resolve_site_id(value, sites_by_name):
+    """Turn a SiteId cell (an id, 'main-site', or a site NAME) into a site id."""
+    raw = str(value or "").strip()
+    if not raw:
+        return raw
+    return sites_by_name.get(raw.lower(), raw)
+
+
+def _build_location_body(record, address_columns, require_mandatory=True, sites_by_name=None):
     """Construct the create/update request body from a sheet row.
 
     Returns ``(body, errors, notes)``. Friendly values (country/state/street-type
@@ -534,6 +565,9 @@ def _build_location_body(record, address_columns, require_mandatory=True):
 
     site_id = str(record.get("SiteId", "")).strip()
     if site_id:
+        # SiteId may be a friendly site NAME — resolve it to the id RC needs.
+        if sites_by_name:
+            site_id = _resolve_site_id(site_id, sites_by_name)
         body["site"] = {"id": site_id}
 
     address_format_id = str(record.get("AddressFormatId", "")).strip() or None
@@ -654,6 +688,8 @@ def apply_locations_from_records(records, address_columns, task_id=None):
     total = len(records)
     yield {"type": "start", "total": total,
            "message": f"Applying {total} location change{'' if total == 1 else 's'}…"}
+    # Resolve friendly site names → ids once for the whole run.
+    sites_by_name = _account_sites_by_name()
     results = []
 
     for i, record in enumerate(records):
@@ -689,7 +725,8 @@ def apply_locations_from_records(records, address_columns, task_id=None):
                 # On MODIFY only validate the fields that are supplied (a partial
                 # update is legitimate), so don't enforce mandatory-presence.
                 body, errs, notes = _build_location_body(record, address_columns,
-                                                         require_mandatory=False)
+                                                         require_mandatory=False,
+                                                         sites_by_name=sites_by_name)
                 if not body.get("name"):
                     raise ValueError("Name is required.")
                 if errs:
@@ -699,7 +736,8 @@ def apply_locations_from_records(records, address_columns, task_id=None):
                 verb = "MODIFY"
             else:  # NEW
                 body, errs, notes = _build_location_body(record, address_columns,
-                                                         require_mandatory=True)
+                                                         require_mandatory=True,
+                                                         sites_by_name=sites_by_name)
                 if not body.get("name"):
                     raise ValueError("Name is required.")
                 if not body.get("address"):

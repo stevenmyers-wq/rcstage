@@ -43,17 +43,11 @@
         </div>
     </div>
 
-    <!-- New location template (friendly, format-aware) -->
+    <!-- New location template (friendly, format-aware, all countries) -->
     <div class="card !p-5 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800/50 shadow-sm">
         <h4 class="text-heading text-base text-emerald-900 dark:text-emerald-100 mb-1">➕ New location template</h4>
-        <p class="text-slate-600 dark:text-slate-400 text-sm font-medium mb-3">Pick a country and download a ready-to-fill sheet with the correct columns for that country's address format, the format id pre-set, an example row, and a <strong>Reference</strong> tab listing valid states and street types. Enter friendly names (e.g. "Queensland", "Drive") — the tool resolves them on upload.</p>
-        <div class="flex flex-col sm:flex-row gap-3 sm:items-end">
-            <div class="input-wrapper flex-grow">
-                <label for="el-tpl-country" class="input-label">Country</label>
-                <select id="el-tpl-country" class="input-field h-[52px]"><option value="">Loading countries…</option></select>
-            </div>
-            <button id="el-tpl-btn" class="btn-secondary h-[52px] px-6 disabled:opacity-50" disabled>⬇ Download template</button>
-        </div>
+        <p class="text-slate-600 dark:text-slate-400 text-sm font-medium mb-3">Download a ready-to-fill workbook with in-cell <strong>dropdowns</strong>: Action, Visibility, <strong>Country</strong> (all), <strong>Site</strong> (your account's sites by name), and <strong>State</strong> / <strong>Street type</strong> that follow the Country you pick. No format id needed — the backend picks it. Required fields per country are listed on the <strong>Ref Countries</strong> tab (and the upload validates before sending).</p>
+        <button id="el-tpl-btn" class="btn-secondary h-[52px] px-6">⬇ Download template</button>
     </div>
 
     <!-- Debug: raw example (esp. international / non-US address format) -->
@@ -573,103 +567,37 @@ document.addEventListener('DOMContentLoaded', () => {
         AP.finish(`Downloaded ${currentData.length} locations`);
     });
 
-    // --- New location template (format-aware) ---
-    const tplCountry = document.getElementById('el-tpl-country');
+    // --- New location template (server-generated, all countries, with dropdowns) ---
     const tplBtn = document.getElementById('el-tpl-btn');
-    let refCountries = [];   // [{id, isoCode, name, primaryFormatId, formatCount}]
+    let refCountries = [];   // for the audit Reference tab
 
-    const loadRefCountries = async () => {
+    // Load the createable-countries list for the audit workbook's Reference tab.
+    (async () => {
         try {
             const res = await fetch('/api/emergency_locations/reference');
             const data = await res.json();
             refCountries = data.countries || [];
-            if (!refCountries.length) { tplCountry.innerHTML = '<option value="">— reference unavailable —</option>'; return; }
-            tplCountry.innerHTML = refCountries
-                .map(c => `<option value="${c.id}">${c.name} (${c.isoCode || c.id})</option>`)
-                .join('');
-            // Default to AU if present, else first.
-            const au = refCountries.find(c => c.isoCode === 'AU');
-            tplCountry.value = au ? au.id : refCountries[0].id;
-            tplBtn.disabled = false;
-        } catch (e) {
-            tplCountry.innerHTML = '<option value="">— failed to load —</option>';
-        }
-    };
-    loadRefCountries();
+        } catch (e) { /* audit reference tab is best-effort */ }
+    })();
 
-    // Build the Reference sheet (aoa) for a country's detail payload.
-    const buildReferenceAoa = (detail, fmt) => {
-        const c = detail.country || {};
-        const aoa = [
-            ['EMERGENCY LOCATION REFERENCE'],
-            ['Country', c.name || '', 'ISO', c.isoCode || '', 'CountryId', c.id || ''],
-            ['Address format id', fmt.id || '', 'primary', String(!!fmt.primary), 'validation', fmt.validationVersion || ''],
-            [],
-            ['MANDATORY FIELDS', (fmt.fields || []).filter(f => f.mandatory).map(f => f.id).join(', ')],
-            ['OPTIONAL FIELDS', (fmt.fields || []).filter(f => !f.mandatory && !f.hidden).map(f => f.id).join(', ')],
-            [],
-        ];
-        // Option enums (streetType, state, …)
-        (fmt.fields || []).forEach(f => {
-            if (f.options && f.options.length) {
-                aoa.push([`${f.id.toUpperCase()} — enter label or code`]);
-                aoa.push(['Label', 'Code']);
-                f.options.forEach(o => aoa.push([o.label || '', o.key || '']));
-                aoa.push([]);
-            }
-        });
-        // States (if not already an option enum on the state field)
-        const stateField = (fmt.fields || []).find(f => f.id === 'state');
-        if ((!stateField || !(stateField.options || []).length) && (detail.states || []).length) {
-            aoa.push(['STATES — enter name or code']);
-            aoa.push(['Name', 'Code', 'Id']);
-            detail.states.forEach(s => aoa.push([s.name || '', s.isoCode || '', s.id || '']));
-        }
-        return aoa;
-    };
-
-    tplBtn.addEventListener('click', async () => {
-        const cid = tplCountry.value;
-        if (!cid) return;
-        tplBtn.disabled = true;
+    if (tplBtn) tplBtn.addEventListener('click', async () => {
         const original = tplBtn.textContent;
+        tplBtn.disabled = true;
         tplBtn.textContent = 'Building…';
         try {
-            const res = await fetch(`/api/emergency_locations/reference?countryId=${encodeURIComponent(cid)}`);
-            const detail = await res.json();
-            if (!res.ok || !detail.formats || !detail.formats.length) {
-                alert('No address format found for that country.');
-                return;
+            const res = await fetch('/api/emergency_locations/template.xlsx');
+            if (!res.ok) {
+                let msg = `HTTP ${res.status}`;
+                try { msg = (await res.json()).error || msg; } catch (e) {}
+                throw new Error(msg);
             }
-            const fmt = detail.formats[0];  // primary first
-            const c = detail.country || {};
-            const fields = (fmt.fields || []).filter(f => !f.hidden)
-                .sort((a, b) => (a.order || 99) - (b.order || 99));
-
-            const metaCols = ['Action', 'LocationId', 'Name', 'Visibility', 'SiteId', 'AddressFormatId'];
-            const addrCols = fields.map(f => 'Address.' + f.id);
-            const headers = [...metaCols, ...addrCols];
-
-            // Example row: friendly, valid-shaped, ready to edit.
-            const example = {
-                Action: 'NEW', LocationId: '', Name: 'Example site - rename me',
-                Visibility: 'Public', SiteId: 'main-site', AddressFormatId: fmt.id
-            };
-            fields.forEach(f => {
-                let v = '';
-                if (f.id === 'country') v = c.isoCode || '';
-                else if (f.options && f.options.length) v = f.options[0].label || f.options[0].key || '';
-                else if (f.id === 'customerName') v = 'Example site';
-                else if (f.id === 'zip') v = '';
-                example['Address.' + f.id] = v;
-            });
-
-            const wsData = XLSX.utils.json_to_sheet([example], { header: headers });
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, wsData, 'Emergency Locations');
-            const wsRef = XLSX.utils.aoa_to_sheet(buildReferenceAoa(detail, fmt));
-            XLSX.utils.book_append_sheet(wb, wsRef, 'Reference');
-            XLSX.writeFile(wb, `RC_ERL_Template_${c.isoCode || cid}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `RC_ERL_Template_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
         } catch (e) {
             alert('Could not build template: ' + e.message);
         } finally {
